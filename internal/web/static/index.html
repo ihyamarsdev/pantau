@@ -74,6 +74,20 @@ a.btn:hover { text-decoration: none; color: var(--text); }
 .badge-degraded, .badge-warning { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
 .badge-down, .badge-danger { background: rgba(239, 68, 68, 0.2); color: #f87171; }
 .badge-unknown, .badge-info { background: rgba(148, 163, 184, 0.2); color: #94a3b8; }
+.badge-sec-critical { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.35); }
+.badge-sec-important { background: rgba(251, 146, 60, 0.2); color: #fb923c; border: 1px solid rgba(251, 146, 60, 0.35); }
+.badge-sec-moderate { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); }
+.badge-sec-low { background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.35); }
+.badge-sec-unknown { background: rgba(148, 163, 184, 0.2); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.35); }
+.sec-banner { border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; }
+.sec-banner-warn { background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); color: #fbbf24; }
+.sec-banner-info { background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.35); color: #38bdf8; }
+.sec-banner-danger { background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); color: #f87171; }
+.sec-zero-state { border-radius: 8px; padding: 16px; text-align: center; margin: 8px 0; }
+.sec-zero-ok { background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399; }
+.sec-zero-warn { background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3); color: #fbbf24; }
+.sec-zero-info { background: rgba(148, 163, 184, 0.08); border: 1px solid rgba(148, 163, 184, 0.3); color: #94a3b8; }
+.sec-stat-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; }
 .container { max-width: 1400px; margin: 0 auto; padding: 24px; padding-top: 76px; padding-bottom: 56px; width: 100%; flex: 1; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; }
 .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
@@ -1517,6 +1531,7 @@ body.has-workspace-shelf .container {
           <option value="cron">cron</option>
           <option value="backup">backup</option>
           <option value="process">process</option>
+          <option value="security_updates">security_updates</option>
         </select>
       </div>
       <div class="form-group">
@@ -1852,6 +1867,7 @@ body.has-workspace-shelf .container {
         <div class="tab" data-tab="network" onclick="switchTab('network')" data-i18n="tab_network">Network & Security</div>
         <div class="tab" data-tab="netdiag" onclick="switchTab('netdiag')" data-i18n="tab_netdiag">Network Diagnostics</div>
         <div class="tab" data-tab="packages" onclick="switchTab('packages')" data-i18n="tab_packages">Packages</div>
+        <div class="tab" data-tab="security" onclick="switchTab('security')" data-i18n="tab_security">Security</div>
         <div class="tab" data-tab="desired" onclick="switchTab('desired')" data-i18n="tab_desired">Desired State (Drift)</div>
         <div class="tab" data-tab="docker" onclick="switchTab('docker')" data-i18n="tab_docker">Docker</div>
         <div class="tab" data-tab="timeline" onclick="switchTab('timeline')" data-i18n="tab_timeline">Incident Timeline</div>
@@ -1955,6 +1971,17 @@ body.has-workspace-shelf .container {
               <span style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="seconds_unit">seconds (0 = disabled)</span>
             </div>
             <button class="btn btn-primary btn-sm" onclick="savePollInterval()" style="width: auto; white-space: nowrap;" data-i18n="save_interval">Save Interval</button>
+          </div>
+        </div>
+        <div class="card" style="padding: 16px;">
+          <h4 style="margin-bottom: 8px;" data-i18n="sec_scan_interval_title">🛡️ Security Scan Interval</h4>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px;" data-i18n="sec_scan_interval_desc">Interval for background host security scans in hours (1-720 hours, default 24, or 0 to disable).</p>
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <input type="number" id="settingSecurityScanInterval" min="0" max="720" placeholder="24" style="width: 120px;" />
+              <span style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="hours_unit">hours (0 = disabled)</span>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="saveSecurityScanInterval()" style="width: auto; white-space: nowrap;" data-i18n="save_interval">Save Interval</button>
           </div>
         </div>
       </div>
@@ -3232,7 +3259,69 @@ const I18N = {
     "auth_fails": "Failed Auth Attempts",
     "egress_connectivity": "Internet Egress Status",
     "system_status_label": "System Desired State",
-    "inspection_freshness": "Inspection Freshness"
+    "inspection_freshness": "Inspection Freshness",
+    "tab_security": "Security",
+    "sec_title": "Host Security Scan",
+    "sec_scan_now": "Scan Now",
+    "sec_scanning": "Scanning...",
+    "sec_never_scanned_title": "No Security Scan Available",
+    "sec_never_scanned_desc": "This host has not been scanned for security updates and hardening checks yet.",
+    "sec_scan_complete": "Security scan completed successfully",
+    "sec_scan_cooldown": "Scan cooldown active, please wait",
+    "sec_scan_in_progress": "Security scan already in progress",
+    "sec_scan_failed": "Security scan failed",
+    "sec_banner_partial": "Partial Scan Coverage",
+    "sec_banner_unsupported": "Security Updates Unsupported on this OS",
+    "sec_banner_unsupported_desc": "Automated package security update inspection is not available for this distribution ({os} / {pm}). Hardening checks below are still evaluated.",
+    "sec_banner_error": "Security Scan Error",
+    "sec_pending_updates": "Pending Security Updates",
+    "sec_total_packages": "total upgradable",
+    "sec_no_pending": "Up to date",
+    "sec_not_assessed": "Not assessed",
+    "sec_severity_breakdown": "Severity Breakdown",
+    "sec_sev_crit_short": "Crit",
+    "sec_sev_imp_short": "Imp",
+    "sec_sev_mod_short": "Mod",
+    "sec_sev_low_short": "Low",
+    "sec_sev_unk_short": "Unk",
+    "sec_reboot_status": "Reboot Status",
+    "sec_reboot_yes": "Reboot Required",
+    "sec_reboot_no": "No Reboot Required",
+    "sec_repo_cache_age": "Repo Cache Age",
+    "sec_system_info": "System & Scan Time",
+    "sec_findings_title": "Security Findings",
+    "search_findings_ph": "Filter packages or advisories...",
+    "sort_sev_desc": "Severity: High to Low",
+    "sort_sev_asc": "Severity: Low to High",
+    "sort_pkg_asc": "Package Name (A-Z)",
+    "sec_th_pkg": "Package",
+    "sec_th_installed": "Installed Version",
+    "sec_th_fixed": "Fixed Version",
+    "sec_th_severity": "Severity",
+    "sec_th_advisory": "Advisory",
+    "no_matching_findings": "No findings match your filter.",
+    "sec_all_clear_title": "All Clear - No Security Updates Pending",
+    "sec_all_clear_desc": "All installed packages are up to date with available security patches.",
+    "sec_partial_zero_title": "No Security Updates Detected (Coverage Partial)",
+    "sec_partial_zero_desc": "No updates were reported, but scan coverage is limited. Review the coverage notes above.",
+    "sec_unsupported_title": "Package Security Scanning Not Supported",
+    "sec_unsupported_desc": "Package manager security updates are not available for this OS distribution. Hardening checks are shown below.",
+    "sec_stale_zero_title": "Package Cache Stale",
+    "sec_stale_zero_desc": "Package repository metadata is over 7 days old. Results may miss recent security updates.",
+    "sec_hardening_title": "Hardening & Baseline Checks",
+    "sec_no_hardening": "No hardening checks reported",
+    "sec_check": "Check",
+    "sec_status": "Status",
+    "sec_detail": "Detail",
+    "sec_notes_title": "Coverage & Operational Notes",
+    "sec_scan_interval_title": "🛡️ Security Scan Interval",
+    "sec_scan_interval_desc": "Interval for background host security scans in hours (1-720 hours, default 24, or 0 to disable).",
+    "sec_scan_interval_error": "Security scan interval must be between 0 and 720 hours (0 = disabled)",
+    "hours_unit": "hours (0 = disabled)",
+    "hardening_sshd_permit_root_login": "SSH Root Login",
+    "hardening_sshd_password_auth": "SSH Password Authentication",
+    "hardening_auto_security_updates": "Automatic Security Updates",
+    "hardening_firewall_active": "Firewall Active",
   },
   id: {
     "brand_subtitle": "Manajemen Server Agentless",
@@ -3899,7 +3988,69 @@ const I18N = {
     "auth_fails": "Percobaan Login Gagal",
     "egress_connectivity": "Status Akses Internet",
     "system_status_label": "Kondisi Desired State",
-    "inspection_freshness": "Kebaruan Inspeksi"
+    "inspection_freshness": "Kebaruan Inspeksi",
+    "tab_security": "Keamanan",
+    "sec_title": "Pemindaian Keamanan Host",
+    "sec_scan_now": "Pindai Sekarang",
+    "sec_scanning": "Memindai...",
+    "sec_never_scanned_title": "Belum Ada Data Pemindaian Keamanan",
+    "sec_never_scanned_desc": "Host ini belum pernah dipindai untuk pembaruan keamanan dan pemeriksaan hardening.",
+    "sec_scan_complete": "Pemindaian keamanan berhasil diselesaikan",
+    "sec_scan_cooldown": "Cooldown pemindaian aktif, mohon tunggu sebentar",
+    "sec_scan_in_progress": "Pemindaian keamanan sedang berlangsung",
+    "sec_scan_failed": "Pemindaian keamanan gagal",
+    "sec_banner_partial": "Cakupan Pemindaian Parsial",
+    "sec_banner_unsupported": "Pembaruan Keamanan Tidak Didukung pada OS Ini",
+    "sec_banner_unsupported_desc": "Inspeksi otomatis pembaruan keamanan paket tidak tersedia untuk distribusi ini ({os} / {pm}). Pemeriksaan hardening di bawah tetap dievaluasi.",
+    "sec_banner_error": "Error Pemindaian Keamanan",
+    "sec_pending_updates": "Pembaruan Keamanan Tertunda",
+    "sec_total_packages": "total dapat diperbarui",
+    "sec_no_pending": "Mutakhir",
+    "sec_not_assessed": "Tidak dinilai",
+    "sec_severity_breakdown": "Rincian Tingkat Keparahan",
+    "sec_sev_crit_short": "Kritis",
+    "sec_sev_imp_short": "Penting",
+    "sec_sev_mod_short": "Moderat",
+    "sec_sev_low_short": "Rendah",
+    "sec_sev_unk_short": "Tidak Diketahui",
+    "sec_reboot_status": "Status Reboot",
+    "sec_reboot_yes": "Perlu Reboot",
+    "sec_reboot_no": "Tidak Perlu Reboot",
+    "sec_repo_cache_age": "Usia Cache Repositori",
+    "sec_system_info": "Sistem & Waktu Pindai",
+    "sec_findings_title": "Temuan Keamanan",
+    "search_findings_ph": "Cari paket atau advisori...",
+    "sort_sev_desc": "Keparahan: Tinggi ke Rendah",
+    "sort_sev_asc": "Keparahan: Rendah ke Tinggi",
+    "sort_pkg_asc": "Nama Paket (A-Z)",
+    "sec_th_pkg": "Paket",
+    "sec_th_installed": "Versi Terpasang",
+    "sec_th_fixed": "Versi Perbaikan",
+    "sec_th_severity": "Keparahan",
+    "sec_th_advisory": "Advisori",
+    "no_matching_findings": "Tidak ada temuan yang cocok dengan filter.",
+    "sec_all_clear_title": "Semua Aman - Tidak Ada Pembaruan Keamanan Tertunda",
+    "sec_all_clear_desc": "Semua paket yang terpasang sudah mutakhir dengan patch keamanan yang tersedia.",
+    "sec_partial_zero_title": "Tidak Ada Pembaruan Keamanan Terdeteksi (Cakupan Parsial)",
+    "sec_partial_zero_desc": "Tidak ada pembaruan dilaporkan, namun cakupan pindai terbatas. Periksa catatan cakupan di atas.",
+    "sec_unsupported_title": "Pemindaian Keamanan Paket Tidak Didukung",
+    "sec_unsupported_desc": "Pembaruan keamanan manajer paket tidak tersedia untuk distribusi OS ini. Pemeriksaan hardening ditampilkan di bawah.",
+    "sec_stale_zero_title": "Cache Paket Usang",
+    "sec_stale_zero_desc": "Metadata repositori paket berusia lebih dari 7 hari. Hasil mungkin melewatkan pembaruan keamanan terbaru.",
+    "sec_hardening_title": "Pemeriksaan Hardening & Baseline",
+    "sec_no_hardening": "Tidak ada pemeriksaan hardening yang dilaporkan",
+    "sec_check": "Pemeriksaan",
+    "sec_status": "Status",
+    "sec_detail": "Rincian",
+    "sec_notes_title": "Catatan Cakupan & Operasional",
+    "sec_scan_interval_title": "🛡️ Interval Pemindaian Keamanan",
+    "sec_scan_interval_desc": "Interval pemindaian keamanan host di latar belakang dalam jam (1-720 jam, bawaan 24, atau 0 untuk menonaktifkan).",
+    "sec_scan_interval_error": "Interval pemindaian keamanan harus antara 0 dan 720 jam (0 = dinonaktifkan)",
+    "hours_unit": "jam (0 = nonaktif)",
+    "hardening_sshd_permit_root_login": "Login Root SSH",
+    "hardening_sshd_password_auth": "Autentikasi Password SSH",
+    "hardening_auto_security_updates": "Pembaruan Keamanan Otomatis",
+    "hardening_firewall_active": "Firewall Aktif"
   }
 };
 
@@ -4553,6 +4704,30 @@ async function savePollInterval() {
       currentPollInterval = sec;
       updateInspectionStatusUI();
       renderHosts();
+      showToast(t('settings_saved', 'Settings saved successfully'), 'success');
+    } else {
+      showToast(t('save_failed', 'Failed to save settings'), 'error');
+    }
+  } catch (e) {
+    showToast(t('save_failed', 'Failed to save settings') + ': ' + e.message, 'error');
+  }
+}
+
+async function saveSecurityScanInterval() {
+  const input = document.getElementById('settingSecurityScanInterval');
+  if (!input) return;
+  const hours = parseInt(input.value, 10);
+  if (isNaN(hours) || hours < 0 || hours > 720) {
+    showToast(t('sec_scan_interval_error', 'Security scan interval must be between 0 and 720 hours (0 = disabled)'), 'error');
+    return;
+  }
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ security_scan_interval_hours: String(hours) })
+    });
+    if (res.ok) {
       showToast(t('settings_saved', 'Settings saved successfully'), 'success');
     } else {
       showToast(t('save_failed', 'Failed to save settings'), 'error');
@@ -6268,6 +6443,8 @@ function switchTab(tab, presetID) {
     renderInspectionRunsTab();
   } else if (tab === 'packages') {
     renderPackagesTab();
+  } else if (tab === 'security') {
+    loadSecurityTab();
   } else if (tab === 'netdiag') {
     renderNetDiagTab(d.host);
   } else if (tab === 'files') {
@@ -6661,6 +6838,464 @@ function displayPackagesTable(hostID) {
   `;
 }
 
+let currentSecurityScan = null;
+let secCooldownTimer = null;
+
+function updateSecCooldownUI(seconds) {
+  if (secCooldownTimer) {
+    clearInterval(secCooldownTimer);
+    secCooldownTimer = null;
+  }
+  const btn = document.getElementById('btnScanSecurity');
+  if (!btn) return;
+  let rem = Number(seconds) || 0;
+  if (rem > 0) {
+    btn.disabled = true;
+    btn.innerHTML = `<span>⏳</span> <span>${t('cooldown_wait', 'Wait')} (${rem}s)</span>`;
+    secCooldownTimer = setInterval(() => {
+      rem--;
+      if (rem <= 0) {
+        clearInterval(secCooldownTimer);
+        secCooldownTimer = null;
+        btn.disabled = false;
+        btn.innerHTML = `<span>🔄</span> <span>${t('sec_scan_now', 'Scan Now')}</span>`;
+      } else {
+        btn.innerHTML = `<span>⏳</span> <span>${t('cooldown_wait', 'Wait')} (${rem}s)</span>`;
+      }
+    }, 1000);
+  } else {
+    btn.disabled = false;
+    btn.innerHTML = `<span>🔄</span> <span>${t('sec_scan_now', 'Scan Now')}</span>`;
+  }
+}
+
+async function loadSecurityTab() {
+  const host = currentHost;
+  const content = document.getElementById('tabContent');
+  if (!host || !content) return;
+
+  content.innerHTML = `<div style="text-align: center; padding: 40px; color: var(--text-muted);"><span class="spinner" style="display:inline-block; margin-right:8px;">⏳</span>${t('loading', 'Loading...')}</div>`;
+
+  let res, data;
+  try {
+    res = await fetch('/api/hosts/' + host.id + '/security');
+    data = await res.json();
+  } catch (e) {
+    if (currentTab !== 'security' || !currentHost || currentHost.id !== host.id) return;
+    content.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-shrink: 0;">
+        <h4 style="margin: 0;">🛡️ ${t('tab_security', 'Security')}</h4>
+        <button id="btnScanSecurity" class="btn btn-sm btn-primary" onclick="runHostSecurityScan(${host.id})"><span>🔄</span> <span>${t('sec_scan_now', 'Scan Now')}</span></button>
+      </div>
+      <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 8px; padding: 16px; color: #f87171;">
+        <div style="font-weight: 600; margin-bottom: 4px;">❌ ${t('sec_scan_failed', 'Security scan failed')}</div>
+        <div style="font-size: 0.82rem; font-family: monospace;">${escapeHtml(e.message)}</div>
+      </div>`;
+    return;
+  }
+
+  if (currentTab !== 'security' || !currentHost || currentHost.id !== host.id) return;
+
+  const cooldownHeader = res.headers ? res.headers.get('X-Scan-Cooldown-Remaining') : null;
+  const cooldownRem = parseInt(cooldownHeader || '0', 10);
+
+  if (!res.ok) {
+    content.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-shrink: 0;">
+        <h4 style="margin: 0;">🛡️ ${t('tab_security', 'Security')}</h4>
+        <button id="btnScanSecurity" class="btn btn-sm btn-primary" onclick="runHostSecurityScan(${host.id})"><span>🔄</span> <span>${t('sec_scan_now', 'Scan Now')}</span></button>
+      </div>
+      <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 8px; padding: 16px; color: #f87171;">
+        <div style="font-weight: 600; margin-bottom: 4px;">❌ ${t('sec_scan_failed', 'Security scan failed')}</div>
+        <div style="font-size: 0.82rem;">${escapeHtml(data?.error || res.statusText)}</div>
+      </div>`;
+    if (cooldownRem > 0) updateSecCooldownUI(cooldownRem);
+    return;
+  }
+
+  if (!data.scanned || !data.scan) {
+    content.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-shrink: 0;">
+        <h4 style="margin: 0;">🛡️ ${t('tab_security', 'Security')}</h4>
+        <button id="btnScanSecurity" class="btn btn-sm btn-primary" onclick="runHostSecurityScan(${host.id})"><span>🔄</span> <span>${t('sec_scan_now', 'Scan Now')}</span></button>
+      </div>
+      <div class="empty-state">
+        <div class="empty-state-icon">🛡️</div>
+        <div class="empty-state-title">${t('sec_never_scanned_title', 'No Security Scan Available')}</div>
+        <div class="empty-state-desc">${t('sec_never_scanned_desc', 'This host has not been scanned for security updates and hardening checks yet.')}</div>
+        <div style="margin-top: 16px;">
+          <button class="btn btn-primary" onclick="runHostSecurityScan(${host.id})">
+            <span>🔍</span> <span>${t('sec_scan_now', 'Scan Now')}</span>
+          </button>
+        </div>
+      </div>`;
+    if (cooldownRem > 0) updateSecCooldownUI(cooldownRem);
+    return;
+  }
+
+  currentSecurityScan = data.scan;
+  renderSecurityData(data.scan, host.id);
+  if (cooldownRem > 0) updateSecCooldownUI(cooldownRem);
+}
+
+function renderSecurityData(scan, hostID) {
+  const content = document.getElementById('tabContent');
+  if (!content) return;
+  currentSecurityScan = scan;
+
+  const isStaleCache = scan.repo_cache_age_hours > 168;
+
+  let statusBadge = '<span class="badge badge-success">OK</span>';
+  if (scan.status === 'partial') {
+    statusBadge = '<span class="badge badge-warning">PARTIAL</span>';
+  } else if (scan.status === 'unsupported') {
+    statusBadge = '<span class="badge badge-unknown">UNSUPPORTED</span>';
+  } else if (scan.status === 'error') {
+    statusBadge = '<span class="badge badge-danger">ERROR</span>';
+  }
+
+  let bannerHtml = '';
+  if (scan.status === 'partial') {
+    bannerHtml = `
+      <div class="sec-banner sec-banner-warn">
+        <div style="font-weight: 600; display: flex; align-items: center; gap: 6px; margin-bottom: ${scan.notes && scan.notes.length ? '6px' : '0'};">
+          <span>⚠️</span> <span>${t('sec_banner_partial', 'Partial Scan Coverage')}</span>
+        </div>
+        ${scan.notes && scan.notes.length ? `<ul style="margin: 0; padding-left: 20px; font-size: 0.82rem; color: #fde68a;">${scan.notes.map(n => `<li>${escapeHtml(n)}</li>`).join('')}</ul>` : ''}
+      </div>`;
+  } else if (scan.status === 'unsupported') {
+    bannerHtml = `
+      <div class="sec-banner sec-banner-info">
+        <div style="font-weight: 600; display: flex; align-items: center; gap: 6px;">
+          <span>ℹ️</span> <span>${t('sec_banner_unsupported', 'Security Updates Unsupported on this OS')}</span>
+        </div>
+        <div style="font-size: 0.82rem; color: #bae6fd; margin-top: 4px;">
+          ${t('sec_banner_unsupported_desc', 'Automated package security update inspection is not available for this distribution ({os} / {pm}). Hardening checks below are still evaluated.').replace('{os}', escapeHtml(scan.os_family || 'unknown')).replace('{pm}', escapeHtml(scan.package_manager || 'unknown'))}
+        </div>
+        ${scan.notes && scan.notes.length ? `<ul style="margin: 6px 0 0 0; padding-left: 20px; font-size: 0.82rem; color: #bae6fd;">${scan.notes.map(n => `<li>${escapeHtml(n)}</li>`).join('')}</ul>` : ''}
+      </div>`;
+  } else if (scan.status === 'error') {
+    bannerHtml = `
+      <div class="sec-banner sec-banner-danger">
+        <div style="font-weight: 600; display: flex; align-items: center; gap: 6px;">
+          <span>❌</span> <span>${t('sec_banner_error', 'Security Scan Error')}</span>
+        </div>
+        <div style="font-size: 0.82rem; color: #fca5a5; margin-top: 4px; font-family: monospace;">${escapeHtml(scan.error || 'Unknown scan error')}</div>
+      </div>`;
+  }
+
+  const notAssessed = scan.status === 'unsupported' || scan.status === 'error';
+  const recency = scan.scanned_at ? formatRelativeTime(scan.scanned_at) : { title: '-', relative: '-' };
+  const cardsHtml = `
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px;">
+      <div class="card" style="padding: 14px; gap: 4px;">
+        <div class="sec-stat-label">${t('sec_pending_updates', 'Pending Security Updates')}</div>
+        <div style="font-size: 1.6rem; font-weight: 700; color: ${notAssessed ? 'var(--text-muted)' : (scan.pending_security > 0 ? '#f87171' : '#34d399')};">
+          ${notAssessed ? 'N/A' : (scan.pending_security || 0)}
+        </div>
+        <div style="font-size: 0.75rem; color: var(--text-muted);">
+          ${notAssessed ? t('sec_not_assessed', 'Not assessed') : (scan.pending_total > 0 ? `${scan.pending_total} ${t('sec_total_packages', 'total upgradable')}` : t('sec_no_pending', 'Up to date'))}
+        </div>
+      </div>
+
+      <div class="card" style="padding: 14px; gap: 4px;">
+        <div class="sec-stat-label" style="margin-bottom: 4px;">${t('sec_severity_breakdown', 'Severity Breakdown')}</div>
+        ${notAssessed ? `<div style="color: var(--text-muted); font-size: 0.9rem;">${t('sec_not_assessed', 'Not assessed')}</div>` : `<div style="display: flex; gap: 4px; flex-wrap: wrap;">
+          <span class="badge badge-sec-critical" title="Critical">${t('sec_sev_crit_short', 'Crit')}: ${scan.severity?.critical || 0}</span>
+          <span class="badge badge-sec-important" title="Important">${t('sec_sev_imp_short', 'Imp')}: ${scan.severity?.important || 0}</span>
+          <span class="badge badge-sec-moderate" title="Moderate">${t('sec_sev_mod_short', 'Mod')}: ${scan.severity?.moderate || 0}</span>
+          <span class="badge badge-sec-low" title="Low">${t('sec_sev_low_short', 'Low')}: ${scan.severity?.low || 0}</span>
+          <span class="badge badge-sec-unknown" title="Unknown">${t('sec_sev_unk_short', 'Unk')}: ${scan.severity?.unknown || 0}</span>
+        </div>`}
+      </div>
+
+      <div class="card" style="padding: 14px; gap: 4px;">
+        <div class="sec-stat-label">${t('sec_reboot_status', 'Reboot Status')}</div>
+        <div style="margin-top: 6px;">
+          ${notAssessed
+            ? `<span style="color: var(--text-muted); font-size: 0.9rem;">${t('unknown', 'Unknown')}</span>`
+            : (scan.reboot_required
+              ? `<span class="badge badge-danger" style="font-size: 0.75rem; padding: 4px 8px;">⚠️ ${t('sec_reboot_yes', 'Reboot Required')}</span>`
+              : `<span class="badge badge-success" style="font-size: 0.75rem; padding: 4px 8px;">✓ ${t('sec_reboot_no', 'No Reboot Required')}</span>`)
+          }
+        </div>
+      </div>
+
+      <div class="card" style="padding: 14px; gap: 4px;">
+        <div class="sec-stat-label">${t('sec_repo_cache_age', 'Repo Cache Age')}</div>
+        <div style="font-size: 1.15rem; font-weight: 700; margin-top: 4px;">
+          ${scan.repo_cache_age_hours < 0 
+            ? `<span style="color: var(--text-muted); font-size: 0.9rem;">${t('unknown', 'Unknown')}</span>`
+            : (isStaleCache 
+                ? `<span style="color: #fbbf24;" title="Cache is older than 7 days">⚠️ ${scan.repo_cache_age_hours}h (${Math.round(scan.repo_cache_age_hours / 24)}d)</span>`
+                : `<span style="color: #34d399;">✓ ${scan.repo_cache_age_hours}h</span>`
+              )
+          }
+        </div>
+      </div>
+
+      <div class="card" style="padding: 14px; gap: 4px;">
+        <div class="sec-stat-label">${t('sec_system_info', 'System & Scan Time')}</div>
+        <div style="font-size: 0.82rem; margin-top: 4px; color: #fff;">
+          <b>${escapeHtml(scan.os_family || 'unknown')}</b> / <span>${escapeHtml(scan.package_manager || 'unknown')}</span>
+        </div>
+        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;" title="${escapeHtml(recency.title)}">
+          ${escapeHtml(recency.relative)}
+        </div>
+      </div>
+    </div>
+  `;
+
+  const findings = scan.findings || [];
+  const findingsHtml = `
+    <div class="card" style="padding: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+        <h4 style="margin: 0;">🔍 ${t('sec_findings_title', 'Security Findings')} (<span id="secFindingsCount">${findings.length}</span>)</h4>
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <input type="text" id="secFindingsFilter" placeholder="${t('search_findings_ph', 'Filter packages or advisories...')}" oninput="filterSecurityFindings()" style="background: #0f172a; border: 1px solid var(--card-border); border-radius: 6px; padding: 4px 10px; font-size: 0.8rem; color: #fff; width: 180px;">
+          <select id="secFindingsSort" onchange="filterSecurityFindings()" style="background: #0f172a; border: 1px solid var(--card-border); border-radius: 6px; padding: 4px 8px; font-size: 0.8rem; color: #fff;">
+            <option value="sev_desc">${t('sort_sev_desc', 'Severity: High to Low')}</option>
+            <option value="sev_asc">${t('sort_sev_asc', 'Severity: Low to High')}</option>
+            <option value="pkg_asc">${t('sort_pkg_asc', 'Package Name (A-Z)')}</option>
+          </select>
+        </div>
+      </div>
+      <div id="secFindingsContainer"></div>
+    </div>
+  `;
+
+  const hardeningList = scan.hardening || [];
+  let hardeningContent = '';
+  if (hardeningList.length === 0) {
+    hardeningContent = `<div style="color: var(--text-muted); font-size: 0.85rem;">${t('sec_no_hardening', 'No hardening checks reported')}</div>`;
+  } else {
+    hardeningContent = `
+      <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+          <thead>
+            <tr style="border-bottom: 1px solid var(--card-border); color: var(--text-muted); text-align: left;">
+              <th style="padding: 8px 12px;">${t('sec_check', 'Check')}</th>
+              <th style="padding: 8px 12px; width: 110px;">${t('sec_status', 'Status')}</th>
+              <th style="padding: 8px 12px;">${t('sec_detail', 'Detail')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${hardeningList.map(h => {
+              let badgeCls = 'badge-sec-unknown';
+              let statusText = (h.status || 'unknown').toLowerCase();
+              if (statusText === 'pass') badgeCls = 'badge-success';
+              else if (statusText === 'warn') badgeCls = 'badge-warning';
+              else if (statusText === 'fail') badgeCls = 'badge-danger';
+              const title = t('hardening_' + h.id, h.title || h.id);
+              return `
+                <tr style="border-bottom: 1px solid rgba(255,255,255,0.04);">
+                  <td style="padding: 8px 12px; font-weight: 600; color: #fff;">${escapeHtml(title)}</td>
+                  <td style="padding: 8px 12px;"><span class="badge ${badgeCls}">${escapeHtml(statusText.toUpperCase())}</span></td>
+                  <td style="padding: 8px 12px; color: var(--text-muted); font-size: 0.82rem; font-family: monospace;">${escapeHtml(h.detail || '-')}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+  const hardeningHtml = `
+    <div class="card" style="padding: 16px; margin-top: 16px;">
+      <h4 style="margin: 0 0 12px 0;">🛡️ ${t('sec_hardening_title', 'Hardening & Baseline Checks')}</h4>
+      ${hardeningContent}
+    </div>
+  `;
+
+  let notesHtml = '';
+  if (scan.notes && scan.notes.length > 0) {
+    notesHtml = `
+      <div class="card" style="padding: 16px; margin-top: 16px;">
+        <h4 style="margin: 0 0 10px 0;">📋 ${t('sec_notes_title', 'Coverage & Operational Notes')}</h4>
+        <ul style="margin: 0; padding-left: 20px; color: var(--text-muted); font-size: 0.82rem; line-height: 1.6;">
+          ${scan.notes.map(n => `<li>${escapeHtml(n)}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+  }
+
+  content.innerHTML = `
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px; flex-shrink: 0;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <h4 style="margin: 0;">🛡️ ${t('tab_security', 'Security')}</h4>
+        ${statusBadge}
+      </div>
+      <button id="btnScanSecurity" class="btn btn-sm btn-primary" onclick="runHostSecurityScan(${hostID})" style="display: inline-flex; align-items: center; gap: 4px;">
+        <span>🔄</span> <span>${t('sec_scan_now', 'Scan Now')}</span>
+      </button>
+    </div>
+    <div style="overflow-y: auto; flex: 1;">
+      ${bannerHtml}
+      ${cardsHtml}
+      ${findingsHtml}
+      ${hardeningHtml}
+      ${notesHtml}
+    </div>
+  `;
+
+  filterSecurityFindings();
+}
+
+function getSecuritySeverityBadge(sev) {
+  const s = String(sev || 'unknown').toLowerCase();
+  let cls = 'badge-sec-unknown';
+  if (s === 'critical') cls = 'badge-sec-critical';
+  else if (s === 'important') cls = 'badge-sec-important';
+  else if (s === 'moderate') cls = 'badge-sec-moderate';
+  else if (s === 'low') cls = 'badge-sec-low';
+  return `<span class="badge ${cls}">${escapeHtml(s)}</span>`;
+}
+
+function filterSecurityFindings() {
+  const container = document.getElementById('secFindingsContainer');
+  if (!container || !currentSecurityScan) return;
+
+  const q = (document.getElementById('secFindingsFilter')?.value || '').toLowerCase().trim();
+  const sort = document.getElementById('secFindingsSort')?.value || 'sev_desc';
+  const scan = currentSecurityScan;
+  const allFindings = scan.findings || [];
+  const isStaleCache = scan.repo_cache_age_hours > 168;
+
+  if (allFindings.length === 0) {
+    if (scan.status === 'ok' && !isStaleCache) {
+      container.innerHTML = `
+        <div class="sec-zero-state sec-zero-ok">
+          <span style="font-size: 1.25rem; display: block; margin-bottom: 4px;">✅</span>
+          <b>${t('sec_all_clear_title', 'All Clear - No Security Updates Pending')}</b>
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">${t('sec_all_clear_desc', 'All installed packages are up to date with available security patches.')}</div>
+        </div>`;
+    } else if (scan.status === 'unsupported') {
+      container.innerHTML = `
+        <div class="sec-zero-state sec-zero-info">
+          <span style="font-size: 1.25rem; display: block; margin-bottom: 4px;">ℹ️</span>
+          <b>${t('sec_unsupported_title', 'Package Security Scanning Not Supported')}</b>
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">${t('sec_unsupported_desc', 'Package manager security updates are not available for this OS distribution. Hardening checks are shown below.')}</div>
+        </div>`;
+    } else if (isStaleCache) {
+      container.innerHTML = `
+        <div class="sec-zero-state sec-zero-warn">
+          <span style="font-size: 1.25rem; display: block; margin-bottom: 4px;">⚠️</span>
+          <b>${t('sec_stale_zero_title', 'Package Cache Stale')}</b>
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">${t('sec_stale_zero_desc', 'Package repository metadata is over 7 days old. Results may miss recent security updates.')}</div>
+        </div>`;
+    } else {
+      container.innerHTML = `
+        <div class="sec-zero-state sec-zero-warn">
+          <span style="font-size: 1.25rem; display: block; margin-bottom: 4px;">⚠️</span>
+          <b>${t('sec_partial_zero_title', 'No Security Updates Detected (Coverage Partial)')}</b>
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">${t('sec_partial_zero_desc', 'No updates were reported, but scan coverage is limited. Review the coverage notes above.')}</div>
+        </div>`;
+    }
+    return;
+  }
+
+  const sevWeight = { critical: 5, important: 4, moderate: 3, low: 2, unknown: 1 };
+  let list = allFindings.slice();
+  if (q) {
+    list = list.filter(f => 
+      (f.package && f.package.toLowerCase().includes(q)) ||
+      (f.advisory && f.advisory.toLowerCase().includes(q)) ||
+      (f.severity && f.severity.toLowerCase().includes(q))
+    );
+  }
+
+  list.sort((a, b) => {
+    if (sort === 'sev_desc') {
+      const diff = (sevWeight[String(b.severity).toLowerCase()] || 0) - (sevWeight[String(a.severity).toLowerCase()] || 0);
+      return diff !== 0 ? diff : (a.package || '').localeCompare(b.package || '');
+    } else if (sort === 'sev_asc') {
+      const diff = (sevWeight[String(a.severity).toLowerCase()] || 0) - (sevWeight[String(b.severity).toLowerCase()] || 0);
+      return diff !== 0 ? diff : (a.package || '').localeCompare(b.package || '');
+    } else {
+      return (a.package || '').localeCompare(b.package || '');
+    }
+  });
+
+  const countEl = document.getElementById('secFindingsCount');
+  if (countEl) countEl.innerText = list.length;
+
+  if (list.length === 0) {
+    container.innerHTML = `<div style="text-align: center; padding: 24px; color: var(--text-muted); font-size: 0.85rem;">${t('no_matching_findings', 'No findings match your filter.')}</div>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <div style="overflow-x: auto;">
+      <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--card-border); color: var(--text-muted); text-align: left;">
+            <th style="padding: 8px 12px;">${t('sec_th_pkg', 'Package')}</th>
+            <th style="padding: 8px 12px;">${t('sec_th_installed', 'Installed Version')}</th>
+            <th style="padding: 8px 12px;">${t('sec_th_fixed', 'Fixed Version')}</th>
+            <th style="padding: 8px 12px; width: 110px;">${t('sec_th_severity', 'Severity')}</th>
+            <th style="padding: 8px 12px;">${t('sec_th_advisory', 'Advisory')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${list.map(f => `
+            <tr style="border-bottom: 1px solid rgba(255,255,255,0.04);">
+              <td style="padding: 8px 12px; font-weight: 600; color: #fff;">${escapeHtml(f.package)}</td>
+              <td style="padding: 8px 12px; font-family: monospace; color: var(--text-muted); font-size: 0.8rem;">${escapeHtml(f.installed_version || '-')}</td>
+              <td style="padding: 8px 12px; font-family: monospace; color: #34d399; font-size: 0.8rem;">${escapeHtml(f.fixed_version || '-')}</td>
+              <td style="padding: 8px 12px;">${getSecuritySeverityBadge(f.severity)}</td>
+              <td style="padding: 8px 12px; font-family: monospace; font-size: 0.8rem; color: #60a5fa;">${escapeHtml(f.advisory || '-')}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function runHostSecurityScan(hostID) {
+  const btn = document.getElementById('btnScanSecurity');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner" style="display:inline-block; margin-right:4px;">⏳</span> <span>${t('sec_scanning', 'Scanning...')}</span>`;
+  }
+  try {
+    const res = await fetch('/api/hosts/' + hostID + '/security/scan', { method: 'POST' });
+    if (res.ok) {
+      const data = await res.json();
+      showToast(t('sec_scan_complete', 'Security scan complete'), 'success');
+      updateSecCooldownUI(60);
+      if (currentTab === 'security' && currentHost && currentHost.id === hostID) {
+        renderSecurityData(data.scan, hostID);
+      }
+    } else if (res.status === 429) {
+      const errData = await res.json().catch(() => ({}));
+      const rem = errData.cooldown_remaining || 60;
+      showToast(errData.error || t('sec_scan_cooldown', 'Scan cooldown active, please wait'), 'warning');
+      updateSecCooldownUI(rem);
+    } else if (res.status === 409) {
+      const errData = await res.json().catch(() => ({}));
+      showToast(errData.error || t('sec_scan_in_progress', 'Security scan already in progress'), 'warning');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = `<span>🔄</span> <span>${t('sec_scan_now', 'Scan Now')}</span>`;
+      }
+    } else {
+      const errData = await res.json().catch(() => ({}));
+      showToast(t('sec_scan_failed', 'Security scan failed') + ': ' + (errData.error || res.statusText), 'error');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = `<span>🔄</span> <span>${t('sec_scan_now', 'Scan Now')}</span>`;
+      }
+    }
+  } catch (e) {
+    showToast(t('sec_scan_failed', 'Security scan failed') + ': ' + e.message, 'error');
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `<span>🔄</span> <span>${t('sec_scan_now', 'Scan Now')}</span>`;
+    }
+  }
+}
+
 async function generateBaseline(hostID) {
   const res = await fetch('/api/hosts/' + hostID + '/baseline', { method: 'POST' });
   if (res.ok) {
@@ -6675,7 +7310,8 @@ const ruleKindHints = {
   disk: { targetPh: 'e.g. /, /var, /data', expected: '<85%', expectedPh: 'e.g. <80%, <90%' },
   cron: { targetPh: 'e.g. backup.sh, certbot renew', expected: 'configured', expectedPh: 'e.g. configured' },
   backup: { targetPh: 'e.g. /var/backups/daily.sql.gz', expected: 'fresh_24h', expectedPh: 'e.g. fresh_24h, fresh_12h' },
-  process: { targetPh: 'e.g. celery, supervisord', expected: 'running', expectedPh: 'e.g. running' }
+  process: { targetPh: 'e.g. celery, supervisord', expected: 'running', expectedPh: 'e.g. running' },
+  security_updates: { targetPh: 'security', targetVal: 'security', readOnlyTarget: true, expected: 'none', expectedPh: 'none or <=N (max pending security updates)' }
 };
 
 function onRuleKindChange() {
@@ -6683,7 +7319,18 @@ function onRuleKindChange() {
   const hint = ruleKindHints[kind] || ruleKindHints.container;
   const targetEl = document.getElementById('ruleTarget');
   const expectedEl = document.getElementById('ruleExpected');
-  if (targetEl) targetEl.placeholder = hint.targetPh;
+  if (targetEl) {
+    targetEl.placeholder = hint.targetPh;
+    if (hint.readOnlyTarget) {
+      targetEl.value = hint.targetVal || 'security';
+      targetEl.readOnly = true;
+    } else {
+      if (targetEl.readOnly) {
+        targetEl.readOnly = false;
+        targetEl.value = '';
+      }
+    }
+  }
   if (expectedEl) {
     expectedEl.placeholder = hint.expectedPh;
     expectedEl.value = hint.expected;
@@ -6697,7 +7344,11 @@ function addRulePrompt(hostID) {
 function openAddRuleModal(hostID) {
   document.getElementById('ruleHostId').value = hostID;
   document.getElementById('ruleKind').value = 'container';
-  document.getElementById('ruleTarget').value = '';
+  const targetEl = document.getElementById('ruleTarget');
+  if (targetEl) {
+    targetEl.readOnly = false;
+    targetEl.value = '';
+  }
   onRuleKindChange();
   openModal('ruleModal');
   setTimeout(() => document.getElementById('ruleTarget')?.focus(), 50);
@@ -10464,6 +11115,8 @@ async function openSettingsModal(tab) {
   document.getElementById('settingWebhook').value = data.webhook_url || '';
   const pollEl = document.getElementById('settingPollInterval');
   if (pollEl) pollEl.value = (data.poll_interval_sec !== undefined && data.poll_interval_sec !== '') ? data.poll_interval_sec : '300';
+  const secScanEl = document.getElementById('settingSecurityScanInterval');
+  if (secScanEl) secScanEl.value = (data.security_scan_interval_hours !== undefined && data.security_scan_interval_hours !== '') ? data.security_scan_interval_hours : '24';
 
   document.getElementById('settingGhEnabled').checked = data.github_backup_enabled === '1';
   document.getElementById('settingGhRepo').value = data.github_repo || '';

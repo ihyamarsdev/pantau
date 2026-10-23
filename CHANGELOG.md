@@ -21,6 +21,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Encrypted System Snapshot Integration: `ssh_keys` records included in AES-256-GCM snapshots with backward compatibility and consistent key ID restoration.
 - REST API Endpoints: introduced `GET /api/ssh-keys`, `POST /api/ssh-keys`, and `DELETE /api/ssh-keys/{id}`, with `key_id` support on `POST /api/hosts` and host update routes.
 - Architectural Decision Record: [ADR-0035](docs/adr/0035-ssh-key-library.md).
+- Agentless Host Security Scan: on-demand and scheduled security assessment identifying pending package security updates on Debian/Ubuntu (`apt`) and RHEL/CentOS/AlmaLinux/Rocky/Fedora/Amazon Linux (`dnf`/`yum`) via read-only SSH execution without requiring root/sudo privileges or remote agents.
+- Severity & Advisory Classification: extracts upstream advisory identifiers (RHSA, ALAS, CVE) and package manager severities (Critical, Important, Moderate, Low) on dnf/yum, with transparent `unknown` severity tracking for apt updates.
+- Reboot Required & Cache Freshness Detection: automatically checks `/var/run/reboot-required` and `needs-restarting -r` exit codes, while tracking package manager repository cache age and flagging stale caches (>7 days) with `partial` status warnings.
+- Passive System Hardening Checks: audits 4 essential configuration controls: SSH root login policy (`sshd_permit_root_login`), SSH password authentication (`sshd_password_auth`), automated security update services (`auto_security_updates`), and firewall daemon/filtering rules (`firewall_active`).
+- Honest Coverage Principle: strictly reports partial coverage, permission boundaries, or unsupported operating systems (Alpine, Arch, etc.) as `partial` or `unsupported` status with detailed notes, preventing misleading clean bills of health.
+- Dedicated Security Workspace Tab: new Security tab in the Host Workspace Modal displaying pending security updates, total upgradable packages, severity breakdown badges, reboot-required indicator, findings table, hardening checks, and coverage notes with a 60-second cooldown on-demand rescan button.
+- Desired State Security Rules: new `security_updates` rule kind (fixed target `security`, expected `none` or `<=N`) evaluated against the latest cached SQLite scan without live SSH overhead, generating drift alerts when unapplied security updates accumulate, scans exceed 72 hours, or status is unverified.
+- Automated Background Worker & Settings: configurable `security_scan_interval_hours` setting (default 24 hours, range 1–720, or 0 to pause) evaluated by a 10-minute scheduler pool running up to 2 concurrent host scans.
+- REST API Endpoints: introduced `GET /api/hosts/{id}/security` (with `X-Scan-Cooldown-Remaining` header) and `POST /api/hosts/{id}/security/scan` with anti-flood cooldown (`HTTP 429`) and concurrency guard (`HTTP 409`).
+- Architectural Decision Record: [ADR-0036](docs/adr/0036-agentless-security-scan.md).
+
+### Fixed
+- Network Diagnostics Traceroute returned "No hops detected" (or `timeout: failed to run command 'traceroute': No such file or directory`) on hosts where `tracepath` was present: `tracepath` block-buffers its output when piped, so when the 15s probe deadline killed it no hop ever reached Pantau, and the old `tracepath && … || traceroute` chain fell through to a missing `traceroute` whenever `tracepath` exited non-zero. Pantau now prefers `traceroute`, installs it first when missing (apt, dnf, yum, apk, pacman, zypper; installer output streams to the raw viewer; apt runs with `NEEDRESTART_MODE=l` so no services are restarted), and falls back to line-buffered `tracepath` (`stdbuf -oL`) when installation is not possible. Installing requires root or passwordless `sudo`; if neither tool exists and installation is impossible, the probe stops with a message naming what to install manually.
 
 ## [0.25.0] - 2026-10-21
 ### Added

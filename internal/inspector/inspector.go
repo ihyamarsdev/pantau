@@ -35,6 +35,7 @@ type Inspector struct {
 	notifier        *notify.Dispatcher
 	inFlight        sync.Map
 	packageInFlight sync.Map
+	securityInFlight sync.Map
 }
 
 func New(db *store.DB, factory sshrunner.RunnerFactory, notifier *notify.Dispatcher) *Inspector {
@@ -1322,6 +1323,112 @@ func (ins *Inspector) evaluateRule(h *store.Host, runner sshrunner.Runner, rule 
 				status = "drift"
 				rootCause = fmt.Sprintf("Process matching '%s' is not running (expected %s)", rule.Target, rule.Expected)
 			}
+		}
+		return
+
+	case "security_updates":
+		maxAllowed := 0
+		exp := strings.TrimSpace(rule.Expected)
+		validExpected := false
+		if strings.EqualFold(exp, "none") {
+			maxAllowed = 0
+			validExpected = true
+		} else if strings.HasPrefix(exp, "<=") {
+			numStr := strings.TrimSpace(strings.TrimPrefix(exp, "<="))
+			if n, err := strconv.Atoi(numStr); err == nil && n >= 0 {
+				maxAllowed = n
+				validExpected = true
+			}
+		} else if strings.HasPrefix(exp, "<") {
+			numStr := strings.TrimSpace(strings.TrimPrefix(exp, "<"))
+			if n, err := strconv.Atoi(numStr); err == nil && n > 0 {
+				maxAllowed = n - 1
+				validExpected = true
+			}
+		} else if n, err := strconv.Atoi(exp); err == nil && n >= 0 {
+			maxAllowed = n
+			validExpected = true
+		}
+
+		if !validExpected {
+			current = "invalid_expected"
+			status = "drift"
+			details = fmt.Sprintf("invalid expected value '%s'", rule.Expected)
+			rootCause = fmt.Sprintf("Invalid expected value %q: must be 'none' or '<=N'", rule.Expected)
+			return
+		}
+
+		scan, err := ins.db.GetSecurityScan(h.ID)
+		if err != nil {
+			current = "error"
+			status = "drift"
+			details = fmt.Sprintf("failed reading security scan: %v", err)
+			rootCause = fmt.Sprintf("Failed to read security scan: %v", err)
+			return
+		}
+		if scan == nil {
+			current = "not_scanned"
+			status = "drift"
+			details = "host has not been scanned for security updates"
+			rootCause = "Host has not been scanned for security updates yet"
+			return
+		}
+		if scan.Status == "unsupported" {
+			current = "unsupported"
+			status = "drift"
+			details = fmt.Sprintf("unsupported package manager: %s", scan.PackageManager)
+			rootCause = fmt.Sprintf("Package manager is unsupported (%s); security updates cannot be determined", scan.PackageManager)
+			return
+		}
+		if scan.Status == "error" {
+			current = "error"
+			status = "drift"
+			details = fmt.Sprintf("security scan error: %s", scan.Error)
+			rootCause = fmt.Sprintf("Last security scan failed: %s", scan.Error)
+			return
+		}
+		if time.Since(scan.ScannedAt) > 72*time.Hour {
+			current = "stale"
+			status = "drift"
+			details = fmt.Sprintf("security scan is stale (%s old)", time.Since(scan.ScannedAt).Round(time.Hour))
+			rootCause = fmt.Sprintf("Security scan is stale (last scanned %s ago, threshold is 72h)", time.Since(scan.ScannedAt).Round(time.Hour))
+			return
+		}
+
+		current = fmt.Sprintf("%d pending", scan.PendingSecurity)
+		if scan.PendingSecurity <= maxAllowed {
+			status = "ok"
+			details = fmt.Sprintf("%d pending security updates (allowed: %s)", scan.PendingSecurity, rule.Expected)
+			rootCause = ""
+		} else {
+			status = "drift"
+			details = fmt.Sprintf("%d pending security updates exceeds threshold (%s)", scan.PendingSecurity, rule.Expected)
+			var rcLines []string
+			rcLines = append(rcLines, fmt.Sprintf("%d pending security updates found (allowed: %s):", scan.PendingSecurity, rule.Expected))
+			limit := 5
+			if len(scan.Findings) < limit {
+				limit = len(scan.Findings)
+			}
+			for i := range limit {
+				f := scan.Findings[i]
+				adv := ""
+				if f.Advisory != "" {
+					adv = fmt.Sprintf(" [%s]", f.Advisory)
+				}
+				fromVer := f.InstalledVersion
+				if fromVer == "" {
+					fromVer = "none"
+				}
+				toVer := f.FixedVersion
+				if toVer == "" {
+					toVer = "latest"
+				}
+				rcLines = append(rcLines, fmt.Sprintf("- %s: %s -> %s%s (%s)", f.Package, fromVer, toVer, adv, f.Severity))
+			}
+			if len(scan.Findings) > limit {
+				rcLines = append(rcLines, fmt.Sprintf("... and %d more", len(scan.Findings)-limit))
+			}
+			rootCause = strings.Join(rcLines, "\n")
 		}
 		return
 	}

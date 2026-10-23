@@ -21,6 +21,7 @@ Pantau beroperasi **100% agentless** melalui protokol standar SSH (`port 22`). S
    - [Siklus Inspeksi, Inspeksi Massal & Kesegaran Data](#siklus-inspeksi-inspeksi-massal-inspect-all--kesegaran-data)
    - [Resource Metrics, Process Telemetry & Observabilitas Perangkat Keras](#resource-metrics-process-telemetry--observabilitas-perangkat-keras)
    - [Inventarisasi Paket & Audit Higienitas Software](#inventarisasi-paket--audit-higienitas-software)
+   - [Pemindaian Keamanan Host & Pemeriksaan Hardening](#pemindaian-keamanan-host--pemeriksaan-hardening)
    - [Mendeteksi Drift & Root Cause Excerpt](#mendeteksi-drift--root-cause-excerpt)
    - [Investigasi Interaktif via Terminal Dock & Terminal Preset](#investigasi-interaktif-via-terminal-dock--terminal-preset)
    - [In-App Activity Console & Live Telemetry Stream](#in-app-activity-console--live-telemetry-stream)
@@ -128,8 +129,7 @@ Pantau tidak hanya menampilkan metrik pasif; sistem ini secara aktif memverifika
 
 ### Tabel Referensi Aturan Desired State
 
-Pantau mendukung 7 jenis aturan Desired State yang dievaluasi secara otomatis pada setiap siklus inspeksi:
-
+Pantau mendukung 8 jenis aturan Desired State yang dievaluasi secara otomatis pada setiap siklus inspeksi:
 | Jenis (`Kind`) | Target Identifier | Kondisi Diharapkan (`Expected`) | Contoh Target & Expected | Kriteria Drift & Root Cause Excerpt |
 | :--- | :--- | :--- | :--- | :--- |
 | **`container`** | Nama kontainer Docker | `running` | `nginx` &rarr; `running` | Kontainer `exited`, `dead`, crash. Menyajikan exit code, OOMKilled, dan 50 baris log kontainer. |
@@ -139,6 +139,7 @@ Pantau mendukung 7 jenis aturan Desired State yang dievaluasi secara otomatis pa
 | **`cron`** | Kata kunci / perintah cron | `configured` | `backup.sh` &rarr; `configured` | Baris perintah tidak ditemukan dalam `crontab -l` user SSH. |
 | **`backup`** | Path absolut berkas backup | `fresh_<N>h` (default: 24h) | `/backup/db.sql.gz` &rarr; `fresh_24h` | Berkas tidak ditemukan, berukuran 0 byte, atau usia berkas melampaui N jam. |
 | **`process`** | Pola atau nama proses | `running` (atau `stopped`) | `celery` &rarr; `running` | Proses tidak aktif pada sistem (memeriksa `pgrep`/`ps`). |
+| **`security_updates`** | `security` (tetap) | `none` atau `<=N` (ambang batas) | `security` &rarr; `none` | Pembaruan keamanan melebihi ambang batas N, belum pernah dipindai, hasil scan >72 jam, atau berstatus `unsupported`/`error`. Dievaluasi dari cache scan terbaru. |
 
 ### Konfigurasi Backup Freshness & Protected Path
 
@@ -194,6 +195,65 @@ Pantau menyediakan visibilitas inventaris paket perangkat lunak secara agentless
   - Filter kategori cepat: **Manual Install**, **Dormant Packages**, dan **All Packages**.
   - **Rescan Packages**: Tombol pemindaian ulang on-demand dengan dialog konfirmasi, dilindungi timer cooldown anti-flood 30 detik (`HTTP 429 Too Many Requests`) dan kunci konkurensi latar belakang (`HTTP 409 Conflict`).
   - **Prinsip Non-Destruktif**: Pantau tidak menyediakan tombol uninstall destruktif di web UI untuk mencegah risiko rusaknya dependensi berantai (*cascading broken dependencies*). Administrator diarahkan memanfaatkan Terminal Dock bawaan atau merumuskan aturan Desired State.
+
+
+### Pemindaian Keamanan Host & Pemeriksaan Hardening
+
+Pantau menyediakan visibilitas keamanan sistem operasi secara agentless dan pasif (read-only), mengidentifikasi pembaruan patch keamanan yang tertunda, kebutuhan reboot, kesegaran metadata repositori, serta 4 pemeriksaan pengerasan sistem (*hardening checks*) krusial—beroperasi 100% mandiri (*airgapped*) tanpa agen pihak ketiga, tanpa hak akses root/sudo, dan tanpa permintaan data keluar ke database CVE publik di internet.
+
+#### Tab Security di Workspace Modal
+Buka Workspace Modal pada host mana pun dan pilih tab **Security**:
+- **Ringkasan Metrik**:
+  - **Pending Security Updates**: Jumlah paket dengan pembaruan perbaikan keamanan yang belum diterapkan.
+  - **Total Pending Updates**: Jumlah total paket sistem yang dapat ditingkatkan (*upgradable*).
+  - **Rincian Severity**: Lencana warna mengelompokkan paket ke dalam **Critical**, **Important**, **Moderate**, **Low**, dan **Unknown** (paket Debian/Ubuntu diklasifikasikan sebagai `Unknown` karena utilitas `apt` bawaan tidak memaparkan tingkat keparahan upstream).
+  - **Reboot Required**: Menandai apakah kernel atau pustaka inti sistem memerlukan reboot (`/var/run/reboot-required` pada Debian/Ubuntu atau `needs-restarting -r` pada keluarga RHEL).
+  - **Repo Cache Age**: Mengukur waktu sejak terakhir kali metadata paket lokal diperbarui.
+- **Tabel Security Findings**: Menampilkan daftar paket terdampak, versi terpasang saat ini, versi perbaikan yang tersedia, lencana keparahan (*severity*), dan ID advisori keamanan (seperti `RHSA-*`, `ALAS-*`, atau nomor CVE).
+- **Hardening Checks**: Memverifikasi 4 kontrol pengerasan konfigurasi sistem berbasis read-only:
+  - `sshd_permit_root_login`: Memeriksa kebijakan login root OpenSSH di `/etc/ssh/sshd_config` dan `/etc/ssh/sshd_config.d/*.conf` (berlaku aturan *first-match-wins*). Menghasilkan `pass` untuk bawaan OpenSSH (`prohibit-password`) atau `no`, dan `fail` jika diatur eksplisit `yes`.
+  - `sshd_password_auth`: Mengevaluasi autentikasi sandi SSH. Menghasilkan `pass` jika dinonaktifkan (`no`), atau `warn` jika aktif (`yes`) atau tidak dikonfigurasi (default aktif).
+  - `auto_security_updates`: Mendeteksi keaktifan pembaruan keamanan otomatis (`unattended-upgrades` pada Debian/Ubuntu, atau timer `dnf-automatic` / `yum-cron` pada RHEL).
+  - `firewall_active`: Memverifikasi keaktifan firewall host (`ufw`, `firewalld`, atau aturan filter `nftables`/`iptables`). Jika izin non-root tidak memungkinkan pembacaan aturan firewall, dilaporkan sebagai `unknown` disertai rincian penjelasan.
+- **Catatan Cakupan (*Coverage Notes*)**: Memaparkan batasan lingkungan operasional, kendala izin akses, atau peringatan cache repositori yang kedaluwarsa.
+
+#### Prinsip Kejujuran Cakupan (*Honest Coverage Principle*)
+Pantau memegang teguh aturan integritas (**Honesty Rule**): host tidak pernah dinyatakan "bersih" atau "aman" jika evaluasi tidak memiliki cakupan penuh.
+- Jika sistem operasi belum didukung untuk analisis paket keamanan (seperti Alpine Linux atau Arch Linux), hasil pemindaian berstatus `status: unsupported` dengan catatan penjelasan (pemeriksaan hardening tetap dijalankan).
+- Jika perintah pengecekan pembaruan itu sendiri terhambat batas izin pengguna, atau jika cache paket lokal lebih dari 7 hari (> 168 jam), status pemindaian menjadi `status: partial` disertai peringatan bahwa hasil mungkin belum mencakup advisori terbaru.
+- Pemeriksaan hardening yang tidak dapat dievaluasi (misalnya status firewall butuh root, atau berkas konfigurasi tidak ada) ditampilkan sebagai `unknown` dan dicantumkan di catatan pemindaian; status tidak berubah karena data pembaruan tetap terkumpul penuh.
+- Ketika status `unsupported` atau `error`, UI menampilkan pembaruan tertunda, rincian severity, dan status reboot sebagai **tidak dinilai**, bukan nol.
+- Distro dengan utilitas versi lama (CentOS 6/7, Debian 7+) ditangani secara adaptif tanpa menggagalkan siklus inspeksi.
+
+#### Pemindaian On-Demand & Proteksi Cooldown
+- Klik tombol **Scan Security Now** di tab Security untuk memicu evaluasi sinkron secara instan.
+- **Proteksi Cooldown & Konkruensi**: Pemindaian manual menerapkan batas jeda 60 detik (`HTTP 429 Too Many Requests` menyertakan sisa detik jeda pada header `X-Scan-Cooldown-Remaining`) dan kunci konkruensi host tunggal (`HTTP 409 Conflict`).
+
+#### Penjadwalan Pemindaian Latar Belakang
+- **Konfigurasi Interval**: Atur parameter `security_scan_interval_hours` di menu **Settings** → **General** (default: `24` jam; nilai yang diterima: `1`–`720` jam).
+- **Menonaktifkan Pemindaian Latar Belakang**: Mengisi nilai `0` akan menonaktifkan pemindaian otomatis berkala, sehingga pemindaian hanya berjalan secara manual atas permintaan administrator.
+- **Pekerja Latar Belakang**: Scheduler berjalan setiap 10 menit untuk memindai host yang scan terakhirnya telah melampaui interval atau belum pernah dipindai (dibatasi maksimal 2 pemindaian konkuren, dimulai ~2 menit setelah aplikasi dijalankan).
+
+#### Penegakan Desired State (`security_updates`)
+Pantau kepatuhan pembaruan keamanan secara otomatis melalui aturan Desired State:
+- **Jenis Aturan (`Kind`)**: `security_updates`
+- **Sasaran Target (`Target`)**: `security` (tetap/fixed)
+- **Kondisi Diharapkan (`Expected`)**: `none` atau `<=N` (dengan `none` mengharuskan 0 paket keamanan tertunda; `<=N` menoleransi maksimal N paket).
+- **Evaluasi Berbasis Cache**: Dievaluasi langsung dari hasil pemindaian terakhir yang tersimpan di basis data SQLite tanpa melakukan koneksi SSH langsung saat siklus inspeksi rutin.
+- **Kondisi Kepatuhan & Drift**:
+  - `ok`: Jumlah pembaruan keamanan tertunda berada di bawah atau sama dengan ambang batas (`<= N`).
+  - `drift`: Jumlah pembaruan keamanan melebihi ambang batas `N` (potongan bukti root cause memuat daftar paket teratas, versi, dan advisori).
+  - `drift`: Host belum pernah dipindai (`not_scanned`), data pemindaian lebih dari 72 jam (`stale`), atau status pemindaian terakhir adalah `unsupported` atau `error`. Pantau pantang mengklaim kepatuhan tanpa data yang segar dan terverifikasi.
+
+#### Referensi REST API
+Seluruh endpoint keamanan memerlukan autentikasi sesi yang valid (`authMiddleware`):
+- `GET /api/hosts/{id}/security`: Menghasilkan `{"scanned": false}` jika belum pernah dipindai, atau `{"scanned": true, "scan": <SecurityScan>}`. Menyertakan header `X-Scan-Cooldown-Remaining: <sec>` saat masa jeda aktif.
+- `POST /api/hosts/{id}/security/scan`: Menjalankan pemindaian keamanan sinkron. Menghasilkan status `200 OK` dengan data hasil terbaru, `429 Too Many Requests` jika masih dalam masa jeda, `409 Conflict` jika pemindaian sedang berlangsung, atau `500 Internal Server Error` saat terjadi kegagalan koneksi (tanpa menimpa hasil scan sebelumnya).
+
+#### Batasan Operasional & Desain Airgapped
+- **Tanpa Sudo / Tanpa Agen**: Pengumpulan data dilakukan murni sebagai pembacaan (read-only) menggunakan izin akun pengguna SSH standar. Tidak pernah mengeksekusi `sudo`, tidak memasang paket baru, dan tidak memperbarui cache jaringan (`apt-get update` / `dnf makecache`).
+- **Bebas Database Kerentanan Eksternal**: Kompatibel penuh dengan jaringan tertutup (*airgapped*, merujuk ADR-0013). Analisis murni mengandalkan metadata yang dipaparkan oleh manajer paket distro host. Pencocokan database CVE eksternal tidak disertakan dalam Fase 1 (integrasi feed CVE di masa mendatang hanya dirancang sebagai opsi tambahan opsional / *opt-in*).
+- **Telemetri Turunan**: Hasil pemindaian disimpan di tabel SQLite `security_scans` dan dikecualikan dari System Snapshot terenkripsi karena merupakan telemetri yang dapat direproduksi melalui pemindaian ulang.
 
 ### Mendeteksi Drift & Root Cause Excerpt
 
@@ -252,7 +312,7 @@ Saat menangani kendala konektivitas antar-server, pemblokiran firewall, atau ano
 
 - **Mode Diagnostik**: Eksekusi pengujian non-destruktif langsung dari host jarak jauh:
   - **Ping**: Menguji keterjangkauan host dan roundtrip time via `timeout 14 ping -c 4 -W 2 <target>`.
-  - **Traceroute**: Memeriksa hop rute jaringan menggunakan fallback cerdas tanpa dependensi (`tracepath` atau `traceroute`) tanpa butuh hak akses root/raw-socket.
+  - **Traceroute**: Memeriksa hop rute jaringan dengan `traceroute` (diutamakan, hop tampil satu per satu). Jika belum ada di host sumber, Pantau memasangnya lebih dulu (apt, dnf, yum, apk, pacman, zypper; apt berjalan tanpa me-restart service) dan menampilkan output instalasi di viewer mentah sebelum probe dijalankan. Pemasangan membutuhkan user SSH berstatus root atau memiliki `sudo` tanpa password; jika tidak, Pantau beralih ke `tracepath` (dijalankan line-buffered via `stdbuf -oL`) dan mencatat fallback itu di viewer mentah. Jika kedua tool tidak ada dan tidak bisa dipasang, probe berhenti dengan pesan yang menjelaskan paket yang perlu dipasang manual.
   - **Port Probe (TCP)**: Menguji konektivitas port TCP via socket bash native `/dev/tcp/<target>/<port>`, tanpa butuh `nc`, `telnet`, atau `nmap`.
   - **DNS Resolve**: Memverifikasi jalur resolusi DNS dan latensi nama domain via `getent hosts` dan `nslookup`.
 - **Analisis Hop Cerdas**: Memetakan hop rute traceroute secara otomatis ke dalam kartu topologi terstruktur:

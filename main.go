@@ -305,6 +305,7 @@ func main() {
 	defer cancel()
 
 	go startInspectionWorker(ctx, db, ins)
+	go startSecurityScanWorker(ctx, db, ins)
 	snapshotMgr := snapshot.NewManager(db, nil)
 	go snapshotMgr.Start(ctx)
 
@@ -427,6 +428,112 @@ func runInspectionCycle(db *store.DB, ins *inspector.Inspector) bool {
 				_ = ins.InspectHost(hostID)
 			}(h.ID)
 		}
+	}
+	return true
+}
+
+// selectDueSecurityScanHosts selects hosts due for a background security scan.
+// It skips hosts that are "down", hosts currently scanning, and hosts whose last scan
+// is newer than intervalHours. If intervalHours <= 0, scanning is disabled and returns nil.
+func selectDueSecurityScanHosts(hosts []*store.Host, scanTimes map[int64]time.Time, intervalHours int, now time.Time, isScanning func(int64) bool) []*store.Host {
+	if intervalHours <= 0 {
+		return nil
+	}
+	interval := time.Duration(intervalHours) * time.Hour
+	var due []*store.Host
+	for _, h := range hosts {
+		if h == nil {
+			continue
+		}
+		if strings.EqualFold(h.Status, "down") {
+			continue
+		}
+		if isScanning != nil && isScanning(h.ID) {
+			continue
+		}
+		lastScan, ok := scanTimes[h.ID]
+		if !ok || lastScan.IsZero() || now.Sub(lastScan) >= interval {
+			due = append(due, h)
+		}
+	}
+	return due
+}
+
+func startSecurityScanWorker(ctx context.Context, db *store.DB, ins *inspector.Inspector) {
+	// First run delayed ~2 min after startup.
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(2 * time.Minute):
+	}
+
+	runSecurityScanCycle(ctx, db, ins)
+
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			runSecurityScanCycle(ctx, db, ins)
+		}
+	}
+}
+
+// runSecurityScanCycle executes a single security scan sweep across hosts that are due.
+// Returns false if disabled, nil dependencies, or database error.
+func runSecurityScanCycle(ctx context.Context, db *store.DB, ins *inspector.Inspector) bool {
+	if ins == nil || db == nil {
+		return false
+	}
+	intervalHours := 24
+	if valStr, err := db.GetSetting("security_scan_interval_hours"); err == nil && valStr != "" {
+		if v, err := strconv.Atoi(strings.TrimSpace(valStr)); err == nil {
+			if v <= 0 {
+				return false
+			}
+			if v > 720 {
+				intervalHours = 720
+			} else {
+				intervalHours = v
+			}
+		}
+	}
+
+	hosts, err := db.ListHosts()
+	if err != nil || len(hosts) == 0 {
+		return false
+	}
+
+	scanTimes, err := db.ListSecurityScanTimes()
+	if err != nil {
+		scanTimes = make(map[int64]time.Time)
+	}
+
+	hostPtrs := make([]*store.Host, len(hosts))
+	for i := range hosts {
+		hostPtrs[i] = &hosts[i]
+	}
+	due := selectDueSecurityScanHosts(hostPtrs, scanTimes, intervalHours, time.Now(), ins.IsSecurityScanning)
+	if len(due) == 0 {
+		return true
+	}
+
+	// Bounded concurrency: at most 2 concurrent scans
+	sem := make(chan struct{}, 2)
+	for _, h := range due {
+		select {
+		case <-ctx.Done():
+			return false
+		case sem <- struct{}{}:
+		}
+
+		go func(hostID int64) {
+			defer func() { <-sem }()
+			_ = ins.ScanSecurity(hostID)
+		}(h.ID)
 	}
 	return true
 }

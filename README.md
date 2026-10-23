@@ -227,6 +227,15 @@ Pantau inspects remote hosts via non-interactive SSH commands, continuously vali
 - **Zero-Credential-Leakage & Safety Controls**: Private keys are never serialized to the REST API (`GET /api/ssh-keys` returns metadata only) and are deterministically scrubbed from system logs (`[REDACTED]`). Key deletion is protected and strictly refused (`HTTP 409 Conflict`) while any host still references the key (`used_by > 0`).
 - **Encrypted Snapshot Resilience**: All registered library keys are included in encrypted System Snapshots (AES-256-GCM), preserving host key associations during cluster backups and bare-metal disaster recovery.
 
+### 26. 🛡️ Agentless Host Security Scan & Hardening Checks
+- **Agentless Security Patch Discovery**: Identifies pending security updates on Debian/Ubuntu (`apt`), RHEL/CentOS/AlmaLinux/Rocky/Fedora/Amazon Linux (`dnf`/`yum`) via read-only remote commands without requiring root/sudo privileges or agent installations.
+- **Severity & Advisory Visibility**: Extracts upstream vulnerability severities (`Critical`, `Important`, `Moderate`, `Low`) and advisory references (RHSA/ALAS/CVE) for dnf/yum, while tracking apt security updates with explicit `unknown` severity transparency.
+- **Reboot & Repo Cache Freshness**: Automatically detects reboot requirements (`/var/run/reboot-required` or `needs-restarting -r`) and repository metadata age, warning operators when cache is stale (>7 days) rather than falsely reporting zero pending updates.
+- **Essential Read-Only Hardening Checks**: Audits 4 vital baseline security controls: OpenSSH root login policy (`sshd_permit_root_login`), SSH password authentication (`sshd_password_auth`), automatic security update timers (`auto_security_updates`), and host firewall state (`firewall_active`).
+- **Honest-Coverage Architecture**: Enforces a strict honesty rule—systems with unsupported distributions (Alpine, Arch, etc.), unreadable configurations, or stale caches report clear status (`partial`, `unsupported`) and detailed coverage notes instead of a deceptive clean bill of health.
+- **Continuous Compliance via Desired Rules**: Declare `security_updates` rules (target `security`, expected `none` or `<=N`) evaluated against the cached scan without live SSH overhead, triggering automated drift alerts when security updates accumulate, scans exceed 72 hours, or coverage is unverified.
+- **Airgapped-Ready & Zero CVE Bloat**: 100% functional in isolated networks without outbound internet access or external vulnerability database dependencies; scan results are stored in SQLite and excluded from encrypted snapshots as reproducible telemetry.
+
 ---
 
 ## 🚀 Quick Start

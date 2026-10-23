@@ -227,6 +227,15 @@ Pantau menginspeksi Host remote melalui perintah SSH non-interaktif, memvalidasi
 - **Keamanan Tanpa Kebocoran Kredensial**: Kunci privat tidak pernah disertakan dalam respons REST API (`GET /api/ssh-keys` hanya mengirim metadata) dan disensor dari log sistem (`[REDACTED]`). Penghapusan kunci dicegah dan ditolak (`HTTP 409 Conflict`) jika masih ada host yang menggunakannya (`used_by > 0`).
 - **Pencadangan Snapshot Terenkripsi**: Seluruh entri library key disertakan di dalam System Snapshot terenkripsi (AES-256-GCM), menjaga keutuhan relasi kunci host saat proses pencadangan dan pemulihan bencana.
 
+### 26. 🛡️ Pemindaian Keamanan Host & Pemeriksaan Hardening Agentless
+- **Pendeteksian Patch Keamanan Agentless**: Mendeteksi pembaruan patch keamanan yang tertunda pada Debian/Ubuntu (`apt`) dan keluarga RHEL/CentOS/AlmaLinux/Rocky/Fedora/Amazon Linux (`dnf`/`yum`) murni melalui perintah read-only tanpa memerlukan hak akses root/sudo atau agen remote.
+- **Visibilitas Severity & Advisori Upstream**: Mengekstrak tingkat keparahan (*Critical*, *Important*, *Moderate*, *Low*) serta referensi advisori (RHSA/ALAS/CVE) pada dnf/yum, serta menyajikan pembaruan keamanan apt dengan transparansi severity *unknown*.
+- **Indikator Kebutuhan Reboot & Kesegaran Cache**: Mendeteksi kebutuhan reboot sistem (`/var/run/reboot-required` atau `needs-restarting -r`) dan mengukur usia metadata repositori, memperingatkan administrator jika cache basi (>7 hari) daripada menampilkan status aman palsu.
+- **4 Pemeriksaan Pengerasan Sistem (Hardening Checks)**: Mengaudit 4 kontrol konfigurasi krusial: pembatasan login root OpenSSH (`sshd_permit_root_login`), autentikasi sandi SSH (`sshd_password_auth`), keaktifan timer pembaruan otomatis (`auto_security_updates`), dan status firewall host (`firewall_active`).
+- **Prinsip Kejujuran Cakupan (*Honest Coverage*)**: Menerapkan aturan integritas ketat—sistem dengan distribusi yang belum didukung (Alpine, Arch), perintah terbatas izin, atau cache repositori kedaluwarsa dilaporkan dengan status transparan (`partial`, `unsupported`) beserta catatan kendala, bukan disamarkan sebagai 0 temuan.
+- **Kepatuhan Berkelanjutan via Desired State**: Mendukung aturan berjenis `security_updates` (target `security`, ekspektasi `none` atau `<=N`) yang dievaluasi langsung dari cache basis data tanpa beban SSH berulang, memicu peringatan drift otomatis jika terdapat paket tertunda, scan melebihi 72 jam, atau cakupan tidak terverifikasi.
+- **Kesiapan Lingkungan Terisolasi (Airgapped)**: Beroperasi 100% mandiri tanpa koneksi internet keluar atau dependensi database CVE eksternal; hasil pemindaian disimpan di SQLite dan dikecualikan dari snapshot terenkripsi sebagai telemetri turunan yang dapat direproduksi.
+
 ---
 
 ## 🚀 Panduan Memulai Cepat (Quick Start)

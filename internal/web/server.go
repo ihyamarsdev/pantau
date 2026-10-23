@@ -1038,6 +1038,10 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, pkgs)
 		return
 
+	case "security":
+		s.handleHostSecurity(w, r, hostID, parts[2:])
+		return
+
 	case "commission-date":
 		if r.Method != http.MethodPut && r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1831,6 +1835,10 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		if backupInterval == "" {
 			backupInterval = "24"
 		}
+		securityScanInterval, _ := s.db.GetSetting("security_scan_interval_hours")
+		if securityScanInterval == "" {
+			securityScanInterval = "24"
+		}
 		lastBackupTime, _ := s.db.GetSetting("last_backup_time")
 		lastBackupStatus, _ := s.db.GetSetting("last_backup_status")
 
@@ -1848,6 +1856,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			"snapshot_passphrase":   snapPass,
 			"backup_interval_hours": backupInterval,
 			"last_backup_time":      lastBackupTime,
+			"security_scan_interval_hours": securityScanInterval,
 			"last_backup_status":    lastBackupStatus,
 		})
 	case http.MethodPost:
@@ -1866,6 +1875,18 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 						} else if sec < 30 {
 							v = "30"
 						}
+					}
+				}
+				if k == "security_scan_interval_hours" {
+					val, err := strconv.Atoi(strings.TrimSpace(v))
+					if err != nil || val < 0 {
+						v = "24"
+					} else if val == 0 {
+						v = "0"
+					} else if val > 720 {
+						v = "720"
+					} else {
+						v = strconv.Itoa(val)
 					}
 				}
 				_ = s.db.SetSetting(k, v)

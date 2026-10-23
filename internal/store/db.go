@@ -398,6 +398,23 @@ func (d *DB) migrate() error {
 		fingerprint TEXT NOT NULL,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+
+	CREATE TABLE IF NOT EXISTS security_scans (
+		host_id INTEGER PRIMARY KEY REFERENCES hosts(id) ON DELETE CASCADE,
+		scanned_at DATETIME NOT NULL,
+		status TEXT,
+		package_manager TEXT,
+		os_family TEXT,
+		pending_security INTEGER,
+		pending_total INTEGER,
+		severity_json TEXT,
+		reboot_required INTEGER,
+		repo_cache_age_hours INTEGER,
+		findings_json TEXT,
+		hardening_json TEXT,
+		notes_json TEXT,
+		error TEXT
+	);
 	`
 	_, err := d.Exec(schema)
 	if err != nil {

@@ -13,9 +13,8 @@ Kumpulan aturan dan ekspektasi yang didefinisikan untuk sebuah Host (misal: serv
 _Avoid_: Baseline, blueprint, config template
 
 **Desired Rule**:
-Satu butir aturan spesifikasi kondisi yang diharapkan pada Host, terdiri atas jenis aturan (*Kind*: `container`, `service`, `port`, `disk`, `cron`, `backup`, `process`), pengenal target (*Target*), nilai ambang atau status yang diharapkan (*Expected*), serta status keaktifan (*Enabled*).
+Satu butir aturan spesifikasi kondisi yang diharapkan pada Host, terdiri atas jenis aturan (*Kind*: `container`, `service`, `port`, `disk`, `cron`, `backup`, `process`, `security_updates`), pengenal target (*Target*), nilai ambang atau status yang diharapkan (*Expected*), serta status keaktifan (*Enabled*).
 _Avoid_: Config check, monitor item, health probe
-
 **Actual State**:
 Kondisi riil sebuah Host yang didapatkan dari hasil pembacaan inspeksi berkala.
 _Avoid_: Current status, telemetry snapshot
@@ -431,3 +430,15 @@ _Avoid_: Preset finder, terminal filter, command search
 **Terminal Pinned Paths Dropdown**:
 Akses cepat berkas dan direktori tersemat (File Pin) langsung dari bilah alat terminal (`📌`) untuk navigasi `cd` cepat atau penyisipan path ke sesi shell.
 _Avoid_: Terminal bookmarks, pin menu, path picker
+
+**Security Scan**:
+Proses evaluasi keamanan berkala atau on-demand pada Host secara agentless dan pasif (read-only) untuk mengidentifikasi pembaruan keamanan paket sistem tertunda, kebutuhan reboot, kesegaran metadata repositori, serta postur pengerasan konfigurasi server tanpa ketergantungan database CVE eksternal.
+_Avoid_: Vulnerability assessment, CVE scan, pen-test run, antivirus scan
+
+**Security Finding**:
+Satu butir temuan paket perangkat lunak sistem yang memiliki pembaruan patch keamanan yang belum diterapkan, memuat nama paket, versi terpasang saat ini, versi perbaikan yang tersedia, tingkat keparahan (*severity*), serta pengenal advisori keamanan (seperti RHSA, ALAS, atau CVE).
+_Avoid_: Vulnerability item, CVE finding, security bug, alert ticket
+
+**Hardening Check**:
+Satu butir verifikasi pasif terhadap praktik terbaik keamanan konfigurasi sistem Host (seperti pembatasan login root SSH, autentikasi sandi SSH, keaktifan update keamanan otomatis, dan status firewall aktif) yang menghasilkan status kelulusan (*pass*, *warn*, *fail*, atau *unknown*).
+_Avoid_: Security compliance rule, CIS benchmark check, audit rule

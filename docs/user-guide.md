@@ -21,6 +21,7 @@ Pantau operates **100% agentless** over standard SSH (`port 22`). It requires ze
    - [Inspection Lifecycle, Mass Inspection (Inspect All) & Recency](#inspection-lifecycle-mass-inspection-inspect-all--recency)
    - [Resource Metrics, Process Telemetry & Hardware Observability](#resource-metrics-process-telemetry--hardware-observability)
    - [Package Inventory & Software Hygiene Audit](#package-inventory--software-hygiene-audit)
+   - [Host Security Scan & Hardening Checks](#host-security-scan--hardening-checks)
    - [Detecting Drift & Root Cause Excerpts](#detecting-drift--root-cause-excerpts)
    - [Interactive Diagnostics via Terminal Dock & Terminal Presets](#interactive-diagnostics-via-terminal-dock--terminal-presets)
    - [In-App Activity Console & Live Telemetry Stream](#in-app-activity-console--live-telemetry-stream)
@@ -128,8 +129,7 @@ Pantau does not merely display metrics; it enforces continuous adherence to your
 
 ### Desired State Rules Reference Table
 
-Pantau supports 7 Desired State rule types evaluated on every inspection cycle:
-
+Pantau supports 8 Desired State rule types evaluated on every inspection cycle:
 | Kind | Target Identifier | Expected State | Examples | Drift Criteria & Root Cause Excerpt |
 | :--- | :--- | :--- | :--- | :--- |
 | **`container`** | Docker container name | `running` | `nginx` &rarr; `running` | Container exited, dead, or crash loop. Captures exit code, OOMKilled flag, and last 50 container log lines. |
@@ -139,6 +139,7 @@ Pantau supports 7 Desired State rule types evaluated on every inspection cycle:
 | **`cron`** | Keyword or command substring | `configured` | `backup.sh` &rarr; `configured` | Specified cron command not found in user's `crontab -l`. |
 | **`backup`** | Absolute backup file path | `fresh_<N>h` (default: 24h) | `/backup/db.sql.gz` &rarr; `fresh_24h` | File is missing, 0 bytes empty, or modification time older than N hours. |
 | **`process`** | Process name or pattern | `running` (or `stopped`) | `celery` &rarr; `running` | Process not currently active on system (verified via `pgrep`/`ps`). |
+| **`security_updates`** | `security` (fixed) | `none` or `<=N` (ceiling) | `security` &rarr; `none` | Pending security updates exceed threshold N, no scan recorded, scan older than 72h, or status is `unsupported`/`error`. Evaluated from latest cached scan. |
 
 ### Configuring Backup Freshness & Protected Paths
 
@@ -194,6 +195,65 @@ Pantau provides agentless software inventory visibility across multiple Linux di
   - Category filters for **Manual Install**, **Dormant Packages**, and **All Packages**.
   - **Rescan Packages**: On-demand manual package re-inspection with confirmation dialog, protected by a 30-second anti-flood cooldown timer (`HTTP 429 Too Many Requests`) and background concurrency lock (`HTTP 409 Conflict`).
   - **Non-Destructive Philosophy**: Pantau avoids destructive web-based package uninstalls that could trigger cascading dependency failures. Operators are encouraged to use the built-in Terminal Dock or establish Desired State rules for compliance.
+
+
+### Host Security Scan & Hardening Checks
+
+Pantau provides agentless, read-only security visibility across remote hosts, discovering pending security updates, reboot requirements, repository cache freshness, and 4 essential system hardening checks—operating 100% airgapped without third-party agents, without root/sudo privileges, and without outbound CVE database queries.
+
+#### The Security Workspace Tab
+Open any host's Workspace Modal and navigate to the **Security** tab:
+- **Summary Metrics**:
+  - **Pending Security Updates**: Total count of packages with unapplied security fixes.
+  - **Total Pending Updates**: Total count of upgradable system packages.
+  - **Severity Breakdown**: Color-coded badges categorizing updates into **Critical**, **Important**, **Moderate**, **Low**, and **Unknown** (Debian/Ubuntu packages are classified as `Unknown` because `apt` does not report upstream severities).
+  - **Reboot Required**: Alerts whether the kernel or core libraries require a system restart (`/var/run/reboot-required` on Debian/Ubuntu or `needs-restarting -r` on RHEL families).
+  - **Repo Cache Age**: Tracks when the local package manager metadata was last updated.
+- **Security Findings Table**: Lists affected packages, currently installed versions, available fixed versions, severity badges, and security advisory IDs (e.g., `RHSA-*`, `ALAS-*`, or CVE numbers).
+- **Hardening Checks**: Evaluates 4 read-only security configuration baselines:
+  - `sshd_permit_root_login`: Evaluates OpenSSH root login policy across `/etc/ssh/sshd_config` and `/etc/ssh/sshd_config.d/*.conf` (first-match-wins). Reports `pass` for OpenSSH default (`prohibit-password`) or `no`, and `fail` if explicitly set to `yes`.
+  - `sshd_password_auth`: Evaluates SSH password authentication. Reports `pass` if disabled (`no`), or `warn` if enabled (`yes`) or left at default.
+  - `auto_security_updates`: Detects whether automated security updates are enabled (`unattended-upgrades` on Debian/Ubuntu, or `dnf-automatic` / `yum-cron` timer on RHEL).
+  - `firewall_active`: Verifies active firewall status (`ufw`, `firewalld`, or `nftables`/`iptables` rules). If permissions prevent reading firewall tables, reports `unknown` with explanatory detail.
+- **Coverage Notes**: Surfaces any environment limitations, permission barriers, or cache staleness notices.
+
+#### Honest Coverage Principle
+Pantau strictly enforces an **Honesty Rule**: a host is never presented as "clean" or "safe" without complete coverage.
+- If an operating system is not supported for package vulnerability checks (such as Alpine Linux or Arch Linux), the scan reports `status: unsupported` with an explanatory note (hardening checks still run).
+- If the update commands themselves are restricted by user permissions or if the local package cache is older than 7 days (> 168 hours), the scan reports `status: partial` with a notice that results may miss recent advisories.
+- Hardening checks that cannot be evaluated (e.g. the firewall status needs root, or a config file is absent) are shown as `unknown` and listed in the scan notes; they do not change `status`, since the update data itself was fully collected.
+- When the status is `unsupported` or `error`, the UI shows pending updates, severity breakdown and reboot state as **not assessed** instead of zero.
+- Distros with legacy tools (CentOS 6/7, Debian 7+) are handled gracefully without failing the inspection cycle.
+
+#### On-Demand Scanning & Cooldown Guard
+- Click **Scan Security Now** inside the Security tab to trigger an immediate synchronous audit.
+- **Cooldown & Concurrency Guards**: Manual scans enforce a 60-second cooldown timer (`HTTP 429 Too Many Requests` returning remaining seconds in `X-Scan-Cooldown-Remaining`) and an in-flight concurrency lock (`HTTP 409 Conflict`).
+
+#### Background Scan Scheduling
+- **Interval Setting**: Configure `security_scan_interval_hours` in **Settings** → **General** (default: `24` hours; accepts `1`–`720` hours).
+- **Disable Background Scans**: Setting the interval to `0` disables automated background security scanning, allowing strictly on-demand manual audits.
+- **Scheduler Worker**: A background worker runs every 10 minutes to scan hosts whose last scan exceeds the configured interval or has never run (clamped to a maximum of 2 concurrent scans, delayed ~2 minutes after startup).
+
+#### Desired State Enforcement (`security_updates`)
+Enforce security update compliance automatically through Desired State rules:
+- **Rule Kind**: `security_updates`
+- **Target**: `security` (fixed)
+- **Expected State**: `none` or `<=N` (where `none` requires 0 pending security updates; `<=N` permits up to N updates).
+- **Cache-Based Evaluation**: Evaluated against the latest stored scan in SQLite without executing live SSH commands during routine inspection cycles.
+- **Compliance & Drift Conditions**:
+  - `ok`: Pending security updates are within the allowed ceiling (`<= N`).
+  - `drift`: Pending security updates exceed threshold `N` (root cause excerpts list top pending packages, versions, and advisories).
+  - `drift`: The host has never been scanned (`not_scanned`), the scan data is older than 72 hours (`stale`), or the latest scan status is `unsupported` or `error`. Pantau will never claim compliance without fresh, verifiable data.
+
+#### REST API Endpoints
+All security endpoints require valid session authentication (`authMiddleware`):
+- `GET /api/hosts/{id}/security`: Returns `{"scanned": false}` if no scan exists, or `{"scanned": true, "scan": <SecurityScan>}`. Emits `X-Scan-Cooldown-Remaining: <sec>` header when cooldown is active.
+- `POST /api/hosts/{id}/security/scan`: Executes a synchronous security scan. Returns `200 OK` with updated scan results, `429 Too Many Requests` if cooldown is active, `409 Conflict` if a scan is already running, or `500 Internal Server Error` on connection failure (without overwriting previous scan data).
+
+#### Operational Boundaries & Airgapped Design
+- **Zero Sudo / Zero Agent**: Read-only collection using standard SSH user permissions. Never runs `sudo`, never installs packages, and never updates package caches (`apt-get update` / `dnf makecache`).
+- **No External Vulnerability Database**: Fully compatible with airgapped environments (ADR-0013). Operates strictly on upstream package manager metadata. External CVE database matching is not performed in Phase 1 (any future CVE feed integration would be an optional future opt-in).
+- **Ephemeral Telemetry**: Scan results are persisted in the `security_scans` SQLite table and excluded from encrypted System Snapshots as reproducible telemetry.
 
 ### Detecting Drift & Root Cause Excerpts
 
@@ -252,7 +312,7 @@ When troubleshooting server connectivity issues, firewall blocking, or cross-dat
 
 - **Diagnostic Modes**: Execute non-destructive diagnostics directly from the remote host:
   - **Ping**: Probes host reachability and roundtrip times via `timeout 14 ping -c 4 -W 2 <target>`.
-  - **Traceroute**: Inspects network route hops using smart zero-dependency fallback (`tracepath` or `traceroute`) without requiring root/raw-socket privileges.
+  - **Traceroute**: Inspects network route hops with `traceroute` (preferred, streams hop by hop). If it is missing on the source host, Pantau installs it first (apt, dnf, yum, apk, pacman, zypper; apt runs without restarting services) and streams the installer output to the raw viewer before probing. Installing requires the SSH user to be root or have passwordless `sudo`; otherwise Pantau falls back to `tracepath` (run line-buffered via `stdbuf -oL`) and notes the fallback in the raw viewer. If neither tool exists and installation is impossible, the probe stops with a message telling you what to install manually.
   - **Port Probe (TCP)**: Tests TCP port connectivity via native bash socket `/dev/tcp/<target>/<port>`, bypassing the need for `nc`, `telnet`, or `nmap`.
   - **DNS Resolve**: Verifies DNS resolution path and name resolution latency via `getent hosts` and `nslookup`.
 - **Intelligent Hop Analysis**: Automatically parses traceroute hops into structured topology cards:
