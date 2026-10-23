@@ -123,6 +123,7 @@ Pantau menginspeksi Host remote melalui perintah SSH non-interaktif, memvalidasi
 ### 7. 💻 Interactive Web Terminal & SFTP File Manager
 - **Web Terminal**: Akses shell interaktif di browser berbasis `xterm.js` melalui koneksi WebSocket SSH PTY dengan dukungan warna ANSI, penyesuaian ukuran terminal, dan integrasi clipboard aman.
 - **SFTP Explorer & Code Editor**: Eksplorasi direktori remote dengan breadcrumb interaktif, filter dan sorting berkas, duplikasi file/folder aman dengan pengecekan kapasitas disk otomatis, serta penyuntingan berkas dalam mode full-viewport bertema modern VS Code Dark+.
+- **Elevated File Access**: Beralih hak akses ke `root` atau pengguna target lain via `sudo -n -u` tanpa kata sandi pada server SFTP remote—memungkinkan penelusuran, baca, tulis, unggah, unduh arsip, dan duplikasi pada direktori terproteksi secara aman dengan lencana visual dan audit Activity Console.
 
 ### 8. 🌐 Antarmuka Dwibahasa (English & Bahasa Indonesia)
 - Tombol pemilih bahasa instan (`🌐 EN` / `🌐 ID`) langsung di bilah navigasi atas (header).

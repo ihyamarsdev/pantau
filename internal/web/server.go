@@ -1459,10 +1459,36 @@ func (s *Server) handleFilesRoute(hostID int64, subparts []string, w http.Respon
 	}
 	defer runner.Close()
 
-	sftpClient, err := runner.SFTP()
-	if err != nil {
-		http.Error(w, fmt.Sprintf("sftp error: %v", err), http.StatusInternalServerError)
-		return
+	// Optional elevated access: run the host's sftp-server (and exec-based file commands) as another user via sudo.
+	runAs := strings.TrimSpace(r.URL.Query().Get("as"))
+	if runAs != "" {
+		if err := sshrunner.ValidateRunAsUser(runAs); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	asCmd := func(cmd string) string {
+		if runAs == "" {
+			return cmd
+		}
+		return fmt.Sprintf("sudo -n -u %s sh -c %s", shellQuote(runAs), shellQuote(cmd))
+	}
+
+	var sftpClient *sftp.Client
+	if runAs != "" {
+		sftpClient, err = runner.SFTPAs(runAs)
+		if err != nil {
+			logger.Warn("files", host.Name, fmt.Sprintf("elevated file access as %s refused: %v", runAs, err))
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		logger.Info("files", host.Name, fmt.Sprintf("elevated file access as %s: %s %s", runAs, action, r.URL.Query().Get("path")))
+	} else {
+		sftpClient, err = runner.SFTP()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("sftp error: %v", err), http.StatusInternalServerError)
+			return
+		}
 	}
 	defer sftpClient.Close()
 
@@ -1614,9 +1640,9 @@ func (s *Server) handleFilesRoute(hostID int64, subparts []string, w http.Respon
 			http.Error(w, "path required", http.StatusBadRequest)
 			return
 		}
-		out, _, _, _ := runner.Exec(fmt.Sprintf(`du -sb %s 2>/dev/null | cut -f1`, shellQuote(targetPath)))
+		out, _, _, _ := runner.Exec(asCmd(fmt.Sprintf(`du -sb %s 2>/dev/null | cut -f1`, shellQuote(targetPath))))
 		size, _ := strconv.ParseInt(strings.TrimSpace(out), 10, 64)
-		outDf, _, _, _ := runner.Exec(fmt.Sprintf(`df -PB1 %s 2>/dev/null | tail -n 1 | awk '{print $4}'`, shellQuote(path.Dir(targetPath))))
+		outDf, _, _, _ := runner.Exec(asCmd(fmt.Sprintf(`df -PB1 %s 2>/dev/null | tail -n 1 | awk '{print $4}'`, shellQuote(path.Dir(targetPath)))))
 		avail, _ := strconv.ParseInt(strings.TrimSpace(outDf), 10, 64)
 		writeJSON(w, http.StatusOK, map[string]int64{
 			"size":      size,
@@ -1662,9 +1688,9 @@ func (s *Server) handleFilesRoute(hostID int64, subparts []string, w http.Respon
 
 		// Disk Space Safety Check:
 		// Measure source size and available space on target partition (+ 100MB safety buffer)
-		outSize, _, _, _ := runner.Exec(fmt.Sprintf(`du -sb %s 2>/dev/null | cut -f1`, shellQuote(req.Path)))
+		outSize, _, _, _ := runner.Exec(asCmd(fmt.Sprintf(`du -sb %s 2>/dev/null | cut -f1`, shellQuote(req.Path))))
 		sourceSize, _ := strconv.ParseInt(strings.TrimSpace(outSize), 10, 64)
-		outDf, _, _, _ := runner.Exec(fmt.Sprintf(`df -PB1 %s 2>/dev/null | tail -n 1 | awk '{print $4}'`, shellQuote(parentDir)))
+		outDf, _, _, _ := runner.Exec(asCmd(fmt.Sprintf(`df -PB1 %s 2>/dev/null | tail -n 1 | awk '{print $4}'`, shellQuote(parentDir))))
 		availBytes, _ := strconv.ParseInt(strings.TrimSpace(outDf), 10, 64)
 
 		const safetyBuffer = 100 * 1024 * 1024 // 100 MB buffer
@@ -1674,7 +1700,7 @@ func (s *Server) handleFilesRoute(hostID int64, subparts []string, w http.Respon
 		}
 
 		// ponytail: Use native remote cp -a to perform instant atomic copy with preserved permissions
-		cmd := fmt.Sprintf("cp -a -- %s %s", shellQuote(req.Path), shellQuote(destPath))
+		cmd := asCmd(fmt.Sprintf("cp -a -- %s %s", shellQuote(req.Path), shellQuote(destPath)))
 		_, stderr, exitCode, err := runner.Exec(cmd)
 		if err != nil || exitCode != 0 {
 			http.Error(w, fmt.Sprintf("duplication failed: %s", strings.TrimSpace(stderr)), http.StatusInternalServerError)
@@ -1707,12 +1733,12 @@ func (s *Server) handleFilesRoute(hostID int64, subparts []string, w http.Respon
 			if hasZip {
 				w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", base+".zip"))
 				w.Header().Set("Content-Type", "application/zip")
-				cmd := fmt.Sprintf(`cd %s && zip -r -q - %s`, shellQuote(parent), shellQuote(base))
+				cmd := asCmd(fmt.Sprintf(`cd %s && zip -r -q - %s`, shellQuote(parent), shellQuote(base)))
 				_ = runner.PipeCommand(cmd, nil, w)
 			} else {
 				w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", base+".tar.gz"))
 				w.Header().Set("Content-Type", "application/gzip")
-				cmd := fmt.Sprintf(`tar -czf - -C %s %s`, shellQuote(parent), shellQuote(base))
+				cmd := asCmd(fmt.Sprintf(`tar -czf - -C %s %s`, shellQuote(parent), shellQuote(base)))
 				_ = runner.PipeCommand(cmd, nil, w)
 			}
 			return

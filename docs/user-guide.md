@@ -418,6 +418,46 @@ To streamline access to frequent configuration files, application secrets, and a
   - **Direct Terminal Dock Jump**: Launch an interactive terminal tab already positioned in the parent directory of the pinned file (`openTerminalForHost` with target path).
   - **Inline Note Updates & Unpinning**: Update operational notes or remove pins directly from the modal.
 
+
+### Elevated File Access (Run as root or Another User)
+
+By default, the SFTP File Manager operates using the SSH credentials configured for the host. When attempting to navigate into another user's home directory (such as `/home/otheruser`) or restricted system locations (such as `/root` or `/var/log/audit`), the remote host denies access with a `permission denied` error.
+
+Pantau allows you to elevate file operations to `root` or any other local system account via passwordless `sudo`:
+
+#### How It Works
+- **Access as Selector**: Use the **Access as** dropdown in the File Manager toolbar to select `default` (the configured SSH user), `root`, or enter another specific username.
+- **Sudo SFTP Execution**: Rather than opening the default SSH subsystem, Pantau locates the remote host's `sftp-server` executable and launches it through an SSH exec channel using `sudo -n -u <user> <sftp-server>`. Pantau then communicates standard SFTP over this channel.
+- **Complete Feature Parity**: Every File Manager capability runs under the target user's permissions: directory listings, file viewing and editing, uploads, calculating directory sizes, in-place duplication (with disk space verification), downloading files or streaming folder archives (`zip`/`tar.gz`), deleting, and changing permissions (`chmod`).
+
+#### Prerequisites & Limitations
+- **Passwordless Sudo**: The SSH user configured for the host must have passwordless `sudo` privileges (`sudo -n`) to run commands as the target user (e.g. configured with `NOPASSWD` in `/etc/sudoers`).
+- **Standalone `sftp-server` Binary**: The host must have an OpenSSH `sftp-server` binary located at one of the standard system search paths:
+  - `/usr/lib/openssh/sftp-server` (Debian, Ubuntu)
+  - `/usr/libexec/openssh/sftp-server` (RHEL, CentOS, Fedora, Rocky, AlmaLinux)
+  - `/usr/lib/ssh/sftp-server` (Arch Linux, openSUSE)
+  - `/usr/libexec/sftp-server` (Gentoo, Alpine, BSD)
+  - `/usr/lib64/ssh/sftp-server` (Alternative 64-bit paths)
+- **Internal SFTP Incompatible**: Remote hosts configured exclusively with OpenSSH's built-in `internal-sftp` subsystem cannot be elevated, as there is no standalone binary on disk for `sudo` to execute.
+
+#### Zero Password Exposure
+- Pantau never prompts for, transmits, or stores passwords for `sudo` or target accounts.
+- All elevation attempts strictly use `sudo -n` (non-interactive). If `sudo` requires a password or the user is not permitted in sudoers, the command fails immediately and safely.
+
+#### Failure Handling & 1-Click Root Retry
+- **Elevation Failure (HTTP 403)**: If elevation is unavailable (sudo requires a password, the user lacks sudo permissions, or the `sftp-server` binary is missing), the backend responds with `HTTP 403 Forbidden` and a plain-text message describing the reason. Pantau displays this error in a toast notification and reverts back to default SSH user access.
+- **One-Click 'Open as root'**: When browsing under default access, if a directory listing fails with a `permission denied` error (`HTTP 400 Bad Request`), the UI presents a 1-click **Open as root** action button to instantly retry opening the restricted folder with elevated root permissions.
+
+#### Security & Auditing
+- **Full Privilege Context**: Elevated access grants full read and write capabilities of the target account. Exercise appropriate caution when modifying or deleting system files.
+- **Prominent Visual Badge**: A distinct visual badge is displayed in the File Manager header whenever elevated mode is active, clearly indicating the active username.
+- **Activity Console Logging**: Every elevated action (list, read, write, upload, duplicate, download, delete, chmod) and elevation refusal is recorded in Pantau's Activity Console log stream (`logger.Info` / `logger.Warn` with category `files`).
+- **Trust Boundary**: Elevated file access shares the same trust level as an administrator running commands with `sudo` in an interactive web terminal session on hosts with sudo configured.
+
+#### REST API Reference
+- All endpoints under `/api/hosts/{id}/files/*` (including `list`, `read`, `write`, `upload`, `size`, `duplicate`, `download`, `delete`, and `chmod` — but *not* `pins`) accept an optional query parameter `as=<username>`.
+- Usernames are validated against POSIX regex `^[A-Za-z_][A-Za-z0-9_.-]{0,31}$`. Invalid usernames return `HTTP 400 Bad Request`.
+- Download links use standard `<a href>` GET requests, with the `as` query parameter appended to the download URL and authenticated via the active session cookie.
 ---
 
 ## 6. Phase 5: Hardening, Snapshots & Disaster Recovery

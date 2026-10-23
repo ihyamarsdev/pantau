@@ -123,6 +123,7 @@ Pantau inspects remote hosts via non-interactive SSH commands, continuously vali
 ### 7. 💻 Interactive Web Terminal & SFTP File Manager
 - **Web Terminal**: In-browser interactive shell powered by `xterm.js` over WebSocket SSH PTY sessions with full ANSI color, terminal resize support, and safe clipboard bridge.
 - **SFTP Explorer & Code Editor**: Navigate remote directories with clickable breadcrumbs, sort by columns, filter by categories, duplicate files/folders with automatic disk space safety verification, and edit scripts with full-viewport CodeMirror maximize in a modern VS Code Dark+ theme.
+- **Elevated File Access**: Switch access to `root` or another user via passwordless `sudo -n -u` to explore, edit, upload, download, or duplicate files in restricted directories with clear visual badges and Activity Console auditing.
 
 ### 8. 🌐 Dual Language Interface (English & Bahasa Indonesia)
 - Instant client-side localization switcher (`🌐 EN` / `🌐 ID`) in the header.

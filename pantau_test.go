@@ -1892,3 +1892,94 @@ func TestUIPackageTabAndProcessTelemetryPresence(t *testing.T) {
 
 
 
+func TestFileManagerElevatedAccessUsesSudoSFTPAndExecWrapping(t *testing.T) {
+	env := setupTestEnv(t)
+	client := loginClient(t, env)
+
+	hostID, _ := env.db.CreateHost(&store.Host{Name: "Elevated Host", Host: "10.0.0.6", Port: 22, User: "ihya"})
+	base := fmt.Sprintf("%s/api/hosts/%d/files", env.httpServer.URL, hostID)
+
+	tmpDir, err := os.MkdirTemp("", "pantau_elevated_*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// 1. Elevation unavailable (no sftp provider): 403 with the reason, never a silent fallback to the SSH user.
+	resp, err := client.Get(base + "/list?as=root&path=" + tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 when elevation is unavailable, got %d: %s", resp.StatusCode, body)
+	}
+
+	env.mockRunner.SFTPProvider = func() (*sftp.Client, error) {
+		sConn, cConn := net.Pipe()
+		server, err := sftp.NewServer(sConn)
+		if err != nil {
+			return nil, err
+		}
+		go func() { _ = server.Serve() }()
+		return sftp.NewClientPipe(cConn, cConn)
+	}
+	env.mockRunner.SFTPAsUsers = nil
+
+	// 2. Invalid user names are rejected before any connection work (shell/sudo option injection).
+	for _, bad := range []string{"-s", "ro ot", "root;id", "a$(id)"} {
+		resp, err := client.Get(base + "/list?path=/&as=" + url.QueryEscape(bad))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("as=%q: expected 400, got %d", bad, resp.StatusCode)
+		}
+	}
+	if len(env.mockRunner.SFTPAsUsers) != 0 {
+		t.Fatalf("invalid user names must never reach SFTPAs, got %v", env.mockRunner.SFTPAsUsers)
+	}
+
+	// 3. Elevated listing goes through SFTPAs; the default listing does not.
+	resp, err = client.Get(base + "/list?as=root&path=" + tmpDir)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("elevated list failed: %v status=%v", err, resp)
+	}
+	resp.Body.Close()
+	resp, err = client.Get(base + "/list?path=" + tmpDir)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("default list failed: %v", err)
+	}
+	resp.Body.Close()
+	if got := env.mockRunner.SFTPAsUsers; len(got) != 1 || got[0] != "root" {
+		t.Fatalf("expected exactly one elevated SFTP session as root, got %v", got)
+	}
+
+	// 4. Exec-based actions run under sudo only when elevated.
+	env.mockRunner.ExecHistory = nil
+	resp, err = client.Get(base + "/size?as=deploy&path=" + tmpDir)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("elevated size failed: %v", err)
+	}
+	resp.Body.Close()
+	resp, err = client.Get(base + "/size?path=" + tmpDir)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("default size failed: %v", err)
+	}
+	resp.Body.Close()
+	var elevatedCmds, plainCmds int
+	for _, c := range env.mockRunner.ExecHistory {
+		if strings.Contains(c, "du -sb") {
+			if strings.Contains(c, "sudo -n -u") && strings.Contains(c, "deploy") {
+				elevatedCmds++
+			} else if !strings.Contains(c, "sudo") {
+				plainCmds++
+			}
+		}
+	}
+	if elevatedCmds != 1 || plainCmds != 1 {
+		t.Fatalf("expected one sudo-wrapped and one plain du command, got elevated=%d plain=%d history=%v", elevatedCmds, plainCmds, env.mockRunner.ExecHistory)
+	}
+}

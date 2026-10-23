@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -55,6 +56,8 @@ type Runner interface {
 	Stream(cmd string, out io.Writer) error
 	PipeCommand(cmd string, in io.Reader, out io.Writer) error
 	SFTP() (*sftp.Client, error)
+	// SFTPAs opens an SFTP client whose server runs as runAsUser via passwordless `sudo -n -u`.
+	SFTPAs(runAsUser string) (*sftp.Client, error)
 	Terminal(in io.Reader, out io.Writer, cols, rows int, resizeChan <-chan [2]int) error
 	DialContext(ctx context.Context, network, addr string) (net.Conn, error)
 	Close() error
@@ -284,6 +287,74 @@ func (r *LiveSSHRunner) SFTP() (*sftp.Client, error) {
 	return sftp.NewClient(r.client)
 }
 
+var runAsUserRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]{0,31}$`)
+
+// ValidateRunAsUser reports whether name is a safe local account name to pass to `sudo -u`.
+func ValidateRunAsUser(name string) error {
+	if !runAsUserRe.MatchString(name) {
+		return fmt.Errorf("invalid user name %q", name)
+	}
+	return nil
+}
+
+// sftpServerLookupCmd prints the first executable sftp-server binary found at the paths used by Debian/Ubuntu,
+// RHEL-family, Arch/SUSE and BSD-style layouts. Hosts configured with the built-in `internal-sftp` have none.
+const sftpServerLookupCmd = `for p in /usr/lib/openssh/sftp-server /usr/libexec/openssh/sftp-server /usr/lib/ssh/sftp-server /usr/libexec/sftp-server /usr/lib64/ssh/sftp-server; do if [ -x "$p" ]; then echo "$p"; break; fi; done`
+
+func quoteArg(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+// SFTPAs starts the host's sftp-server as runAsUser through `sudo -n` on an exec channel and speaks SFTP over it,
+// so every file operation runs with that user's permissions. No password is ever requested, sent or stored.
+func (r *LiveSSHRunner) SFTPAs(runAsUser string) (*sftp.Client, error) {
+	if err := ValidateRunAsUser(runAsUser); err != nil {
+		return nil, err
+	}
+	server, _, _, err := r.Exec(sftpServerLookupCmd)
+	if err != nil {
+		return nil, fmt.Errorf("locate sftp-server: %w", err)
+	}
+	server = strings.TrimSpace(server)
+	if server == "" {
+		return nil, fmt.Errorf("elevated access as %q is unavailable: no sftp-server binary found (the host may use the built-in internal-sftp)", runAsUser)
+	}
+	if _, stderr, code, err := r.Exec("sudo -n -u " + quoteArg(runAsUser) + " true"); err != nil || code != 0 {
+		reason := strings.TrimSpace(stderr)
+		if reason == "" {
+			reason = "sudo requires a password or the user is not permitted"
+		}
+		return nil, fmt.Errorf("elevated access as %q is unavailable on this host: %s", runAsUser, reason)
+	}
+
+	session, err := r.client.NewSession()
+	if err != nil {
+		return nil, err
+	}
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		session.Close()
+		return nil, err
+	}
+	stdout, err := session.StdoutPipe()
+	if err != nil {
+		session.Close()
+		return nil, err
+	}
+	var stderr bytes.Buffer
+	session.Stderr = &stderr
+	if err := session.Start("sudo -n -u " + quoteArg(runAsUser) + " " + quoteArg(server)); err != nil {
+		session.Close()
+		return nil, err
+	}
+	client, err := sftp.NewClientPipe(stdout, stdin)
+	if err != nil {
+		session.Close()
+		return nil, fmt.Errorf("start elevated sftp as %q: %w (%s)", runAsUser, err, strings.TrimSpace(stderr.String()))
+	}
+	return client, nil
+}
+
 func (r *LiveSSHRunner) Terminal(in io.Reader, out io.Writer, cols, rows int, resizeChan <-chan [2]int) error {
 	session, err := r.client.NewSession()
 	if err != nil {
@@ -352,6 +423,7 @@ type MockRunner struct {
 	ExecHistory     []string
 	Closed          bool
 	SFTPProvider    func() (*sftp.Client, error)
+	SFTPAsUsers     []string
 	DialContextFunc func(ctx context.Context, network, addr string) (net.Conn, error)
 }
 
@@ -437,6 +509,17 @@ func (m *MockRunner) SFTP() (*sftp.Client, error) {
 		return m.SFTPProvider()
 	}
 	return nil, fmt.Errorf("mock sftp not configured")
+}
+
+// SFTPAs mirrors SFTP for tests and records the requested user in SFTPAsUsers.
+func (m *MockRunner) SFTPAs(runAsUser string) (*sftp.Client, error) {
+	if err := ValidateRunAsUser(runAsUser); err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	m.SFTPAsUsers = append(m.SFTPAsUsers, runAsUser)
+	m.mu.Unlock()
+	return m.SFTP()
 }
 
 func (m *MockRunner) Terminal(in io.Reader, out io.Writer, cols, rows int, resizeChan <-chan [2]int) error {

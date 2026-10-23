@@ -2990,6 +2990,16 @@ const I18N = {
     "filter_files": "📄 Files",
     "showing_entries": "Showing {count} of {total} entries",
     "no_matching_files": "No matching files or folders found",
+    "access_as": "Access as",
+    "access_default": "Default (SSH user)",
+    "access_root": "root (sudo)",
+    "access_custom": "Another user…",
+    "access_custom_ph": "username",
+    "open_as_root": "Open as root (sudo)",
+    "invalid_username": "Invalid username format",
+    "permission_denied": "Permission Denied",
+    "permission_denied_desc": "Permission denied accessing this path.",
+    "elevation_unavailable": "Elevation unavailable on this host",
     "edit_file": "Edit File",
     "btn_save": "\ud83d\udcbe Save",
     "tab_settings_general": "⚙️ General",
@@ -3728,6 +3738,16 @@ const I18N = {
     "tab_settings_backup": "💾 Backup",
     "ssh_key_library": "Library Kunci SSH",
     "ssh_key_library_desc": "Simpan dan kelola private key SSH yang dapat digunakan kembali di server tanpa perlu menempelkan kredensial berulang kali.",
+    "access_as": "Akses sebagai",
+    "access_default": "Default (pengguna SSH)",
+    "access_root": "root (sudo)",
+    "access_custom": "Pengguna lain…",
+    "access_custom_ph": "username",
+    "open_as_root": "Buka sebagai root (sudo)",
+    "invalid_username": "Format username tidak valid",
+    "permission_denied": "Izin Ditolak",
+    "permission_denied_desc": "Izin ditolak untuk mengakses path ini.",
+    "elevation_unavailable": "Eskalasi hak akses tidak tersedia di host ini",
     "add_ssh_key_title": "Tambah Kunci SSH Baru",
     "ssh_key_name": "Nama Kunci",
     "ssh_key_name_ph": "contoh: prod-key atau dev-cluster",
@@ -7596,6 +7616,97 @@ let fileFilterQuery = '';
 let fileFilterType = 'all'; // 'all' | 'dir' | 'file'
 let fileSortColumn = 'name'; // 'name' | 'size' | 'mod_time'
 let fileSortOrder = 'asc'; // 'asc' | 'desc'
+const hostFileAccessMap = new Map();
+
+function getHostFileAccess(hostId) {
+  if (!hostId) return '';
+  if (hostFileAccessMap.has(hostId)) return hostFileAccessMap.get(hostId) || '';
+  try {
+    const saved = sessionStorage.getItem('pantau_host_file_access_' + hostId);
+    if (saved && /^[A-Za-z_][A-Za-z0-9_.-]{0,31}$/.test(saved)) {
+      hostFileAccessMap.set(hostId, saved);
+      return saved;
+    }
+  } catch (e) {}
+  hostFileAccessMap.set(hostId, '');
+  return '';
+}
+
+function setHostFileAccess(hostId, user) {
+  if (!hostId) return;
+  const clean = (user || '').trim();
+  const valid = /^[A-Za-z_][A-Za-z0-9_.-]{0,31}$/.test(clean) ? clean : '';
+  hostFileAccessMap.set(hostId, valid);
+  try {
+    if (valid) sessionStorage.setItem('pantau_host_file_access_' + hostId, valid);
+    else sessionStorage.removeItem('pantau_host_file_access_' + hostId);
+  } catch (e) {}
+}
+function resetHostFileAccess(id) { if (getHostFileAccess(id)) setHostFileAccess(id, ''); }
+
+function filesApiUrl(hostId, action, params) {
+  const url = '/api/hosts/' + hostId + '/files/' + action;
+  const q = new URLSearchParams();
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null) q.set(k, v);
+    }
+  }
+  const as = getHostFileAccess(hostId);
+  if (as) q.set('as', as);
+  const qs = q.toString();
+  return qs ? url + '?' + qs : url;
+}
+
+function renderFileAccessControls() {
+  if (!currentHost) return '';
+  const u = getHostFileAccess(currentHost.id), c = !!(u && u !== 'root');
+  return `<div style="display:inline-flex;align-items:center;gap:6px;">
+    <label style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap;">${t('access_as')}:</label>
+    <select id="fileAccessSelect" class="input input-sm" style="padding:2px 6px;font-size:0.75rem;height:26px;" onchange="onFileAccessSelectChange(this.value)">
+      <option value="" ${u === '' ? 'selected' : ''}>${t('access_default')}</option>
+      <option value="root" ${u === 'root' ? 'selected' : ''}>${t('access_root')}</option>
+      <option value="__custom__" ${c ? 'selected' : ''}>${t('access_custom')}</option>
+    </select>
+    <input type="text" id="fileAccessCustomUser" class="input input-sm" style="width:100px;padding:2px 6px;font-size:0.75rem;height:26px;display:${c ? 'inline-block' : 'none'};" placeholder="${t('access_custom_ph')}" value="${c ? escapeHtml(u) : ''}" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" onblur="onFileAccessCustomBlur(this.value)" />
+    ${u ? `<span class="badge badge-warning" style="text-transform:none;white-space:nowrap;font-size:0.75rem;padding:3px 8px;">🛡️ sudo: ${escapeHtml(u)}</span>` : ''}
+  </div>`;
+}
+
+function onFileAccessSelectChange(val) {
+  const inp = document.getElementById('fileAccessCustomUser');
+  if (val === '__custom__') {
+    if (inp) { inp.style.display = 'inline-block'; inp.focus(); }
+  } else {
+    if (inp) inp.style.display = 'none';
+    if (currentHost && getHostFileAccess(currentHost.id) !== val) switchFileAccess(val);
+  }
+}
+
+function onFileAccessCustomBlur(val) {
+  if (!currentHost) return;
+  const trimmed = (val || '').trim(), current = getHostFileAccess(currentHost.id);
+  if (!trimmed) {
+    const sel = document.getElementById('fileAccessSelect');
+    if (sel) sel.value = (current === '' || current === 'root') ? current : '__custom__';
+    const inp = document.getElementById('fileAccessCustomUser');
+    if (inp && current !== '__custom__' && !current) inp.style.display = 'none';
+    return;
+  }
+  if (!/^[A-Za-z_][A-Za-z0-9_.-]{0,31}$/.test(trimmed)) {
+    showToast(t('invalid_username'), 'error');
+    const inp = document.getElementById('fileAccessCustomUser');
+    if (inp) inp.value = (current !== 'root' && current !== '') ? current : '';
+    return;
+  }
+  if (trimmed !== current) switchFileAccess(trimmed);
+}
+
+async function switchFileAccess(user) {
+  if (!currentHost) return;
+  setHostFileAccess(currentHost.id, user);
+  await loadFiles((currentFilesData && currentFilesData.path) || '/');
+}
 
 async function loadHostFilePins(hostId) {
   if (!hostId) return;
@@ -7611,19 +7722,38 @@ async function loadHostFilePins(hostId) {
   }
 }
 
-async function loadFiles(path) {
+async function loadFiles(path, isFallback) {
   if (currentHost && currentHost.id && path) {
     setHostFilesPath(currentHost.id, path);
   }
   const content = document.getElementById('tabContent');
-  content.innerHTML = '<p>' + t('loading_files') + '</p>';
+  if (content && !isFallback) content.innerHTML = '<p>' + t('loading_files') + '</p>';
   try {
     const [listRes] = await Promise.all([
-      fetch('/api/hosts/' + currentHost.id + '/files/list?path=' + encodeURIComponent(path)),
+      fetch(filesApiUrl(currentHost.id, 'list', { path })),
       loadHostFilePins(currentHost.id)
     ]);
+    if (listRes.status === 403) {
+      const errText = (await listRes.text()).trim();
+      showToast(errText || t('elevation_unavailable'), 'error');
+      setHostFileAccess(currentHost.id, '');
+      if (path !== '/' && !isFallback) return loadFiles('/', true);
+      return loadFiles(path, true);
+    }
     if (!listRes.ok) {
-      content.innerHTML = '<p style="color: var(--danger);">' + t('failed_open_path') + path + '</p>';
+      const errText = (await listRes.text()).trim();
+      const isPermDenied = errText.toLowerCase().includes('permission denied');
+      const isDefault = !getHostFileAccess(currentHost.id);
+      if (isDefault && isPermDenied) {
+        currentFilesData = { path: path, files: [], is_protected: false, permDenied: true, errorText: errText };
+        fileFilterQuery = '';
+        renderFilesView();
+        return;
+      }
+      if (path !== '/' && !isFallback) return loadFiles('/', true);
+      if (content) {
+        content.innerHTML = '<p style="color: var(--danger);">' + t('failed_open_path') + escapeHtml(path) + (errText ? ': ' + escapeHtml(errText) : '') + '</p>';
+      }
       return;
     }
     const data = await listRes.json();
@@ -7634,7 +7764,10 @@ async function loadFiles(path) {
     fileFilterQuery = '';
     renderFilesView();
   } catch(e) {
-    content.innerHTML = '<p style="color: var(--danger);">' + t('failed_open_path') + path + '</p>';
+    if (path !== '/' && !isFallback) return loadFiles('/', true);
+    if (content) {
+      content.innerHTML = '<p style="color: var(--danger);">' + t('failed_open_path') + escapeHtml(path) + '</p>';
+    }
   }
 }
 
@@ -7722,7 +7855,8 @@ function renderFilesView() {
         </div>
         ${isProtectedDir ? `<span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); font-size: 0.75rem; padding: 4px 8px; border-radius: 4px; white-space: nowrap;">🔒 ${t('protected_path')}</span>` : ''}
       </div>
-      <div style="display: flex; gap: 8px; align-items: center;">
+      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+        ${renderFileAccessControls()}
         <button class="btn btn-sm" onclick="openTerminalForPath('${escapeHtml(data.path)}')" title="${t('open_terminal_here', 'Open Terminal Here')}" style="display: inline-flex; align-items: center; gap: 4px;">
           <span>💻</span> <span>${t('open_terminal_here', 'Open Terminal Here')}</span>
         </button>
@@ -7773,6 +7907,22 @@ function renderFilesTableBody() {
   const countLabel = document.getElementById('fileCountLabel');
   const clearBtn = document.getElementById('fileSearchClear');
   if (!tbody) return;
+  if (currentFilesData.permDenied) {
+    if (countLabel) countLabel.textContent = '';
+    if (clearBtn) clearBtn.style.display = 'none';
+    tbody.innerHTML = `<tr><td colspan="5" style="padding:20px 16px;">
+      <div class="sec-banner sec-banner-warn" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0;flex-wrap:wrap;">
+        <div>
+          <span style="font-weight:600;">⚠️ ${t('permission_denied')}</span>
+          <div style="font-size:0.82rem;margin-top:4px;opacity:0.9;">${escapeHtml(currentFilesData.errorText || t('permission_denied_desc'))}</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn btn-sm" onclick="loadFiles('/')">📁 /</button>
+          <button class="btn btn-warning btn-sm" onclick="switchFileAccess('root')" style="white-space:nowrap;font-weight:600;">🛡️ ${t('open_as_root')}</button>
+        </div>
+      </div></td></tr>`;
+    return;
+  }
 
   if (clearBtn) {
     clearBtn.style.display = fileFilterQuery ? 'inline-flex' : 'none';
@@ -7871,7 +8021,7 @@ function renderFilesTableBody() {
             <button class="btn btn-sm action-btn-duplicate" title="${t('duplicate')}" ${isItemProtected ? 'disabled title="' + t('cannot_modify_protected') + '"' : ''} onclick="openDuplicateModal('${escapeHtml(fullPath)}', ${f.is_dir}, '${escapeHtml(f.name)}')">📋</button>
             ${f.is_dir 
               ? `<button class="btn btn-sm action-btn-download" title="${t('download_folder', 'Download Folder Archive')}" onclick="downloadFolder('${escapeHtml(fullPath)}')">⬇️</button>` 
-              : `<a class="btn btn-sm action-btn-download" title="${t('download_file', 'Download File')}" href="/api/hosts/${currentHost.id}/files/download?path=${encodeURIComponent(fullPath)}" download>⬇️</a>`}
+              : `<a class="btn btn-sm action-btn-download" title="${t('download_file', 'Download File')}" href="${filesApiUrl(currentHost.id, 'download', { path: fullPath })}" download>⬇️</a>`}
             <button class="btn btn-warning btn-sm" onclick="openTransferDialog('${escapeHtml(fullPath)}', ${f.is_dir})">${t('copy_to_host')}</button>
             <button class="btn btn-danger btn-sm" ${isItemProtected ? 'disabled title="' + t('cannot_delete_protected') + '"' : ''} onclick="deleteRemoteFile('${escapeHtml(fullPath)}', '${escapeHtml(currentFilesData.path)}')">🗑️</button>
           </div>
@@ -7913,7 +8063,7 @@ function toggleFileSort(col) {
 
 async function downloadFolder(path) {
   try {
-    const res = await fetch('/api/hosts/' + currentHost.id + '/files/size?path=' + encodeURIComponent(path));
+    const res = await fetch(filesApiUrl(currentHost.id, 'size', { path }));
     if (res.ok) {
       const data = await res.json();
       if (data.size > 2 * 1024 * 1024 * 1024) {
@@ -7925,7 +8075,7 @@ async function downloadFolder(path) {
   } catch (e) {
     console.warn('size check error:', e);
   }
-  window.location.href = '/api/hosts/' + currentHost.id + '/files/download?path=' + encodeURIComponent(path);
+  window.location.href = filesApiUrl(currentHost.id, 'download', { path });
 }
 
 async function uploadFile(targetDir, overwrite = false) {
@@ -7934,7 +8084,7 @@ async function uploadFile(targetDir, overwrite = false) {
   const file = input.files[0];
   const formData = new FormData();
   formData.append('file', file);
-  const url = '/api/hosts/' + currentHost.id + '/files/upload?dir=' + encodeURIComponent(targetDir) + (overwrite ? '&overwrite=true' : '');
+  const url = filesApiUrl(currentHost.id, 'upload', { dir: targetDir, overwrite: overwrite ? 'true' : undefined });
   const res = await fetch(url, {
     method: 'POST',
     body: formData
@@ -7947,12 +8097,15 @@ async function uploadFile(targetDir, overwrite = false) {
     return;
   }
   if (res.status === 403) {
-    showToast(t('cannot_upload_protected'), 'error');
+    const errTxt = (await res.text()).trim();
+    showToast(errTxt || t('cannot_upload_protected'), 'error');
+    resetHostFileAccess(currentHost.id);
     input.value = '';
     return;
   }
   if (!res.ok) {
-    showToast(t('failed_prefix', 'Failed: ') + 'Failed to upload file', 'error');
+    const errTxt = (await res.text()).trim();
+    showToast(t('failed_prefix', 'Failed: ') + (errTxt || 'Failed to upload file'), 'error');
     input.value = '';
     return;
   }
@@ -7963,17 +8116,20 @@ async function uploadFile(targetDir, overwrite = false) {
 
 async function deleteRemoteFile(path, parentDir) {
   if (!await showConfirm({ message: t('confirm_delete_file').replace('{path}', path), confirmText: t('delete', 'Delete') })) return;
-  const res = await fetch('/api/hosts/' + currentHost.id + '/files/delete', {
+  const res = await fetch(filesApiUrl(currentHost.id, 'delete'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path })
   });
   if (res.status === 403) {
-    showToast(t('cannot_delete_protected'), 'error');
+    const errTxt = (await res.text()).trim();
+    showToast(errTxt || t('cannot_delete_protected'), 'error');
+    resetHostFileAccess(currentHost.id);
     return;
   }
   if (!res.ok) {
-    showToast(t('failed_prefix', 'Failed: ') + 'Failed to delete', 'error');
+    const errTxt = (await res.text()).trim();
+    showToast(t('failed_prefix', 'Failed: ') + (errTxt || 'Failed to delete'), 'error');
     return;
   }
   showToast(t('file_deleted', 'File deleted successfully'), 'success');
@@ -8026,7 +8182,7 @@ async function openDuplicateModal(fullPath, isDir, origName) {
   setTimeout(() => { if (nameInp) nameInp.focus(); }, 100);
 
   try {
-    const res = await fetch('/api/hosts/' + currentHost.id + '/files/size?path=' + encodeURIComponent(fullPath));
+    const res = await fetch(filesApiUrl(currentHost.id, 'size', { path: fullPath }));
     if (res.ok) {
       const data = await res.json();
       const itemSize = data.size || 0;
@@ -8066,7 +8222,7 @@ async function executeDuplicate() {
     confirmBtn.innerText = '⏳ ' + t('duplicating');
   }
   try {
-    const res = await fetch('/api/hosts/' + currentHost.id + '/files/duplicate', {
+    const res = await fetch(filesApiUrl(currentHost.id, 'duplicate'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: currentDuplicatePath, new_name: newName })
@@ -8080,7 +8236,9 @@ async function executeDuplicate() {
       return;
     }
     if (res.status === 403) {
-      showToast(t('cannot_modify_protected'), 'error');
+      const errTxt = (await res.text()).trim();
+      showToast(errTxt || t('cannot_modify_protected'), 'error');
+      resetHostFileAccess(currentHost.id);
       if (confirmBtn) {
         confirmBtn.disabled = false;
         confirmBtn.innerText = t('duplicate_btn');
@@ -8475,8 +8633,13 @@ async function openEditor(path) {
     restoreWorkspaceSession(sessId);
     return;
   }
-  const res = await fetch('/api/hosts/' + currentHost.id + '/files/read?path=' + encodeURIComponent(path));
-  if (!res.ok) { showToast(t('failed_read_file'), 'error'); return; }
+  const res = await fetch(filesApiUrl(currentHost.id, 'read', { path }));
+  if (!res.ok) {
+    const errTxt = (await res.text()).trim();
+    showToast(errTxt || t('failed_read_file'), 'error');
+    if (res.status === 403) resetHostFileAccess(currentHost.id);
+    return;
+  }
   const data = await res.json();
   currentEditorState = {
     hostId: currentHost.id,
@@ -8508,7 +8671,7 @@ async function saveEditorFile() {
   const content = codeEditor.getValue();
   const hostId = (currentEditorState && currentEditorState.hostId) ? currentEditorState.hostId : (currentHost ? currentHost.id : null);
   if (!hostId) return;
-  const res = await fetch('/api/hosts/' + hostId + '/files/write', {
+  const res = await fetch(filesApiUrl(hostId, 'write'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path, content })
@@ -8523,9 +8686,12 @@ async function saveEditorFile() {
     renderWorkspaceShelf();
     closeModal('editorModal');
   } else if (res.status === 403) {
-    showToast(t('cannot_modify_protected'), 'error');
+    const errTxt = (await res.text()).trim();
+    showToast(errTxt || t('cannot_modify_protected'), 'error');
+    resetHostFileAccess(hostId);
   } else {
-    showToast(t('failed_prefix', 'Failed: ') + 'Failed to save file', 'error');
+    const errTxt = (await res.text()).trim();
+    showToast(t('failed_prefix', 'Failed: ') + (errTxt || 'Failed to save file'), 'error');
   }
 }
 

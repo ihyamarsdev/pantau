@@ -418,6 +418,46 @@ Untuk mempermudah akses ke berkas konfigurasi penting, rahasia aplikasi, dan fol
   - **Loncat ke Terminal Dock**: Buka tab terminal baru yang secara otomatis telah berada di direktori induk berkas tersemat (`openTerminalForHost` dengan path tujuan).
   - **Sunting Catatan & Lepas Pin**: Perbarui catatan operasional atau lepas sematan berkas langsung dari jendela modal.
 
+
+### Elevated File Access (Akses Berkas sebagai root atau Pengguna Lain)
+
+Secara default, SFTP File Manager beroperasi menggunakan akun SSH yang terkonfigurasi pada Host. Ketika Anda mencoba menelusuri direktori *home* milik pengguna lain (seperti `/home/pengguna_lain`) atau direktori sistem terproteksi (seperti `/root` atau `/var/log/audit`), host remote akan menolak akses dengan galat `permission denied`.
+
+Pantau memungkinkan eskalasi hak akses berkas ke pengguna `root` atau akun pengguna lokal lain melalui mekanisme `sudo` tanpa kata sandi:
+
+#### Cara Kerja
+- **Selektor Access as**: Gunakan menu dropdown **Access as** pada bilah alat File Manager untuk memilih `default` (pengguna SSH bawaan), `root`, atau masukkan nama pengguna target lainnya.
+- **Eksekusi SFTP via Sudo**: Alih-alih membuka subsistem SSH standar, Pantau mendeteksi lokasi biner `sftp-server` pada host dan mengeksekusinya melalui SSH *exec channel* dengan perintah `sudo -n -u <user> <sftp-server>`. Pantau kemudian berkomunikasi menggunakan protokol SFTP standar di atas kanal tersebut.
+- **Paritas Fitur Penuh**: Seluruh kapabilitas File Manager berjalan di bawah izin pengguna yang dituju: penelusuran direktori, pembacaan dan penyuntingan berkas, pengunggahan, kalkulasi ukuran folder, duplikasi lokal (dilengkapi verifikasi sisa ruang disk), pengunduhan berkas maupun arsip folder (`zip`/`tar.gz`), penghapusan, dan pengubahan hak akses (`chmod`).
+
+#### Prasyarat & Batasan
+- **Sudo Tanpa Kata Sandi (*Passwordless Sudo*)**: Pengguna SSH pada host target harus memiliki izin `sudo` tanpa kata sandi (`sudo -n`) untuk beralih ke pengguna target (contoh: konfigurasi `NOPASSWD` di `/etc/sudoers`).
+- **Biner Mandiri `sftp-server`**: Host target harus memiliki biner OpenSSH `sftp-server` di salah satu jalur pencarian sistem standar:
+  - `/usr/lib/openssh/sftp-server` (Debian, Ubuntu)
+  - `/usr/libexec/openssh/sftp-server` (RHEL, CentOS, Fedora, Rocky, AlmaLinux)
+  - `/usr/lib/ssh/sftp-server` (Arch Linux, openSUSE)
+  - `/usr/libexec/sftp-server` (Gentoo, Alpine, BSD)
+  - `/usr/lib64/ssh/sftp-server` (Varian jalur 64-bit)
+- **Tidak Kompatibel dengan Internal SFTP**: Server yang konfigurasi OpenSSH-nya hanya menggunakan `Subsystem sftp internal-sftp` bawaan daemon tanpa menyediakan berkas biner mandiri `sftp-server` di disk tidak dapat dielevasi.
+
+#### Prinsip Keamanan Zero-Password
+- Pantau tidak pernah meminta, mengirimkan, maupun menyimpan kata sandi untuk `sudo` atau akun target.
+- Seluruh upaya eskalasi strictly menggunakan opsi `sudo -n` (*non-interactive*). Jika `sudo` membutuhkan input kata sandi atau pengguna tidak berhak di sudoers, eksekusi perintah seketika dibatalkan secara aman.
+
+#### Penanganan Kegagalan & Pintasan 1-Klik Buka sebagai Root
+- **Kegagalan Eskalasi (HTTP 403)**: Jika eskalasi tidak dapat dilakukan (sudo meminta kata sandi, pengguna tidak diizinkan, atau biner `sftp-server` tidak ditemukan), backend merespons dengan status `HTTP 403 Forbidden` disertai pesan teks penjelas. Pantau menampilkan pesan galat tersebut melalui notifikasi *toast* dan secara otomatis mengembalikan mode akses ke pengguna SSH default.
+- **Pintasan 1-Klik 'Open as root'**: Saat menelusuri direktori dengan akses default dan terjadi penolakan izin `permission denied` (`HTTP 400 Bad Request`), antarmuka File Manager menyediakan tombol aksi 1-klik **Open as root** untuk langsung mencoba membuka kembali direktori tersebut menggunakan hak akses root.
+
+#### Keamanan & Jejak Audit
+- **Hak Akses Baca/Tulis Penuh**: Mode terelevasi memberikan hak penuh akun target (termasuk root). Harap berhati-hati saat memodifikasi atau menghapus berkas sistem kritis.
+- **Lencana Visual Aktif**: Lencana visual (*badge*) warna ditampilkan secara jelas pada header File Manager saat mode terelevasi aktif, menunjukkan akun pengguna yang sedang digunakan.
+- **Pencatatan Jejak Audit di Activity Console**: Setiap aksi file terelevasi (list, read, write, upload, duplicate, download, delete, chmod) maupun penolakan eskalasi dicatat secara otomatis ke stream log Activity Console (`logger.Info` / `logger.Warn` dengan kategori `files`).
+- **Batasan Kepercayaan (*Trust Level*)**: Hak akses berkas terelevasi memiliki tingkat kepercayaan yang setara dengan administrator yang menjalankan perintah `sudo` pada sesi terminal interaktif di host yang memiliki hak sudo.
+
+#### Referensi REST API
+- Seluruh rute di bawah `/api/hosts/{id}/files/*` (`list`, `read`, `write`, `upload`, `size`, `duplicate`, `download`, `delete`, dan `chmod` — tidak termasuk `pins`) menerima parameter kueri opsional `as=<username>`.
+- Nama pengguna divalidasi dengan regex POSIX `^[A-Za-z_][A-Za-z0-9_.-]{0,31}$`. Nama pengguna yang tidak valid akan ditolak dengan `HTTP 400 Bad Request`.
+- Tautan unduhan menggunakan request GET native browser `<a href>`, dengan parameter `as` disertakan langsung pada URL dan diautentikasi melalui cookie sesi aktif.
 ---
 
 ## 6. Fase 5: Pengerasan Keamanan, Snapshot & Pemulihan Bencana

@@ -442,3 +442,7 @@ _Avoid_: Vulnerability item, CVE finding, security bug, alert ticket
 **Hardening Check**:
 Satu butir verifikasi pasif terhadap praktik terbaik keamanan konfigurasi sistem Host (seperti pembatasan login root SSH, autentikasi sandi SSH, keaktifan update keamanan otomatis, dan status firewall aktif) yang menghasilkan status kelulusan (*pass*, *warn*, *fail*, atau *unknown*).
 _Avoid_: Security compliance rule, CIS benchmark check, audit rule
+
+**Elevated File Access**:
+Akses manajemen berkas SFTP dengan eskalasi hak istimewa pengguna remote (seperti `root` atau akun pengguna lain) yang dijalankan melalui `sudo -n -u <user>` pada subsistem server SFTP remote tanpa transmisi atau penyimpanan kata sandi, memungkinkan penelusuran direktori, pembacaan, penulisan, pengunggahan, pengecekan ukuran, duplikasi, pengunduhan berkas dan arsip folder, penghapusan, serta chmod pada berkas yang dibatasi oleh izin akun SSH standar.
+_Avoid_: Sudo SFTP, root file manager, admin file browse, privileged explorer
