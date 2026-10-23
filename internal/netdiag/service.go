@@ -116,7 +116,15 @@ func (s *Service) ExecuteProbe(ctx context.Context, req ProbeRequest, eventSink 
 	}
 	defer runner.Close()
 
-	// 6. Build command and timeout budget
+	// 6a. Traceroute needs tracepath or traceroute on the remote host: install it first when missing.
+	if req.Type == ProbeTypeTraceroute {
+		if err := ensureTraceTool(ctx, runner, sourceHost.Name, eventSink); err != nil {
+			logger.Error("netdiag", sourceHost.Name, "Traceroute tool unavailable: "+err.Error())
+			return err
+		}
+	}
+
+	// 6b. Build command and timeout budget
 	var cmd string
 	var probeTimeout time.Duration
 
@@ -129,8 +137,8 @@ func (s *Service) ExecuteProbe(ctx context.Context, req ProbeRequest, eventSink 
 
 	case ProbeTypeTraceroute:
 		probeTimeout = 18 * time.Second
-		// ponytail: Prefer tracepath without raw root socket, fallback to traceroute if installed.
-		cmd = fmt.Sprintf("command -v tracepath >/dev/null 2>&1 && (timeout 15 tracepath -n -m 20 %s 2>&1) || (timeout 15 traceroute -n -m 20 -q 1 -w 1 %s 2>&1)", quotedTarget, quotedTarget)
+		// ponytail: Prefer tracepath (no raw sockets); use traceroute only when tracepath is absent.
+		cmd = traceProbeCommand(quotedTarget)
 
 	case ProbeTypePort:
 		probeTimeout = 8 * time.Second

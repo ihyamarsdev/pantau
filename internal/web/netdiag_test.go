@@ -199,6 +199,9 @@ func TestNetDiagExecutionFlowWithMockRunner(t *testing.T) {
 4 packets transmitted, 4 received, 0% packet loss, time 3004ms
 rtt min/avg/max/mdev = 12.100/12.400/12.800/0.250 ms`, "", 0, nil
 		}
+		if strings.Contains(cmd, "PANTAU_TRACE_TOOL_OK") {
+			return "PANTAU_TRACE_TOOL_OK\n", "", 0, nil
+		}
 		if strings.Contains(cmd, "tracepath") || strings.Contains(cmd, "traceroute") {
 			return ` 1:  192.168.1.1   1.234ms
  2:  103.10.10.1   5.678ms
