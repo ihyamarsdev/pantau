@@ -189,6 +189,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/hosts", s.authMiddleware(s.handleHosts))
 	s.mux.HandleFunc("/api/hosts/", s.authMiddleware(s.handleHostDetailRoute))
 
+	// SSH Keys
+	s.mux.HandleFunc("/api/ssh-keys", s.authMiddleware(s.handleSSHKeys))
+	s.mux.HandleFunc("/api/ssh-keys/", s.authMiddleware(s.handleSSHKeyDetail))
+
 	// Rules
 	s.mux.HandleFunc("/api/rules/", s.authMiddleware(s.handleRuleRoute))
 
@@ -690,13 +694,38 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 		if h.User == "" {
 			h.User = "root"
 		}
+		if h.KeyID < 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "invalid key_id"})
+			return
+		}
+		var libKey *store.SSHKey
+		if h.KeyID > 0 {
+			var err error
+			libKey, err = s.db.GetSSHKey(h.KeyID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if libKey == nil {
+				writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": fmt.Sprintf("ssh key %d not found", h.KeyID)})
+				return
+			}
+			h.CustomKey = ""
+		}
+
 
 		// If one-time password provided, attempt key provisioning
 		if strings.TrimSpace(req.Password) != "" {
-			pubKey, err := s.db.GetSetting("ssh_public_key")
-			if err != nil || pubKey == "" {
-				http.Error(w, "global ssh public key not found", http.StatusInternalServerError)
-				return
+			var pubKey string
+			if h.KeyID > 0 {
+				pubKey = libKey.PublicKey
+			} else {
+				var err error
+				pubKey, err = s.db.GetSetting("ssh_public_key")
+				if err != nil || pubKey == "" {
+					http.Error(w, "global ssh public key not found", http.StatusInternalServerError)
+					return
+				}
 			}
 			if err := s.provisioner(h.Host, h.Port, h.User, req.Password, pubKey); err != nil {
 				logger.Error("ssh", h.Name, fmt.Sprintf("SSH key provisioning failed: %v", err))
@@ -744,6 +773,16 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
+	}
+
+	if parts[0] == "import" {
+		s.handleHostImport(w, r, parts[1:])
+		return
+	}
+
+	if parts[0] == "groups" {
+		s.handleHostGroups(w, r)
 		return
 	}
 
@@ -890,6 +929,22 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 			if err := s.validateCommissionDate(h.CommissionDate, existing); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
+			}
+			if h.KeyID < 0 {
+				writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "invalid key_id"})
+				return
+			}
+			if h.KeyID > 0 {
+				libKey, err := s.db.GetSSHKey(h.KeyID)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				if libKey == nil {
+					writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": fmt.Sprintf("ssh key %d not found", h.KeyID)})
+					return
+				}
+				h.CustomKey = ""
 			}
 
 			if err := s.db.UpdateHost(&h); err != nil {
@@ -1074,10 +1129,25 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		pubKey, err := s.db.GetSetting("ssh_public_key")
-		if err != nil || pubKey == "" {
-			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "global public key missing"})
-			return
+		var pubKey string
+		if host.KeyID > 0 {
+			libKey, err := s.db.GetSSHKey(host.KeyID)
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": err.Error()})
+				return
+			}
+			if libKey == nil {
+				writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": fmt.Sprintf("ssh key %d not found", host.KeyID)})
+				return
+			}
+			pubKey = libKey.PublicKey
+		} else {
+			var err error
+			pubKey, err = s.db.GetSetting("ssh_public_key")
+			if err != nil || pubKey == "" {
+				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "global public key missing"})
+				return
+			}
 		}
 
 		if err := s.provisioner(host.Host, host.Port, host.User, req.Password, pubKey); err != nil {
@@ -1212,6 +1282,16 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 		}
 
 	case "docker":
+		// GET /api/hosts/{id}/docker -> live container list
+		if len(parts) == 2 && r.Method == http.MethodGet {
+			containers, err := s.inspector.ListDockerContainers(hostID)
+			if err != nil {
+				writeJSON(w, http.StatusOK, map[string]interface{}{"ok": false, "error": err.Error()})
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "containers": containers})
+			return
+		}
 		// /api/hosts/{id}/docker/action
 		if len(parts) >= 3 && parts[2] == "action" && r.Method == http.MethodPost {
 			var act struct {
@@ -2200,7 +2280,8 @@ func (s *Server) handleWSDockerLogs(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if n > 0 {
-				_ = ws.WriteMessage(websocket.TextMessage, buf[:n])
+				// Binary frames: raw 1KB chunks can split multi-byte UTF-8 runes, which browsers reject in text frames.
+				_ = ws.WriteMessage(websocket.BinaryMessage, buf[:n])
 			}
 		}
 	}()

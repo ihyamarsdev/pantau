@@ -69,9 +69,16 @@ Saluran pengiriman peringatan saat terdeteksi Drift (seperti Telegram bot, webho
 _Avoid_: Alert sink, message publisher
 
 **Key Provisioning**:
-Proses penyisipan otomatis SSH Public Key Pantau ke dalam `~/.ssh/authorized_keys` di Host target menggunakan autentikasi password sementara (one-time).
+Proses penyisipan otomatis SSH Public Key Pantau (menggunakan kunci publik dari Library Key yang dipilih, atau Global SSH Key default jika tidak ditentukan) ke dalam `~/.ssh/authorized_keys` di Host target menggunakan autentikasi password sementara (one-time).
 _Avoid_: Password sync, credential push
 
+**SSH Key Library**:
+Katalog penyimpanan kunci privat SSH terpusat di Pantau yang memungkinkan pendaftaran dan pengelolaan kunci sekali untuk digunakan berulang kali oleh banyak Host melalui pilihan dropdown.
+_Avoid_: Key manager, credential vault, ssh keychain
+
+**Library Key**:
+Satu entri kunci privat SSH terdaftar di dalam SSH Key Library yang memiliki pengenal unik (*ID*), nama alias (*Name*), sidik jari SHA-256 (*Fingerprint*), serta kunci publik terderivasi (*Public Key*).
+_Avoid_: Shared key, preset key, stored credential
 **Cross-Host Transfer**:
 Proses pemindahan file atau folder langsung dari Host sumber ke Host tujuan melalui stream pipa relay Pantau tanpa penyimpanan file sementara pada disk master.
 _Avoid_: File sync, remote copy, direct scp

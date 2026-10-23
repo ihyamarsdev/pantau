@@ -63,13 +63,9 @@ func NewManager(db *store.DB, factory sshrunner.RunnerFactory) *Manager {
 }
 
 func (m *Manager) getRunnerForHost(h *store.Host) (sshrunner.Runner, error) {
-	key := h.CustomKey
-	if strings.TrimSpace(key) == "" {
-		globalKey, err := m.db.GetSetting("ssh_private_key")
-		if err != nil {
-			return nil, fmt.Errorf("get global ssh key: %w", err)
-		}
-		key = globalKey
+	key, err := m.db.ResolveHostPrivateKey(h)
+	if err != nil {
+		return nil, err
 	}
 	return m.factory(h.Host, h.Port, h.User, key)
 }

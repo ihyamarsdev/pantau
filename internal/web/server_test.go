@@ -3,7 +3,11 @@ package web
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,7 +19,6 @@ import (
 	"testing"
 	"testing/fstest"
 	"time"
-
 	"pantau/internal/inspector"
 	"pantau/internal/sshrunner"
 	"pantau/internal/store"
@@ -663,9 +666,9 @@ func TestIndexGzipAndETagRevalidation(t *testing.T) {
 	if wGz.Header().Get("ETag") != etag {
 		t.Errorf("expected matching ETag %s, got %s", etag, wGz.Header().Get("ETag"))
 	}
-	// Verify compression ratio: ~115KB vs ~570KB (<130KB)
-	if wGz.Body.Len() > 130000 {
-		t.Errorf("expected gzipped body < 130KB, got %d bytes", wGz.Body.Len())
+	// Verify compression is effective: ~131KB gzipped vs ~600KB raw (<140KB budget)
+	if wGz.Body.Len() > 140000 {
+		t.Errorf("expected gzipped body < 140KB, got %d bytes", wGz.Body.Len())
 	}
 
 	// Decompress and compare with raw
@@ -834,7 +837,8 @@ func TestSettingsModalLayout(t *testing.T) {
 		`id="tabSettingsUpdates"`,
 		`id="settingsPanelGeneral"`,
 		`id="settingsPanelSecurity"`,
-		`repeat(6, 1fr)`,
+		`id="tabSettingsKeys"`,
+		`id="settingsPanelKeys"`,
 	}
 	for _, snippet := range requiredSnippets {
 		if !strings.Contains(body, snippet) {
@@ -1825,6 +1829,345 @@ func TestFilePinsAPI(t *testing.T) {
 	_ = json.NewDecoder(w.Body).Decode(&pins)
 	if len(pins) != 0 {
 		t.Fatalf("expected 0 pins after delete, got %d", len(pins))
+	}
+}
+func TestSSHKeysAPI(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "pantau-web-sshkeys-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	srv := NewServer(db, nil, nil)
+	token := "valid_test_token"
+	srv.sessions.Store(token, time.Now().Add(time.Hour))
+	authReq := func(req *http.Request) {
+		req.AddCookie(&http.Cookie{Name: "pantau_session", Value: token})
+	}
+
+	// 1. GET /api/ssh-keys returns 200 and []
+	req := httptest.NewRequest(http.MethodGet, "/api/ssh-keys", nil)
+	authReq(req)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if strings.TrimSpace(w.Body.String()) != "[]" {
+		t.Fatalf("expected [], got %s", w.Body.String())
+	}
+
+	// 2. POST /api/ssh-keys with empty name -> 400
+	body, _ := json.Marshal(map[string]string{"name": "", "private_key": "dummy"})
+	req = httptest.NewRequest(http.MethodPost, "/api/ssh-keys", bytes.NewReader(body))
+	authReq(req)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for empty name, got %d", w.Code)
+	}
+
+	// 3. POST /api/ssh-keys with invalid key -> 400
+	body, _ = json.Marshal(map[string]string{"name": "Bad Key", "private_key": "not-a-pem"})
+	req = httptest.NewRequest(http.MethodPost, "/api/ssh-keys", bytes.NewReader(body))
+	authReq(req)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid key, got %d", w.Code)
+	}
+
+	// 4. POST /api/ssh-keys with passphrase-protected key -> 400
+	privKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privDER := x509.MarshalPKCS1PrivateKey(privKey)
+	encBlock, err := x509.EncryptPEMBlock(rand.Reader, "RSA PRIVATE KEY", privDER, []byte("testpass"), x509.PEMCipherAES256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encPEM := string(pem.EncodeToMemory(encBlock))
+
+	body, _ = json.Marshal(map[string]string{"name": "Encrypted Key", "private_key": encPEM})
+	req = httptest.NewRequest(http.MethodPost, "/api/ssh-keys", bytes.NewReader(body))
+	authReq(req)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for passphrase-protected key, got %d", w.Code)
+	}
+	if !strings.Contains(strings.ToLower(w.Body.String()), "passphrase") && !strings.Contains(strings.ToLower(w.Body.String()), "not supported") {
+		t.Errorf("expected passphrase rejection message, got: %s", w.Body.String())
+	}
+
+	// 5. POST /api/ssh-keys with valid key -> 201 + SSHKey (NEVER leaks private key)
+	validPrivPEM, _, err := store.GenerateRSAKeyPair(2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ = json.Marshal(map[string]string{"name": "Production Key", "private_key": validPrivPEM})
+	req = httptest.NewRequest(http.MethodPost, "/api/ssh-keys", bytes.NewReader(body))
+	authReq(req)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	rawResp := w.Body.String()
+	if strings.Contains(rawResp, "private_key") || strings.Contains(rawResp, validPrivPEM) {
+		t.Fatalf("SECURITY VIOLATION: response leaked private key! %s", rawResp)
+	}
+
+	var createdKey store.SSHKey
+	if err := json.NewDecoder(w.Body).Decode(&createdKey); err != nil {
+		t.Fatalf("decode created key: %v", err)
+	}
+	if createdKey.ID <= 0 || createdKey.Name != "Production Key" {
+		t.Fatalf("unexpected created key: %+v", createdKey)
+	}
+	if !strings.HasPrefix(createdKey.Fingerprint, "SHA256:") {
+		t.Errorf("expected SHA256: fingerprint, got %s", createdKey.Fingerprint)
+	}
+
+	// 6. POST /api/ssh-keys with duplicate name -> 409
+	body, _ = json.Marshal(map[string]string{"name": "Production Key", "private_key": validPrivPEM})
+	req = httptest.NewRequest(http.MethodPost, "/api/ssh-keys", bytes.NewReader(body))
+	authReq(req)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409 for duplicate name, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// 7. GET /api/ssh-keys list verification -> never leaks private key
+	req = httptest.NewRequest(http.MethodGet, "/api/ssh-keys", nil)
+	authReq(req)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if strings.Contains(w.Body.String(), "private_key") || strings.Contains(w.Body.String(), validPrivPEM) {
+		t.Fatalf("SECURITY VIOLATION: list response leaked private key! %s", w.Body.String())
+	}
+
+	// 8. POST /api/hosts with dangling key_id -> 400
+	hostBody, _ := json.Marshal(map[string]interface{}{
+		"name":    "Bad Host",
+		"host":    "10.0.0.1",
+		"port":    22,
+		"user":    "root",
+		"key_id":  99999,
+	})
+	req = httptest.NewRequest(http.MethodPost, "/api/hosts", bytes.NewReader(hostBody))
+	authReq(req)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for nonexistent key_id, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// 9. POST /api/hosts with valid key_id and custom_key provided -> custom_key cleared
+	hostBody, _ = json.Marshal(map[string]interface{}{
+		"name":       "Alpha Server",
+		"host":       "10.0.0.2",
+		"port":       22,
+		"user":       "root",
+		"key_id":     createdKey.ID,
+		"custom_key": "some-ignored-key",
+	})
+	req = httptest.NewRequest(http.MethodPost, "/api/hosts", bytes.NewReader(hostBody))
+	authReq(req)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201 creating host, got %d: %s", w.Code, w.Body.String())
+	}
+	var createdHost store.Host
+	if err := json.NewDecoder(w.Body).Decode(&createdHost); err != nil {
+		t.Fatalf("decode created host: %v", err)
+	}
+	if createdHost.KeyID != createdKey.ID {
+		t.Errorf("expected host key_id %d, got %d", createdKey.ID, createdHost.KeyID)
+	}
+	if createdHost.CustomKey != "" {
+		t.Errorf("expected empty custom_key when key_id is used, got %q", createdHost.CustomKey)
+	}
+
+	// 10. DELETE /api/ssh-keys/{id} while in use -> 409
+	req = httptest.NewRequest(http.MethodDelete, "/api/ssh-keys/"+strconv.FormatInt(createdKey.ID, 10), nil)
+	authReq(req)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409 deleting in-use key, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// 11. PUT /api/hosts/{id} to update key_id to 0
+	updateBody, _ := json.Marshal(map[string]interface{}{
+		"name":    "Alpha Server",
+		"host":    "10.0.0.2",
+		"port":    22,
+		"user":    "root",
+		"key_id":  0,
+	})
+	req = httptest.NewRequest(http.MethodPut, "/api/hosts/"+strconv.FormatInt(createdHost.ID, 10), bytes.NewReader(updateBody))
+	authReq(req)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 updating host, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// 12. DELETE /api/ssh-keys/{id} after detach -> 200
+	req = httptest.NewRequest(http.MethodDelete, "/api/ssh-keys/"+strconv.FormatInt(createdKey.ID, 10), nil)
+	authReq(req)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 deleting unused key, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// 13. DELETE nonexistent key -> 404
+	req = httptest.NewRequest(http.MethodDelete, "/api/ssh-keys/99999", nil)
+	authReq(req)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 deleting missing key, got %d", w.Code)
+	}
+}
+
+func TestSSHKeyProvisioningWithLibraryKey(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "pantau-web-prov-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	// Global key in settings
+	globalPub := "ssh-rsa GLOBAL_PUBLIC_KEY_AUTHORIZED"
+	_ = db.SetSetting("ssh_public_key", globalPub)
+
+	// Create library key
+	libPriv, _, err := store.GenerateRSAKeyPair(2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	libPub, libFP, err := store.ParseSSHPrivateKey([]byte(libPriv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	libKeyID, err := db.CreateSSHKey(&store.SSHKey{
+		Name:        "Deployment Key",
+		PrivateKey:  libPriv,
+		PublicKey:   libPub,
+		Fingerprint: libFP,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var usedKey string
+	mockRunner := sshrunner.NewMockRunner()
+	mockRunner.DefaultExec = func(cmd string) (string, string, int, error) {
+		return "Linux 6.0 x86_64", "", 0, nil
+	}
+	factory := func(host string, port int, user, key string) (sshrunner.Runner, error) {
+		usedKey = key
+		return mockRunner, nil
+	}
+	srv := NewServer(db, inspector.New(db, factory, nil), nil)
+	token := "prov_test_token"
+	srv.sessions.Store(token, time.Now().Add(time.Hour))
+	authReq := func(req *http.Request) {
+		req.AddCookie(&http.Cookie{Name: "pantau_session", Value: token})
+	}
+
+	var injectedPubKey string
+	srv.SetKeyProvisioner(func(host string, port int, user, password, pubKey string) error {
+		injectedPubKey = pubKey
+		return nil
+	})
+
+	// 1. Host create with password and key_id > 0: MUST inject the library key's public key
+	host1Body, _ := json.Marshal(map[string]interface{}{
+		"name":     "Host With LibKey",
+		"host":     "10.0.0.10",
+		"port":     22,
+		"user":     "root",
+		"key_id":   libKeyID,
+		"password": "rootpassword123",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/hosts", bytes.NewReader(host1Body))
+	authReq(req)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201 creating host 1, got %d: %s", w.Code, w.Body.String())
+	}
+	if injectedPubKey != libPub {
+		t.Errorf("expected injected key to match library key public key %q, got %q", libPub, injectedPubKey)
+	}
+
+	// 2. Host create with password and key_id == 0: MUST inject the global public key
+	injectedPubKey = ""
+	host2Body, _ := json.Marshal(map[string]interface{}{
+		"name":     "Host With GlobalKey",
+		"host":     "10.0.0.20",
+		"port":     22,
+		"user":     "root",
+		"key_id":   0,
+		"password": "rootpassword123",
+	})
+	req = httptest.NewRequest(http.MethodPost, "/api/hosts", bytes.NewReader(host2Body))
+	authReq(req)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201 creating host 2, got %d: %s", w.Code, w.Body.String())
+	}
+	if injectedPubKey != globalPub {
+		t.Errorf("expected injected key to match global public key %q, got %q", globalPub, injectedPubKey)
+	}
+
+	var host1 store.Host
+	_ = json.NewDecoder(w.Body).Decode(&host1) // Note: this was host2, let's query host1 ID
+	hosts, _ := db.ListHosts()
+	var h1ID int64
+	for _, h := range hosts {
+		if h.Name == "Host With LibKey" {
+			h1ID = h.ID
+		}
+	}
+
+	// 3. inject-key route on Host 1 (key_id > 0) -> MUST inject library key public key
+	injectedPubKey = ""
+	injectBody, _ := json.Marshal(map[string]string{"password": "secretpassword"})
+	req = httptest.NewRequest(http.MethodPost, "/api/hosts/"+strconv.FormatInt(h1ID, 10)+"/inject-key", bytes.NewReader(injectBody))
+	authReq(req)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	// Even if inspector runner verify fails or succeeds, provisioner is called first!
+	if injectedPubKey != libPub {
+		t.Errorf("expected inject-key to use library public key %q, got %q", libPub, injectedPubKey)
+	}
+	if usedKey != libPriv {
+		t.Errorf("expected verification connection to use library private key")
 	}
 }
 

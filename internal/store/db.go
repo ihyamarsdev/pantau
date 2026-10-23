@@ -21,6 +21,21 @@ import (
 type DB struct {
 	*sql.DB
 }
+type SSHKey struct {
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	PublicKey   string    `json:"public_key"`   // authorized_keys line derived from private key
+	Fingerprint string    `json:"fingerprint"`  // "SHA256:..."
+	CreatedAt   time.Time `json:"created_at"`
+	UsedBy      int       `json:"used_by"`      // number of hosts with key_id = this id (computed on list)
+	PrivateKey  string    `json:"-"`            // NEVER serialized to any API
+}
+
+var (
+	ErrSSHKeyNotFound = errors.New("ssh key not found")
+	ErrSSHKeyInUse    = errors.New("ssh key is in use")
+	ErrHostNotFound   = errors.New("host not found")
+)
 
 type Host struct {
 	ID             int64     `json:"id"`
@@ -29,6 +44,7 @@ type Host struct {
 	Port           int       `json:"port"`
 	User           string    `json:"user"`
 	CustomKey      string    `json:"custom_key,omitempty"`
+	KeyID          int64     `json:"key_id"`
 	Status         string    `json:"status"` // healthy, degraded, down, unknown
 	OSInfo         string    `json:"os_info"`
 	Kernel         string    `json:"kernel"`
@@ -238,6 +254,7 @@ func (d *DB) migrate() error {
 		port INTEGER NOT NULL DEFAULT 22,
 		user TEXT NOT NULL DEFAULT 'root',
 		custom_key TEXT,
+		key_id INTEGER DEFAULT 0,
 		status TEXT DEFAULT 'unknown',
 		os_info TEXT DEFAULT '',
 		kernel TEXT DEFAULT '',
@@ -372,6 +389,15 @@ func (d *DB) migrate() error {
 		UNIQUE(host_id, path)
 	);
 	CREATE INDEX IF NOT EXISTS idx_host_file_pins_host ON host_file_pins(host_id);
+
+	CREATE TABLE IF NOT EXISTS ssh_keys (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL UNIQUE,
+		private_key TEXT NOT NULL,
+		public_key TEXT NOT NULL,
+		fingerprint TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
 	`
 	_, err := d.Exec(schema)
 	if err != nil {
@@ -409,6 +435,7 @@ func (d *DB) migrate() error {
 	_ = d.alterAddColumn("hosts", "top_cpu_processes", "TEXT DEFAULT ''")
 	_ = d.alterAddColumn("hosts", "top_ram_processes", "TEXT DEFAULT ''")
 	_ = d.alterAddColumn("hosts", "top_swap_processes", "TEXT DEFAULT ''")
+	_ = d.alterAddColumn("hosts", "key_id", "INTEGER DEFAULT 0")
 
 	return nil
 }
@@ -569,7 +596,7 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-const hostSelectCols = `SELECT id, name, host, port, user, COALESCE(custom_key,''), status, os_info, kernel, uptime, cpu_load, ram_used_bytes, ram_total_bytes, disk_used_bytes, disk_total_bytes, lifecycle_score, lifecycle_notes, COALESCE(lifecycle_breakdown, '[]'), last_inspected, created_at,
+const hostSelectCols = `SELECT id, name, host, port, user, COALESCE(custom_key,''), COALESCE(key_id, 0), status, os_info, kernel, uptime, cpu_load, ram_used_bytes, ram_total_bytes, disk_used_bytes, disk_total_bytes, lifecycle_score, lifecycle_notes, COALESCE(lifecycle_breakdown, '[]'), last_inspected, created_at,
 	COALESCE(net_rx_bytes, 0), COALESCE(net_tx_bytes, 0), COALESCE(net_rx_speed_bps, 0), COALESCE(net_tx_speed_bps, 0),
 	COALESCE(disk_read_bytes, 0), COALESCE(disk_write_bytes, 0), COALESCE(disk_read_speed_bps, 0), COALESCE(disk_write_speed_bps, 0),
 	COALESCE(internet_online, 0), COALESCE(internet_latency_ms, 0), COALESCE(public_ip, ''), COALESCE(active_conn_count, 0),
@@ -584,7 +611,7 @@ func scanHost(s rowScanner) (*Host, error) {
 	var h Host
 	var inspected sql.NullTime
 	var online int
-	err := s.Scan(&h.ID, &h.Name, &h.Host, &h.Port, &h.User, &h.CustomKey, &h.Status, &h.OSInfo, &h.Kernel, &h.Uptime, &h.CPULoad, &h.RAMUsedBytes, &h.RAMTotalBytes, &h.DiskUsedBytes, &h.DiskTotalBytes, &h.LifecycleScore, &h.LifecycleNotes, &h.LifecycleBreakdown, &inspected, &h.CreatedAt,
+	err := s.Scan(&h.ID, &h.Name, &h.Host, &h.Port, &h.User, &h.CustomKey, &h.KeyID, &h.Status, &h.OSInfo, &h.Kernel, &h.Uptime, &h.CPULoad, &h.RAMUsedBytes, &h.RAMTotalBytes, &h.DiskUsedBytes, &h.DiskTotalBytes, &h.LifecycleScore, &h.LifecycleNotes, &h.LifecycleBreakdown, &inspected, &h.CreatedAt,
 		&h.NetRxBytes, &h.NetTxBytes, &h.NetRxSpeedBps, &h.NetTxSpeedBps,
 		&h.DiskReadBytes, &h.DiskWriteBytes, &h.DiskReadSpeedBps, &h.DiskWriteSpeedBps,
 		&online, &h.InternetLatencyMs, &h.PublicIP, &h.ActiveConnCount,
@@ -634,9 +661,12 @@ func (d *DB) GetHost(id int64) (*Host, error) {
 }
 
 func (d *DB) CreateHost(h *Host) (int64, error) {
+	if h.KeyID > 0 {
+		h.CustomKey = ""
+	}
 	var maxOrder int
 	_ = d.QueryRow(`SELECT COALESCE(MAX(sort_order), 0) FROM hosts`).Scan(&maxOrder)
-	res, err := d.Exec(`INSERT INTO hosts (name, host, port, user, custom_key, status, notes, sort_order, group_name, commission_date, bios_date) VALUES (?, ?, ?, ?, ?, 'unknown', ?, ?, ?, ?, ?)`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.Notes, maxOrder+1, h.GroupName, h.CommissionDate, h.BIOSDate)
+	res, err := d.Exec(`INSERT INTO hosts (name, host, port, user, custom_key, key_id, status, notes, sort_order, group_name, commission_date, bios_date) VALUES (?, ?, ?, ?, ?, ?, 'unknown', ?, ?, ?, ?, ?)`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, maxOrder+1, h.GroupName, h.CommissionDate, h.BIOSDate)
 	if err != nil {
 		return 0, err
 	}
@@ -644,7 +674,10 @@ func (d *DB) CreateHost(h *Host) (int64, error) {
 }
 
 func (d *DB) UpdateHost(h *Host) error {
-	_, err := d.Exec(`UPDATE hosts SET name=?, host=?, port=?, user=?, custom_key=?, notes=?, group_name=?, commission_date=? WHERE id=?`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.Notes, h.GroupName, h.CommissionDate, h.ID)
+	if h.KeyID > 0 {
+		h.CustomKey = ""
+	}
+	_, err := d.Exec(`UPDATE hosts SET name=?, host=?, port=?, user=?, custom_key=?, key_id=?, notes=?, group_name=?, commission_date=? WHERE id=?`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, h.GroupName, h.CommissionDate, h.ID)
 	return err
 }
 func (d *DB) UpdateHostNotes(id int64, notes string) error {
@@ -673,6 +706,39 @@ func (d *DB) ReorderHosts(orderedIDs []int64) error {
 	for i, id := range orderedIDs {
 		if _, err := stmt.Exec(i+1, id); err != nil {
 			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// HostGroupAssignment sets the group of one host. An empty GroupName clears it.
+type HostGroupAssignment struct {
+	ID        int64  `json:"id"`
+	GroupName string `json:"group_name"`
+}
+
+// UpdateHostGroups applies all assignments atomically: if any host id does not
+// exist nothing is changed.
+func (d *DB) UpdateHostGroups(assignments []HostGroupAssignment) error {
+	tx, err := d.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(`UPDATE hosts SET group_name=? WHERE id=?`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, a := range assignments {
+		res, err := stmt.Exec(strings.TrimSpace(a.GroupName), a.ID)
+		if err != nil {
+			return err
+		}
+		if n, err := res.RowsAffected(); err == nil && n == 0 {
+			return fmt.Errorf("host %d: %w", a.ID, ErrHostNotFound)
 		}
 	}
 	return tx.Commit()
@@ -1057,6 +1123,16 @@ func (d *DB) DeleteTerminalPreset(id int64) error {
 	return err
 }
 
+// SnapshotSSHKey stores an SSH library key within a snapshot payload.
+type SnapshotSSHKey struct {
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	PrivateKey  string    `json:"private_key"`
+	PublicKey   string    `json:"public_key"`
+	Fingerprint string    `json:"fingerprint"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
 // SnapshotPayload holds the sanitized system configuration for backup and restore.
 type SnapshotPayload struct {
 	Version         int               `json:"version"`
@@ -1065,6 +1141,7 @@ type SnapshotPayload struct {
 	Hosts           []Host            `json:"hosts"`
 	DesiredRules    []DesiredRule     `json:"desired_rules"`
 	TerminalPresets []TerminalPreset  `json:"terminal_presets,omitempty"`
+	SSHKeys         []SnapshotSSHKey  `json:"ssh_keys,omitempty"`
 }
 
 func (d *DB) IsFresh() (bool, error) {
@@ -1147,6 +1224,18 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 		}
 	}
 
+	var allSSHKeys []SnapshotSSHKey
+	kRows, err := d.Query("SELECT id, name, private_key, public_key, fingerprint, created_at FROM ssh_keys ORDER BY id ASC")
+	if err == nil {
+		defer kRows.Close()
+		for kRows.Next() {
+			var k SnapshotSSHKey
+			if err := kRows.Scan(&k.ID, &k.Name, &k.PrivateKey, &k.PublicKey, &k.Fingerprint, &k.CreatedAt); err == nil {
+				allSSHKeys = append(allSSHKeys, k)
+			}
+		}
+	}
+
 	return &SnapshotPayload{
 		Version:         1,
 		CreatedAt:       time.Now().UTC(),
@@ -1154,6 +1243,7 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 		Hosts:           hosts,
 		DesiredRules:    allRules,
 		TerminalPresets: allPresets,
+		SSHKeys:         allSSHKeys,
 	}, nil
 }
 
@@ -1167,10 +1257,18 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 	}
 	defer tx.Rollback()
 
-	tables := []string{"alerts", "incidents", "actual_items", "desired_rules", "hosts", "terminal_presets"}
+	tables := []string{"alerts", "incidents", "actual_items", "desired_rules", "hosts", "terminal_presets", "ssh_keys"}
 	for _, t := range tables {
 		if _, err := tx.Exec("DELETE FROM " + t); err != nil {
 			return fmt.Errorf("clear %s: %w", t, err)
+		}
+	}
+
+	for _, k := range payload.SSHKeys {
+		_, err := tx.Exec(`INSERT INTO ssh_keys (id, name, private_key, public_key, fingerprint, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+			k.ID, k.Name, k.PrivateKey, k.PublicKey, k.Fingerprint, k.CreatedAt)
+		if err != nil {
+			return fmt.Errorf("insert ssh key %d: %w", k.ID, err)
 		}
 	}
 
@@ -1180,15 +1278,15 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 			onlineInt = 1
 		}
 		_, err := tx.Exec(`INSERT INTO hosts (
-			id, name, host, port, user, custom_key, status, os_info, kernel, uptime, cpu_load,
+			id, name, host, port, user, custom_key, key_id, status, os_info, kernel, uptime, cpu_load,
 			ram_used_bytes, ram_total_bytes, disk_used_bytes, disk_total_bytes, lifecycle_score, lifecycle_notes, lifecycle_breakdown,
 			created_at, net_rx_bytes, net_tx_bytes, net_rx_speed_bps, net_tx_speed_bps,
 			disk_read_bytes, disk_write_bytes, disk_read_speed_bps, disk_write_speed_bps,
 			internet_online, internet_latency_ms, public_ip, active_conn_count, failed_logins_count,
 			top_connections, listening_ports, notes, sort_order, group_name,
 			commission_date, bios_date, os_install_epoch
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			h.ID, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.Status, h.OSInfo, h.Kernel, h.Uptime, h.CPULoad,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			h.ID, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Status, h.OSInfo, h.Kernel, h.Uptime, h.CPULoad,
 			h.RAMUsedBytes, h.RAMTotalBytes, h.DiskUsedBytes, h.DiskTotalBytes, h.LifecycleScore, h.LifecycleNotes, h.LifecycleBreakdown,
 			h.CreatedAt, h.NetRxBytes, h.NetTxBytes, h.NetRxSpeedBps, h.NetTxSpeedBps,
 			h.DiskReadBytes, h.DiskWriteBytes, h.DiskReadSpeedBps, h.DiskWriteSpeedBps,
@@ -1313,3 +1411,146 @@ func (d *DB) DeleteFilePin(hostID int64, path string) error {
 	_, err := d.Exec(`DELETE FROM host_file_pins WHERE host_id = ? AND path = ?`, hostID, path)
 	return err
 }
+
+// ParseSSHPrivateKey validates a private key PEM, rejecting passphrase-protected keys,
+// and extracts the authorized_keys public key string and SHA256 fingerprint.
+func ParseSSHPrivateKey(pemBytes []byte) (pubKeyStr string, fingerprint string, err error) {
+	var signers []ssh.Signer
+	rest := pemBytes
+	var passphraseErr error
+
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		signer, err := ssh.ParsePrivateKey(pem.EncodeToMemory(block))
+		if err != nil {
+			var pme *ssh.PassphraseMissingError
+			if errors.As(err, &pme) || strings.Contains(strings.ToLower(err.Error()), "passphrase") || strings.Contains(strings.ToLower(err.Error()), "encrypted") {
+				passphraseErr = err
+			}
+			continue
+		}
+		signers = append(signers, signer)
+	}
+
+	if len(signers) == 0 {
+		if passphraseErr != nil {
+			return "", "", fmt.Errorf("passphrase-protected keys are not supported: %w", passphraseErr)
+		}
+		s, err := ssh.ParsePrivateKey(pemBytes)
+		if err != nil {
+			var pme *ssh.PassphraseMissingError
+			if errors.As(err, &pme) || strings.Contains(strings.ToLower(err.Error()), "passphrase") || strings.Contains(strings.ToLower(err.Error()), "encrypted") {
+				return "", "", fmt.Errorf("passphrase-protected keys are not supported: %w", err)
+			}
+			return "", "", fmt.Errorf("invalid private key: %w", err)
+		}
+		signers = append(signers, s)
+	}
+
+	pubKey := signers[0].PublicKey()
+	pubKeyBytes := ssh.MarshalAuthorizedKey(pubKey)
+	pubKeyStr = strings.TrimSpace(string(pubKeyBytes))
+	fingerprint = ssh.FingerprintSHA256(pubKey)
+	return pubKeyStr, fingerprint, nil
+}
+
+// SSH Key Library DB Operations
+
+func (d *DB) CreateSSHKey(k *SSHKey) (int64, error) {
+	res, err := d.Exec(`INSERT INTO ssh_keys (name, private_key, public_key, fingerprint) VALUES (?, ?, ?, ?)`,
+		k.Name, k.PrivateKey, k.PublicKey, k.Fingerprint)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (d *DB) ListSSHKeys() ([]SSHKey, error) {
+	rows, err := d.Query(`SELECT k.id, k.name, k.public_key, k.fingerprint, k.created_at, COUNT(h.id) AS used_by
+		FROM ssh_keys k
+		LEFT JOIN hosts h ON h.key_id = k.id
+		GROUP BY k.id
+		ORDER BY k.id ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	list := make([]SSHKey, 0)
+	for rows.Next() {
+		var k SSHKey
+		if err := rows.Scan(&k.ID, &k.Name, &k.PublicKey, &k.Fingerprint, &k.CreatedAt, &k.UsedBy); err != nil {
+			return nil, err
+		}
+		list = append(list, k)
+	}
+	return list, rows.Err()
+}
+
+func (d *DB) GetSSHKey(id int64) (*SSHKey, error) {
+	var k SSHKey
+	err := d.QueryRow(`SELECT k.id, k.name, k.private_key, k.public_key, k.fingerprint, k.created_at, COUNT(h.id) AS used_by
+		FROM ssh_keys k
+		LEFT JOIN hosts h ON h.key_id = k.id
+		WHERE k.id = ?
+		GROUP BY k.id`, id).Scan(&k.ID, &k.Name, &k.PrivateKey, &k.PublicKey, &k.Fingerprint, &k.CreatedAt, &k.UsedBy)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &k, nil
+}
+
+func (d *DB) DeleteSSHKey(id int64) error {
+	var usedBy int
+	err := d.QueryRow(`SELECT COUNT(*) FROM hosts WHERE key_id = ?`, id).Scan(&usedBy)
+	if err != nil {
+		return err
+	}
+	if usedBy > 0 {
+		return fmt.Errorf("%w by %d host(s); reassign them first", ErrSSHKeyInUse, usedBy)
+	}
+	res, err := d.Exec(`DELETE FROM ssh_keys WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrSSHKeyNotFound
+	}
+	return nil
+}
+
+func (d *DB) ResolveHostPrivateKey(h *Host) (string, error) {
+	if h == nil {
+		return "", errors.New("host is nil")
+	}
+	if h.KeyID > 0 {
+		key, err := d.GetSSHKey(h.KeyID)
+		if err != nil {
+			return "", fmt.Errorf("lookup ssh key %d: %w", h.KeyID, err)
+		}
+		if key == nil {
+			return "", fmt.Errorf("ssh key %d not found", h.KeyID)
+		}
+		return key.PrivateKey, nil
+	}
+	if strings.TrimSpace(h.CustomKey) != "" {
+		return h.CustomKey, nil
+	}
+	globalKey, err := d.GetSetting("ssh_private_key")
+	if err != nil {
+		return "", fmt.Errorf("get global ssh key: %w", err)
+	}
+	return globalKey, nil
+}
+

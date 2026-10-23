@@ -48,7 +48,7 @@ Pantau mengeksekusi perintah jarak jauh dan membaca telemetri server melalui kon
 
 - **Control Plane**: Berupa binary tunggal Go yang berjalan di server manajemen atau mesin bastion administrator, didukung basis data tersemat SQLite (`pantau.db`) dengan mode WAL (Write-Ahead Logging).
 - **Remote Host**: Setiap mesin fisik atau virtual (VPS) Linux (Ubuntu, Debian, RHEL, CentOS 6–9) yang dapat dijangkau melalui jaringan SSH.
-- **Batas Kepercayaan**: Pantau membuat pasangan kunci privat/publik RSA 4096-bit saat pertama kali dijalankan. Host target memberikan izin akses dengan menempatkan kunci publik Pantau ke dalam berkas `~/.ssh/authorized_keys` milik pengguna manajemen (`root` atau pengguna khusus dengan privilese `sudo` tanpa kata sandi).
+- **Batas Kepercayaan**: Pantau membuat pasangan kunci privat/publik RSA 4096-bit saat pertama kali dijalankan sebagai kunci global bawaan, dan juga mendukung kunci khusus yang didaftarkan melalui **SSH Key Library** atau kunci kustom per-host. Host target memberikan izin akses dengan menempatkan kunci publik yang sesuai ke dalam berkas `~/.ssh/authorized_keys` milik pengguna manajemen (`root` atau pengguna khusus dengan privilese `sudo` tanpa kata sandi).
 
 ```
 +-------------------+             SSH Port 22 (Agentless)             +-----------------------+
@@ -72,9 +72,34 @@ Untuk menghubungkan **Host** baru ke dalam Pantau:
    - **SSH Port**: Port standar `22` atau port kustom daemon SSH target.
    - **SSH User**: Akun `root` atau pengguna dengan hak akses sudo.
 3. Pilih metode autentikasi:
-   - **Existing SSH Key**: Gunakan opsi ini jika host sudah memiliki kunci publik Pantau di `~/.ssh/authorized_keys`.
-   - **Key Provisioning (One-Time Password)**: Jika menghubungkan server yang benar-benar baru, masukkan kata sandi target sekali saja. Pantau akan membuat koneksi awal, menyisipkan kunci publik RSA 4096-bit secara idempoten ke `~/.ssh/authorized_keys`, lalu langsung menghapus kata sandi dari memori RAM.
+   - **SSH Key Library (Dropdown)**: Pilih kunci privat terdaftar dari library (dikelola melalui **Settings** → **SSH Keys**). Sangat direkomendasikan untuk mengelola klaster atau lingkungan server yang berbagi pasangan kunci yang sama.
+   - **Custom Private Key**: Tempelkan (*paste*) teks kunci privat OpenSSH spesifik host secara langsung jika tidak menggunakan library.
+   - **Global SSH Key**: Kosongkan pilihan untuk menggunakan kunci SSH universal bawaan Pantau.
+   - **Key Provisioning (One-Time Password)**: Jika menghubungkan server baru tanpa kunci yang terpasang sebelumnya, masukkan kata sandi target sekali saja pada kolom provisioning. Pantau akan menghubungkan via SSH, menyisipkan kunci publik yang sesuai (kunci publik terderivasi dari Library Key yang dipilih, atau kunci publik global bawaan) ke `~/.ssh/authorized_keys` secara idempoten, lalu langsung menghapus kata sandi dari memori RAM.
 4. Klik **Save & Test Connection**. Pantau akan melakukan uji koneksi (*handshake*) untuk memvalidasi akses.
+
+### Mengimpor Host dari SSH Config
+
+Untuk menambahkan banyak host sekaligus, klik **Import** di sebelah **Add Host**:
+
+1. Sediakan konfigurasi: tempel isi `~/.ssh/config`, klik **Choose File**, atau klik **Read Server ~/.ssh/config** untuk membaca file milik user yang menjalankan Pantau (tidak tersedia di dalam Docker kecuali file tersebut di-mount). Lalu klik **Parse**.
+2. Periksa pratinjau. Setiap alias `Host` yang konkret menjadi satu host dengan `HostName` (default: alias), `User` (default: `root`), dan `Port` (default: `22`). Blok wildcard (`Host *`) tidak pernah diimpor tetapi menyediakan nilai default, persis seperti OpenSSH. Entri yang sudah ada di Pantau, atau mengulang alamat/port/user dari entri sebelumnya di file yang sama, ditampilkan redup dan tidak bisa dipilih.
+3. Klik **Import Selected**. Host dibuat tanpa grup dan memakai **Global SSH Key**; `IdentityFile` pada config tidak ikut diimpor (host tersebut diberi petunjuk 🔑, jadi tetapkan Library Key sesudahnya bila perlu).
+4. Pada form **Set Group** berikutnya, isi Host Group untuk tiap host (grup yang sudah ada disarankan) lalu klik **Save Groups**. Kosongkan kolom agar host tetap tanpa grup; **Skip** menutup form dan grup tetap bisa diatur nanti lewat dialog edit host.
+
+> [!NOTE]
+> Direktif `Include` dan `Match` tidak diikuti atau dievaluasi. Pantau terhubung langsung, sehingga pengaturan `ProxyJump`/`ProxyCommand` diabaikan.
+
+### Hirarki Resolusi Kunci & Prioritas Autentikasi
+
+Saat melakukan autentikasi ke host untuk inspeksi latar belakang, sesi terminal interaktif, operasi file SFTP, tunneling port, atau diagnostik jaringan, Pantau menentukan kunci privat berdasarkan urutan deterministik yang ketat:
+
+1. **Library Key (`key_id > 0`)**: Jika host dikonfigurasi dengan kunci terdaftar dari SSH Key Library, Pantau memuat dan mengautentikasi dengan kunci privat tersebut. Jika `key_id` yang dirujuk tidak ditemukan di library, **Pantau langsung membatalkan koneksi dengan error eksplisit**—sistem tidak pernah melakukan fallback senyap ke kunci lain.
+2. **Custom Key (`custom_key`)**: Jika tidak ada library key yang dipilih dan host memiliki kunci privat kustom tersimpan, Pantau menggunakan custom key tersebut. Saat host diubah untuk menggunakan Library Key (`key_id > 0`), nilai `custom_key` sebelumnya otomatis dibersihkan dari basis data.
+3. **Global SSH Key (`settings.ssh_private_key`)**: Jika tidak ada library key maupun custom key (`key_id == 0` dan `custom_key` kosong), Pantau menggunakan kunci privat global bawaan sistem.
+
+> [!TIP]
+> Aksi **Inject Key** pada Workspace Modal host mengikuti aturan yang sama: jika host terhubung ke Library Key, Pantau menyuntikkan kunci publik dari library key tersebut; jika tidak, kunci publik global yang disuntikkan.
 
 > [!NOTE]
 > Untuk server Linux lawas (*legacy*) seperti CentOS 5/6, Debian 7, atau OpenSSH 4.x/5.x, Pantau secara otomatis mengaktifkan fallback cipher dan algoritma host key warisan (`aes128-cbc`, `3des-cbc`, `diffie-hellman-group1-sha1`, `ssh-dss`, `ssh-rsa`) saat negosiasi SSH. Pantau menerapkan verifikasi host key TOFU (Trust-On-First-Use) yang otomatis mencatat fingerprint host pada koneksi awal sekaligus melindungi sesi berikutnya dari manipulasi Machine-in-the-Middle (MITM).
@@ -354,6 +379,32 @@ Untuk melindungi akses administratif dari kebocoran kata sandi:
   ./pantau -port 8080 -db /data/pantau.db -disable-2fa
   ```
   Perintah ini akan langsung menonaktifkan konfigurasi TOTP dari SQLite dan memulihkan akses login administrator.
+
+### SSH Key Library Terpusat (Settings → SSH Keys)
+
+Untuk mengeliminasi proses penempelan (*paste*) kunci privat berulang kali di form host, Pantau menyediakan katalog **SSH Key Library** terpusat di menu **Settings** → **SSH Keys**.
+
+#### Menambahkan & Mengelola Kunci
+1. Buka **Settings** → **SSH Keys**.
+2. Masukkan **Nama** unik (contoh: `aws-staging-cluster`, `hetzner-infra`, atau `db-ansible-key`) dan tempelkan kunci privat OpenSSH tanpa enkripsi dalam format PEM.
+3. Klik **Add Key**. Pantau memproses dan memvalidasi kunci di sisi server menggunakan `golang.org/x/crypto/ssh`:
+   - Menurunkan (*derive*) dan menyimpan format kunci publik OpenSSH (`authorized_keys`).
+   - Menghitung dan menampilkan sidik jari (*fingerprint*) SHA-256 (`SHA256:...`).
+   - Menormalisasi karakter baris baru (*trailing newline*).
+   - **Kunci dengan Passphrase**: Kunci privat yang diproteksi frasa sandi (*passphrase*) tidak didukung untuk kebutuhan otomasi daemon agentless; mencoba mendaftarkannya akan menghasilkan pesan kesalahan eksplisit (`400 Bad Request`).
+
+#### Aturan Keamanan & Perlindungan Kredensial
+- **Zero API Credential Leakage**: Endpoint REST API (`GET /api/ssh-keys`) mengembalikan metadata kunci (`id`, `name`, `public_key`, `fingerprint`, `created_at`, `used_by`), tetapi kolom `private_key` tidak pernah diekspos dalam respons JSON (`json:"-"`).
+- **Proteksi Penghapusan Kunci Aktif**: Percobaan menghapus kunci yang masih digunakan oleh satu atau lebih host (`used_by > 0`) akan ditolak secara tegas dengan `HTTP 409 Conflict`. Anda wajib melepaskan atau mengalihkan host terkait terlebih dahulu sebelum menghapus kunci, guna mencegah pemutusan koneksi yang tidak disengaja.
+- **Penyensoran Log**: Pencatat log telemetri Pantau menyensor kunci privat dan token rahasia secara deterministik menjadi `[REDACTED]`.
+- **Snapshot Terenkripsi**: Seluruh library key disertakan dalam System Snapshot dan disegel dengan enkripsi AES-256-GCM. Saat dipulihkan di server baru, ID kunci dan relasi pemetaan host dipertahankan secara utuh.
+
+#### Referensi REST API Otomasi
+Seluruh rute membutuhkan cookie sesi autentikasi yang valid (`authMiddleware`):
+- `GET /api/ssh-keys`: Mengembalikan daftar array metadata `[SSHKey...]` beserta jumlah host pengguna (`used_by`).
+- `POST /api/ssh-keys`: Mendaftarkan kunci baru dengan body `{"name":"...","private_key":"..."}`. Mengembalikan status `201 Created` beserta metadata kunci. Mengembalikan `400` jika parsing/passphrase gagal, atau `409` jika nama sudah digunakan.
+- `DELETE /api/ssh-keys/{id}`: Menghapus kunci jika tidak lagi digunakan. Mengembalikan `200` jika berhasil, `404` jika ID tidak ditemukan, atau `409` jika masih aktif dirujuk oleh host.
+- `POST /api/hosts` dan rute update: Menerima parameter `key_id`. Mengisi `key_id` yang tidak valid menghasilkan respons `400 Bad Request`.
 
 ### System Snapshot Terenkripsi & Disaster Recovery GitHub
 

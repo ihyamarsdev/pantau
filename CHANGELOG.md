@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+### Added
+- Bulk Host Import from SSH Config: new **Import** button on the dashboard imports hosts from an OpenSSH client config (`~/.ssh/config`) pasted into the dialog, chosen as a file, or read from the Pantau server user's `~/.ssh/config`. A preview lists every concrete `Host` alias with its resolved `HostName`, `User` and `Port` (OpenSSH first-value-wins, so `Host *` defaults apply; wildcard and negated patterns are skipped; `Match` and `Include` are reported but not evaluated). Hosts already registered (same address, port and user) and repeated endpoints inside the file are flagged and cannot be selected.
+- Post-Import Group Form: after importing, a form lists the new hosts with one Host Group field each (suggesting existing groups and groups already typed in the form); hosts left empty stay ungrouped. Saved atomically through `PUT /api/hosts/groups`.
+- REST API Endpoints: `POST /api/hosts/import/preview`, `POST /api/hosts/import` and `PUT /api/hosts/groups`.
+- Centralized SSH Key Library: dedicated management panel under Settings → SSH Keys to register and maintain reusable private keys once, eliminating repetitive copy-pasting across individual host forms.
+- Dropdown Key Selection: host creation and edit dialogs now support selecting from registered library keys (`key_id`), alongside custom private keys and the universal global SSH key.
+- Deterministic Key Resolution Hierarchy: unified precedence across all SSH operations (inspection, file transfer, terminal, tunnel, and network diagnostics): Library Key (`key_id > 0`) → Custom Key (`custom_key`) → Global SSH Key (`settings.ssh_private_key`), with explicit error reporting if a referenced library key is missing.
+- Automated Public Key & Fingerprint Derivation: server-side parsing with `golang.org/x/crypto/ssh` automatically extracts OpenSSH public key (`authorized_keys` format) and computes SHA-256 fingerprint (`SHA256:...`) with trailing newline normalization.
+- Active Key Deletion Guard: deleting a library key is strictly rejected (`HTTP 409 Conflict`) while any host still references it (`used_by > 0`), preventing unexpected connection failures.
+- Passphrase-Protected Key Rejection: early validation rejecting passphrase-protected private keys (`HTTP 400 Bad Request`) to ensure non-blocking daemon operation.
+- Zero-Exposure Credential Safety: private key field omitted from JSON serialization (`json:"-"`), blocked from settings API, and deterministically redacted in logs (`[REDACTED]`).
+- Context-Aware Key Provisioning & Key Injection: one-time password provisioning and the `inject-key` host action automatically inject the public key of the host's selected library key when configured, falling back to the global public key when unassigned.
+- Encrypted System Snapshot Integration: `ssh_keys` records included in AES-256-GCM snapshots with backward compatibility and consistent key ID restoration.
+- REST API Endpoints: introduced `GET /api/ssh-keys`, `POST /api/ssh-keys`, and `DELETE /api/ssh-keys/{id}`, with `key_id` support on `POST /api/hosts` and host update routes.
+- Architectural Decision Record: [ADR-0035](docs/adr/0035-ssh-key-library.md).
+
 ## [0.25.0] - 2026-10-21
 ### Added
 - Interactive Terminal Link Detection: native `term.registerLinkProvider` integration in xterm.js matching RFC 3986 URLs and remote loopback addresses, with `Ctrl+Click` (Linux/Windows) and `Cmd+Click` (macOS) interaction to prevent accidental terminal text selection conflicts.

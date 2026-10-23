@@ -48,7 +48,7 @@ Pantau executes remote commands and inspects telemetry via standard SSH connecti
 
 - **Control Plane**: A single Go binary running on your management machine or bastion host, backed by an embedded SQLite database (`pantau.db`) in WAL mode.
 - **Remote Host**: Any physical or virtual Linux machine (Ubuntu, Debian, RHEL, CentOS 6–9) accessible via SSH.
-- **Trust Boundary**: Pantau uses an RSA 4096-bit keypair generated on first startup. Target hosts must grant access to this public key inside `~/.ssh/authorized_keys` for the designated management user (`root` or a dedicated user with passwordless `sudo`).
+- **Trust Boundary**: Pantau uses an RSA 4096-bit keypair generated on first startup as its global default key, and also supports dedicated keys registered in the **SSH Key Library** or custom keys per host. Target hosts must grant access to the relevant public key inside `~/.ssh/authorized_keys` for the designated management user (`root` or a dedicated user with passwordless `sudo`).
 
 ```
 +-------------------+             SSH Port 22 (Agentless)             +-----------------------+
@@ -72,9 +72,34 @@ When connecting a new **Host** to Pantau:
    - **SSH Port**: Standard port `22` or custom SSH daemon port.
    - **SSH User**: `root` or a sudo-privileged user.
 3. Choose the authentication method:
-   - **Existing SSH Key**: Use if the host already accepts Pantau's universal public key.
-   - **Key Provisioning (One-Time Password)**: If configuring a brand-new host, provide the target server password once. Pantau will connect via SSH, append its RSA 4096-bit public key to `~/.ssh/authorized_keys` idempotently, and immediately discard the password from memory.
+   - **SSH Key Library (Dropdown)**: Select a pre-registered private key from the library (managed via **Settings** → **SSH Keys**). Recommended when managing clusters or environments sharing a common keypair.
+   - **Custom Private Key**: Paste a host-specific OpenSSH private key directly if not using the library.
+   - **Global SSH Key**: Leave unassigned to use Pantau's universal default SSH key.
+   - **Key Provisioning (One-Time Password)**: If onboarding a server without pre-configured keys, enter the root/sudo password once in the provisioning field. Pantau connects via SSH, appends the corresponding public key (the selected Library Key's derived public key, or the universal global public key) to `~/.ssh/authorized_keys` idempotently, and immediately discards the password from memory.
 4. Click **Save & Test Connection**. Pantau performs an initial handshake to verify connectivity.
+
+### Importing Hosts from an SSH Config
+
+To onboard many hosts at once, click **Import** next to **Add Host**:
+
+1. Provide the config: paste your `~/.ssh/config`, click **Choose File**, or click **Read Server ~/.ssh/config** to read the file of the user running Pantau (not available inside Docker unless the file is mounted). Then click **Parse**.
+2. Review the preview. Each concrete `Host` alias becomes one host with its `HostName` (defaults to the alias), `User` (defaults to `root`) and `Port` (defaults to `22`). Wildcard (`Host *`) blocks are never imported but supply defaults, exactly like OpenSSH. Entries already in Pantau, or repeating an earlier address/port/user in the same file, are greyed out and cannot be selected.
+3. Click **Import Selected**. Hosts are created without a group, using the **Global SSH Key**; an `IdentityFile` in the config is not imported (a 🔑 hint marks such hosts, so assign a Library Key afterwards if needed).
+4. In the **Set Group** form that follows, type a Host Group per host (existing groups are suggested) and click **Save Groups**. Leave a field empty to keep that host ungrouped; **Skip** closes the form and groups can still be set later from each host's edit dialog.
+
+> [!NOTE]
+> `Include` and `Match` directives are not followed or evaluated. Pantau connects directly, so `ProxyJump`/`ProxyCommand` settings are ignored.
+
+### Key Resolution Hierarchy & Precedence
+
+When authenticating against a host for background inspection, interactive terminal sessions, SFTP file operations, port tunneling, or network diagnostics, Pantau resolves SSH credentials in strict deterministic order:
+
+1. **Library Key (`key_id > 0`)**: If a registered key from the SSH Key Library is assigned to the host, Pantau loads and authenticates using that private key. If the referenced `key_id` no longer exists in the library, **Pantau aborts immediately with an explicit error**—it never falls back silently to other keys.
+2. **Custom Key (`custom_key`)**: If no library key is selected and a host-specific private key is stored, Pantau uses that custom key. When a host is updated to use a Library Key (`key_id > 0`), any previously stored `custom_key` is automatically cleared.
+3. **Global SSH Key (`settings.ssh_private_key`)**: If neither a library key nor a custom key is assigned (`key_id == 0` and `custom_key` is empty), Pantau defaults to the system's global private key.
+
+> [!TIP]
+> The **Inject Key** action in the host Workspace Modal follows the same logic: if a Library Key is assigned, it injects that key's derived public key; otherwise, it injects the global default public key.
 
 > [!NOTE]
 > For legacy Linux systems (CentOS 5/6, Debian 7, or systems running OpenSSH 4.x/5.x), Pantau automatically enables legacy cipher and host key fallbacks (`aes128-cbc`, `3des-cbc`, `diffie-hellman-group1-sha1`, `ssh-dss`, `ssh-rsa`) during the SSH handshake. Pantau applies TOFU (Trust-On-First-Use) host key verification, seamlessly recording the target host's fingerprint on initial connection while actively protecting subsequent sessions against Machine-in-the-Middle (MITM) tampering.
@@ -354,6 +379,32 @@ To protect management actions against credential theft:
   ./pantau -port 8080 -db /data/pantau.db -disable-2fa
   ```
   This immediately clears active TOTP configurations from SQLite and allows administrative login.
+
+### Centralized SSH Key Library (Settings → SSH Keys)
+
+To avoid manually pasting private keys across multiple host forms, Pantau provides a centralized **SSH Key Library** under **Settings** → **SSH Keys**.
+
+#### Adding & Managing Keys
+1. Open **Settings** → **SSH Keys**.
+2. Provide a unique **Name** (e.g., `aws-staging-cluster`, `hetzner-infra`, or `db-ansible-key`) and paste the unencrypted OpenSSH private key in PEM format.
+3. Click **Add Key**. Pantau parses the key server-side using `golang.org/x/crypto/ssh`:
+   - Automatically derives and stores the OpenSSH public key (`authorized_keys` format).
+   - Computes and displays the SHA-256 fingerprint (`SHA256:...`).
+   - Normalizes trailing newlines.
+   - **Passphrase-Protected Keys**: Keys requiring a passphrase are not supported for automated agentless monitoring; attempting to add one returns an explicit error (`400 Bad Request`).
+
+#### Safety Rules & Credential Protection
+- **Zero API Credential Leakage**: The REST API (`GET /api/ssh-keys`) returns key metadata (`id`, `name`, `public_key`, `fingerprint`, `created_at`, `used_by`), but the `private_key` field is never exposed in JSON responses (`json:"-"`).
+- **Deletion Protection for Active Keys**: Attempting to delete a key currently assigned to one or more hosts (`used_by > 0`) is strictly rejected with `HTTP 409 Conflict`. You must first reassign or detach the hosts before deleting the key to prevent accidental connection dropouts.
+- **Log Masking**: Pantau's telemetry logger deterministically redacts private keys and authentication secrets into `[REDACTED]`.
+- **Encrypted Snapshots**: All library keys are included in System Snapshots and sealed with AES-256-GCM. When restoring on a new server, key IDs and host mappings are preserved.
+
+#### Automation REST API Reference
+All endpoints require valid session authentication (`authMiddleware`):
+- `GET /api/ssh-keys`: Returns `[SSHKey...]` metadata array with active usage counts (`used_by`).
+- `POST /api/ssh-keys`: Creates a new key with `{"name":"...","private_key":"..."}`. Returns `201 Created` with key metadata. Returns `400` on parsing/passphrase failure, or `409` on duplicate name.
+- `DELETE /api/ssh-keys/{id}`: Deletes a key if unreferenced. Returns `200` on success, `404` if not found, or `409` if still used by hosts.
+- `POST /api/hosts` and update routes: Accept `key_id`. Specifying an invalid `key_id` returns `400 Bad Request`.
 
 ### Encrypted System Snapshots & GitHub Disaster Recovery
 

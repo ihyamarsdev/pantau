@@ -769,3 +769,30 @@ func TestProcessNameWithSpacesInSwap(t *testing.T) {
 		t.Errorf("unexpected swap item 0: %+v", swapList[0])
 	}
 }
+
+func TestParseDockerPSIncludesStoppedContainersAndDerivesState(t *testing.T) {
+	out := "web|nginx:1.25|Up 3 hours (healthy)|0.0.0.0:80->80/tcp, :::80->80/tcp\n" +
+		"db|postgres:16|Up 2 days (Paused)|5432/tcp\n" +
+		"job|alpine|Exited (0) 5 minutes ago|\n" +
+		"new|busybox|Created|\n" +
+		"bad-line-without-fields\n"
+
+	got := parseDockerPS(out)
+	want := []struct{ name, state, ports string }{
+		{"web", "running", "0.0.0.0:80->80/tcp, :::80->80/tcp"},
+		{"db", "paused", "5432/tcp"},
+		{"job", "exited", ""},
+		{"new", "created", ""},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d containers, got %d: %+v", len(want), len(got), got)
+	}
+	for i, w := range want {
+		if got[i].Name != w.name || got[i].State != w.state || got[i].Ports != w.ports {
+			t.Errorf("container %d: expected %+v, got %+v", i, w, got[i])
+		}
+	}
+	if len(parseDockerPS("")) != 0 {
+		t.Errorf("expected no containers for empty output")
+	}
+}

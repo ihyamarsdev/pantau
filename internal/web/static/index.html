@@ -135,8 +135,8 @@ a.btn:hover { text-decoration: none; color: var(--text); }
 .tab { padding: 10px 16px; cursor: pointer; color: var(--text-muted); font-size: 0.85rem; font-weight: 500; border-bottom: 2px solid transparent; flex-shrink: 0; transition: all 0.15s ease; }
 .tab:hover { color: #f8fafc; }
 .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
-/* ponytail: 6-column grid fits comfortably in 740px Action Dialog (modal-dialog-lg); scrollable on mobile */
-#settingsTabs { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; overflow-x: auto; }
+/* ponytail: 7-column grid fits comfortably in 740px Action Dialog (modal-dialog-lg); scrollable on mobile */
+#settingsTabs { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; overflow-x: auto; min-width: 620px; }
 #settingsTabs .tab { padding: 10px 4px; text-align: center; justify-content: center; display: flex; align-items: center; white-space: nowrap; font-size: 0.82rem; }
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px 24px; text-align: center; color: var(--text-muted); flex: 1; gap: 10px; }
 .empty-state-icon { font-size: 2.5rem; opacity: 0.7; }
@@ -1274,6 +1274,7 @@ body.has-workspace-shelf .container {
           <svg id="inspectAllIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
         </button>
         <button class="btn btn-primary" onclick="openAddHostModal()" data-i18n="add_host" style="height: 32px; display: inline-flex; align-items: center;">+ Add Host</button>
+        <button class="btn" onclick="openImportHostsModal()" title="Import Hosts from SSH Config" data-i18n="import_hosts_btn" data-i18n-title="import_hosts_title" style="height: 32px; display: inline-flex; align-items: center;">⬇ Import</button>
       </div>
       <div class="header-divider"></div>
       <div class="header-cluster">
@@ -1433,7 +1434,7 @@ body.has-workspace-shelf .container {
     <div class="modal-body">
       <input type="hidden" id="injectKeyHostId" />
       <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;" data-i18n="inject_key_desc">
-        One-time temporary root password to inject Pantau's SSH public key into <code>~/.ssh/authorized_keys</code>. Password is never saved.
+        One-time temporary root password to inject the host's SSH public key into <code>~/.ssh/authorized_keys</code>. Password is never saved.
       </p>
       <div class="form-group">
         <label data-i18n="ssh_pass">SSH Password</label>
@@ -1590,11 +1591,18 @@ body.has-workspace-shelf .container {
         </div>
       </div>
       <div class="form-group" id="passGroup">
-        <label data-i18n="ssh_pass">SSH Password (One-Time: auto-injects Pantau public key)</label>
+        <label data-i18n="ssh_pass">SSH Password (One-Time: auto-injects SSH public key)</label>
         <input type="password" id="hostPassword" placeholder="e.g. root password (never stored in database)" data-i18n-placeholder="ssh_pass_ph" />
       </div>
       <div class="form-group">
-        <label data-i18n="custom_key">Custom SSH Private Key (Optional, leave blank to use global key)</label>
+        <label data-i18n="ssh_auth_key">SSH Authentication Key</label>
+        <select id="hostKeyId" onchange="onHostKeySelectChange()">
+          <option value="0" data-i18n="ssh_key_global">Global key (default)</option>
+          <option value="custom" data-i18n="ssh_key_custom_opt">Custom key (paste manually)</option>
+        </select>
+      </div>
+      <div class="form-group" id="hostCustomKeyGroup" style="display: none;">
+        <label data-i18n="custom_key">Custom SSH Private Key</label>
         <textarea id="hostCustomKey" rows="2" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" data-i18n-placeholder="custom_key_ph"></textarea>
       </div>
       <div class="form-group">
@@ -1609,6 +1617,76 @@ body.has-workspace-shelf .container {
       <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px;">
         <button class="btn" onclick="closeModal('hostModal')" data-i18n="cancel">Cancel</button>
         <button class="btn btn-primary" onclick="saveHost()" data-i18n="save_host">Save Host</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Import Hosts from SSH Config Modal -->
+<div id="importHostsModal" class="modal">
+  <div class="modal-content modal-dialog-lg">
+    <div class="modal-header">
+      <h3 data-i18n="import_hosts_title">Import Hosts from SSH Config</h3>
+      <button class="btn btn-sm" onclick="closeModal('importHostsModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="importStepSelect" style="display: flex; flex-direction: column; gap: 12px;">
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;" data-i18n="import_hosts_desc">Paste your ~/.ssh/config, choose the file, or read it from the server. Hosts are added without a group; you assign groups in the next step.</p>
+        <textarea id="importConfigText" rows="6" spellcheck="false" placeholder="Host myserver&#10;    HostName 192.168.1.10&#10;    User root&#10;    Port 22" style="font-family: monospace; font-size: 0.8rem;"></textarea>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <input type="file" id="importConfigFile" style="display: none;" onchange="importLoadFile(this)" />
+          <button class="btn btn-sm" onclick="document.getElementById('importConfigFile').click()" data-i18n="import_choose_file">📂 Choose File</button>
+          <button class="btn btn-sm" onclick="importReadServer()" data-i18n="import_read_server">🖥 Read Server ~/.ssh/config</button>
+          <button class="btn btn-sm btn-primary" onclick="importParse()" data-i18n="import_parse">Parse</button>
+        </div>
+        <div id="importWarnings" style="display: none; font-size: 0.8rem; color: #fbbf24;"></div>
+        <div id="importPreview" style="display: none; flex-direction: column; gap: 10px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem;">
+            <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" id="importSelectAll" onchange="importToggleAll(this)" style="width: 16px; height: 16px; padding: 0; accent-color: #2563eb;" />
+              <span data-i18n="import_select_all">Select all importable</span>
+            </label>
+            <span id="importSelectedCount" style="color: var(--text-muted);"></span>
+          </div>
+          <div style="max-height: 38vh; overflow: auto; border: 1px solid var(--card-border); border-radius: 6px;">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 32px;"></th>
+                  <th data-i18n="import_col_name">Name</th>
+                  <th data-i18n="import_col_addr">Address</th>
+                  <th data-i18n="import_col_port">Port</th>
+                  <th data-i18n="import_col_user">User</th>
+                  <th data-i18n="import_col_note">Note</th>
+                </tr>
+              </thead>
+              <tbody id="importPreviewBody"></tbody>
+            </table>
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 10px;">
+            <button class="btn" onclick="closeModal('importHostsModal')" data-i18n="cancel">Cancel</button>
+            <button class="btn btn-primary" id="importSubmitBtn" onclick="importSubmit()" data-i18n="import_submit">Import Selected</button>
+          </div>
+        </div>
+      </div>
+      <div id="importStepGroups" style="display: none; flex-direction: column; gap: 12px;">
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;" data-i18n="import_groups_desc">Assign a group to each imported host. Leave a field empty to keep that host ungrouped.</p>
+        <datalist id="importGroupSuggestions"></datalist>
+        <div style="max-height: 50vh; overflow: auto; border: 1px solid var(--card-border); border-radius: 6px;">
+          <table>
+            <thead>
+              <tr>
+                <th data-i18n="import_col_name">Name</th>
+                <th data-i18n="host_group">Host Group</th>
+              </tr>
+            </thead>
+            <tbody id="importGroupsBody"></tbody>
+          </table>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+          <button class="btn" onclick="closeModal('importHostsModal')" data-i18n="import_groups_skip">Skip</button>
+          <button class="btn btn-primary" onclick="importSaveGroups()" data-i18n="import_groups_save">Save Groups</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1858,6 +1936,7 @@ body.has-workspace-shelf .container {
       <div class="tabs" id="settingsTabs">
         <div class="tab active" id="tabSettingsGeneral" onclick="switchSettingsTab('general')" data-i18n="tab_settings_general">⚙️ General</div>
         <div class="tab" id="tabSettingsSecurity" onclick="switchSettingsTab('security')" data-i18n="tab_settings_security">🔒 Security</div>
+        <div class="tab" id="tabSettingsKeys" onclick="switchSettingsTab('keys')" data-i18n="tab_settings_keys">🔑 SSH Keys</div>
         <div class="tab" id="tabSettingsNotif" onclick="switchSettingsTab('notif')" data-i18n="tab_settings_notif">🔔 Notifications</div>
         <div class="tab" id="tabSettingsBackup" onclick="switchSettingsTab('backup')" data-i18n="tab_settings_backup">💾 Backup</div>
         <div class="tab" id="tabSettingsPresets" onclick="switchSettingsTab('presets')" data-i18n="tab_settings_presets">💻 Presets</div>
@@ -1966,6 +2045,44 @@ body.has-workspace-shelf .container {
               <button class="btn btn-danger btn-sm" onclick="disable2FA()" data-i18n="disable_2fa_btn">Disable 2FA</button>
               <div id="setting2FADisableErr" style="color: var(--danger); font-size: 0.8rem; margin-top: 4px;"></div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SSH Keys Tab -->
+      <div id="settingsPanelKeys" style="display: none; flex-direction: column; gap: 16px;">
+        <!-- Add SSH Key Card -->
+        <div class="card" style="padding: 16px;">
+          <h4 style="margin-bottom: 6px;" data-i18n="add_ssh_key_title">➕ Add New SSH Key</h4>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 14px;" data-i18n="ssh_key_library_desc">Store and manage reusable SSH private keys to authenticate your servers without repeatedly pasting credentials.</p>
+          <div class="form-group">
+            <label data-i18n="ssh_key_name">Key Name</label>
+            <input type="text" id="newKeyName" placeholder="e.g. prod-key or dev-cluster" data-i18n-placeholder="ssh_key_name_ph" />
+          </div>
+          <div class="form-group">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label data-i18n="ssh_private_key_label" style="margin-bottom: 0;">Private Key (PEM format)</label>
+              <div>
+                <input type="file" id="sshKeyFileInput" style="display: none;" onchange="handleSSHKeyFileSelect(event)" />
+                <button type="button" class="btn btn-sm" onclick="document.getElementById('sshKeyFileInput').click()" style="font-size: 0.75rem; padding: 2px 8px;" data-i18n="import_key_file">📁 Import from file</button>
+              </div>
+            </div>
+            <textarea id="newKeyPrivate" rows="4" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----" style="font-family: monospace; font-size: 0.78rem; line-height: 1.4; resize: vertical;" data-i18n-placeholder="ssh_private_key_ph"></textarea>
+            <small style="color: var(--text-muted); font-size: 0.75rem; margin-top: 4px; display: block;" data-i18n="ssh_key_passphrase_hint">Only passphrase-less keys are supported. Keys are kept in the local Pantau database and are never returned by the API or written to logs.</small>
+          </div>
+          <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
+            <button class="btn btn-primary btn-sm" onclick="addSSHKey()" data-i18n="add_ssh_key_btn">➕ Add Key to Library</button>
+          </div>
+        </div>
+
+        <!-- Registered Keys List Card -->
+        <div class="card" style="padding: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h4 style="margin: 0;" data-i18n="registered_ssh_keys">Registered SSH Keys</h4>
+            <button class="btn btn-sm" onclick="loadSSHKeys()" style="font-size: 0.75rem; padding: 2px 8px;" data-i18n="refresh">🔄 Refresh</button>
+          </div>
+          <div id="sshKeysListContainer">
+            <div style="text-align: center; color: var(--text-muted); padding: 16px;">Loading...</div>
           </div>
         </div>
       </div>
@@ -2199,6 +2316,27 @@ body.has-workspace-shelf .container {
     </div>
     <div class="modal-body" style="padding: 0; display: flex; flex-direction: column; flex: 1; min-height: 0;">
       <textarea id="codeEditorArea"></textarea>
+    </div>
+  </div>
+</div>
+
+<!-- Docker Container Logs Modal -->
+<div id="dockerLogsModal" class="modal">
+  <div class="modal-content modal-workspace">
+    <div class="modal-header">
+      <h3 id="dockerLogsTitle" style="font-family: monospace; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55vw;"></h3>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <span id="dockerLogsStatus" class="badge badge-info"></span>
+        <label style="display: flex; align-items: center; gap: 4px; font-size: 0.8rem; cursor: pointer;">
+          <input type="checkbox" id="dockerLogsAutoScroll" checked style="width: auto;" />
+          <span data-i18n="docker_logs_autoscroll">Auto-scroll</span>
+        </label>
+        <button class="btn btn-sm" onclick="document.getElementById('dockerLogsOutput').textContent = ''" data-i18n="docker_logs_clear">Clear</button>
+        <button class="btn btn-sm" onclick="closeModal('dockerLogsModal')">✕</button>
+      </div>
+    </div>
+    <div class="modal-body" style="padding: 0; flex: 1; min-height: 0; gap: 0;">
+      <pre id="dockerLogsOutput" style="flex: 1; min-height: 0; max-height: none; margin: 0; border-radius: 0; overflow: auto; white-space: pre-wrap; word-break: break-all; font-size: 0.78rem; line-height: 1.4;"></pre>
     </div>
   </div>
 </div>
@@ -2507,6 +2645,35 @@ const I18N = {
     "footer_drift": "Drift",
     "lang_btn": "\ud83c\udf10 EN",
     "add_host_title": "Add Host",
+    "import_hosts_btn": "⬇ Import",
+    "import_hosts_title": "Import Hosts from SSH Config",
+    "import_hosts_desc": "Paste your ~/.ssh/config, choose the file, or read it from the server. Hosts are added without a group; you assign groups in the next step.",
+    "import_choose_file": "📂 Choose File",
+    "import_read_server": "🖥 Read Server ~/.ssh/config",
+    "import_parse": "Parse",
+    "import_select_all": "Select all importable",
+    "import_selected_count": "{n} of {m} selected",
+    "import_col_name": "Name",
+    "import_col_addr": "Address",
+    "import_col_port": "Port",
+    "import_col_user": "User",
+    "import_col_note": "Note",
+    "import_submit": "Import Selected",
+    "import_dup_exists": "Already in Pantau as \"{name}\"",
+    "import_dup_file": "Same server as \"{name}\" above",
+    "import_invalid": "Invalid entry",
+    "import_identity_note": "Has its own key in ssh config; Pantau uses the global key",
+    "import_empty": "Paste or load an SSH config first",
+    "import_none_found": "No importable hosts found",
+    "import_nothing_selected": "Select at least one host",
+    "import_none_created": "No hosts were imported",
+    "import_failed": "Import failed: ",
+    "import_done": "{n} host(s) imported",
+    "import_skipped": "{n} skipped",
+    "import_groups_desc": "Assign a group to each imported host. Leave a field empty to keep that host ungrouped.",
+    "import_groups_save": "Save Groups",
+    "import_groups_skip": "Skip",
+    "import_groups_saved": "Groups saved",
     "edit_host_title": "Edit Host",
     "display_name": "Display Name",
     "display_name_ph": "e.g. Production Web",
@@ -2514,9 +2681,12 @@ const I18N = {
     "addr_ip_ph": "192.168.1.100 or vps.domain.com",
     "ssh_port": "SSH Port",
     "ssh_user": "SSH User",
-    "ssh_pass": "SSH Password (One-Time: auto-injects Pantau public key)",
+    "ssh_pass": "SSH Password (One-Time: auto-injects SSH public key)",
     "ssh_pass_ph": "e.g. root password (never stored in database)",
-    "custom_key": "Custom SSH Private Key (Optional, leave blank to use global key)",
+    "ssh_auth_key": "SSH Authentication Key",
+    "ssh_key_global": "Global key (default)",
+    "ssh_key_custom_opt": "Custom key (paste manually)",
+    "custom_key": "Custom SSH Private Key",
     "custom_key_ph": "-----BEGIN OPENSSH PRIVATE KEY-----",
     "cancel": "Cancel",
     "save_host": "Save Host",
@@ -2578,7 +2748,7 @@ const I18N = {
     "test_connection": "Test Connection",
     "delete_host": "Delete Host",
     "inject_key_title": "Key Provisioning",
-    "inject_key_desc": "One-time temporary root password to inject Pantau's SSH public key into authorized_keys. Password is never saved.",
+    "inject_key_desc": "One-time temporary root password to inject the host's SSH public key into authorized_keys. Password is never saved.",
     "testing_ssh": "Testing SSH connection...",
     "ssh_test_success": "SSH Connection Success: ",
     "inspect_success": "Inspection completed for host",
@@ -2746,6 +2916,18 @@ const I18N = {
     "no_containers_title": "No Docker Containers",
     "no_containers_desc": "No active Docker daemon or running containers found on this host.",
     "container_name": "Container Name",
+    "container_image": "Image",
+    "container_ports": "Ports",
+    "docker_logs": "📜 Logs",
+    "docker_logs_title": "Container Logs",
+    "docker_logs_autoscroll": "Auto-scroll",
+    "docker_logs_clear": "Clear",
+    "docker_logs_connecting": "Connecting...",
+    "docker_logs_live": "● Live",
+    "docker_logs_ended": "Stream ended",
+    "docker_menu_title": "Container actions",
+    "docker_loading": "Loading containers...",
+    "docker_unavailable": "Cannot read Docker on this host",
     "start": "\u25b6 Start",
     "restart": "\ud83d\udd04 Restart",
     "stop": "\u23f9 Stop",
@@ -2785,8 +2967,35 @@ const I18N = {
     "btn_save": "\ud83d\udcbe Save",
     "tab_settings_general": "⚙️ General",
     "tab_settings_security": "🔒 Security",
+    "tab_settings_keys": "🔑 SSH Keys",
     "tab_settings_notif": "🔔 Notifications",
     "tab_settings_backup": "💾 Backup",
+    "ssh_key_library": "SSH Key Library",
+    "ssh_key_library_desc": "Store and manage reusable SSH private keys to authenticate your servers without repeatedly pasting credentials.",
+    "add_ssh_key_title": "Add New SSH Key",
+    "ssh_key_name": "Key Name",
+    "ssh_key_name_ph": "e.g. prod-key or dev-cluster",
+    "ssh_private_key_label": "Private Key (PEM format)",
+    "ssh_private_key_ph": "-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----",
+    "import_key_file": "📁 Import from file",
+    "ssh_key_passphrase_hint": "Only passphrase-less keys are supported. Keys are kept in the local Pantau database and are never returned by the API or written to logs.",
+    "add_ssh_key_btn": "➕ Add Key to Library",
+    "registered_ssh_keys": "Registered SSH Keys",
+    "no_keys_title": "No SSH Keys in Library",
+    "no_keys_desc": "Add your first private key above to authenticate hosts across your infrastructure.",
+    "key_col_name": "Name",
+    "key_col_fingerprint": "Fingerprint",
+    "key_col_used_by": "Used By",
+    "key_col_created": "Created",
+    "confirm_delete_ssh_key": "Are you sure you want to delete SSH key \"{name}\"?",
+    "ssh_key_deleted": "SSH key deleted successfully",
+    "delete_ssh_key_failed": "Failed to delete SSH key: ",
+    "key_name_required": "Key name is required",
+    "key_private_required": "Private key content is required",
+    "key_added_success": "SSH key added to library successfully",
+    "key_add_failed": "Failed to add SSH key: ",
+    "host_singular": "host",
+    "host_plural": "hosts",
     "seconds_unit": "seconds (0 = disabled)",
     "global_pub_key": "Global Pantau SSH Public Key",
     "global_pub_key_desc": "This public key is placed into <code>~/.ssh/authorized_keys</code> on target servers for agentless SSH authentication.",
@@ -3103,6 +3312,35 @@ const I18N = {
     "footer_drift": "Drift",
     "lang_btn": "\ud83c\udf10 ID",
     "add_host_title": "Tambah Host",
+    "import_hosts_btn": "⬇ Impor",
+    "import_hosts_title": "Impor Host dari SSH Config",
+    "import_hosts_desc": "Tempel ~/.ssh/config Anda, pilih filenya, atau baca dari server. Host ditambahkan tanpa grup; grup diatur di langkah berikutnya.",
+    "import_choose_file": "📂 Pilih File",
+    "import_read_server": "🖥 Baca ~/.ssh/config Server",
+    "import_parse": "Parse",
+    "import_select_all": "Pilih semua yang bisa diimpor",
+    "import_selected_count": "{n} dari {m} dipilih",
+    "import_col_name": "Nama",
+    "import_col_addr": "Alamat",
+    "import_col_port": "Port",
+    "import_col_user": "User",
+    "import_col_note": "Catatan",
+    "import_submit": "Impor yang Dipilih",
+    "import_dup_exists": "Sudah ada di Pantau sebagai \"{name}\"",
+    "import_dup_file": "Server sama dengan \"{name}\" di atas",
+    "import_invalid": "Entri tidak valid",
+    "import_identity_note": "Punya key sendiri di ssh config; Pantau memakai key global",
+    "import_empty": "Tempel atau muat SSH config terlebih dahulu",
+    "import_none_found": "Tidak ada host yang bisa diimpor",
+    "import_nothing_selected": "Pilih minimal satu host",
+    "import_none_created": "Tidak ada host yang diimpor",
+    "import_failed": "Impor gagal: ",
+    "import_done": "{n} host diimpor",
+    "import_skipped": "{n} dilewati",
+    "import_groups_desc": "Tentukan grup untuk setiap host yang diimpor. Kosongkan kolom untuk membiarkan host tanpa grup.",
+    "import_groups_save": "Simpan Grup",
+    "import_groups_skip": "Lewati",
+    "import_groups_saved": "Grup disimpan",
     "edit_host_title": "Edit Host",
     "display_name": "Nama Tampilan",
     "display_name_ph": "contoh: Production Web",
@@ -3110,9 +3348,12 @@ const I18N = {
     "addr_ip_ph": "192.168.1.100 atau vps.domain.com",
     "ssh_port": "Port SSH",
     "ssh_user": "User SSH",
-    "ssh_pass": "Password SSH (Satu Kali: auto-inject public key Pantau)",
+    "ssh_pass": "Password SSH (Sekali pakai: otomatis pasang kunci publik SSH)",
     "ssh_pass_ph": "contoh: password root (tidak pernah disimpan di database)",
-    "custom_key": "Custom SSH Private Key (Opsional, kosongkan untuk gunakan kunci global)",
+    "ssh_auth_key": "Kunci Otentikasi SSH",
+    "ssh_key_global": "Kunci global (default)",
+    "ssh_key_custom_opt": "Kunci khusus (tempel manual)",
+    "custom_key": "Custom SSH Private Key",
     "custom_key_ph": "-----BEGIN OPENSSH PRIVATE KEY-----",
     "cancel": "Batal",
     "save_host": "Simpan Host",
@@ -3174,7 +3415,7 @@ const I18N = {
     "test_connection": "Uji Koneksi SSH",
     "delete_host": "Hapus Host",
     "inject_key_title": "Key Provisioning",
-    "inject_key_desc": "Password sementara satu kali untuk injeksi public key Pantau ke authorized_keys. Password tidak pernah disimpan.",
+    "inject_key_desc": "Password sementara satu kali untuk injeksi public key SSH host ke authorized_keys. Password tidak pernah disimpan.",
     "testing_ssh": "Menguji koneksi SSH...",
     "ssh_test_success": "Koneksi SSH Berhasil: ",
     "inspect_success": "Inspeksi selesai untuk host",
@@ -3342,6 +3583,18 @@ const I18N = {
     "no_containers_title": "Tidak Ada Container Docker",
     "no_containers_desc": "Tidak ditemukan daemon Docker aktif atau container yang sedang berjalan pada host ini.",
     "container_name": "Nama Container",
+    "container_image": "Image",
+    "container_ports": "Port",
+    "docker_logs": "📜 Log",
+    "docker_logs_title": "Log Container",
+    "docker_logs_autoscroll": "Gulir otomatis",
+    "docker_logs_clear": "Bersihkan",
+    "docker_logs_connecting": "Menghubungkan...",
+    "docker_logs_live": "● Langsung",
+    "docker_logs_ended": "Stream berakhir",
+    "docker_menu_title": "Aksi container",
+    "docker_loading": "Memuat container...",
+    "docker_unavailable": "Tidak dapat membaca Docker pada host ini",
     "start": "\u25b6 Start",
     "restart": "\ud83d\udd04 Restart",
     "stop": "\u23f9 Stop",
@@ -3381,8 +3634,35 @@ const I18N = {
     "btn_save": "💾 Simpan",
     "tab_settings_general": "⚙️ Umum",
     "tab_settings_security": "🔒 Keamanan",
+    "tab_settings_keys": "🔑 Kunci SSH",
     "tab_settings_notif": "🔔 Notifikasi",
     "tab_settings_backup": "💾 Backup",
+    "ssh_key_library": "Library Kunci SSH",
+    "ssh_key_library_desc": "Simpan dan kelola private key SSH yang dapat digunakan kembali di server tanpa perlu menempelkan kredensial berulang kali.",
+    "add_ssh_key_title": "Tambah Kunci SSH Baru",
+    "ssh_key_name": "Nama Kunci",
+    "ssh_key_name_ph": "contoh: prod-key atau dev-cluster",
+    "ssh_private_key_label": "Private Key (format PEM)",
+    "ssh_private_key_ph": "-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----",
+    "import_key_file": "📁 Impor dari berkas",
+    "ssh_key_passphrase_hint": "Hanya kunci tanpa passphrase yang didukung. Kunci disimpan di database lokal Pantau dan tidak pernah dikembalikan oleh API maupun ditulis ke log.",
+    "add_ssh_key_btn": "➕ Tambah Kunci ke Library",
+    "registered_ssh_keys": "Kunci SSH Terdaftar",
+    "no_keys_title": "Belum Ada Kunci SSH di Library",
+    "no_keys_desc": "Tambahkan private key pertama Anda di atas untuk otentikasi host di infrastruktur Anda.",
+    "key_col_name": "Nama",
+    "key_col_fingerprint": "Fingerprint",
+    "key_col_used_by": "Digunakan Oleh",
+    "key_col_created": "Dibuat",
+    "confirm_delete_ssh_key": "Apakah Anda yakin ingin menghapus kunci SSH \"{name}\"?",
+    "ssh_key_deleted": "Kunci SSH berhasil dihapus",
+    "delete_ssh_key_failed": "Gagal menghapus kunci SSH: ",
+    "key_name_required": "Nama kunci wajib diisi",
+    "key_private_required": "Isi private key wajib diisi",
+    "key_added_success": "Kunci SSH berhasil ditambahkan ke library",
+    "key_add_failed": "Gagal menambahkan kunci SSH: ",
+    "host_singular": "host",
+    "host_plural": "host",
     "seconds_unit": "detik (0 = nonaktif)",
     "global_pub_key": "Global Pantau SSH Public Key",
     "global_pub_key_desc": "Kunci publik ini ditempelkan ke file <code>~/.ssh/authorized_keys</code> di server target untuk otentikasi SSH agentless.",
@@ -4903,6 +5183,55 @@ document.addEventListener('click', function(e) {
   }
 });
 
+async function populateHostKeySelect(selectedKeyId = 0, isCustom = false) {
+  const sel = document.getElementById('hostKeyId');
+  if (!sel) return;
+
+  const renderOptions = (keys) => {
+    let html = `<option value="0">${t('ssh_key_global', 'Global key (default)')}</option>`;
+    (keys || []).forEach(k => {
+      html += `<option value="${k.id}">${escapeHtml(k.name)}</option>`;
+    });
+    html += `<option value="custom">${t('ssh_key_custom_opt', 'Custom key (paste manually)')}</option>`;
+    sel.innerHTML = html;
+
+    if (isCustom) {
+      sel.value = 'custom';
+    } else if (selectedKeyId && (keys || []).some(k => k.id === selectedKeyId)) {
+      sel.value = String(selectedKeyId);
+    } else if (selectedKeyId) {
+      const opt = document.createElement('option');
+      opt.value = String(selectedKeyId);
+      opt.textContent = `Key #${selectedKeyId}`;
+      sel.insertBefore(opt, sel.lastElementChild);
+      sel.value = String(selectedKeyId);
+    } else {
+      sel.value = '0';
+    }
+    onHostKeySelectChange();
+  };
+
+  renderOptions(cachedSSHKeys);
+
+  try {
+    const res = await fetch('/api/ssh-keys');
+    if (res.ok) {
+      const keys = await res.json() || [];
+      cachedSSHKeys = keys;
+      renderOptions(keys);
+    }
+  } catch (err) {
+    console.error('Failed to load ssh keys for select:', err);
+  }
+}
+
+function onHostKeySelectChange() {
+  const sel = document.getElementById('hostKeyId');
+  const group = document.getElementById('hostCustomKeyGroup');
+  if (!sel || !group) return;
+  group.style.display = sel.value === 'custom' ? 'block' : 'none';
+}
+
 function openAddHostModal() {
   document.getElementById('hostModalTitle').innerText = t('add_host_title');
   document.getElementById('editHostId').value = '';
@@ -4917,6 +5246,7 @@ function openAddHostModal() {
   document.getElementById('hostGroup').value = '';
   updateGroupSuggestions();
   document.getElementById('passGroup').style.display = 'flex';
+  populateHostKeySelect(0, false);
   openModal('hostModal');
 }
 
@@ -4936,6 +5266,8 @@ function openEditHostModal(hostId) {
   document.getElementById('hostNote').value = h.notes || '';
   document.getElementById('passGroup').style.display = 'none';
   updateGroupSuggestions();
+  const hasCustom = !!(h.custom_key && h.custom_key.trim());
+  populateHostKeySelect(h.key_id || 0, hasCustom);
   openModal('hostModal');
 }
 
@@ -4967,13 +5299,22 @@ function updateGroupSuggestions() {
 
 async function saveHost() {
   const id = document.getElementById('editHostId').value;
+  const selectedKey = document.getElementById('hostKeyId')?.value || '0';
+  let keyId = 0;
+  let customKey = '';
+  if (selectedKey === 'custom') {
+    customKey = document.getElementById('hostCustomKey')?.value || '';
+  } else {
+    keyId = parseInt(selectedKey, 10) || 0;
+  }
   const payload = {
     name: document.getElementById('hostName').value,
     host: document.getElementById('hostAddr').value,
     port: parseInt(document.getElementById('hostPort').value) || 22,
     user: document.getElementById('hostUser').value,
     password: document.getElementById('hostPassword').value,
-    custom_key: document.getElementById('hostCustomKey').value,
+    key_id: keyId,
+    custom_key: customKey,
     commission_date: (document.getElementById('hostCommissionDate')?.value || '').trim(),
     notes: document.getElementById('hostNote').value,
     group_name: (document.getElementById('hostGroup')?.value || '').trim(),
@@ -5015,6 +5356,228 @@ function openCommissionDateModal(hostId, currentCommDate, biosDate) {
     biosInfoEl.style.display = 'none';
   }
   openModal('commissionDateModal');
+}
+
+// ---- Import hosts from SSH config ----
+let importEntries = [];
+let importedHosts = [];
+
+function importFill(tpl, vars) {
+  return String(tpl).replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m));
+}
+
+function importReasonText(reason, sameAs) {
+  if (reason === 'exists') return importFill(t('import_dup_exists', 'Already in Pantau as "{name}"'), { name: sameAs || '' });
+  if (reason === 'duplicate_in_file') return importFill(t('import_dup_file', 'Same server as "{name}" above'), { name: sameAs || '' });
+  return t('import_invalid', 'Invalid entry');
+}
+
+function openImportHostsModal() {
+  importEntries = [];
+  importedHosts = [];
+  document.getElementById('importConfigText').value = '';
+  document.getElementById('importConfigFile').value = '';
+  document.getElementById('importWarnings').style.display = 'none';
+  document.getElementById('importPreview').style.display = 'none';
+  document.getElementById('importStepSelect').style.display = 'flex';
+  document.getElementById('importStepGroups').style.display = 'none';
+  openModal('importHostsModal');
+}
+
+function importLoadFile(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  if (file.size > 1024 * 1024) {
+    showToast(t('import_failed', 'Import failed: ') + 'file too large (max 1 MiB)', 'error');
+    input.value = '';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    document.getElementById('importConfigText').value = String(reader.result || '');
+    importParse();
+  };
+  reader.readAsText(file);
+}
+
+async function importRequestPreview(payload) {
+  let res;
+  try {
+    res = await fetch('/api/hosts/import/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+  } catch (e) {
+    showToast(t('import_failed', 'Import failed: ') + e.message, 'error');
+    return;
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    showToast(t('import_failed', 'Import failed: ') + (data.error || res.status), 'error');
+    return;
+  }
+  renderImportPreview(data);
+}
+
+function importParse() {
+  const content = document.getElementById('importConfigText').value;
+  if (!content.trim()) {
+    showToast(t('import_empty', 'Paste or load an SSH config first'), 'warning');
+    return;
+  }
+  importRequestPreview({ content });
+}
+
+function importReadServer() {
+  importRequestPreview({ source: 'server' });
+}
+
+function renderImportPreview(data) {
+  importEntries = data.entries || [];
+  const warns = data.warnings || [];
+  const warnEl = document.getElementById('importWarnings');
+  warnEl.innerHTML = warns.map(w => `<div>⚠️ ${escapeHtml(w)}</div>`).join('');
+  warnEl.style.display = warns.length ? 'block' : 'none';
+
+  const preview = document.getElementById('importPreview');
+  if (!importEntries.length) {
+    preview.style.display = 'none';
+    showToast(t('import_none_found', 'No importable hosts found'), 'warning');
+    return;
+  }
+  document.getElementById('importPreviewBody').innerHTML = importEntries.map((e, i) => {
+    let note = '';
+    if (e.duplicate) {
+      note = `<span style="color: var(--text-muted);">${escapeHtml(importReasonText(e.reason, e.same_as))}</span>`;
+    } else if (e.identity_file) {
+      note = `<span title="${escapeHtml(e.identity_file)}" style="color: #fbbf24;">🔑 ${escapeHtml(t('import_identity_note', 'Has its own key in ssh config; Pantau uses the global key'))}</span>`;
+    }
+    return `<tr${e.duplicate ? ' style="opacity: 0.55;"' : ''}>
+      <td><input type="checkbox" class="import-cb" data-idx="${i}" ${e.duplicate ? 'disabled' : 'checked'} onchange="updateImportCount()" style="width: 16px; height: 16px; padding: 0; accent-color: #2563eb;" /></td>
+      <td><strong>${escapeHtml(e.alias)}</strong></td>
+      <td style="font-family: monospace;">${escapeHtml(e.host)}</td>
+      <td>${escapeHtml(String(e.port))}</td>
+      <td>${escapeHtml(e.user || 'root')}</td>
+      <td style="font-size: 0.78rem;">${note}</td>
+    </tr>`;
+  }).join('');
+  preview.style.display = 'flex';
+  updateImportCount();
+}
+
+function importableBoxes() {
+  return Array.from(document.querySelectorAll('#importPreviewBody .import-cb')).filter(b => !b.disabled);
+}
+
+function updateImportCount() {
+  const boxes = importableBoxes();
+  const sel = boxes.filter(b => b.checked).length;
+  document.getElementById('importSelectedCount').textContent = importFill(t('import_selected_count', '{n} of {m} selected'), { n: sel, m: boxes.length });
+  const all = document.getElementById('importSelectAll');
+  all.checked = boxes.length > 0 && sel === boxes.length;
+  all.indeterminate = sel > 0 && sel < boxes.length;
+  document.getElementById('importSubmitBtn').disabled = sel === 0;
+}
+
+function importToggleAll(cb) {
+  importableBoxes().forEach(b => { b.checked = cb.checked; });
+  updateImportCount();
+}
+
+async function importSubmit() {
+  const hosts = importableBoxes().filter(b => b.checked).map(b => {
+    const e = importEntries[parseInt(b.dataset.idx, 10)];
+    return { name: e.alias, host: e.host, port: e.port, user: e.user };
+  });
+  if (!hosts.length) {
+    showToast(t('import_nothing_selected', 'Select at least one host'), 'warning');
+    return;
+  }
+  const btn = document.getElementById('importSubmitBtn');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/hosts/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hosts })
+    });
+    const data = await res.json().catch(() => ({}));
+    importedHosts = data.created || [];
+    if (importedHosts.length) await loadHosts();
+    if (!res.ok) {
+      showToast(t('import_failed', 'Import failed: ') + (data.error || res.status), 'error');
+      // Hosts created before the failure still need their groups.
+      if (importedHosts.length) showImportGroupsStep();
+      return;
+    }
+    if (!importedHosts.length) {
+      showToast(t('import_none_created', 'No hosts were imported'), 'warning');
+      return;
+    }
+    const skipped = (data.skipped || []).length;
+    let msg = importFill(t('import_done', '{n} host(s) imported'), { n: importedHosts.length });
+    if (skipped) msg += ', ' + importFill(t('import_skipped', '{n} skipped'), { n: skipped });
+    showToast(msg, 'success');
+    showImportGroupsStep();
+  } catch (e) {
+    showToast(t('import_failed', 'Import failed: ') + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function showImportGroupsStep() {
+  document.getElementById('importStepSelect').style.display = 'none';
+  document.getElementById('importStepGroups').style.display = 'flex';
+  document.getElementById('importGroupsBody').innerHTML = importedHosts.map(h => `<tr>
+    <td>
+      <strong>${escapeHtml(h.name)}</strong>
+      <div style="font-size: 0.75rem; color: var(--text-muted); font-family: monospace;">${escapeHtml(h.user)}@${escapeHtml(h.host)}:${escapeHtml(String(h.port))}</div>
+    </td>
+    <td style="width: 50%;"><input type="text" class="import-group-input" data-id="${h.id}" list="importGroupSuggestions" placeholder="${escapeHtml(t('host_group_ph', 'e.g. Primary Server, Testing, DB Cluster'))}" onchange="refreshImportGroupSuggestions()" /></td>
+  </tr>`).join('');
+  refreshImportGroupSuggestions();
+}
+
+// Suggest existing groups plus the ones already typed in this form, so a new
+// group only has to be typed once.
+function refreshImportGroupSuggestions() {
+  const groups = new Set(allRawHosts.map(h => (h.group_name || '').trim()).filter(Boolean));
+  document.querySelectorAll('.import-group-input').forEach(i => {
+    const v = i.value.trim();
+    if (v) groups.add(v);
+  });
+  document.getElementById('importGroupSuggestions').innerHTML = Array.from(groups)
+    .sort((a, b) => a.localeCompare(b))
+    .map(g => `<option value="${escapeHtml(g)}"></option>`).join('');
+}
+
+async function importSaveGroups() {
+  const assignments = Array.from(document.querySelectorAll('.import-group-input'))
+    .map(i => ({ id: parseInt(i.dataset.id, 10), group_name: i.value.trim() }))
+    .filter(a => a.group_name);
+  if (!assignments.length) {
+    closeModal('importHostsModal');
+    return;
+  }
+  try {
+    const res = await fetch('/api/hosts/groups', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assignments })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(t('save_host_failed', 'Failed to save host: ') + (data.error || res.status), 'error');
+      return;
+    }
+    showToast(t('import_groups_saved', 'Groups saved'), 'success');
+    closeModal('importHostsModal');
+    loadHosts();
+  } catch (e) {
+    showToast(t('save_host_failed', 'Failed to save host: ') + e.message, 'error');
+  }
 }
 
 async function submitQuickCommissionDate() {
@@ -5670,38 +6233,8 @@ function switchTab(tab, presetID) {
       `}
     `;
   } else if (tab === 'docker') {
-    const containers = (d.actual_items || []).filter(it => it.kind === 'container');
-    content.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-shrink: 0;">
-        <h4>${t('docker_containers')}</h4>
-      </div>
-      ${containers.length === 0 ? `
-        <div class="empty-state">
-          <div class="empty-state-icon">🐳</div>
-          <div class="empty-state-title">${t('no_containers_title')}</div>
-          <div class="empty-state-desc">${t('no_containers_desc')}</div>
-        </div>
-      ` : `
-        <table>
-          <thead>
-            <tr><th>${t('container_name')}</th><th>${t('status')}</th><th>${t('action')}</th></tr>
-          </thead>
-          <tbody>
-            ${containers.map(c => `
-              <tr>
-                <td><b>${escapeHtml(c.target)}</b></td>
-                <td><span class="badge badge-${c.status === 'ok' ? 'healthy' : 'down'}">${escapeHtml(c.current)}</span></td>
-                <td>
-                  <button class="btn btn-success btn-sm" onclick="dockerAction('${c.target}', 'start')">${t('start')}</button>
-                  <button class="btn btn-warning btn-sm" onclick="dockerAction('${c.target}', 'restart')">${t('restart')}</button>
-                  <button class="btn btn-danger btn-sm" onclick="dockerAction('${c.target}', 'stop')">${t('stop')}</button>
-                </td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      `}
-    `;
+    content.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🐳</div><div class="empty-state-desc">${t('docker_loading')}</div></div>`;
+    loadDockerTab();
   } else if (tab === 'timeline') {
     const incidents = d.incidents || [];
     content.innerHTML = `
@@ -6215,6 +6748,177 @@ async function deleteRule(id) {
   }
 }
 
+async function loadDockerTab() {
+  const host = currentHost;
+  const content = document.getElementById('tabContent');
+  if (!host || !content) return;
+  let data;
+  try {
+    const res = await fetch('/api/hosts/' + host.id + '/docker');
+    data = await res.json();
+  } catch (e) {
+    data = { ok: false, error: e.message };
+  }
+  if (currentTab !== 'docker' || !currentHost || currentHost.id !== host.id) return;
+  const header = `
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-shrink: 0;">
+      <h4>${t('docker_containers')}</h4>
+      <button class="btn btn-sm" onclick="switchTab('docker')">${t('refresh')}</button>
+    </div>`;
+  if (!data.ok) {
+    content.innerHTML = header + `
+      <div class="empty-state">
+        <div class="empty-state-icon">🐳</div>
+        <div class="empty-state-title">${t('docker_unavailable')}</div>
+        <div class="empty-state-desc" style="font-family: monospace; white-space: pre-wrap;">${escapeHtml(data.error || '')}</div>
+      </div>`;
+    return;
+  }
+  const containers = data.containers || [];
+  if (containers.length === 0) {
+    content.innerHTML = header + `
+      <div class="empty-state">
+        <div class="empty-state-icon">🐳</div>
+        <div class="empty-state-title">${t('no_containers_title')}</div>
+        <div class="empty-state-desc">${t('no_containers_desc')}</div>
+      </div>`;
+    return;
+  }
+  dockerContainersCache = containers;
+  content.innerHTML = header + `
+    <table>
+      <thead>
+        <tr><th>${t('container_name')}</th><th>${t('container_image')}</th><th>${t('status')}</th><th>${t('container_ports')}</th><th>${t('action')}</th></tr>
+      </thead>
+      <tbody>
+        ${containers.map((c, idx) => {
+          const running = c.state === 'running';
+          const name = escapeHtml(c.name);
+          return `
+          <tr>
+            <td><b>${name}</b></td>
+            <td style="font-family: monospace; font-size: 0.8rem;">${escapeHtml(c.image)}</td>
+            <td><span class="badge badge-${running ? 'healthy' : (c.state === 'exited' || c.state === 'dead' ? 'down' : 'warning')}">${escapeHtml(c.status)}</span></td>
+            <td style="font-family: monospace; font-size: 0.75rem; word-break: break-all;">${escapeHtml(c.ports || '')}</td>
+            <td style="text-align: right;"><button class="btn btn-sm btn-icon" title="${t('docker_menu_title')}" aria-label="${t('docker_menu_title')}" onclick="openDockerMenu(event, ${idx})">⋮</button></td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+}
+
+let dockerContainersCache = [];
+let dockerLogsSocket = null;
+
+function closeDockerMenu() {
+  const m = document.getElementById('dockerActionMenu');
+  if (m) m.remove();
+}
+window.addEventListener('click', closeDockerMenu);
+window.addEventListener('scroll', closeDockerMenu, true);
+
+function openDockerMenu(e, idx) {
+  e.stopPropagation();
+  const existing = document.getElementById('dockerActionMenu');
+  const toggleOff = existing && existing.dataset.idx === String(idx);
+  closeDockerMenu();
+  closeAllDropdowns();
+  if (toggleOff) return;
+  const c = dockerContainersCache[idx];
+  if (!c) return;
+  const running = c.state === 'running';
+  const items = [{ label: t('docker_logs'), run: () => openDockerLogs(c.name) }, null];
+  if (!running) items.push({ label: t('start'), run: () => dockerAction(c.name, 'start') });
+  if (running) {
+    items.push({ label: t('restart'), run: () => dockerAction(c.name, 'restart') });
+    items.push({ label: t('stop'), danger: true, run: () => dockerAction(c.name, 'stop') });
+  }
+  const menu = document.createElement('div');
+  menu.id = 'dockerActionMenu';
+  menu.className = 'dropdown-menu';
+  menu.dataset.idx = String(idx);
+  menu.style.cssText = 'display: block; position: fixed; margin: 0; right: auto; bottom: auto; z-index: ' + (modalZIndexCounter + 100) + ';';
+  items.forEach(it => {
+    if (!it) {
+      const hr = document.createElement('div');
+      hr.className = 'dropdown-divider';
+      menu.appendChild(hr);
+      return;
+    }
+    const b = document.createElement('button');
+    b.className = 'dropdown-item' + (it.danger ? ' danger' : '');
+    b.textContent = it.label;
+    b.addEventListener('click', () => { closeDockerMenu(); it.run(); });
+    menu.appendChild(b);
+  });
+  document.body.appendChild(menu);
+  const rect = e.currentTarget.getBoundingClientRect();
+  let left = rect.right - menu.offsetWidth;
+  let top = rect.bottom + 4;
+  if (top + menu.offsetHeight > window.innerHeight) top = rect.top - menu.offsetHeight - 4;
+  menu.style.left = Math.max(4, left) + 'px';
+  menu.style.top = Math.max(4, top) + 'px';
+}
+
+function stopDockerLogs() {
+  const ws = dockerLogsSocket;
+  dockerLogsSocket = null;
+  if (ws) ws.close();
+}
+
+function openDockerLogs(container) {
+  stopDockerLogs();
+  const out = document.getElementById('dockerLogsOutput');
+  const status = document.getElementById('dockerLogsStatus');
+  document.getElementById('dockerLogsTitle').textContent = t('docker_logs_title') + ': ' + container + ' @ ' + currentHost.name;
+  out.textContent = '';
+  status.textContent = t('docker_logs_connecting');
+  status.className = 'badge badge-info';
+  openModal('dockerLogsModal');
+
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(protocol + '//' + location.host + '/ws/docker/logs?host_id=' + currentHost.id + '&container=' + encodeURIComponent(container));
+  ws.binaryType = 'arraybuffer';
+  dockerLogsSocket = ws;
+  // Streaming decoder keeps multi-byte UTF-8 sequences intact across chunk boundaries.
+  const decoder = new TextDecoder('utf-8');
+  let scrollQueued = false;
+  const maxChars = 500000;
+  let chars = 0;
+
+  ws.onopen = () => {
+    if (dockerLogsSocket !== ws) return;
+    status.textContent = t('docker_logs_live');
+    status.className = 'badge badge-healthy';
+  };
+  ws.onmessage = (ev) => {
+    if (dockerLogsSocket !== ws) return;
+    if (!document.getElementById('dockerLogsModal').classList.contains('open')) {
+      stopDockerLogs();
+      return;
+    }
+    let text = typeof ev.data === 'string' ? ev.data : decoder.decode(ev.data, { stream: true });
+    text = text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+    if (!text) return;
+    out.appendChild(document.createTextNode(text));
+    chars += text.length;
+    while (chars > maxChars && out.firstChild && out.firstChild !== out.lastChild) {
+      chars -= out.firstChild.textContent.length;
+      out.removeChild(out.firstChild);
+    }
+    if (document.getElementById('dockerLogsAutoScroll').checked && !scrollQueued) {
+      scrollQueued = true;
+      requestAnimationFrame(() => { scrollQueued = false; out.scrollTop = out.scrollHeight; });
+    }
+  };
+  ws.onclose = () => {
+    if (dockerLogsSocket !== ws) return;
+    dockerLogsSocket = null;
+    status.textContent = t('docker_logs_ended');
+    status.className = 'badge badge-unknown';
+  };
+}
+
 async function dockerAction(container, action) {
   try {
     const res = await fetch('/api/hosts/' + currentHost.id + '/docker/action', {
@@ -6225,7 +6929,7 @@ async function dockerAction(container, action) {
     const data = await res.json();
     if (data.ok) {
       showToast(t('docker_action_success', 'Docker {action} completed successfully').replace('{action}', action), 'success');
-      inspectHost(currentHost.id);
+      loadDockerTab();
     } else {
       showToast(t('error_prefix', 'Error: ') + (data.error || 'Docker action failed'), 'error');
     }
@@ -9372,6 +10076,7 @@ function switchSettingsTab(tab) {
   document.querySelectorAll('#settingsTabs .tab').forEach(t => t.classList.remove('active'));
   if (tab === 'general') document.getElementById('tabSettingsGeneral')?.classList.add('active');
   else if (tab === 'security') document.getElementById('tabSettingsSecurity')?.classList.add('active');
+  else if (tab === 'keys') document.getElementById('tabSettingsKeys')?.classList.add('active');
   else if (tab === 'notif') document.getElementById('tabSettingsNotif')?.classList.add('active');
   else if (tab === 'backup') document.getElementById('tabSettingsBackup')?.classList.add('active');
   else if (tab === 'presets') document.getElementById('tabSettingsPresets')?.classList.add('active');
@@ -9379,6 +10084,7 @@ function switchSettingsTab(tab) {
 
   const panelGeneral = document.getElementById('settingsPanelGeneral');
   const panelSecurity = document.getElementById('settingsPanelSecurity');
+  const panelKeys = document.getElementById('settingsPanelKeys');
   const panelNotif = document.getElementById('settingsPanelNotif');
   const panelBackup = document.getElementById('settingsPanelBackup');
   const panelPresets = document.getElementById('settingsPanelPresets');
@@ -9386,12 +10092,15 @@ function switchSettingsTab(tab) {
 
   if (panelGeneral) panelGeneral.style.display = tab === 'general' ? 'flex' : 'none';
   if (panelSecurity) panelSecurity.style.display = tab === 'security' ? 'flex' : 'none';
+  if (panelKeys) panelKeys.style.display = tab === 'keys' ? 'flex' : 'none';
   if (panelNotif) panelNotif.style.display = tab === 'notif' ? 'flex' : 'none';
   if (panelBackup) panelBackup.style.display = tab === 'backup' ? 'flex' : 'none';
   if (panelPresets) panelPresets.style.display = tab === 'presets' ? 'flex' : 'none';
   if (panelUpdates) panelUpdates.style.display = tab === 'updates' ? 'flex' : 'none';
 
-  if (tab === 'presets') {
+  if (tab === 'keys') {
+    loadSSHKeys();
+  } else if (tab === 'presets') {
     loadSettingsPresets();
   } else if (tab === 'updates') {
     checkForUpdates(false);
@@ -9419,6 +10128,174 @@ function copyPubKey() {
       btn.style.background = '';
     }, 1500);
   }
+}
+
+let cachedSSHKeys = [];
+
+async function loadSSHKeys() {
+  const container = document.getElementById('sshKeysListContainer');
+  if (!container) return;
+  try {
+    const res = await fetch('/api/ssh-keys');
+    if (!res.ok) {
+      container.innerHTML = `<div style="color: var(--danger); font-size: 0.85rem; padding: 12px;">Failed to load SSH keys</div>`;
+      return;
+    }
+    const keys = await res.json() || [];
+    cachedSSHKeys = keys;
+    renderSSHKeys(keys);
+  } catch (err) {
+    container.innerHTML = `<div style="color: var(--danger); font-size: 0.85rem; padding: 12px;">${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function renderSSHKeys(keys) {
+  const container = document.getElementById('sshKeysListContainer');
+  if (!container) return;
+
+  if (!keys || keys.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state" style="padding: 24px;">
+        <div class="empty-state-icon">🔑</div>
+        <div class="empty-state-title" data-i18n="no_keys_title">${t('no_keys_title', 'No SSH Keys in Library')}</div>
+        <div class="empty-state-desc" data-i18n="no_keys_desc">${t('no_keys_desc', 'Add your first private key above to authenticate hosts across your infrastructure.')}</div>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = `
+    <div style="overflow-x: auto;">
+      <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--card-border); color: var(--text-muted); text-align: left;">
+            <th style="padding: 8px 6px; white-space: nowrap;" data-i18n="key_col_name">${t('key_col_name', 'Name')}</th>
+            <th style="padding: 8px 6px; min-width: 200px;" data-i18n="key_col_fingerprint">${t('key_col_fingerprint', 'Fingerprint')}</th>
+            <th style="padding: 8px 6px; white-space: nowrap; text-align: center;" data-i18n="key_col_used_by">${t('key_col_used_by', 'Used By')}</th>
+            <th style="padding: 8px 6px; white-space: nowrap;" data-i18n="key_col_created">${t('key_col_created', 'Created')}</th>
+            <th style="padding: 8px 6px; white-space: nowrap; text-align: right;" data-i18n="actions">${t('actions', 'Action')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${keys.map(k => {
+            const count = k.used_by || 0;
+            const countLabel = count === 1 ? t('host_singular', 'host') : t('host_plural', 'hosts');
+            const createdStr = k.created_at ? new Date(k.created_at).toLocaleDateString() : '—';
+            return `
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                <td style="padding: 8px 6px; font-weight: 600; color: #f8fafc; white-space: nowrap;">
+                  🔑 ${escapeHtml(k.name)}
+                </td>
+                <td style="padding: 8px 6px; font-family: monospace; font-size: 0.75rem; color: #cbd5e1; word-break: break-all;">
+                  <code>${escapeHtml(k.fingerprint || '—')}</code>
+                </td>
+                <td style="padding: 8px 6px; text-align: center; white-space: nowrap;">
+                  <span class="badge" style="background: ${count > 0 ? 'rgba(59,130,246,0.18)' : 'rgba(255,255,255,0.06)'}; color: ${count > 0 ? '#93c5fd' : 'var(--text-muted)'}; font-size: 0.75rem; padding: 2px 8px;">
+                    ${count} ${countLabel}
+                  </span>
+                </td>
+                <td style="padding: 8px 6px; color: var(--text-muted); font-size: 0.8rem; white-space: nowrap;">
+                  ${createdStr}
+                </td>
+                <td style="padding: 8px 6px; text-align: right; white-space: nowrap;">
+                  <button class="btn btn-danger btn-sm" onclick="deleteSSHKey(${k.id})" style="padding: 2px 8px; font-size: 0.75rem;">
+                    🗑️ <span data-i18n="delete">${t('delete', 'Delete')}</span>
+                  </button>
+                </td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function addSSHKey() {
+  const nameInput = document.getElementById('newKeyName');
+  const privInput = document.getElementById('newKeyPrivate');
+  const name = (nameInput?.value || '').trim();
+  const privateKey = (privInput?.value || '').trim();
+
+  if (!name) {
+    showToast(t('key_name_required', 'Key name is required'), 'warning');
+    nameInput?.focus();
+    return;
+  }
+  if (!privateKey) {
+    showToast(t('key_private_required', 'Private key content is required'), 'warning');
+    privInput?.focus();
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/ssh-keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, private_key: privateKey })
+    });
+    if (res.status === 201 || res.ok) {
+      showToast(t('key_added_success', 'SSH key added to library successfully'), 'success');
+      if (nameInput) nameInput.value = '';
+      if (privInput) privInput.value = '';
+      loadSSHKeys();
+    } else {
+      const txt = await res.text();
+      let errMsg = txt;
+      try {
+        const errObj = JSON.parse(txt);
+        if (errObj.error) errMsg = errObj.error;
+      } catch(e) {}
+      showToast(errMsg, 'error');
+    }
+  } catch (err) {
+    showToast(t('key_add_failed', 'Failed to add SSH key: ') + err.message, 'error');
+  }
+}
+
+async function deleteSSHKey(id) {
+  const k = cachedSSHKeys.find(item => item.id === id);
+  const name = k ? k.name : ('#' + id);
+  const msg = t('confirm_delete_ssh_key', 'Are you sure you want to delete SSH key "{name}"?').replace('{name}', name);
+  if (!await showConfirm({ message: msg, confirmText: t('delete', 'Delete'), danger: true })) return;
+  try {
+    const res = await fetch('/api/ssh-keys/' + id, { method: 'DELETE' });
+    if (res.ok) {
+      showToast(t('ssh_key_deleted', 'SSH key deleted successfully'), 'success');
+      loadSSHKeys();
+    } else {
+      const txt = await res.text();
+      let errMsg = txt;
+      try {
+        const errObj = JSON.parse(txt);
+        if (errObj.error) errMsg = errObj.error;
+      } catch(e) {}
+      showToast(errMsg, 'error');
+    }
+  } catch (err) {
+    showToast(t('delete_ssh_key_failed', 'Failed to delete SSH key: ') + err.message, 'error');
+  }
+}
+
+function handleSSHKeyFileSelect(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const content = e.target.result;
+    const txtArea = document.getElementById('newKeyPrivate');
+    if (txtArea) txtArea.value = content;
+    const nameInput = document.getElementById('newKeyName');
+    if (nameInput && !nameInput.value.trim()) {
+      let baseName = file.name.replace(/\.(pem|key|priv|id_rsa|id_ed25519)$/i, '');
+      if (baseName === 'id_rsa' || baseName === 'id_ed25519' || !baseName) {
+        baseName = file.name;
+      }
+      nameInput.value = baseName;
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
 }
 
 let lastUpdateCheckData = null;
@@ -10204,6 +11081,9 @@ function closeModal(id) {
   if (id === 'transfersListModal' && transferPollInterval) {
     clearInterval(transferPollInterval);
     transferPollInterval = null;
+  }
+  if (id === 'dockerLogsModal') {
+    stopDockerLogs();
   }
   if (id === 'terminalDockModal') {
     minimizeTerminalDock();

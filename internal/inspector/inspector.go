@@ -65,13 +65,9 @@ func (ins *Inspector) InFlightCount() int {
 }
 
 func (ins *Inspector) GetRunnerForHost(h *store.Host) (sshrunner.Runner, error) {
-	key := h.CustomKey
-	if strings.TrimSpace(key) == "" {
-		globalKey, err := ins.db.GetSetting("ssh_private_key")
-		if err != nil {
-			return nil, fmt.Errorf("get global ssh key: %w", err)
-		}
-		key = globalKey
+	key, err := ins.db.ResolveHostPrivateKey(h)
+	if err != nil {
+		return nil, err
 	}
 	return ins.factory(h.Host, h.Port, h.User, key)
 }
@@ -1426,6 +1422,81 @@ func (ins *Inspector) GenerateBaseline(hostID int64) ([]store.DesiredRule, error
 	}
 
 	return rules, nil
+}
+
+// DockerContainer is a live snapshot of one container (running or not) on a host.
+type DockerContainer struct {
+	Name   string `json:"name"`
+	Image  string `json:"image"`
+	State  string `json:"state"`  // running, paused, restarting, exited, created, dead
+	Status string `json:"status"` // raw `docker ps` status, e.g. "Up 3 hours (healthy)"
+	Ports  string `json:"ports"`
+}
+
+// ListDockerContainers lists all containers (including stopped ones) via `docker ps -a`.
+// The state is derived from the Status column so it works on legacy Docker versions without {{.State}}.
+func (ins *Inspector) ListDockerContainers(hostID int64) ([]DockerContainer, error) {
+	host, err := ins.db.GetHost(hostID)
+	if err != nil || host == nil {
+		return nil, fmt.Errorf("host not found")
+	}
+	runner, err := ins.GetRunnerForHost(host)
+	if err != nil {
+		return nil, err
+	}
+	defer runner.Close()
+
+	stdout, stderr, exitCode, err := runner.Exec(`docker ps -a --no-trunc --format '{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}'`)
+	if err != nil {
+		return nil, err
+	}
+	if exitCode != 0 {
+		msg := strings.TrimSpace(stderr)
+		if msg == "" {
+			msg = fmt.Sprintf("docker ps failed (exit %d)", exitCode)
+		}
+		return nil, fmt.Errorf("%s", msg)
+	}
+	return parseDockerPS(stdout), nil
+}
+
+func parseDockerPS(out string) []DockerContainer {
+	containers := []DockerContainer{}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		f := strings.SplitN(line, "|", 4)
+		if len(f) < 3 {
+			continue
+		}
+		c := DockerContainer{Name: f[0], Image: f[1], Status: f[2], State: dockerStateFromStatus(f[2])}
+		if len(f) == 4 {
+			c.Ports = f[3]
+		}
+		containers = append(containers, c)
+	}
+	return containers
+}
+
+func dockerStateFromStatus(status string) string {
+	s := strings.ToLower(status)
+	switch {
+	case strings.Contains(s, "(paused)"):
+		return "paused"
+	case strings.HasPrefix(s, "up"):
+		return "running"
+	case strings.HasPrefix(s, "restarting"):
+		return "restarting"
+	case strings.HasPrefix(s, "exited"):
+		return "exited"
+	case strings.HasPrefix(s, "created"):
+		return "created"
+	case strings.HasPrefix(s, "dead"):
+		return "dead"
+	}
+	return "unknown"
 }
 
 // DockerActions

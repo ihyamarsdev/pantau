@@ -1,9 +1,15 @@
 package store
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -369,6 +375,402 @@ func TestFilePinsCRUD(t *testing.T) {
 	}
 	if pins[0].Path != "/etc/nginx/nginx.conf" {
 		t.Errorf("expected remaining pin to be nginx.conf, got %q", pins[0].Path)
+	}
+}
+func TestSSHKeyLibraryCRUD(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "pantau-keylib-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	db, err := Open(filepath.Join(tmpDir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	privPEM, pubKey, err := GenerateRSAKeyPair(2048)
+	if err != nil {
+		t.Fatalf("generate rsa key: %v", err)
+	}
+
+	pub, fp, err := ParseSSHPrivateKey([]byte(privPEM))
+	if err != nil {
+		t.Fatalf("parse ssh private key: %v", err)
+	}
+	if !strings.HasPrefix(fp, "SHA256:") {
+		t.Fatalf("expected fingerprint starting with SHA256:, got %q", fp)
+	}
+	_ = pubKey
+
+	// 1. Create key
+	keyID, err := db.CreateSSHKey(&SSHKey{
+		Name:        "Prod Cluster Key",
+		PrivateKey:  privPEM,
+		PublicKey:   pub,
+		Fingerprint: fp,
+	})
+	if err != nil {
+		t.Fatalf("create ssh key: %v", err)
+	}
+	if keyID <= 0 {
+		t.Fatalf("expected positive key ID, got %d", keyID)
+	}
+
+	// 2. Duplicate name should fail
+	_, err = db.CreateSSHKey(&SSHKey{
+		Name:        "Prod Cluster Key",
+		PrivateKey:  privPEM,
+		PublicKey:   pub,
+		Fingerprint: fp,
+	})
+	if err == nil {
+		t.Fatal("expected duplicate key name to fail, got nil")
+	}
+
+	// 3. List keys - UsedBy must be 0 initially
+	keys, err := db.ListSSHKeys()
+	if err != nil {
+		t.Fatalf("list ssh keys: %v", err)
+	}
+	if len(keys) != 1 {
+		t.Fatalf("expected 1 key, got %d", len(keys))
+	}
+	if keys[0].UsedBy != 0 {
+		t.Fatalf("expected used_by 0, got %d", keys[0].UsedBy)
+	}
+	if keys[0].Name != "Prod Cluster Key" {
+		t.Errorf("expected name 'Prod Cluster Key', got %q", keys[0].Name)
+	}
+
+	// 4. Get key - verifies PrivateKey is populated in memory
+	gotKey, err := db.GetSSHKey(keyID)
+	if err != nil {
+		t.Fatalf("get ssh key: %v", err)
+	}
+	if gotKey == nil {
+		t.Fatal("expected key, got nil")
+	}
+	if gotKey.PrivateKey != privPEM {
+		t.Errorf("expected private key to match in memory")
+	}
+
+	// 5. Attach host to this key
+	hostID, err := db.CreateHost(&Host{
+		Name:  "Worker-1",
+		Host:  "10.0.0.1",
+		Port:  22,
+		User:  "root",
+		KeyID: keyID,
+	})
+	if err != nil {
+		t.Fatalf("create host with key_id: %v", err)
+	}
+
+	// Verify host has KeyID and custom_key is empty
+	h, err := db.GetHost(hostID)
+	if err != nil {
+		t.Fatalf("get host: %v", err)
+	}
+	if h.KeyID != keyID {
+		t.Errorf("expected host key_id %d, got %d", keyID, h.KeyID)
+	}
+	if h.CustomKey != "" {
+		t.Errorf("expected empty custom_key when key_id is set, got %q", h.CustomKey)
+	}
+
+	// 6. List keys - UsedBy must now be 1
+	keys, err = db.ListSSHKeys()
+	if err != nil {
+		t.Fatalf("list ssh keys: %v", err)
+	}
+	if keys[0].UsedBy != 1 {
+		t.Fatalf("expected used_by 1, got %d", keys[0].UsedBy)
+	}
+
+	// 7. Delete key while in use must fail with ErrSSHKeyInUse
+	err = db.DeleteSSHKey(keyID)
+	if !errors.Is(err, ErrSSHKeyInUse) {
+		t.Fatalf("expected ErrSSHKeyInUse, got %v", err)
+	}
+
+	// 8. Update host to detach key
+	h.KeyID = 0
+	h.CustomKey = "custom-key-body"
+	if err := db.UpdateHost(h); err != nil {
+		t.Fatalf("update host: %v", err)
+	}
+
+	// 9. Delete key now succeeds
+	if err := db.DeleteSSHKey(keyID); err != nil {
+		t.Fatalf("delete ssh key: %v", err)
+	}
+
+	// 10. Delete non-existent key returns ErrSSHKeyNotFound
+	err = db.DeleteSSHKey(keyID)
+	if !errors.Is(err, ErrSSHKeyNotFound) {
+		t.Fatalf("expected ErrSSHKeyNotFound, got %v", err)
+	}
+}
+
+func TestResolveHostPrivateKeyPrecedence(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "pantau-resolve-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	db, err := Open(filepath.Join(tmpDir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	// Setup global key
+	if err := db.SetSetting("ssh_private_key", "GLOBAL_PRIVATE_KEY"); err != nil {
+		t.Fatalf("set global key: %v", err)
+	}
+
+	// Setup library key
+	libKeyID, err := db.CreateSSHKey(&SSHKey{
+		Name:        "Library Key 1",
+		PrivateKey:  "LIBRARY_PRIVATE_KEY",
+		PublicKey:   "ssh-rsa AAAA...",
+		Fingerprint: "SHA256:fakefingerprint",
+	})
+	if err != nil {
+		t.Fatalf("create lib key: %v", err)
+	}
+
+	// Case 1: Host has KeyID > 0 and CustomKey set. Library key MUST take precedence!
+	h1 := &Host{
+		KeyID:     libKeyID,
+		CustomKey: "CUSTOM_PRIVATE_KEY",
+	}
+	resolved, err := db.ResolveHostPrivateKey(h1)
+	if err != nil {
+		t.Fatalf("resolve host 1: %v", err)
+	}
+	if resolved != "LIBRARY_PRIVATE_KEY" {
+		t.Errorf("expected LIBRARY_PRIVATE_KEY, got %q", resolved)
+	}
+
+	// Case 2: Host has dangling/missing KeyID > 0. MUST error and NEVER silently fall back!
+	h2 := &Host{
+		KeyID:     99999,
+		CustomKey: "CUSTOM_PRIVATE_KEY",
+	}
+	_, err = db.ResolveHostPrivateKey(h2)
+	if err == nil {
+		t.Fatal("expected error for dangling KeyID, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected 'not found' in error, got: %v", err)
+	}
+
+	// Case 3: Host has KeyID == 0 and CustomKey set. MUST return CustomKey.
+	h3 := &Host{
+		KeyID:     0,
+		CustomKey: "CUSTOM_PRIVATE_KEY",
+	}
+	resolved, err = db.ResolveHostPrivateKey(h3)
+	if err != nil {
+		t.Fatalf("resolve host 3: %v", err)
+	}
+	if resolved != "CUSTOM_PRIVATE_KEY" {
+		t.Errorf("expected CUSTOM_PRIVATE_KEY, got %q", resolved)
+	}
+
+	// Case 4: Host has KeyID == 0 and CustomKey empty. MUST return global key.
+	h4 := &Host{
+		KeyID:     0,
+		CustomKey: "   ",
+	}
+	resolved, err = db.ResolveHostPrivateKey(h4)
+	if err != nil {
+		t.Fatalf("resolve host 4: %v", err)
+	}
+	if resolved != "GLOBAL_PRIVATE_KEY" {
+		t.Errorf("expected GLOBAL_PRIVATE_KEY, got %q", resolved)
+	}
+
+	// Case 5: Nil host
+	_, err = db.ResolveHostPrivateKey(nil)
+	if err == nil {
+		t.Fatal("expected error for nil host, got nil")
+	}
+}
+
+func TestParseSSHPrivateKey(t *testing.T) {
+	// 1. Valid RSA Key
+	privPEM, _, err := GenerateRSAKeyPair(2048)
+	if err != nil {
+		t.Fatalf("generate rsa: %v", err)
+	}
+	pub, fp, err := ParseSSHPrivateKey([]byte(privPEM))
+	if err != nil {
+		t.Fatalf("parse valid rsa: %v", err)
+	}
+	if !strings.HasPrefix(pub, "ssh-rsa ") {
+		t.Errorf("expected ssh-rsa prefix, got %q", pub)
+	}
+	if !strings.HasPrefix(fp, "SHA256:") {
+		t.Errorf("expected SHA256: fingerprint, got %q", fp)
+	}
+
+	// 2. Passphrase-protected key rejected
+	privKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privDER := x509.MarshalPKCS1PrivateKey(privKey)
+	encBlock, err := x509.EncryptPEMBlock(rand.Reader, "RSA PRIVATE KEY", privDER, []byte("secretpass"), x509.PEMCipherAES256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encPEM := pem.EncodeToMemory(encBlock)
+	_, _, err = ParseSSHPrivateKey(encPEM)
+	if err == nil {
+		t.Fatal("expected passphrase-protected key to be rejected, got nil")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "passphrase") && !strings.Contains(strings.ToLower(err.Error()), "not supported") {
+		t.Errorf("expected passphrase-related error, got: %v", err)
+	}
+
+	// 3. Invalid key rejected
+	_, _, err = ParseSSHPrivateKey([]byte("NOT A VALID KEY CONTENT"))
+	if err == nil {
+		t.Fatal("expected invalid key to be rejected, got nil")
+	}
+}
+
+func TestSnapshotRoundTripWithSSHKeys(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "pantau-snap-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	db1, err := Open(filepath.Join(tmpDir, "source.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db1.Close()
+
+	// 1. Add SSH key to DB 1
+	privPEM, pubKey, _ := GenerateRSAKeyPair(2048)
+	pub, fp, _ := ParseSSHPrivateKey([]byte(privPEM))
+	_ = pubKey
+
+	keyID, err := db1.CreateSSHKey(&SSHKey{
+		Name:        "Backup Key",
+		PrivateKey:  privPEM,
+		PublicKey:   pub,
+		Fingerprint: fp,
+	})
+	if err != nil {
+		t.Fatalf("create ssh key in db1: %v", err)
+	}
+
+	// 2. Add host referencing this key
+	hostID, err := db1.CreateHost(&Host{
+		Name:  "Database Server",
+		Host:  "192.168.1.50",
+		Port:  22,
+		User:  "admin",
+		KeyID: keyID,
+	})
+	if err != nil {
+		t.Fatalf("create host in db1: %v", err)
+	}
+
+	// 3. Export snapshot
+	payload, err := db1.ExportSnapshot()
+	if err != nil {
+		t.Fatalf("export snapshot: %v", err)
+	}
+	if len(payload.SSHKeys) != 1 {
+		t.Fatalf("expected 1 ssh key in snapshot, got %d", len(payload.SSHKeys))
+	}
+	if payload.SSHKeys[0].ID != keyID {
+		t.Errorf("expected key ID %d in snapshot, got %d", keyID, payload.SSHKeys[0].ID)
+	}
+	if payload.SSHKeys[0].PrivateKey != privPEM {
+		t.Errorf("expected snapshot to include private key for restoration")
+	}
+
+	// 4. Import snapshot into DB 2
+	db2, err := Open(filepath.Join(tmpDir, "dest.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db2.Close()
+
+	if err := db2.ImportSnapshot(payload); err != nil {
+		t.Fatalf("import snapshot into db2: %v", err)
+	}
+
+	// Verify key restored in DB 2
+	restoredKey, err := db2.GetSSHKey(keyID)
+	if err != nil {
+		t.Fatalf("get restored key: %v", err)
+	}
+	if restoredKey == nil {
+		t.Fatal("restored key not found in db2")
+	}
+	if restoredKey.Name != "Backup Key" {
+		t.Errorf("expected 'Backup Key', got %q", restoredKey.Name)
+	}
+	if restoredKey.PrivateKey != privPEM {
+		t.Errorf("restored private key does not match")
+	}
+
+	// Verify host restored and links to key
+	restoredHost, err := db2.GetHost(hostID)
+	if err != nil {
+		t.Fatalf("get restored host: %v", err)
+	}
+	if restoredHost == nil {
+		t.Fatal("restored host not found in db2")
+	}
+	if restoredHost.KeyID != keyID {
+		t.Errorf("expected restored host key_id %d, got %d", keyID, restoredHost.KeyID)
+	}
+
+	// Verify resolution on restored host
+	resolved, err := db2.ResolveHostPrivateKey(restoredHost)
+	if err != nil {
+		t.Fatalf("resolve restored host key: %v", err)
+	}
+	if resolved != privPEM {
+		t.Errorf("resolved key did not match restored private key")
+	}
+
+	// 5. Backward compatibility: import older snapshot without SSHKeys
+	oldPayload := &SnapshotPayload{
+		Version:   1,
+		CreatedAt: time.Now().UTC(),
+		Settings:  map[string]string{"foo": "bar"},
+		Hosts: []Host{
+			{
+				ID:   99,
+				Name: "Legacy Host",
+				Host: "10.0.0.99",
+				Port: 22,
+				User: "root",
+			},
+		},
+	}
+	if err := db2.ImportSnapshot(oldPayload); err != nil {
+		t.Fatalf("import backward compatible snapshot failed: %v", err)
+	}
+	legacyHost, err := db2.GetHost(99)
+	if err != nil || legacyHost == nil {
+		t.Fatalf("expected legacy host 99 in db2: %v", err)
+	}
+	if legacyHost.KeyID != 0 {
+		t.Errorf("expected KeyID 0 for legacy host, got %d", legacyHost.KeyID)
 	}
 }
 
