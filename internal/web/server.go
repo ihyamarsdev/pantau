@@ -2397,6 +2397,17 @@ func (s *Server) handleFilesRoute(hostID int64, subparts []string, w http.Respon
 			hasZipOut, _, _, _ := runner.Exec("which zip 2>/dev/null")
 			hasZip := strings.TrimSpace(hasZipOut) != ""
 
+			// Ensure remote zip/tar is immediately aborted if client cancels download request
+			doneChan := make(chan struct{})
+			defer close(doneChan)
+			go func() {
+				select {
+				case <-r.Context().Done():
+					_ = runner.Close()
+				case <-doneChan:
+				}
+			}()
+
 			if hasZip {
 				w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", base+".zip"))
 				w.Header().Set("Content-Type", "application/zip")
@@ -2878,7 +2889,11 @@ func (s *Server) handleWSTerminal(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if n > 0 {
-				_ = ws.WriteMessage(websocket.BinaryMessage, buf[:n])
+				if err := ws.WriteMessage(websocket.BinaryMessage, buf[:n]); err != nil {
+					_ = inWriter.Close()
+					_ = runner.Close()
+					return
+				}
 			}
 		}
 	}()
@@ -2888,7 +2903,8 @@ func (s *Server) handleWSTerminal(w http.ResponseWriter, r *http.Request) {
 		for {
 			msgType, data, err := ws.ReadMessage()
 			if err != nil {
-				inWriter.Close()
+				_ = inWriter.Close()
+				_ = runner.Close()
 				return
 			}
 			if msgType == websocket.TextMessage && len(data) > 0 && data[0] == '{' {
@@ -3180,16 +3196,21 @@ func (s *Server) handleWSDockerLogs(w http.ResponseWriter, r *http.Request) {
 			}
 			if n > 0 {
 				// Binary frames: raw 1KB chunks can split multi-byte UTF-8 runes, which browsers reject in text frames.
-				_ = ws.WriteMessage(websocket.BinaryMessage, buf[:n])
+				if err := ws.WriteMessage(websocket.BinaryMessage, buf[:n]); err != nil {
+					_ = outWriter.Close()
+					_ = runner.Close()
+					return
+				}
 			}
 		}
 	}()
 
-	// Close on websocket close
+	// Close on websocket close - immediately aborts remote docker logs -f
 	go func() {
 		for {
 			if _, _, err := ws.ReadMessage(); err != nil {
-				outWriter.Close()
+				_ = outWriter.Close()
+				_ = runner.Close()
 				return
 			}
 		}

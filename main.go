@@ -457,6 +457,7 @@ func main() {
 	}
 
 	server.SetDocsFS(embeddedDocs)
+	server.StartTunnelReaper(ctx, 30*time.Second, 3*time.Minute)
 	listener, port, err := listenPort(listenBind, port, portExplicit)
 	if err != nil {
 		logger.Error("system", "", "Failed to bind port: "+err.Error())
