@@ -85,6 +85,21 @@ ID=arch`,
 			wantManager: "apt",
 		},
 		{
+			name: "macOS Tahoe with ID=macos",
+			content: `NAME="macOS"
+ID=macos
+VERSION_ID="26.5.1"
+PRETTY_NAME="macOS 26.5.1 (Tahoe)"`,
+			wantFamily:  "macos",
+			wantManager: "softwareupdate",
+		},
+		{
+			name:        "macOS from uname",
+			content:     "Darwin Mac-Host 25.5.0 Darwin Kernel Version",
+			wantFamily:  "macos",
+			wantManager: "softwareupdate",
+		},
+		{
 			name:        "Unknown distro",
 			content:     "Custom Embedded Linux",
 			wantFamily:  "unknown",
@@ -758,5 +773,275 @@ func TestEvaluateSecurityUpdatesRule(t *testing.T) {
 	}
 	if !strings.Contains(rc, "Invalid expected value") {
 		t.Errorf("expected explanatory rootCause for invalid expected, got %s", rc)
+	}
+}
+
+func TestParseSoftwareUpdate_Clean(t *testing.T) {
+	output := `Software Update Tool
+
+Finding available software
+No new software available.
+`
+	findings, pendingSec, pendingTot, rebootReq, notes := parseSoftwareUpdate(output, "26.5.1")
+	if pendingTot != 0 {
+		t.Errorf("expected 0 pendingTot, got %d", pendingTot)
+	}
+	if pendingSec != 0 {
+		t.Errorf("expected 0 pendingSec, got %d", pendingSec)
+	}
+	if rebootReq {
+		t.Errorf("expected rebootReq false, got true")
+	}
+	if len(findings) != 0 {
+		t.Errorf("expected 0 findings, got %d", len(findings))
+	}
+	if len(notes) == 0 || !strings.Contains(notes[0], "heuristic") && !strings.Contains(notes[0], "security updates") {
+		t.Errorf("expected honesty note, got %v", notes)
+	}
+}
+
+func TestParseSoftwareUpdate_SafariAndCLT(t *testing.T) {
+	output := `Software Update Tool
+
+Finding available software
+Software Update found the following new or updated software:
+* Label: Command Line Tools for Xcode 26.6-26.6
+	Title: Command Line Tools for Xcode 26.6, Version: 26.6, Size: 920431KiB, Recommended: YES,
+* Label: Safari27.2TahoeAuto-27.2
+	Title: Safari, Version: 27.2, Size: 250130KiB, Recommended: YES,
+`
+	findings, pendingSec, pendingTot, rebootReq, _ := parseSoftwareUpdate(output, "26.2")
+	if pendingTot != 2 {
+		t.Errorf("expected pendingTot 2, got %d", pendingTot)
+	}
+	if pendingSec != 1 {
+		t.Errorf("expected pendingSec 1 (Safari only), got %d", pendingSec)
+	}
+	if rebootReq {
+		t.Errorf("expected rebootReq false, got true")
+	}
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	if findings[0].Package != "Safari" {
+		t.Errorf("expected Package 'Safari', got %q", findings[0].Package)
+	}
+	if findings[0].FixedVersion != "27.2" {
+		t.Errorf("expected FixedVersion '27.2', got %q", findings[0].FixedVersion)
+	}
+	if findings[0].Severity != "unknown" {
+		t.Errorf("expected Severity 'unknown', got %q", findings[0].Severity)
+	}
+}
+
+func TestParseSoftwareUpdate_PointUpdateWithRestart(t *testing.T) {
+	output := `Software Update Tool
+
+Finding available software
+Software Update found the following new or updated software:
+* Label: macOS Tahoe 26.6-26.6
+	Title: macOS Tahoe 26.6, Version: 26.6, Size: 3123456KiB, Recommended: YES, Action: restart,
+`
+	findings, pendingSec, pendingTot, rebootReq, _ := parseSoftwareUpdate(output, "26.5.1")
+	if pendingTot != 1 {
+		t.Errorf("expected pendingTot 1, got %d", pendingTot)
+	}
+	if pendingSec != 1 {
+		t.Errorf("expected pendingSec 1, got %d", pendingSec)
+	}
+	if !rebootReq {
+		t.Errorf("expected rebootReq true, got false")
+	}
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	if findings[0].Package != "macOS Tahoe 26.6" {
+		t.Errorf("expected Package 'macOS Tahoe 26.6', got %q", findings[0].Package)
+	}
+	if findings[0].FixedVersion != "26.6" {
+		t.Errorf("expected FixedVersion '26.6', got %q", findings[0].FixedVersion)
+	}
+	if findings[0].InstalledVersion != "26.5.1" {
+		t.Errorf("expected InstalledVersion '26.5.1', got %q", findings[0].InstalledVersion)
+	}
+}
+
+func TestParseSoftwareUpdate_UnreachableAndTimeout(t *testing.T) {
+	unreachable := `Software Update Tool
+
+Finding available software
+Can't connect to the Apple Software Update server.
+`
+	findings, pendingSec, pendingTot, rebootReq, notes := parseSoftwareUpdate(unreachable, "26.5.1")
+	if pendingTot != 0 || pendingSec != 0 || rebootReq || len(findings) != 0 {
+		t.Errorf("expected zero results for unreachable, got tot=%d sec=%d reboot=%v findings=%d", pendingTot, pendingSec, rebootReq, len(findings))
+	}
+	if len(notes) == 0 || !strings.Contains(strings.ToLower(notes[0]), "timed out") && !strings.Contains(strings.ToLower(notes[0]), "failed") {
+		t.Errorf("expected error note for unreachable, got %v", notes)
+	}
+
+	timeoutText := `Software Update Tool
+
+Finding available software
+softwareupdate: timed out
+`
+	_, _, _, _, timeoutNotes := parseSoftwareUpdate(timeoutText, "26.5.1")
+	if len(timeoutNotes) == 0 || !strings.Contains(strings.ToLower(timeoutNotes[0]), "timed out") && !strings.Contains(strings.ToLower(timeoutNotes[0]), "failed") {
+		t.Errorf("expected error note for timeout, got %v", timeoutNotes)
+	}
+}
+
+func TestParseSecurityScanOutput_MacOS(t *testing.T) {
+	// 1. Clean macOS scan: status MUST be "partial" (never "ok") due to Apple's unclassified updates
+	cleanBatch := `===OS_RELEASE===
+ID=macos
+NAME="macOS"
+VERSION_ID="26.5.1"
+PRETTY_NAME="macOS 26.5.1 (Tahoe)"
+===CACHE_AGE===
+1793256603
+===REBOOT===
+===UPDATES===
+MGR:softwareupdate
+Software Update Tool
+
+Finding available software
+No new software available.
+===SSHD_CONFIG===
+FILE:/etc/ssh/sshd_config
+UsePAM yes
+===AUTO_UPDATES===
+    AutomaticDownload = 1;
+    AutomaticallyInstallMacOSUpdates = 1;
+    ConfigDataInstall = 1;
+    CriticalUpdateInstall = 1;
+===FIREWALL===
+Firewall is enabled. (State = 1)
+`
+	scan := parseSecurityScanOutput(cleanBatch, 10)
+	if scan.OSFamily != "macos" {
+		t.Errorf("expected OSFamily 'macos', got %q", scan.OSFamily)
+	}
+	if scan.PackageManager != "softwareupdate" {
+		t.Errorf("expected PackageManager 'softwareupdate', got %q", scan.PackageManager)
+	}
+	if scan.Status != "partial" {
+		t.Errorf("expected Status 'partial', got %q", scan.Status)
+	}
+	if scan.RepoCacheAgeHours != -1 {
+		t.Errorf("expected RepoCacheAgeHours -1, got %d", scan.RepoCacheAgeHours)
+	}
+	if scan.PendingSecurity != 0 || scan.PendingTotal != 0 {
+		t.Errorf("expected 0 pending, got sec=%d tot=%d", scan.PendingSecurity, scan.PendingTotal)
+	}
+	if len(scan.Hardening) != 4 {
+		t.Fatalf("expected 4 hardening checks, got %d", len(scan.Hardening))
+	}
+	for _, h := range scan.Hardening {
+		if h.Status != "pass" && h.ID != "sshd_password_auth" {
+			t.Errorf("expected pass for %s, got %s", h.ID, h.Status)
+		}
+	}
+
+	// 2. Unreachable softwareupdate: status MUST be "partial" (never "ok")
+	unreachBatch := `===OS_RELEASE===
+ID=macos
+NAME="macOS"
+VERSION_ID="26.2"
+===CACHE_AGE===
+1793256603
+===REBOOT===
+===UPDATES===
+MGR:softwareupdate
+Software Update Tool
+
+Finding available software
+Can't connect to the Apple Software Update server.
+===SSHD_CONFIG===
+FILE:/etc/ssh/sshd_config
+UsePAM yes
+===AUTO_UPDATES===
+    AutomaticDownload = 1;
+===FIREWALL===
+Firewall is disabled. (State = 0)
+`
+	unreachScan := parseSecurityScanOutput(unreachBatch, 11)
+	if unreachScan.Status != "partial" {
+		t.Errorf("expected Status 'partial' for unreachable, got %q", unreachScan.Status)
+	}
+	hasErrorNote := false
+	for _, note := range unreachScan.Notes {
+		if strings.Contains(strings.ToLower(note), "failed") || strings.Contains(strings.ToLower(note), "timed out") {
+			hasErrorNote = true
+			break
+		}
+	}
+	if !hasErrorNote {
+		t.Errorf("expected error/timeout note for unreachable softwareupdate, got notes: %v", unreachScan.Notes)
+	}
+}
+
+func TestParseHardeningChecks_MacOS_Fixtures(t *testing.T) {
+	// Fixture A: macstudio-A (only AutomaticDownload = 1, Firewall State = 0)
+	autoSecA := "    AutomaticDownload = 1;\n"
+	fwSecA := "Firewall is disabled. (State = 0)\n"
+	sshdSecA := "FILE:/etc/ssh/sshd_config\nUsePAM yes\n"
+
+	checksA, _ := parseHardeningChecks(sshdSecA, autoSecA, fwSecA)
+	if len(checksA) != 4 {
+		t.Fatalf("expected 4 checks, got %d", len(checksA))
+	}
+	mA := make(map[string]store.HardeningCheck)
+	for _, c := range checksA {
+		mA[c.ID] = c
+	}
+	if mA["sshd_permit_root_login"].Status != "pass" {
+		t.Errorf("expected sshd_permit_root_login pass, got %s", mA["sshd_permit_root_login"].Status)
+	}
+	if mA["sshd_password_auth"].Status != "warn" {
+		t.Errorf("expected sshd_password_auth warn, got %s", mA["sshd_password_auth"].Status)
+	}
+	if mA["auto_security_updates"].Status != "warn" {
+		t.Errorf("expected auto_security_updates warn for macstudio-A, got %s", mA["auto_security_updates"].Status)
+	}
+	if mA["firewall_active"].Status != "warn" {
+		t.Errorf("expected firewall_active warn for State=0, got %s", mA["firewall_active"].Status)
+	}
+
+	// Fixture B: macmini-B (all 4 auto keys = 1, Firewall State = 1)
+	autoSecB := `    AutomaticDownload = 1;
+    AutomaticallyInstallMacOSUpdates = 1;
+    ConfigDataInstall = 1;
+    CriticalUpdateInstall = 1;`
+	fwSecB := "Firewall is enabled. (State = 1)\n"
+	sshdSecB := "FILE:/etc/ssh/sshd_config\nUsePAM yes\n"
+
+	checksB, _ := parseHardeningChecks(sshdSecB, autoSecB, fwSecB)
+	mB := make(map[string]store.HardeningCheck)
+	for _, c := range checksB {
+		mB[c.ID] = c
+	}
+	if mB["auto_security_updates"].Status != "pass" {
+		t.Errorf("expected auto_security_updates pass for macmini-B, got %s", mB["auto_security_updates"].Status)
+	}
+	if mB["firewall_active"].Status != "pass" {
+		t.Errorf("expected firewall_active pass for State=1, got %s", mB["firewall_active"].Status)
+	}
+
+	// Unreadable checks
+	autoUnread, notesAuto := parseAutoUpdates("DEFAULTS_UNREADABLE")
+	if autoUnread.Status != "unknown" {
+		t.Errorf("expected unknown for unreadable auto updates, got %s", autoUnread.Status)
+	}
+	if len(notesAuto) == 0 {
+		t.Error("expected note for unreadable auto updates")
+	}
+
+	fwUnread, notesFw := parseFirewall("SOCKETFILTERFW_UNREADABLE")
+	if fwUnread.Status != "unknown" {
+		t.Errorf("expected unknown for unreadable firewall, got %s", fwUnread.Status)
+	}
+	if len(notesFw) == 0 {
+		t.Error("expected note for unreadable firewall")
 	}
 }

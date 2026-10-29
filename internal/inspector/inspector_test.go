@@ -2,6 +2,7 @@ package inspector
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -448,6 +449,122 @@ func TestEvaluateRule_Cron(t *testing.T) {
 	curr, status, _, _ = ins.evaluateRule(host, mockMissing, rule)
 	if status != "drift" || curr != "missing" {
 		t.Fatalf("expected drift/missing, got %s/%s", status, curr)
+	}
+}
+func TestEvaluateRule_MacOS_Service(t *testing.T) {
+	ins := &Inspector{}
+	host := &store.Host{ID: 1, Host: "10.0.0.1"}
+
+	// 1. The service probe is one `sh -c` script: on Darwin it prints `active` when launchctl reports the job running.
+	mockActive := sshrunner.NewMockRunner()
+	mockActive.DefaultExec = func(cmd string) (string, string, int, error) {
+		if !strings.Contains(cmd, `launchctl print "system/$1"`) || !strings.Contains(cmd, `launchctl list`) {
+			t.Errorf("service probe must query launchctl on Darwin, got: %s", cmd)
+		}
+		return "active\n", "", 0, nil
+	}
+	rule := &store.DesiredRule{Kind: "service", Target: "opendirectoryd", Expected: "active"}
+	curr, status, _, _ := ins.evaluateRule(host, mockActive, rule)
+	if status != "ok" || curr != "active" {
+		t.Fatalf("expected ok/active for launchctl active service, got %s/%s", status, curr)
+	}
+
+	// 2. Service inactive via launchctl list (PID is -)
+	mockInactive := sshrunner.NewMockRunner()
+	mockInactive.DefaultExec = func(cmd string) (string, string, int, error) {
+		return "inactive", "", 0, nil
+	}
+	curr, status, _, rootCause := ins.evaluateRule(host, mockInactive, rule)
+	if status != "drift" || curr != "inactive" {
+		t.Fatalf("expected drift/inactive for launchctl inactive service, got %s/%s", status, curr)
+	}
+	if !strings.Contains(rootCause, "expected active") {
+		t.Fatalf("unexpected root cause: %s", rootCause)
+	}
+}
+
+func TestEvaluateRule_MacOS_Port(t *testing.T) {
+	ins := &Inspector{}
+	host := &store.Host{ID: 1, Host: "10.0.0.1"}
+
+	// 1. Port listening via lsof output
+	mockOpen := sshrunner.NewMockRunner()
+	mockOpen.DefaultExec = func(cmd string) (string, string, int, error) {
+		if strings.Contains(cmd, "lsof") {
+			return "sshd    90358 root    3u  IPv4 0x123      0t0  TCP *:22 (LISTEN)\n", "", 0, nil
+		}
+		return "", "", 1, nil
+	}
+	rule := &store.DesiredRule{Kind: "port", Target: "22", Expected: "listening"}
+	curr, status, _, _ := ins.evaluateRule(host, mockOpen, rule)
+	if status != "ok" || curr != "listening" {
+		t.Fatalf("expected ok/listening for lsof output, got %s/%s", status, curr)
+	}
+}
+
+func TestEvaluateRule_MacOS_Backup(t *testing.T) {
+	ins := &Inspector{}
+	host := &store.Host{ID: 1, Host: "10.0.0.1"}
+
+	// 1. Fresh backup via macOS stat -f '%m %z' (mtime size)
+	mockFresh := sshrunner.NewMockRunner()
+	mockFresh.DefaultExec = func(cmd string) (string, string, int, error) {
+		if strings.Contains(cmd, "stat -f") {
+			nowEpoch := time.Now().Unix() - 1800 // 30 mins ago
+			return fmt.Sprintf("%d 1048576\n", nowEpoch), "", 0, nil
+		}
+		return "", "", 1, nil
+	}
+	rule := &store.DesiredRule{Kind: "backup", Target: "/var/backups/db.sql.gz", Expected: "fresh_24h"}
+	curr, status, details, _ := ins.evaluateRule(host, mockFresh, rule)
+	if status != "ok" || !strings.HasPrefix(curr, "fresh") {
+		t.Fatalf("expected ok/fresh for macOS stat -f backup, got %s/%s", status, curr)
+	}
+	if !strings.Contains(details, "1048576 bytes") {
+		t.Fatalf("expected size in details, got %s", details)
+	}
+
+	// 2. Empty backup file (0 bytes) via macOS stat -f
+	mockEmpty := sshrunner.NewMockRunner()
+	mockEmpty.DefaultExec = func(cmd string) (string, string, int, error) {
+		if strings.Contains(cmd, "stat -f") {
+			nowEpoch := time.Now().Unix() - 1800
+			return fmt.Sprintf("%d 0\n", nowEpoch), "", 0, nil
+		}
+		return "", "", 1, nil
+	}
+	curr, status, _, rootCause := ins.evaluateRule(host, mockEmpty, rule)
+	if status != "drift" || curr != "empty_file (0 bytes)" {
+		t.Fatalf("expected drift/empty_file for 0-byte backup, got %s/%s", status, curr)
+	}
+	if !strings.Contains(rootCause, "0 bytes empty") {
+		t.Fatalf("unexpected root cause: %s", rootCause)
+	}
+}
+
+func TestEvaluateRule_MacOS_Disk(t *testing.T) {
+	ins := &Inspector{}
+	host := &store.Host{ID: 1, Host: "10.0.0.1"}
+
+	// macOS Data volume evaluated for root target "/"
+	mockDisk := sshrunner.NewMockRunner()
+	mockDisk.DefaultExec = func(cmd string) (string, string, int, error) {
+		// Mock awk output: /dev/disk3s5 total=482797652 used=186173676 avail=296623976 (38% used)
+		return "Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/disk3s5 482797652 186173676 296623976 38% /\n", "", 0, nil
+	}
+	ruleOK := &store.DesiredRule{Kind: "disk", Target: "/", Expected: "<85%"}
+	curr, status, _, _ := ins.evaluateRule(host, mockDisk, ruleOK)
+	if status != "ok" || curr != "38%" {
+		t.Fatalf("expected ok/38%% for macOS Data volume disk evaluation, got %s/%s", status, curr)
+	}
+
+	ruleDrift := &store.DesiredRule{Kind: "disk", Target: "/", Expected: "<30%"}
+	curr, status, _, rootCause := ins.evaluateRule(host, mockDisk, ruleDrift)
+	if status != "drift" || curr != "38%" {
+		t.Fatalf("expected drift/38%% when limit is <30%%, got %s/%s", status, curr)
+	}
+	if !strings.Contains(rootCause, "exceeding threshold <30%") {
+		t.Fatalf("unexpected root cause: %s", rootCause)
 	}
 }
 

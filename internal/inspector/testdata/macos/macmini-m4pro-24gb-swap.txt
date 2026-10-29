@@ -1,0 +1,156 @@
+### whoami
+macuser
+501
+shell=/bin/zsh
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+### sw_vers
+ProductName:		macOS
+ProductVersion:		26.2
+BuildVersion:		25C56
+### uname
+Darwin Mac-Host arm64
+Darwin Mac-Host 25.2.0 Darwin Mac-Host Version 25.2.0: Tue Nov 18 21:09:56 PST 2025; root:xnu-12377.61.12~1/R
+### sysctl_basic
+25769803776
+12
+12
+12
+Mac16,11
+Apple M4 Pro
+26.2
+25C56
+{ sec = 1790430042, usec = 501007 } Sat Sep 26 20:40:42 2026
+### vm_stat
+Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                              464604.
+Pages active:                            224489.
+Pages inactive:                          219049.
+Pages speculative:                       268612.
+Pages throttled:                              0.
+Pages wired down:                        353576.
+Pages purgeable:                           4266.
+"Translation faults":                4029585287.
+Pages copy-on-write:                  596864882.
+Pages zero filled:                    472813995.
+Pages reactivated:                       617274.
+Pages purged:                          11761241.
+File-backed pages:                       576180.
+Anonymous pages:                         135970.
+Pages stored in compressor:              532639.
+Pages occupied by compressor:              7371.
+Decompressions:                         5898713.
+Compressions:                           2144445.
+Pageins:                               12919618.
+Pageouts:                                   643.
+Swapins:                                 292455.
+Swapouts:                               1084449.
+### swapusage
+vm.swapusage: total = 7168.00M  used = 6034.31M  free = 1133.69M  (encrypted)
+### memory_pressure
+Pageouts: 643 
+
+System-wide memory free percentage: 76%
+### uptime
+13:47  up 32 days, 17:07, 1 user, load averages: 1.04 1.21 1.52
+### df_root
+Filesystem     1024-blocks      Used Available Capacity  Mounted on
+/dev/disk3s1s1   482797652  11978676 296623976     4%    /
+### df_data
+Filesystem   1024-blocks      Used Available Capacity  Mounted on
+/dev/disk3s5   482797652 157505116 296623976    35%    /System/Volumes/Data
+### df_all
+Filesystem     1024-blocks      Used Available Capacity  Mounted on
+/dev/disk3s1s1   482797652  11978676 296623976     4%    /
+/dev/disk3s6     482797652   7340052 296623976     3%    /System/Volumes/VM
+/dev/disk3s2     482797652   7996004 296623976     3%    /System/Volumes/Preboot
+/dev/disk3s4     482797652      2896 296623976     1%    /System/Volumes/Update
+/dev/disk1s2        512000      6164    494344     2%    /System/Volumes/xarts
+/dev/disk1s1        512000      5768    494344     2%    /System/Volumes/iSCPreboot
+/dev/disk1s3        512000       864    494344     1%    /System/Volumes/Hardware
+/dev/disk3s5     482797652 157505116 296623976    35%    /System/Volumes/Data
+### ps_cpu
+  PID USER              %CPU %MEM    RSS COMM
+60859 root              15.1  0.1   16320 sshd-session
+  142 root               8.8  0.1   13552 opendirectoryd
+  335 root               7.9  0.9  227344 netbird
+ 1490 macuser            5.1  1.0  244208 python
+  183 _windowserver      4.7  0.2   41264 WindowServer
+### ps_mem
+  PID USER              %CPU %MEM    RSS COMM
+  289 _mds_stores        0.0  2.6  664960 mds_stores
+46534 macuser            0.0  2.4  594896 llama-box
+20875 macuser            0.0  2.4  594016 llama-box
+66970 macuser            0.0  2.4  594000 llama-box
+22027 macuser            0.0  2.4  593888 llama-box
+### netstat_ib
+Name       Mtu   Network       Address            Ipkts Ierrs     Ibytes    Opkts Oerrs     Obytes  Coll
+lo0        16384 <Link#1>                        766805     0 3044618850   766805     0 3044618850     0
+lo0        16384 127           localhost         766805     - 3044618850   766805     - 3044618850     -
+lo0        16384 localhost   ::1                 766805     - 3044618850   766805     - 3044618850     -
+lo0        16384 macs-mac-mi fe80:1::1           766805     - 3044618850   766805     - 3044618850     -
+gif0*      1280  <Link#2>                             0     0          0        0     0          0     0
+stf0*      1280  <Link#3>                             0     0          0        0     0          0     0
+anpi1      1500  <Link#4>    aa:bb:cc:dd:ee:ff  3140738     0  249956460  3131827     0  253313881     0
+anpi1      1500  macs-mac-mi fe80:4::208e:eeff  3140738     -  249956460  3131827     -  253313881     -
+anpi0      1500  <Link#5>    aa:bb:cc:dd:ee:ff        0     0          0        0     0          0     0
+anpi2      1500  <Link#6>    aa:bb:cc:dd:ee:ff        0     0          0        0     0          0     0
+en0        1500  <Link#7>    aa:bb:cc:dd:ee:ff 403241754     0 340465305228 428326921     0 343818145131     0
+en0        1500  macs-mac-mi fe80:7::1431:9026 403241754     - 340465305228 428326921     - 343818145131     -
+en0        1500  192.168.88    192.168.88.6    403241754     - 340465305228 428326921     - 343818145131     -
+### ping_W
+
+--- 1.1.1.1 ping statistics ---
+1 packets transmitted, 1 packets received, 0.0% packet loss
+round-trip min/avg/max/stddev = 1.947/1.947/1.947/0.000 ms
+### ping_t
+
+--- 1.1.1.1 ping statistics ---
+1 packets transmitted, 1 packets received, 0.0% packet loss
+round-trip min/avg/max/stddev = 2.049/2.049/2.049/nan ms
+### ping4
+
+--- 1.1.1.1 ping statistics ---
+4 packets transmitted, 4 packets received, 0.0% packet loss
+round-trip min/avg/max/stddev = 1.963/2.261/2.978/0.419 ms
+### tools
+timeout=none
+gtimeout=none
+perl=/usr/bin/perl
+python3=/usr/bin/python3
+curl=/usr/bin/curl
+docker=none
+brew=none
+traceroute=/usr/sbin/traceroute
+tracepath=none
+stdbuf=none
+nproc=none
+free=none
+ss=none
+lsof=/usr/sbin/lsof
+system_profiler=/usr/sbin/system_profiler
+softwareupdate=/usr/sbin/softwareupdate
+iostat=/usr/sbin/iostat
+pgrep=/usr/bin/pgrep
+### stat_birth
+1754405985 1754406120
+1763819368 1793208612
+### iostat
+              disk0 
+    KB/t xfrs   MB 
+   27.26 11716686 311872.85 
+### sudo
+sudo-yes
+### sftp
+-rwxr-xr-x  1 root  wheel  238704 Nov 22  2025 /usr/libexec/sftp-server
+### sysprof_time
+      Model Name: Mac mini
+      Model Identifier: Mac16,11
+      Chip: Apple M4 Pro
+      Total Number of Cores: 12 (8 performance and 4 efficiency)
+      Memory: 24 GB
+system_profiler SPHardwareDataType 2>&1  0.03s user 0.04s system 31% cpu 0.200 total
+grep -E   0.00s user 0.00s system 0% cpu 0.200 total
+### bash
+GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)
+### firewall
+Firewall is disabled. (State = 0)

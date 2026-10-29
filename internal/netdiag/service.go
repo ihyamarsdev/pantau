@@ -54,6 +54,31 @@ func ValidateTarget(target string) error {
 	return nil
 }
 
+// PingProbeCommand builds the ping probe command with portable timeout and Darwin compatibility.
+// Linux uses -W 2 (seconds timeout per packet). Darwin uses -t 14 (total seconds timeout deadline).
+func PingProbeCommand(quotedTarget string) string {
+	return PortableTimeoutPrelude + fmt.Sprintf(
+		`if [ "$(uname -s)" = "Darwin" ]; then timeout 14 ping -c 4 -t 14 %[1]s 2>&1; else timeout 14 ping -c 4 -W 2 %[1]s 2>&1; fi`,
+		quotedTarget,
+	)
+}
+
+// PortProbeCommand builds the port probe command using bash /dev/tcp wrapped in the portable timeout helper.
+func PortProbeCommand(targetAddress string, port int) string {
+	return PortableTimeoutPrelude + fmt.Sprintf(
+		"timeout 3 bash -c '</dev/tcp/%s/%d' 2>/dev/null && echo 'PORT_OPEN' || echo 'PORT_CLOSED'",
+		targetAddress, port,
+	)
+}
+
+// DNSProbeCommand builds the DNS probe command supporting macOS dscacheutil, Linux getent, and nslookup/host fallbacks.
+func DNSProbeCommand(quotedTarget string) string {
+	return PortableTimeoutPrelude + fmt.Sprintf(
+		`if command -v dscacheutil >/dev/null 2>&1; then timeout 5 dscacheutil -q host -a name %[1]s 2>&1 || timeout 5 nslookup %[1]s 2>&1 || timeout 5 host %[1]s 2>&1; else timeout 5 getent hosts %[1]s 2>&1 || timeout 5 nslookup %[1]s 2>&1 || timeout 5 host %[1]s 2>&1; fi`,
+		quotedTarget,
+	)
+}
+
 // ExecuteProbe runs the requested diagnostic probe and streams events in real-time.
 // ponytail: Concurrency guard / singleflight prevents overlapping probes and SSH command stampedes on remote hosts.
 func (s *Service) ExecuteProbe(ctx context.Context, req ProbeRequest, eventSink func(ProbeEvent)) error {
@@ -133,7 +158,7 @@ func (s *Service) ExecuteProbe(ctx context.Context, req ProbeRequest, eventSink 
 	switch req.Type {
 	case ProbeTypePing:
 		probeTimeout = 16 * time.Second
-		cmd = fmt.Sprintf("timeout 14 ping -c 4 -W 2 %s 2>&1", quotedTarget)
+		cmd = PingProbeCommand(quotedTarget)
 
 	case ProbeTypeTraceroute:
 		probeTimeout = 18 * time.Second
@@ -143,11 +168,11 @@ func (s *Service) ExecuteProbe(ctx context.Context, req ProbeRequest, eventSink 
 	case ProbeTypePort:
 		probeTimeout = 8 * time.Second
 		// ponytail: Bash built-in /dev/tcp gives zero-dependency TCP socket probe without requiring nc or nmap.
-		cmd = fmt.Sprintf("timeout 3 bash -c '</dev/tcp/%s/%d' 2>/dev/null && echo 'PORT_OPEN' || echo 'PORT_CLOSED'", req.TargetAddress, req.Port)
+		cmd = PortProbeCommand(req.TargetAddress, req.Port)
 
 	case ProbeTypeDNS:
 		probeTimeout = 8 * time.Second
-		cmd = fmt.Sprintf("getent hosts %s 2>&1 || nslookup %s 2>&1", quotedTarget, quotedTarget)
+		cmd = DNSProbeCommand(quotedTarget)
 
 	default:
 		return fmt.Errorf("unsupported probe type: %s", req.Type)

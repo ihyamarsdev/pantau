@@ -7,7 +7,7 @@
 <h1 align="center">Pantau</h1>
 
 <p align="center">
-  <b>Agentless Linux Server Monitoring, Desired State Drift Engine & Interactive Management</b><br>
+  <b>Agentless Linux & macOS Server Monitoring, Desired State Drift Engine & Interactive Management</b><br>
   <i>Single binary. Zero remote daemons. Embedded SQLite. Native SSH.</i>
 </p>
 
@@ -30,7 +30,7 @@
 </p>
 
 > [!WARNING]
-> **Production & Security Advisory**: Pantau is an open-source administrative tool designed for server management and monitoring. It executes remote SSH commands, manages files via SFTP, and provisions keys directly on target Linux hosts with elevated/root privileges. This software is provided **"AS IS"** without warranties of any kind. Users are solely responsible for verifying operations, safeguarding private keys, and maintaining independent offline backups. Never expose Pantau to the public internet without proper authentication, reverse proxy protection, and TLS termination.
+> **Production & Security Advisory**: Pantau is an open-source administrative tool designed for server management and monitoring. It executes remote SSH commands, manages files via SFTP, and provisions keys directly on target Linux and macOS hosts with elevated/root privileges. This software is provided **"AS IS"** without warranties of any kind. Users are solely responsible for verifying operations, safeguarding private keys, and maintaining independent offline backups. Never expose Pantau to the public internet without proper authentication, reverse proxy protection, and TLS termination.
 
 ---
 
@@ -72,10 +72,10 @@ Pantau inspects remote hosts via non-interactive SSH commands, continuously vali
                                                      | Native SSH Protocol                       | Stream Pipe
                                                      v                                           v
                        +-------------------------------------------+   +-------------------------------------------+
-                       |           Remote Linux Host A             |   |           Remote Linux Host B             |
-                       |  (Ubuntu / Debian / RHEL / CentOS 6-9)    |   |  (Ubuntu / Debian / RHEL / CentOS 6-9)    |
-                       |  - POSIX Standard CLI Tools (`ps`, `df`)  |   |  - POSIX Standard CLI Tools (`ps`, `df`)  |
-                       |  - Docker Engine / Containers             |   |  - Docker Engine / Containers             |
+                       |           Remote Linux Host A             |   |           Remote macOS Host B             |
+                       |  (Ubuntu / Debian / RHEL / CentOS 6-9)    |   |  (macOS 26 Tahoe / Apple Silicon / M-Series)  |
+                       |  - POSIX Standard CLI Tools (`ps`, `df`)  |   |  - POSIX & Darwin CLI (`sysctl`, `vm_stat`)|
+                       |  - Docker Engine / Containers             |   |  - APFS Shared Container Storage          |
                        |  - No Daemons / No Agents Installed       |   |  - No Daemons / No Agents Installed       |
                        +-------------------------------------------+   +-------------------------------------------+
 ```
@@ -236,6 +236,15 @@ Pantau inspects remote hosts via non-interactive SSH commands, continuously vali
 - **Honest-Coverage Architecture**: Enforces a strict honesty rule—systems with unsupported distributions (Alpine, Arch, etc.), unreadable configurations, or stale caches report clear status (`partial`, `unsupported`) and detailed coverage notes instead of a deceptive clean bill of health.
 - **Continuous Compliance via Desired Rules**: Declare `security_updates` rules (target `security`, expected `none` or `<=N`) evaluated against the cached scan without live SSH overhead, triggering automated drift alerts when security updates accumulate, scans exceed 72 hours, or coverage is unverified.
 - **Airgapped-Ready & Zero CVE Bloat**: 100% functional in isolated networks without outbound internet access or external vulnerability database dependencies; scan results are stored in SQLite and excluded from encrypted snapshots as reproducible telemetry.
+
+### 27. 🍎 First-Class macOS (Darwin) Host Support
+- **Agentless Darwin Observability**: Extends full agentless monitoring to macOS hosts (Apple silicon Mac mini, Mac Studio, Mac Pro) over standard OpenSSH with zero remote daemons or background agents.
+- **Activity Monitor-Accurate RAM & APFS Storage**: Computes physical memory using Apple's official Activity Monitor formula `(Anonymous - Purgeable + Wired + Compressor) * pagesize` from `vm_stat` alongside swap usage from `sysctl vm.swapusage`. Accurately measures shared APFS storage via `/System/Volumes/Data` (`used = total - available`) rather than the sealed root volume.
+- **Hardware Telemetry & Physical Network Egress**: Discovers chip and hardware model (e.g. `Apple Mac Studio (Mac15,14) - Apple M3 Ultra`), total CPU cores, and system install birthtime. Sums cumulative disk I/O bytes via `ioreg` storage driver statistics and isolates physical `en*` interfaces via `netstat -ibn` without virtual interface distortion.
+- **Privacy-First Process Telemetry (`ucomm`)**: Enforces short process name extraction (`ps -o ucomm`) across CPU and memory tables, guaranteeing sensitive tokens, flags, or secrets in command-line arguments are never captured or leaked.
+- **macOS Security & Hardening Assessment**: Audits pending system updates via `/usr/sbin/softwareupdate` with honest `partial` reporting on network timeouts, coupled with 4 native hardening checks: OpenSSH root login, password authentication, automatic software update preferences (`com.apple.SoftwareUpdate`), and application firewall state.
+- **Continuous Desired State & Portable Diagnostics**: Validates APFS disk thresholds, `launchd` services, listening ports via `lsof`, and backup freshness via BSD `stat -f`. Runs network latency probes and traceroute using native Darwin tooling without external package installation.
+- **Zero Linux Regressions**: Built with strict isolation (`uname -s` runtime branch); Linux inspection workflows remain 100% byte-for-byte unchanged.
 
 ---
 

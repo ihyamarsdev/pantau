@@ -229,7 +229,7 @@ func (ins *Inspector) InspectHostWithTimeout(hostID int64, timeout time.Duration
 // SystemMetricsBatchCmd is the single-shot batch command to gather system, network, and security metrics.
 // ponytail: Universal polyglot batching keeps agentless overhead near zero on modern & legacy Linux.
 // ponytail: Uses df -lPk with timeout fallback to guard against hung NFS / network storage.
-const SystemMetricsBatchCmd = `uname -r; echo "---"; cat /etc/os-release 2>/dev/null || cat /usr/lib/os-release 2>/dev/null || cat /etc/redhat-release 2>/dev/null || cat /etc/centos-release 2>/dev/null || cat /etc/issue 2>/dev/null; echo "---"; uptime; echo "---"; free -b 2>/dev/null; echo "---"; (timeout -k 2s 5s df -lPk / 2>/dev/null || df -lPk / 2>/dev/null); echo "---"; (dmesg 2>/dev/null || cat /var/log/dmesg 2>/dev/null) | grep -iE 'I/O error|EXT4-fs error|BTRFS error' | wc -l; echo "---"; cat /proc/net/dev 2>/dev/null | grep -vE 'lo|Inter-|face' | awk '{rx+=$2; tx+=$10} END {print rx, tx}'; echo "---"; (ping -c 1 -W 2 1.1.1.1 2>/dev/null | grep -oE 'time=[0-9.]+' | cut -d= -f2) || echo "OFFLINE"; echo "---"; curl -s --connect-timeout 2 -m 4 https://icanhazip.com 2>/dev/null || curl -s --connect-timeout 2 -m 4 https://ifconfig.me 2>/dev/null || echo ""; echo "---"; (ss -nt state established 2>/dev/null || ss -nt 2>/dev/null || netstat -nt 2>/dev/null) | awk '!/Recv-Q|Proto|Active/ {if (NF>=5) print $4, $5; else if (NF>=4) print $3, $4}' | head -n 50; echo "---"; (ss -tlpn 2>/dev/null || netstat -tlpn 2>/dev/null) | awk '!/State|Proto|Active/ {print $1, $4, $6}' | head -n 30; echo "---"; (grep -i "Failed password" /var/log/auth.log 2>/dev/null || grep -i "Failed password" /var/log/secure 2>/dev/null || true) | wc -l; echo "---"; (nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo 2>/dev/null || echo 1); echo "---"; (cat /sys/class/dmi/id/bios_date 2>/dev/null || echo ""); echo "---"; (cat /sys/class/dmi/id/sys_vendor 2>/dev/null || cat /sys/class/dmi/id/product_name 2>/dev/null || echo ""); echo "---"; (stat -c %Y /etc/machine-id 2>/dev/null || stat -c %Y /etc/ssh/ssh_host_rsa_key 2>/dev/null || stat -c %Y /var/log 2>/dev/null || echo 0); echo "---"; cat /proc/diskstats 2>/dev/null | awk '{if ($3 ~ /^([hsv]d[a-z]|nvme[0-9]+n[0-9]+|xvd[a-z]|mmcblk[0-9]+)$/) {r+=$6; w+=$10}} END {print (r?r:0)*512, (w?w:0)*512}'; echo "---"; (ps -eo pid,user,%cpu,%mem,rss,comm --sort=-%cpu 2>/dev/null || ps -eo pid,user,%cpu,%mem,rss,args 2>/dev/null) | head -n 6; echo "---"; (ps -eo pid,user,%cpu,%mem,rss,comm --sort=-rss 2>/dev/null || ps -eo pid,user,%cpu,%mem,rss,args 2>/dev/null) | head -n 6; echo "---"; ([ $(awk '/SwapTotal/ {t=$2} /SwapFree/ {f=$2} END {print (t?t:0)-(f?f:0)}' /proc/meminfo 2>/dev/null || echo 0) -gt 0 ] && grep -s -H -E '^(VmSwap|Name|Uid):' /proc/[0-9]*/status 2>/dev/null | awk -F'[: \t]+' '{if ($2=="VmSwap" && $3>0) {split($1,a,"/"); print a[3], (uid[a[3]]?uid[a[3]]:"0"), $3, name[a[3]]} else if ($2=="Name") {split($1,a,"/"); n=$0; sub(/^.+:Name:[ \t]+/, "", n); name[a[3]]=n} else if ($2=="Uid") {split($1,a,"/"); uid[a[3]]=$3}}' | sort -k3 -rn | head -n 5) || true`
+const SystemMetricsBatchCmd = "if [ \"$(uname -s)\" = \"Darwin\" ]; then " + DarwinSystemMetricsBatchCmd + " ; else " + LinuxSystemMetricsBatchCmd + " ; fi"
 
 func splitMetricsSections(stdout string) []string {
 	lines := strings.Split(stdout, "\n")
@@ -471,7 +471,16 @@ func parseNetworkMetrics(h *store.Host, netDevSec, pingSec, pubIPSec, estSec, li
 			remote := parts[1]
 			host, _, err := net.SplitHostPort(remote)
 			if err != nil {
-				host = remote
+				if lastDot := strings.LastIndex(remote, "."); lastDot != -1 {
+					portPart := remote[lastDot+1:]
+					if _, portErr := strconv.Atoi(portPart); portErr == nil {
+						host = remote[:lastDot]
+					} else {
+						host = remote
+					}
+				} else {
+					host = remote
+				}
 			}
 			if host != "" {
 				ipCounts[host]++
@@ -525,6 +534,17 @@ func parseNetworkMetrics(h *store.Host, netDevSec, pingSec, pubIPSec, estSec, li
 				proc = parts[2]
 			}
 			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				if lastDot := strings.LastIndex(addr, "."); lastDot != -1 {
+					portPart := addr[lastDot+1:]
+					if _, portErr := strconv.Atoi(portPart); portErr == nil {
+						host = addr[:lastDot]
+						port = portPart
+						addr = host + ":" + port
+						err = nil
+					}
+				}
+			}
 			if err != nil {
 				continue
 			}
@@ -592,12 +612,36 @@ func parseOSInfo(osRelease string) string {
 			name = strings.Trim(strings.TrimPrefix(line, "NAME="), `"`)
 		} else if strings.HasPrefix(line, "VERSION=") {
 			version = strings.Trim(strings.TrimPrefix(line, "VERSION="), `"`)
+		} else if strings.HasPrefix(line, "VERSION_ID=") {
+			if version == "" {
+				version = strings.Trim(strings.TrimPrefix(line, "VERSION_ID="), `"`)
+			}
+		} else if strings.HasPrefix(line, "ProductName:") {
+			name = strings.TrimSpace(strings.TrimPrefix(line, "ProductName:"))
+		} else if strings.HasPrefix(line, "ProductVersion:") {
+			version = strings.TrimSpace(strings.TrimPrefix(line, "ProductVersion:"))
 		}
 	}
 	if prettyName != "" {
+		if strings.Contains(prettyName, "(") || !strings.Contains(prettyName, "macOS") {
+			return prettyName
+		}
+		if major, _ := parseMacOSMajor(prettyName); major > 0 {
+			if cName := MacOSVersionNames[major]; cName != "" {
+				return fmt.Sprintf("%s (%s)", prettyName, cName)
+			}
+		}
 		return prettyName
 	}
 	if name != "" && version != "" {
+		if strings.EqualFold(name, "macOS") {
+			if major, _ := parseMacOSMajor(version); major > 0 {
+				if cName := MacOSVersionNames[major]; cName != "" {
+					return fmt.Sprintf("macOS %s (%s)", version, cName)
+				}
+			}
+			return fmt.Sprintf("macOS %s", version)
+		}
 		return name + " " + version
 	}
 	if name != "" {
@@ -618,17 +662,46 @@ func parseOSInfo(osRelease string) string {
 
 func parseUptime(line string) (uptimeStr, loadStr string) {
 	// e.g. " 14:00:01 up 12 days,  3:15,  1 user,  load average: 0.15, 0.08, 0.05"
-	parts := strings.Split(line, "load average:")
-	if len(parts) == 2 {
-		loadStr = strings.TrimSpace(parts[1])
+	// or macOS: "13:46  up 13 days, 20:09, 1 user, load averages: 1.83 1.61 1.53"
+	// or "up 3 hrs, 1 user, load averages: 0.50 0.40 0.30"
+	loadDelimiter := "load average:"
+	if strings.Contains(line, "load averages:") {
+		loadDelimiter = "load averages:"
 	}
-	upParts := strings.Split(parts[0], "up ")
-	if len(upParts) == 2 {
-		uptimeRaw := strings.Split(upParts[1], ",")
-		if len(uptimeRaw) >= 2 {
-			uptimeStr = strings.TrimSpace(uptimeRaw[0] + ", " + uptimeRaw[1])
+	parts := strings.Split(line, loadDelimiter)
+	if len(parts) == 2 {
+		rawLoad := strings.TrimSpace(parts[1])
+		if strings.Contains(rawLoad, ",") {
+			loadStr = rawLoad
 		} else {
-			uptimeStr = strings.TrimSpace(uptimeRaw[0])
+			fields := strings.Fields(rawLoad)
+			if len(fields) >= 3 {
+				loadStr = fmt.Sprintf("%s, %s, %s", fields[0], fields[1], fields[2])
+			} else {
+				loadStr = strings.Join(fields, ", ")
+			}
+		}
+	}
+
+	upIdx := strings.Index(parts[0], "up ")
+	if upIdx != -1 {
+		afterUp := parts[0][upIdx+3:]
+		rawPieces := strings.Split(afterUp, ",")
+		var uptimePieces []string
+		for _, piece := range rawPieces {
+			trimmed := strings.TrimSpace(piece)
+			fields := strings.Fields(trimmed)
+			if len(fields) >= 2 && strings.HasPrefix(fields[1], "user") {
+				break
+			}
+			uptimePieces = append(uptimePieces, trimmed)
+		}
+		if len(uptimePieces) >= 2 {
+			uptimeStr = strings.TrimSpace(uptimePieces[0] + ", " + uptimePieces[1])
+		} else if len(uptimePieces) == 1 {
+			uptimeStr = uptimePieces[0]
+		} else if len(rawPieces) > 0 {
+			uptimeStr = strings.TrimSpace(rawPieces[0])
 		}
 	} else {
 		uptimeStr = line
@@ -683,9 +756,15 @@ func parseDf(output string) (used, total int64) {
 	lines := strings.Split(output, "\n")
 	for _, l := range lines {
 		fields := strings.Fields(l)
-		if len(fields) >= 6 && (fields[5] == "/" || strings.HasSuffix(fields[5], "/")) {
+		if len(fields) >= 6 && (fields[5] == "/" || fields[5] == "/System/Volumes/Data" || strings.HasSuffix(fields[5], "/")) {
 			totK, _ := strconv.ParseInt(fields[1], 10, 64)
 			usdK, _ := strconv.ParseInt(fields[2], 10, 64)
+			if fields[5] == "/System/Volumes/Data" && len(fields) >= 4 {
+				availK, _ := strconv.ParseInt(fields[3], 10, 64)
+				if totK > 0 && availK > 0 && totK >= availK {
+					usdK = totK - availK
+				}
+			}
 			return usdK * 1024, totK * 1024
 		}
 	}
@@ -773,6 +852,12 @@ func calculateLifecycleScore(osInfo, loadStr string, cpuCores int, ramUsed, ramT
 			osEOL = true
 			matchedEOL = pat
 			break
+		}
+	}
+	if !osEOL {
+		if isMac, macEOLStr := isMacOSEOL(osInfo); isMac {
+			osEOL = true
+			matchedEOL = macEOLStr
 		}
 	}
 	if osEOL {
@@ -1102,7 +1187,7 @@ func (ins *Inspector) evaluateRule(h *store.Host, runner sshrunner.Runner, rule 
 	switch rule.Kind {
 	case "container":
 		// Check docker container status
-		inspectCmd := fmt.Sprintf(`docker inspect -f '{{.State.Status}}|{{.State.ExitCode}}|{{.State.OOMKilled}}|{{.State.Error}}' %s 2>/dev/null`, shellQuote(rule.Target))
+		inspectCmd := fmt.Sprintf(`%sdocker inspect -f '{{.State.Status}}|{{.State.ExitCode}}|{{.State.OOMKilled}}|{{.State.Error}}' %s 2>/dev/null`, DarwinPathPrelude, shellQuote(rule.Target))
 		out, _, exitCode, _ := runner.Exec(inspectCmd)
 		out = strings.TrimSpace(out)
 		if exitCode != 0 || out == "" {
@@ -1124,7 +1209,7 @@ func (ins *Inspector) evaluateRule(h *store.Host, runner sshrunner.Runner, rule 
 			if len(parts) >= 4 {
 				diag.WriteString(fmt.Sprintf("ExitCode: %s, OOMKilled: %s, Error: %s\n", parts[1], parts[2], parts[3]))
 			}
-			logOut, _, _, _ := runner.Exec(fmt.Sprintf(`docker logs --tail 50 %s 2>&1`, shellQuote(rule.Target)))
+			logOut, _, _, _ := runner.Exec(fmt.Sprintf(`%sdocker logs --tail 50 %s 2>&1`, DarwinPathPrelude, shellQuote(rule.Target)))
 			diag.WriteString("--- Last 50 lines of container logs ---\n")
 			diag.WriteString(strings.TrimSpace(logOut))
 			rootCause = diag.String()
@@ -1138,7 +1223,12 @@ func (ins *Inspector) evaluateRule(h *store.Host, runner sshrunner.Runner, rule 
 			target = "/"
 		}
 		// ponytail: Use timeout wrapper to prevent hanging on stale NFS/remote mounts
-		dfCmd := fmt.Sprintf(`timeout -k 2s 5s df -Pk %s 2>/dev/null || df -Pk %s 2>/dev/null`, shellQuote(target), shellQuote(target))
+		dfCmd := fmt.Sprintf(`sh -c 'if [ "$(uname -s)" = "Darwin" ]; then `+
+			`if [ %[1]s = "/" ]; then `+
+			`out=$(df -lPk /System/Volumes/Data 2>/dev/null) || out=$(df -lPk / 2>/dev/null); `+
+			`echo "$out" | awk '\''NR==2 {used=$2-$4; print $1, $2, used, $4, int(used*100/$2)"%%", "/"}'\''; `+
+			`else df -lPk %[1]s 2>/dev/null || df -Pk %[1]s 2>/dev/null; fi; `+
+			`else timeout -k 2s 5s df -Pk %[1]s 2>/dev/null || df -Pk %[1]s 2>/dev/null; fi'`, shellQuote(target))
 		out, _, exitCode, _ := runner.Exec(dfCmd)
 		if exitCode == 124 {
 			current = "unresponsive"
@@ -1153,6 +1243,18 @@ func (ins *Inspector) evaluateRule(h *store.Host, runner sshrunner.Runner, rule 
 			return
 		}
 		used, total := parseDf(out)
+		if total == 0 {
+			// Fallback parser if mount point does not end with /
+			for _, l := range strings.Split(out, "\n") {
+				fields := strings.Fields(l)
+				if len(fields) >= 6 && fields[1] != "1024-blocks" {
+					totK, _ := strconv.ParseInt(fields[1], 10, 64)
+					usdK, _ := strconv.ParseInt(fields[2], 10, 64)
+					used, total = usdK*1024, totK*1024
+					break
+				}
+			}
+		}
 		if total > 0 {
 			pct := int(float64(used) / float64(total) * 100)
 			current = fmt.Sprintf("%d%%", pct)
@@ -1180,7 +1282,8 @@ func (ins *Inspector) evaluateRule(h *store.Host, runner sshrunner.Runner, rule 
 
 	case "backup":
 		// Target is file path or glob (e.g. /var/backups/db-*.sql.gz)
-		statCmd := fmt.Sprintf(`stat -c "%%s %%Y" %s 2>/dev/null || ls -l %s 2>/dev/null`, shellQuote(rule.Target), shellQuote(rule.Target))
+		// On macOS, BSD stat uses `stat -f '%m %z'` (mtime size). On Linux, GNU stat uses `stat -c "%s %Y"` (size mtime).
+		statCmd := fmt.Sprintf(`sh -c 'if [ "$(uname -s)" = "Darwin" ]; then stat -f "%%m %%z" %[1]s 2>/dev/null; else stat -c "%%s %%Y" %[1]s 2>/dev/null || ls -l %[1]s 2>/dev/null; fi'`, shellQuote(rule.Target))
 		out, _, exitCode, _ := runner.Exec(statCmd)
 		out = strings.TrimSpace(out)
 		if exitCode != 0 || out == "" {
@@ -1192,8 +1295,16 @@ func (ins *Inspector) evaluateRule(h *store.Host, runner sshrunner.Runner, rule 
 
 		fields := strings.Fields(out)
 		if len(fields) >= 2 {
-			sizeBytes, _ := strconv.ParseInt(fields[0], 10, 64)
-			mtimeUnix, _ := strconv.ParseInt(fields[1], 10, 64)
+			f0, _ := strconv.ParseInt(fields[0], 10, 64)
+			f1, _ := strconv.ParseInt(fields[1], 10, 64)
+			var sizeBytes, mtimeUnix int64
+			if f0 > 1000000000 && (f1 < 1000000000 || f0 > f1) {
+				mtimeUnix = f0
+				sizeBytes = f1
+			} else {
+				sizeBytes = f0
+				mtimeUnix = f1
+			}
 			modTime := time.Unix(mtimeUnix, 0)
 			ageHours := time.Since(modTime).Hours()
 
@@ -1246,8 +1357,14 @@ func (ins *Inspector) evaluateRule(h *store.Host, runner sshrunner.Runner, rule 
 
 	case "service":
 		// Target is service name (e.g. "mysql", "mysqld", "nginx", "httpd")
-		// Polyglot check supporting both systemd and SysVinit (CentOS 6, Debian 7)
-		svcCmd := fmt.Sprintf(`sh -c 'if command -v systemctl >/dev/null 2>&1; then systemctl is-active "$1" 2>/dev/null; elif service "$1" status 2>&1 | grep -iq "running"; then echo "active"; else echo "inactive"; fi' -- %s`, shellQuote(rule.Target))
+		// Polyglot check supporting macOS launchctl (substring label match), systemd, and SysVinit.
+		svcCmd := fmt.Sprintf(`sh -c 'if [ "$(uname -s)" = "Darwin" ]; then `+
+			`if launchctl print "system/$1" 2>/dev/null | grep -q "state = running"; then echo "active"; `+
+			`elif launchctl list 2>/dev/null | grep -F "$1" | awk '\''{if ($1 ~ /^[0-9]+$/ && $1 > 0) exit 0; else exit 1}'\''; then echo "active"; `+
+			`else echo "inactive"; fi; `+
+			`elif command -v systemctl >/dev/null 2>&1; then systemctl is-active "$1" 2>/dev/null; `+
+			`elif service "$1" status 2>&1 | grep -iq "running"; then echo "active"; `+
+			`else echo "inactive"; fi' -- %s`, shellQuote(rule.Target))
 		out, _, _, _ := runner.Exec(svcCmd)
 		activeState := strings.TrimSpace(out)
 		current = activeState
@@ -1255,7 +1372,12 @@ func (ins *Inspector) evaluateRule(h *store.Host, runner sshrunner.Runner, rule 
 			status = "ok"
 		} else {
 			status = "drift"
-			diagCmd := fmt.Sprintf(`sh -c 'if command -v journalctl >/dev/null 2>&1; then journalctl -u "$1" -n 50 --no-pager 2>&1; elif [ -f "/var/log/$1.log" ]; then tail -n 50 "/var/log/$1.log" 2>&1; elif [ -f "/var/log/$1/error.log" ]; then tail -n 50 "/var/log/$1/error.log" 2>&1; else tail -n 50 /var/log/messages 2>&1 || tail -n 50 /var/log/syslog 2>&1; fi' -- %s`, shellQuote(rule.Target))
+			diagCmd := fmt.Sprintf(`sh -c 'if [ "$(uname -s)" = "Darwin" ]; then `+
+				`launchctl print "system/$1" 2>&1 || launchctl list 2>/dev/null | grep -F "$1"; `+
+				`elif command -v journalctl >/dev/null 2>&1; then journalctl -u "$1" -n 50 --no-pager 2>&1; `+
+				`elif [ -f "/var/log/$1.log" ]; then tail -n 50 "/var/log/$1.log" 2>&1; `+
+				`elif [ -f "/var/log/$1/error.log" ]; then tail -n 50 "/var/log/$1/error.log" 2>&1; `+
+				`else tail -n 50 /var/log/messages 2>&1 || tail -n 50 /var/log/syslog 2>&1; fi' -- %s`, shellQuote(rule.Target))
 			diagOut, _, _, _ := runner.Exec(diagCmd)
 			rootCause = fmt.Sprintf("Service %s is %s (expected active)\n--- Service diagnostics ---\n%s", rule.Target, activeState, strings.TrimSpace(diagOut))
 		}
@@ -1275,7 +1397,11 @@ func (ins *Inspector) evaluateRule(h *store.Host, runner sshrunner.Runner, rule 
 			rootCause = fmt.Sprintf("Invalid port target: %s", target)
 			return
 		}
-		portCmd := fmt.Sprintf(`sh -c 'if command -v ss >/dev/null 2>&1; then ss -tlpn 2>/dev/null; elif command -v netstat >/dev/null 2>&1; then netstat -tlpn 2>/dev/null; else lsof -iTCP -sTCP:LISTEN -P -n 2>/dev/null; fi' | grep -E ":%d\b"`, pNum)
+		portCmd := fmt.Sprintf(`sh -c 'if [ "$(uname -s)" = "Darwin" ]; then `+
+			`(lsof -nP -iTCP:%[1]d -sTCP:LISTEN 2>/dev/null | grep -v "^COMMAND") || (netstat -an -p tcp 2>/dev/null | grep "LISTEN" | grep -E "\.%[1]d\b|:%[1]d\b"); `+
+			`elif command -v ss >/dev/null 2>&1; then ss -tlpn 2>/dev/null | grep -E ":%[1]d\b"; `+
+			`elif command -v netstat >/dev/null 2>&1; then netstat -tlpn 2>/dev/null | grep -E ":%[1]d\b"; `+
+			`else lsof -iTCP -sTCP:LISTEN -P -n 2>/dev/null | grep -E ":%[1]d\b"; fi'`, pNum)
 		out, _, exitCode, _ := runner.Exec(portCmd)
 		isListening := exitCode == 0 && strings.TrimSpace(out) != ""
 
@@ -1466,7 +1592,7 @@ func (ins *Inspector) GenerateBaseline(hostID int64) ([]store.DesiredRule, error
 	rules = append(rules, diskRule)
 
 	// 2. Running Docker containers
-	dockerOut, _, code, _ := runner.Exec(`docker ps --format '{{.Names}}' 2>/dev/null`)
+	dockerOut, _, code, _ := runner.Exec(DarwinPathPrelude + `docker ps --format '{{.Names}}' 2>/dev/null`)
 	if code == 0 && dockerOut != "" {
 		for _, name := range strings.Split(strings.TrimSpace(dockerOut), "\n") {
 			name = strings.TrimSpace(name)
@@ -1484,9 +1610,15 @@ func (ins *Inspector) GenerateBaseline(hostID int64) ([]store.DesiredRule, error
 		}
 	}
 
-	// 3. Known DB & Web services (supporting systemd and SysVinit / RedHat naming conventions)
+	// 3. Known DB & Web services (supporting macOS launchctl, systemd and SysVinit / RedHat naming conventions)
 	for _, svc := range []string{"mysql", "mysqld", "mariadb", "postgresql", "redis-server", "redis", "nginx", "httpd", "apache2"} {
-		svcCheck := fmt.Sprintf(`sh -c 'if command -v systemctl >/dev/null 2>&1; then systemctl is-active "$1" 2>/dev/null; elif service "$1" status 2>&1 | grep -iq "running"; then echo "active"; else echo "inactive"; fi' -- %s`, svc)
+		svcCheck := fmt.Sprintf(`sh -c 'if [ "$(uname -s)" = "Darwin" ]; then `+
+			`if launchctl print "system/$1" 2>/dev/null | grep -q "state = running"; then echo "active"; `+
+			`elif launchctl list 2>/dev/null | grep -F "$1" | awk '\''{if ($1 ~ /^[0-9]+$/ && $1 > 0) exit 0; else exit 1}'\''; then echo "active"; `+
+			`else echo "inactive"; fi; `+
+			`elif command -v systemctl >/dev/null 2>&1; then systemctl is-active "$1" 2>/dev/null; `+
+			`elif service "$1" status 2>&1 | grep -iq "running"; then echo "active"; `+
+			`else echo "inactive"; fi' -- %s`, svc)
 		out, _, _, _ := runner.Exec(svcCheck)
 		if strings.TrimSpace(out) == "active" {
 			r := store.DesiredRule{
@@ -1553,7 +1685,7 @@ func (ins *Inspector) ListDockerContainers(hostID int64) ([]DockerContainer, err
 	}
 	defer runner.Close()
 
-	stdout, stderr, exitCode, err := runner.Exec(`docker ps -a --no-trunc --format '{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}'`)
+	stdout, stderr, exitCode, err := runner.Exec(DarwinPathPrelude + `docker ps -a --no-trunc --format '{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}'`)
 	if err != nil {
 		return nil, err
 	}
@@ -1628,7 +1760,7 @@ func (ins *Inspector) DockerAction(hostID int64, containerName, action string) (
 	}
 	defer runner.Close()
 
-	cmd := fmt.Sprintf("docker %s %s", action, shellQuote(containerName))
+	cmd := fmt.Sprintf("%sdocker %s %s", DarwinPathPrelude, action, shellQuote(containerName))
 	stdout, stderr, exitCode, err := runner.Exec(cmd)
 	if err != nil || exitCode != 0 {
 		return "", fmt.Errorf("docker %s failed (exit %d): %s %s", action, exitCode, stdout, stderr)
@@ -1662,9 +1794,9 @@ func (ins *Inspector) RecalculateHostLifecycle(hostID int64) error {
 	return ins.db.UpdateHostLifecycle(host.ID, score, notes, breakdown)
 }
 
-// PackageScanBatchCmd is the multi-distro polyglot command to discover packages, manual flags, and service states.
-// ponytail: Detects package managers dynamically across Debian, RHEL, Alpine, and Arch without remote dependencies.
-const PackageScanBatchCmd = `if command -v dpkg-query >/dev/null 2>&1; then
+const PackageScanBatchCmd = `if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+    echo "TYPE:MACOS"
+elif command -v dpkg-query >/dev/null 2>&1; then
     echo "TYPE:DPKG"
     echo "===PKGS==="
     dpkg-query -W -f='${Package}\t${Version}\t${Installed-Size}\t${db:Status-Status}\n' 2>/dev/null
@@ -1963,6 +2095,10 @@ func (ins *Inspector) ScanPackagesWithTimeout(hostID int64, timeout time.Duratio
 
 	var pkgs []*store.HostPackage
 	switch pkgType {
+	case "MACOS":
+		// macOS host does not have a supported system package inventory scanner.
+		// Return cleanly without error so packages tab shows an empty inventory.
+		return nil
 	case "DPKG":
 		pkgs = parseDpkgOutput(pkgsSec, manualMap, servicesMap, hostID)
 	case "RPM", "APK", "PACMAN":

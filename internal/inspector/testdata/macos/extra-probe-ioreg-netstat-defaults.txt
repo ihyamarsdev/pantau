@@ -1,0 +1,134 @@
+======== macstudio-A
+### ioreg_stats
+      "Statistics" = {"Operations (Write)"=0,"Latency Time (Write)"=0,"Bytes (Read)"=0,"Errors (Write)"=0,"Total Time (Read)"=0,"Latency Time (Read)"=0,"Retries (Read)"=0,"Errors (Read)"=0,"Total Time (Write)"=0,"Bytes (Write)"=0,"Operations (Read)"=0,"Retries (Write)"=0}
+      "Statistics" = {"Operations (Write)"=1869451,"Latency Time (Write)"=0,"Bytes (Read)"=84199600128,"Errors (Write)"=0,"Total Time (Read)"=984562538560,"Latency Time (Read)"=0,"Retries (Read)"=0,"Errors (Read)"=0,"Total Time (Write)"=375820726403,"Bytes (Write)"=306935250944,"Operations (Read)"=2250892,"Retries (Write)"=0}
+### ps_ucomm
+  PID USER              %CPU %MEM    RSS UCOMM
+  157 _windowserver     12.5  0.0  67344 WindowServer    
+90358 root              12.2  0.0  20688 sshd-session    
+  126 root               5.9  0.0  14912 opendirectoryd  
+### ps_ucomm_mem
+  PID USER              %CPU %MEM    RSS UCOMM
+21875 macuser         3.1  0.2 422928 Python          
+73969 macuser         0.0  0.1 389088 Python          
+21887 macuser         0.0  0.1 386272 Python          
+### netstat_ibn
+Name       Mtu   Network       Address            Ipkts Ierrs     Ibytes    Opkts Oerrs     Obytes  Coll
+lo0        16384 <Link#1>                       2077699     0  525476333  2077699     0  525476333     0
+gif0*      1280  <Link#2>                             0     0          0        0     0          0     0
+stf0*      1280  <Link#3>                             0     0          0        0     0          0     0
+anpi1      1500  <Link#4>    aa:bb:cc:dd:ee:ff        0     0          0        0     0          0     0
+anpi5      1500  <Link#5>    aa:bb:cc:dd:ee:ff        0     0          0        0     0          0     0
+anpi3      1500  <Link#6>    aa:bb:cc:dd:ee:ff     3226     0     279673     3234     0     264754     0
+anpi2      1500  <Link#7>    aa:bb:cc:dd:ee:ff       36     0       5586       49     0      10051     0
+anpi4      1500  <Link#8>    aa:bb:cc:dd:ee:ff        0     0          0        0     0          0     0
+anpi0      1500  <Link#9>    aa:bb:cc:dd:ee:ff        0     0          0        0     0          0     0
+en8        1500  <Link#10>   aa:bb:cc:dd:ee:ff        0     0          0        0     0          0     0
+en9        1500  <Link#11>   aa:bb:cc:dd:ee:ff        0     0          0        0     0          0     0
+### net_total
+2151630183836 9085525073370
+### autoupdate
+    AutomaticDownload = 1;
+### sshd_dir
+/etc/ssh/:
+crypto
+crypto.conf
+moduli
+ssh_config
+ssh_config.d
+ssh_host_ecdsa_key
+ssh_host_ecdsa_key.pub
+ssh_host_ed25519_key
+ssh_host_ed25519_key.pub
+ssh_host_rsa_key
+ssh_host_rsa_key.pub
+### sshd_effective
+UsePAM yes
+### pf
+pfctl: /dev/pf: Permission denied
+### netstat_listen_sample_fmt
+tcp4 *.40023 LISTEN
+tcp4 *.40081 LISTEN
+tcp4 *.40150 LISTEN
+### netstat_est_fmt
+x.x.x.x.22 x.x.x.x
+x.x.x.x.64605 x.x.x.x
+### sysctl_cores
+24
+8
+### os_install
+1792054964
+1792054964
+### loadavg
+{ 1.88 1.72 1.59 }
+### date
+1793256603
+
+======== macmini-B
+### ioreg_stats
+      "Statistics" = {"Operations (Write)"=7356595,"Latency Time (Write)"=0,"Bytes (Read)"=94217433088,"Errors (Write)"=0,"Total Time (Read)"=1043412249417,"Latency Time (Read)"=0,"Retries (Read)"=0,"Errors (Read)"=0,"Total Time (Write)"=725999964659,"Bytes (Write)"=233157414912,"Operations (Read)"=4374887,"Retries (Write)"=0}
+### ps_ucomm
+  PID USER              %CPU %MEM    RSS UCOMM
+61335 root              14.4  0.1  16304 sshd-session    
+  183 _windowserver      6.1  0.2  42144 WindowServer    
+  142 root               5.6  0.1  13552 opendirectoryd  
+### ps_ucomm_mem
+  PID USER              %CPU %MEM    RSS UCOMM
+  289 _mds_stores        0.0  2.5 617584 mds_stores      
+46534 macuser        0.0  2.4 594896 llama-box       
+20875 macuser        0.0  2.4 594016 llama-box       
+### netstat_ibn
+Name       Mtu   Network       Address            Ipkts Ierrs     Ibytes    Opkts Oerrs     Obytes  Coll
+lo0        16384 <Link#1>                        767050     0 3044668876   767050     0 3044668876     0
+gif0*      1280  <Link#2>                             0     0          0        0     0          0     0
+stf0*      1280  <Link#3>                             0     0          0        0     0          0     0
+anpi1      1500  <Link#4>    aa:bb:cc:dd:ee:ff  3140881     0  249967858  3131970     0  253325387     0
+anpi0      1500  <Link#5>    aa:bb:cc:dd:ee:ff        0     0          0        0     0          0     0
+anpi2      1500  <Link#6>    aa:bb:cc:dd:ee:ff        0     0          0        0     0          0     0
+en0        1500  <Link#7>    aa:bb:cc:dd:ee:ff 403265386     0 340479383728 428348631     0 343822768478     0
+en5        1500  <Link#8>    aa:bb:cc:dd:ee:ff        0     0          0        0     0          0     0
+en6        1500  <Link#11>   aa:bb:cc:dd:ee:ff   220749     0   75495898   220813     0   75521020     0
+en7        1500  <Link#12>   aa:bb:cc:dd:ee:ff        0     0          0        0     0          0     0
+en2        9000  <Link#13>   aa:bb:cc:dd:ee:ff        0     0          0        0     0       1936     0
+### net_total
+844501792871 615471528213
+### autoupdate
+    AutomaticDownload = 1;
+    AutomaticallyInstallMacOSUpdates = 1;
+    ConfigDataInstall = 1;
+    CriticalUpdateInstall = 1;
+### sshd_dir
+/etc/ssh/:
+crypto
+crypto.conf
+moduli
+ssh_config
+ssh_config.d
+ssh_host_dsa_key
+ssh_host_dsa_key.pub
+ssh_host_ecdsa_key
+ssh_host_ecdsa_key.pub
+ssh_host_ed25519_key
+ssh_host_ed25519_key.pub
+### sshd_effective
+UsePAM yes
+### pf
+pfctl: /dev/pf: Permission denied
+### netstat_listen_sample_fmt
+tcp4 *.40014 LISTEN
+tcp6 *.51821 LISTEN
+tcp4 *.51821 LISTEN
+### netstat_est_fmt
+x.x.x.x.22 x.x.x.x
+x.x.x.x.52503 x.x.x.x
+### sysctl_cores
+8
+4
+### os_install
+1754405985
+1754405985
+### loadavg
+{ 1.24 1.25 1.48 }
+### date
+1793256604
+

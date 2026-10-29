@@ -154,6 +154,88 @@ rtt min/avg/max/mdev = 12.800/13.400/14.100/0.479 ms`
 		t.Fatalf("expected healthy, got %s", stats.Status)
 	}
 }
+func TestParsePingOutput_MacOSFixtures(t *testing.T) {
+	// 1. macmini ping_W: 1 packet transmitted, 1 received, round-trip min/avg/max/stddev
+	outputMiniW := `--- 1.1.1.1 ping statistics ---
+1 packets transmitted, 1 packets received, 0.0% packet loss
+round-trip min/avg/max/stddev = 1.947/1.947/1.947/0.000 ms`
+	s1 := ParsePingOutput(outputMiniW)
+	if s1.Status != "healthy" || s1.PacketsTransmitted != 1 || s1.PacketsReceived != 1 || s1.PacketLossPct != 0.0 {
+		t.Fatalf("unexpected stats for macmini ping_W: %+v", s1)
+	}
+	if s1.MinMs != 1.947 || s1.AvgMs != 1.947 || s1.MaxMs != 1.947 {
+		t.Fatalf("unexpected RTTs for macmini ping_W: %+v", s1)
+	}
+
+	// 2. macmini ping_t: round-trip min/avg/max/stddev with 'nan' ms
+	outputMiniT := `--- 1.1.1.1 ping statistics ---
+1 packets transmitted, 1 packets received, 0.0% packet loss
+round-trip min/avg/max/stddev = 2.049/2.049/2.049/nan ms`
+	s2 := ParsePingOutput(outputMiniT)
+	if s2.Status != "healthy" || s2.PacketsTransmitted != 1 || s2.PacketsReceived != 1 {
+		t.Fatalf("unexpected stats for macmini ping_t (nan): %+v", s2)
+	}
+	if s2.MinMs != 2.049 || s2.AvgMs != 2.049 || s2.MaxMs != 2.049 {
+		t.Fatalf("unexpected RTTs for macmini ping_t: %+v", s2)
+	}
+
+	// 3. macmini ping4: 4 packets transmitted, 4 packets received
+	outputMini4 := `--- 1.1.1.1 ping statistics ---
+4 packets transmitted, 4 packets received, 0.0% packet loss
+round-trip min/avg/max/stddev = 1.963/2.261/2.978/0.419 ms`
+	s3 := ParsePingOutput(outputMini4)
+	if s3.Status != "healthy" || s3.PacketsTransmitted != 4 || s3.PacketsReceived != 4 {
+		t.Fatalf("unexpected stats for macmini ping4: %+v", s3)
+	}
+	if s3.MinMs != 1.963 || s3.AvgMs != 2.261 || s3.MaxMs != 2.978 {
+		t.Fatalf("unexpected RTTs for macmini ping4: %+v", s3)
+	}
+
+	// 4. macstudio ping_W: with "1 packets out of wait time"
+	outputStudioW := `--- 1.1.1.1 ping statistics ---
+1 packets transmitted, 1 packets received, 0.0% packet loss, 1 packets out of wait time
+round-trip min/avg/max/stddev = 3.232/3.232/3.232/0.000 ms`
+	s4 := ParsePingOutput(outputStudioW)
+	if s4.Status != "healthy" || s4.PacketsTransmitted != 1 || s4.PacketsReceived != 1 {
+		t.Fatalf("unexpected stats for macstudio ping_W: %+v", s4)
+	}
+	if s4.MinMs != 3.232 || s4.AvgMs != 3.232 || s4.MaxMs != 3.232 {
+		t.Fatalf("unexpected RTTs for macstudio ping_W: %+v", s4)
+	}
+
+	// 5. macOS 100% loss
+	outputLoss := `--- 1.1.1.1 ping statistics ---
+4 packets transmitted, 0 packets received, 100.0% packet loss`
+	s5 := ParsePingOutput(outputLoss)
+	if s5.Status != "down" || s5.PacketsTransmitted != 4 || s5.PacketsReceived != 0 || s5.PacketLossPct != 100.0 {
+		t.Fatalf("unexpected stats for macOS 100%% loss: %+v", s5)
+	}
+}
+
+func TestParseDNSOutput_MacOSDscacheutil(t *testing.T) {
+	// Single record format from macOS Tahoe dscacheutil
+	outputSingle := `name: google.com
+ip_address: 142.250.190.46
+ipv6_address: 2607:f8b0:4006:81b::200e`
+	dns1 := ParseDNSOutput(outputSingle, "google.com")
+	if dns1.Status != "healthy" || len(dns1.ResolvedIPs) != 1 || dns1.ResolvedIPs[0] != "142.250.190.46" {
+		t.Fatalf("unexpected DNS stats for dscacheutil: %+v", dns1)
+	}
+
+	// Multiple records format
+	outputMulti := `name: example.com
+ip_address: 93.184.215.14
+
+name: example.com
+ip_address: 93.184.216.34`
+	dns2 := ParseDNSOutput(outputMulti, "example.com")
+	if dns2.Status != "healthy" || len(dns2.ResolvedIPs) != 2 {
+		t.Fatalf("unexpected multi-IP DNS stats for dscacheutil: %+v", dns2)
+	}
+	if dns2.ResolvedIPs[0] != "93.184.215.14" || dns2.ResolvedIPs[1] != "93.184.216.34" {
+		t.Fatalf("unexpected IPs in dscacheutil: %+v", dns2.ResolvedIPs)
+	}
+}
 
 func TestParsePortOutput(t *testing.T) {
 	openStats := ParsePortOutput("some log\nPORT_OPEN\n", 443)

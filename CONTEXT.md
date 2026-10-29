@@ -8,6 +8,10 @@ Sistem pemantauan dan manajemen infrastruktur server berbasis agentless SSH deng
 Mesin server fisik atau virtual (VPS) Linux yang dikelola dan dipantau melalui koneksi SSH.
 _Avoid_: Node, instance, machine, windows target
 
+**macOS Host**:
+Mesin server fisik atau virtual berbasis sistem operasi macOS (Darwin) yang dikelola dan dipantau secara agentless melalui koneksi SSH standar.
+_Avoid_: Mac node, Darwin instance, OSX target, Apple workstation
+
 **Desired State**:
 Kumpulan aturan dan ekspektasi yang didefinisikan untuk sebuah Host (misal: service harus aktif, disk di bawah ambang batas, container tertentu harus running).
 _Avoid_: Baseline, blueprint, config template

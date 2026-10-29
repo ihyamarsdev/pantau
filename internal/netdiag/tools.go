@@ -23,6 +23,20 @@ const (
 	traceInstallTimeout = 150 * time.Second
 )
 
+// PortableTimeoutPrelude defines a timeout function for platforms where GNU timeout
+// is not installed (e.g. macOS / Darwin). It prefers timeout, falls back to gtimeout,
+// then wraps via perl's alarm function, and finally falls back to running the command directly.
+// It avoids using '&&' or '||' so callers asserting if/elif structure remain valid.
+const PortableTimeoutPrelude = `if ! command -v timeout >/dev/null 2>&1; then ` +
+	`if command -v gtimeout >/dev/null 2>&1; then ` +
+	`timeout() { gtimeout "$@"; }; ` +
+	`elif command -v perl >/dev/null 2>&1; then ` +
+	`timeout() { perl -e 'my $d = shift; alarm($d); exec @ARGV' "$@"; }; ` +
+	`else ` +
+	`timeout() { shift; "$@"; }; ` +
+	`fi; ` +
+	`fi; `
+
 // ensureTraceToolScript is a POSIX sh script run on the source host before a traceroute probe.
 //
 // traceroute is the preferred tool: it streams one line per hop through a pipe. tracepath (iputils) block-buffers
@@ -42,6 +56,9 @@ fallback_or_fail() {
 if command -v traceroute >/dev/null 2>&1; then
   echo ` + traceToolOK + `
   exit 0
+fi
+if [ "$(uname -s)" = "Darwin" ]; then
+  fallback_or_fail ` + traceToolNoPkgMgr + ` 4
 fi
 echo "[pantau] traceroute is not installed on this host; installing it before running the probe..."
 if [ "$(id -u)" = "0" ]; then
@@ -87,7 +104,12 @@ func traceProbeCommand(quotedTarget string) string {
 			`if command -v stdbuf >/dev/null 2>&1; then timeout 15 stdbuf -oL tracepath -n -m 20 %[1]s 2>&1; `+
 			`else timeout 15 tracepath -n -m 20 %[1]s 2>&1; fi; `+
 			`else echo "no traceroute tool available"; fi`, quotedTarget)
-	return "sh -c " + shellQuote(script)
+	return "sh -c " + shellQuote(PortableTimeoutPrelude+script)
+}
+
+// TraceProbeCommand exports traceProbeCommand for test assertions.
+func TraceProbeCommand(quotedTarget string) string {
+	return traceProbeCommand(quotedTarget)
 }
 
 // ensureTraceTool makes sure a traceroute-capable tool exists on the remote host, installing traceroute first when

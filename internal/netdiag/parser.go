@@ -18,7 +18,7 @@ var (
 
 	// Ping regexes
 	pingStatsRegex = regexp.MustCompile(`(\d+)\s+packets transmitted,\s+(\d+)\s+(?:packets\s+)?received,.*?(?:([0-9.]+)%\s+packet loss)`)
-	pingRTTRegex   = regexp.MustCompile(`(?:rtt|round-trip)\s+min/avg/max/(?:mdev|stddev)\s*=\s*([0-9.]+)/([0-9.]+)/([0-9.]+)/?([0-9.]*)?\s*ms`)
+	pingRTTRegex   = regexp.MustCompile(`(?:rtt|round-trip)\s+min/avg/max/(?:mdev|stddev)\s*=\s*([0-9.]+)/([0-9.]+)/([0-9.]+)(?:/([0-9.]+|nan|-))?\s*ms`)
 
 	// IP CIDRs for private/internal classification
 	privateCIDRs []*net.IPNet
@@ -30,11 +30,11 @@ func init() {
 		"172.16.0.0/12",
 		"192.168.0.0/16",
 		"127.0.0.0/8",
-		"100.64.0.0/10",   // CGNAT RFC 6598
-		"169.254.0.0/16",  // Link Local
-		"::1/128",         // IPv6 Loopback
-		"fc00::/7",        // IPv6 Unique Local
-		"fe80::/10",       // IPv6 Link Local
+		"100.64.0.0/10",  // CGNAT RFC 6598
+		"169.254.0.0/16", // Link Local
+		"::1/128",        // IPv6 Loopback
+		"fc00::/7",       // IPv6 Unique Local
+		"fe80::/10",      // IPv6 Link Local
 	}
 	for _, cidr := range cidrs {
 		_, ipNet, err := net.ParseCIDR(cidr)
@@ -324,29 +324,47 @@ func ParsePortOutput(output string, port int) *PortStats {
 	return stats
 }
 
-// ParseDNSOutput parses `getent hosts` or `nslookup` output.
+// ParseDNSOutput parses DNS resolution results across multiple platform tools:
+// - macOS dscacheutil: structured output where records contain "name: <domain>\nip_address: <a.b.c.d>"
+// - Linux getent: "<ip> <domain> [aliases...]"
+// - nslookup: "Address: <ip>" (under Non-authoritative answer)
+// - host: "<domain> has address <ip>"
 func ParseDNSOutput(output string, target string) *DNSStats {
 	stats := &DNSStats{
 		Target: target,
 		Status: "down",
 	}
 
-	// Extract unique IP addresses
-	ipRegex := regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
-	rawIPs := ipRegex.FindAllString(output, -1)
 	seen := make(map[string]bool)
 
-	for _, ip := range rawIPs {
-		// Filter out 0.0.0.0 or 127.0.0.53 (systemd-resolved local listener)
-		if ip == "0.0.0.0" || ip == "127.0.0.53" {
-			continue
-		}
-		if !seen[ip] {
+	// 1. macOS dscacheutil -q host -a name <target>
+	// Format:
+	//   name: x
+	//   ip_address: a.b.c.d
+	dscacheutilRegex := regexp.MustCompile(`(?m)^\s*ip_address:\s*(\b(?:\d{1,3}\.){3}\d{1,3}\b)`)
+	for _, m := range dscacheutilRegex.FindAllStringSubmatch(output, -1) {
+		ip := m[1]
+		if ip != "0.0.0.0" && ip != "127.0.0.53" && !seen[ip] {
 			seen[ip] = true
 			stats.ResolvedIPs = append(stats.ResolvedIPs, ip)
 		}
 	}
 
+	// 2. If dscacheutil did not match, fallback to getent/nslookup/host or generic IP scanning
+	if len(stats.ResolvedIPs) == 0 {
+		ipRegex := regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
+		rawIPs := ipRegex.FindAllString(output, -1)
+		for _, ip := range rawIPs {
+			// Filter out 0.0.0.0 or 127.0.0.53 (systemd-resolved local listener)
+			if ip == "0.0.0.0" || ip == "127.0.0.53" {
+				continue
+			}
+			if !seen[ip] {
+				seen[ip] = true
+				stats.ResolvedIPs = append(stats.ResolvedIPs, ip)
+			}
+		}
+	}
 	if len(stats.ResolvedIPs) > 0 {
 		stats.Status = "healthy"
 		stats.Summary = fmt.Sprintf("Successfully resolved %s to: %s", target, strings.Join(stats.ResolvedIPs, ", "))

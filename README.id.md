@@ -7,7 +7,7 @@
 <h1 align="center">Pantau</h1>
 
 <p align="center">
-  <b>Sistem Pemantauan Server Linux Berbasis Agentless SSH, Desired State Drift Engine & Manajemen Interaktif</b><br>
+  <b>Sistem Pemantauan Server Linux & macOS Berbasis Agentless SSH, Desired State Drift Engine & Manajemen Interaktif</b><br>
   <i>Single binary. Tanpa instalasi agen remote. Embedded SQLite. Native SSH.</i>
 </p>
 
@@ -30,7 +30,7 @@
 </p>
 
 > [!WARNING]
-> **Peringatan Keamanan & Operasional Produksi**: Pantau adalah perangkat lunak *open-source* untuk pemantauan dan manajemen server Linux yang beroperasi dengan mengeksekusi perintah SSH, manipulasi file via SFTP, dan penyisipan kunci secara langsung dengan hak akses istimewa (*privileged/root*). Perangkat lunak ini disediakan atas dasar **"SEBAGAIMANA ADANYA" (*AS IS*)** tanpa jaminan apa pun. Pengguna memikul tanggung jawab penuh atas segala tindakan eksekusi remote, perlindungan kredensial/kunci privat, serta pemeliharaan cadangan (*backup*) mandiri. Jangan pernah membuka akses Pantau ke internet publik tanpa perlindungan reverse proxy, autentikasi ketat, dan enkripsi TLS/HTTPS.
+> **Peringatan Keamanan & Operasional Produksi**: Pantau adalah perangkat lunak *open-source* untuk pemantauan dan manajemen server Linux dan macOS yang beroperasi dengan mengeksekusi perintah SSH, manipulasi file via SFTP, dan penyisipan kunci secara langsung dengan hak akses istimewa (*privileged/root*). Perangkat lunak ini disediakan atas dasar **"SEBAGAIMANA ADANYA" (*AS IS*)** tanpa jaminan apa pun. Pengguna memikul tanggung jawab penuh atas segala tindakan eksekusi remote, perlindungan kredensial/kunci privat, serta pemeliharaan cadangan (*backup*) mandiri. Jangan pernah membuka akses Pantau ke internet publik tanpa perlindungan reverse proxy, autentikasi ketat, dan enkripsi TLS/HTTPS.
 
 ---
 
@@ -72,10 +72,10 @@ Pantau menginspeksi Host remote melalui perintah SSH non-interaktif, memvalidasi
                                                      | Native SSH Protocol                       | Stream Pipe
                                                      v                                           v
                        +-------------------------------------------+   +-------------------------------------------+
-                       |           Remote Linux Host A             |   |           Remote Linux Host B             |
-                       |  (Ubuntu / Debian / RHEL / CentOS 6-9)    |   |  (Ubuntu / Debian / RHEL / CentOS 6-9)    |
-                       |  - POSIX Standard CLI Tools (`ps`, `df`)  |   |  - POSIX Standard CLI Tools (`ps`, `df`)  |
-                       |  - Docker Engine / Containers             |   |  - Docker Engine / Containers             |
+                       |           Remote Linux Host A             |   |           Remote macOS Host B             |
+                       |  (Ubuntu / Debian / RHEL / CentOS 6-9)    |   |  (macOS 26 Tahoe / Apple Silicon / M-Series)  |
+                       |  - POSIX Standard CLI Tools (`ps`, `df`)  |   |  - POSIX & Darwin CLI (`sysctl`, `vm_stat`)|
+                       |  - Docker Engine / Containers             |   |  - APFS Shared Container Storage          |
                        |  - Tanpa Daemon / Tanpa Instalasi Agen    |   |  - Tanpa Daemon / Tanpa Instalasi Agen    |
                        +-------------------------------------------+   +-------------------------------------------+
 ```
@@ -236,6 +236,15 @@ Pantau menginspeksi Host remote melalui perintah SSH non-interaktif, memvalidasi
 - **Prinsip Kejujuran Cakupan (*Honest Coverage*)**: Menerapkan aturan integritas ketat—sistem dengan distribusi yang belum didukung (Alpine, Arch), perintah terbatas izin, atau cache repositori kedaluwarsa dilaporkan dengan status transparan (`partial`, `unsupported`) beserta catatan kendala, bukan disamarkan sebagai 0 temuan.
 - **Kepatuhan Berkelanjutan via Desired State**: Mendukung aturan berjenis `security_updates` (target `security`, ekspektasi `none` atau `<=N`) yang dievaluasi langsung dari cache basis data tanpa beban SSH berulang, memicu peringatan drift otomatis jika terdapat paket tertunda, scan melebihi 72 jam, atau cakupan tidak terverifikasi.
 - **Kesiapan Lingkungan Terisolasi (Airgapped)**: Beroperasi 100% mandiri tanpa koneksi internet keluar atau dependensi database CVE eksternal; hasil pemindaian disimpan di SQLite dan dikecualikan dari snapshot terenkripsi sebagai telemetri turunan yang dapat direproduksi.
+
+### 27. 🍎 Dukungan Host macOS (Darwin) Kelas Satu
+- **Observabilitas Darwin Berbasis Agentless**: Memperluas pemantauan agentless ke host macOS (Apple silicon Mac mini, Mac Studio, Mac Pro) melalui OpenSSH standar tanpa agen atau daemon latar belakang.
+- **Kalkulasi RAM Activity Monitor & Disk APFS**: Menghitung memori fisik sesuai formula resmi Activity Monitor `(Anonymous - Purgeable + Wired + Compressor) * pagesize` dari `vm_stat` serta swap dari `sysctl vm.swapusage`. Mengukur kapasitas penyimpanan kontainer bersama APFS secara riil melalui `/System/Volumes/Data` (`used = total - available`) alih-alih volume root tersegel.
+- **Telemetri Perangkat Keras & Jaringan Fisik**: Mendeteksi model perangkat keras dan chip (misal: `Apple Mac Studio (Mac15,14) - Apple M3 Ultra`), total core CPU, dan waktu instalasi OS. Menghitung akumulasi byte I/O disk via statistik driver `ioreg` serta memfilter antarmuka fisik `en*` via `netstat -ibn` tanpa distorsi antarmuka virtual.
+- **Keamanan Privasi Proses (`ucomm`)**: Menggunakan ekstraksi nama pendek proses (`ps -o ucomm`) untuk daftar Top CPU dan Top RAM, mencegah kebocoran token atau rahasia yang diteruskan pada argumen perintah.
+- **Audit Keamanan & Hardening macOS**: Memeriksa pembaruan sistem tertunda via `/usr/sbin/softwareupdate` dengan status transparan `partial` saat kendala jaringan, dipadukan dengan 4 pemeriksaan pengerasan sistem: login root SSH, autentikasi sandi SSH, preferensi auto-update (`com.apple.SoftwareUpdate`), dan status application firewall.
+- **Penegakan Desired State & Diagnostik Portabel**: Memvalidasi ambang batas disk APFS, layanan `launchd`, port terbuka via `lsof`, dan kesegaran cadangan via BSD `stat -f`. Menjalankan pengujian latensi jaringan dan traceroute menggunakan perkakas native Darwin tanpa instalasi paket remote.
+- **Nol Regresi Linux**: Dibangun dengan isolasi percabangan runtime (`uname -s`); seluruh alur pengumpulan telemetri Linux tetap berjalan 100% identik tanpa perubahan.
 
 ---
 

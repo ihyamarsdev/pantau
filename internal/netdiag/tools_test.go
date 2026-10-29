@@ -104,3 +104,91 @@ func TestTraceProbeCommandPrefersTracerouteAndStreamsTracepath(t *testing.T) {
 		t.Errorf("tracepath must run line-buffered via stdbuf when available: %s", cmd)
 	}
 }
+
+func TestPortableTimeoutPrelude(t *testing.T) {
+	if !strings.Contains(PortableTimeoutPrelude, "command -v timeout") {
+		t.Errorf("expected presence check for timeout")
+	}
+	if !strings.Contains(PortableTimeoutPrelude, "gtimeout") {
+		t.Errorf("expected fallback to gtimeout")
+	}
+	if !strings.Contains(PortableTimeoutPrelude, "perl") || !strings.Contains(PortableTimeoutPrelude, "alarm") {
+		t.Errorf("expected perl alarm fallback")
+	}
+	if strings.Contains(PortableTimeoutPrelude, "&&") || strings.Contains(PortableTimeoutPrelude, "||") {
+		t.Errorf("prelude must not use && or || to avoid interfering with parent scripts")
+	}
+}
+
+func TestPingProbeCommand_DarwinAndLinux(t *testing.T) {
+	cmd := PingProbeCommand("'1.1.1.1'")
+	if !strings.Contains(cmd, PortableTimeoutPrelude) {
+		t.Errorf("expected command to include PortableTimeoutPrelude")
+	}
+	if !strings.Contains(cmd, "uname -s") || !strings.Contains(cmd, "Darwin") {
+		t.Fatalf("expected uname -s check for Darwin: %s", cmd)
+	}
+
+	// Split by Darwin branch
+	parts := strings.Split(cmd, "Darwin")
+	if len(parts) < 2 {
+		t.Fatalf("unexpected command structure: %s", cmd)
+	}
+	darwinBranch := parts[1]
+	if idxElse := strings.Index(darwinBranch, "else"); idxElse > 0 {
+		darwinPart := darwinBranch[:idxElse]
+		linuxPart := darwinBranch[idxElse:]
+
+		// Darwin ping must use -t (deadline in seconds) and NOT -W 2
+		if !strings.Contains(darwinPart, "-t 14") {
+			t.Errorf("Darwin ping must use -t 14, got: %s", darwinPart)
+		}
+		if strings.Contains(darwinPart, "-W 2") {
+			t.Errorf("Darwin ping must not use -W 2: %s", darwinPart)
+		}
+
+		// Linux ping must use -W 2
+		if !strings.Contains(linuxPart, "-W 2") {
+			t.Errorf("Linux ping must keep -W 2: %s", linuxPart)
+		}
+	} else {
+		t.Fatalf("expected else in ping command: %s", cmd)
+	}
+}
+
+func TestEnsureTraceTool_DarwinNoPkgManager(t *testing.T) {
+	idxDarwin := strings.Index(ensureTraceToolScript, `"$(uname -s)" = "Darwin"`)
+	if idxDarwin < 0 {
+		t.Fatalf("ensureTraceToolScript must contain Darwin check")
+	}
+	idxApt := strings.Index(ensureTraceToolScript, "apt-get install")
+	if idxDarwin > idxApt {
+		t.Fatalf("Darwin check (%d) must precede apt-get install (%d)", idxDarwin, idxApt)
+	}
+	if strings.Contains(ensureTraceToolScript, "brew install") {
+		t.Errorf("ensureTraceToolScript must never attempt brew installation")
+	}
+}
+
+func TestDNSProbeCommand_DarwinDscacheutil(t *testing.T) {
+	cmd := DNSProbeCommand("'google.com'")
+	if !strings.Contains(cmd, PortableTimeoutPrelude) {
+		t.Errorf("expected DNS command to include PortableTimeoutPrelude")
+	}
+	if !strings.Contains(cmd, "dscacheutil -q host -a name") {
+		t.Errorf("expected DNS command to contain dscacheutil: %s", cmd)
+	}
+	if !strings.Contains(cmd, "getent hosts") {
+		t.Errorf("expected DNS command to contain getent hosts: %s", cmd)
+	}
+}
+
+func TestPortProbeCommand_PortableTimeout(t *testing.T) {
+	cmd := PortProbeCommand("1.1.1.1", 443)
+	if !strings.Contains(cmd, PortableTimeoutPrelude) {
+		t.Errorf("expected Port command to include PortableTimeoutPrelude")
+	}
+	if !strings.Contains(cmd, "</dev/tcp/1.1.1.1/443") {
+		t.Errorf("expected /dev/tcp port probe: %s", cmd)
+	}
+}

@@ -21,6 +21,10 @@ var (
 	rpmAdvisoryRe = regexp.MustCompile(`^[A-Za-z]+[0-9]*-[0-9]{4}[-:][0-9]+`)
 	// rpmArchSuffixRe matches `name.arch` tokens that start `yum --security check-update` rows.
 	rpmArchSuffixRe = regexp.MustCompile(`\.(x86_64|noarch|i[3-6]86|aarch64|ppc64le|s390x|armv7hl)$`)
+	// macAutoCriticalRe matches CriticalUpdateInstall = 1 in SoftwareUpdate plist.
+	macAutoCriticalRe = regexp.MustCompile(`(?i)CriticalUpdateInstall\s*[:=]\s*1\b`)
+	// macAutoConfigRe matches ConfigDataInstall = 1 in SoftwareUpdate plist.
+	macAutoConfigRe = regexp.MustCompile(`(?i)ConfigDataInstall\s*[:=]\s*1\b`)
 )
 
 func countUnknownHardening(checks []store.HardeningCheck) int {
@@ -35,7 +39,58 @@ func countUnknownHardening(checks []store.HardeningCheck) int {
 
 // SecurityScanBatchCmd is a polyglot, agentless, read-only script executed on the remote host.
 // It detects pending security updates, cache freshness, reboot state, and hardening posture.
-const SecurityScanBatchCmd = `echo "===OS_RELEASE==="
+const SecurityScanBatchCmd = `if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+echo "===OS_RELEASE==="
+echo "ID=macos"
+echo "NAME=\"macOS\""
+echo "VERSION_ID=\"$(sw_vers -productVersion 2>/dev/null)\""
+echo "PRETTY_NAME=\"macOS $(sw_vers -productVersion 2>/dev/null)\""
+
+echo "===CACHE_AGE==="
+date +%s 2>/dev/null
+
+echo "===REBOOT==="
+
+echo "===UPDATES==="
+echo "MGR:softwareupdate"
+if command -v perl >/dev/null 2>&1; then
+    perl -e 'alarm 60; exec @ARGV' softwareupdate -l 2>&1
+else
+    softwareupdate -l 2>&1
+fi
+
+echo "===SSHD_CONFIG==="
+if [ -r /etc/ssh/sshd_config ]; then
+    echo "FILE:/etc/ssh/sshd_config"
+    cat /etc/ssh/sshd_config 2>/dev/null
+    for f in /etc/ssh/sshd_config.d/*; do
+        if [ -r "$f" ]; then
+            echo "FILE:$f"
+            cat "$f" 2>/dev/null
+        fi
+    done
+elif [ -d /etc/ssh/sshd_config.d ]; then
+    for f in /etc/ssh/sshd_config.d/*; do
+        if [ -r "$f" ]; then
+            echo "FILE:$f"
+            cat "$f" 2>/dev/null
+        fi
+    done
+else
+    echo "SSHD_UNREADABLE"
+fi
+
+echo "===AUTO_UPDATES==="
+defaults read /Library/Preferences/com.apple.SoftwareUpdate 2>&1 || echo "DEFAULTS_UNREADABLE"
+
+echo "===FIREWALL==="
+if [ -x /usr/libexec/ApplicationFirewall/socketfilterfw ]; then
+    /usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate 2>&1
+else
+    echo "SOCKETFILTERFW_UNREADABLE"
+fi
+else
+echo "===OS_RELEASE==="
 cat /etc/os-release /usr/lib/os-release 2>/dev/null || cat /etc/redhat-release /etc/debian_version 2>/dev/null
 
 echo "===CACHE_AGE==="
@@ -124,7 +179,7 @@ if command -v iptables >/dev/null 2>&1; then
     echo "---IPTABLES---"
     iptables -S 2>&1 || iptables -L -n 2>&1
 fi
-`
+fi`
 
 // IsSecurityScanning reports whether a security scan is currently running for hostID.
 func (ins *Inspector) IsSecurityScanning(hostID int64) bool {
@@ -242,12 +297,30 @@ func parseSecurityScanOutput(stdout string, hostID int64) *store.SecurityScan {
 		packageManager = "apk"
 	} else if strings.Contains(updatesSec, "MGR:pacman") {
 		packageManager = "pacman"
+	} else if strings.Contains(updatesSec, "MGR:softwareupdate") {
+		packageManager = "softwareupdate"
+	}
+
+	var osProductVersion string
+	if osFamily == "macos" {
+		for _, line := range strings.Split(osSec, "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "VERSION_ID=") {
+				osProductVersion = strings.Trim(strings.TrimPrefix(line, "VERSION_ID="), `"'`)
+				break
+			}
+			if strings.HasPrefix(line, "ProductVersion:") {
+				osProductVersion = strings.TrimSpace(strings.TrimPrefix(line, "ProductVersion:"))
+				break
+			}
+		}
 	}
 
 	var (
 		findings        []store.SecurityFinding
 		pendingSecurity int
 		pendingTotal    int
+		rebootRequired  bool
 		notes           []string
 		updateNotes     []string
 	)
@@ -260,6 +333,12 @@ func parseSecurityScanOutput(stdout string, hostID int64) *store.SecurityScan {
 		totSub := extractSection(updatesSec, "---TOTAL---", "---RPM_QA---")
 		rpmQaSub := extractSection(updatesSec, "---RPM_QA---", "")
 		findings, pendingSecurity, pendingTotal, updateNotes = parseRpmUpdates(secSub, totSub, rpmQaSub)
+	case "softwareupdate":
+		var swReboot bool
+		findings, pendingSecurity, pendingTotal, swReboot, updateNotes = parseSoftwareUpdate(updatesSec, osProductVersion)
+		if swReboot {
+			rebootRequired = true
+		}
 	default:
 		// Unsupported package manager
 		notes = append(notes, fmt.Sprintf("package manager '%s' is not supported for security updates detection", packageManager))
@@ -267,7 +346,9 @@ func parseSecurityScanOutput(stdout string, hostID int64) *store.SecurityScan {
 	notes = append(notes, updateNotes...)
 
 	// Reboot required
-	rebootRequired := parseRebootRequired(rebootSec)
+	if parseRebootRequired(rebootSec) {
+		rebootRequired = true
+	}
 
 	// Repo cache age
 	cacheAgeHours, cacheNotes := parseRepoCacheAge(cacheSec, packageManager)
@@ -296,7 +377,9 @@ func parseSecurityScanOutput(stdout string, hostID int64) *store.SecurityScan {
 
 	// Status derivation per honesty rules
 	status := "ok"
-	if packageManager != "apt" && packageManager != "dnf" && packageManager != "yum" {
+	if packageManager == "softwareupdate" {
+		status = "partial"
+	} else if packageManager != "apt" && packageManager != "dnf" && packageManager != "yum" {
 		status = "unsupported"
 	} else {
 		// If supported, check for partial coverage
@@ -366,6 +449,8 @@ func parseOSFamily(content string) (osFamily, pkgManager string) {
 	idLikeLower := strings.ToLower(idLike)
 
 	switch {
+	case idLower == "macos" || idLower == "darwin":
+		return "macos", "softwareupdate"
 	case idLower == "ubuntu":
 		return "ubuntu", "apt"
 	case idLower == "debian":
@@ -384,7 +469,9 @@ func parseOSFamily(content string) (osFamily, pkgManager string) {
 	default:
 		// Fallback check on content
 		cLower := strings.ToLower(content)
-		if strings.Contains(cLower, "ubuntu") {
+		if strings.Contains(cLower, "macos") || strings.Contains(cLower, "darwin") {
+			return "macos", "softwareupdate"
+		} else if strings.Contains(cLower, "ubuntu") {
 			return "ubuntu", "apt"
 		} else if strings.Contains(cLower, "debian") {
 			return "debian", "apt"
@@ -591,6 +678,9 @@ func parseRebootRequired(content string) bool {
 
 // parseRepoCacheAge computes cache age in hours and issues notes if stale (>168h).
 func parseRepoCacheAge(content, mgr string) (ageHours int, notes []string) {
+	if mgr == "softwareupdate" {
+		return -1, nil
+	}
 	var nowEpoch, cacheEpoch int64
 	lines := strings.Split(content, "\n")
 	for _, line := range lines {
@@ -756,6 +846,35 @@ func parseSshdConfig(content string) (permitRoot, passAuth store.HardeningCheck,
 func parseAutoUpdates(content string) (store.HardeningCheck, []string) {
 	cLower := strings.ToLower(content)
 
+	// macOS SoftwareUpdate defaults check
+	if strings.Contains(cLower, "defaults_unreadable") || strings.Contains(cLower, "com.apple.softwareupdate does not exist") {
+		return store.HardeningCheck{
+			ID:     "auto_security_updates",
+			Title:  "Automatic Security Updates",
+			Status: "unknown",
+			Detail: "unable to read macOS SoftwareUpdate preferences",
+		}, []string{"automatic update preferences could not be read"}
+	}
+	if strings.Contains(content, "CriticalUpdateInstall") || strings.Contains(content, "ConfigDataInstall") ||
+		strings.Contains(content, "AutomaticDownload") || strings.Contains(content, "AutomaticallyInstallMacOSUpdates") {
+		hasCritical := macAutoCriticalRe.MatchString(content)
+		hasConfig := macAutoConfigRe.MatchString(content)
+		if hasCritical && hasConfig {
+			return store.HardeningCheck{
+				ID:     "auto_security_updates",
+				Title:  "Automatic Security Updates",
+				Status: "pass",
+				Detail: "macOS automatic security and configuration updates are enabled",
+			}, nil
+		}
+		return store.HardeningCheck{
+			ID:     "auto_security_updates",
+			Title:  "Automatic Security Updates",
+			Status: "warn",
+			Detail: "macOS automatic security updates are disabled or incomplete",
+		}, nil
+	}
+
 	switch {
 	case strings.Contains(cLower, "unattended_enabled:enabled") || strings.Contains(cLower, "unattended_active:active"):
 		return store.HardeningCheck{
@@ -805,6 +924,32 @@ func parseAutoUpdates(content string) (store.HardeningCheck, []string) {
 // parseFirewall inspects ufw, firewalld, nftables, and iptables.
 func parseFirewall(content string) (store.HardeningCheck, []string) {
 	cLower := strings.ToLower(content)
+
+	if strings.Contains(cLower, "socketfilterfw_unreadable") {
+		return store.HardeningCheck{
+			ID:     "firewall_active",
+			Title:  "Host Firewall",
+			Status: "unknown",
+			Detail: "Application Firewall status could not be read",
+		}, []string{"firewall status could not be read"}
+	}
+	if strings.Contains(cLower, "state = 1") || strings.Contains(cLower, "state = 2") ||
+		(strings.Contains(cLower, "firewall is enabled") && !strings.Contains(cLower, "disabled")) {
+		return store.HardeningCheck{
+			ID:     "firewall_active",
+			Title:  "Host Firewall",
+			Status: "pass",
+			Detail: "Application Firewall is enabled",
+		}, nil
+	}
+	if strings.Contains(cLower, "state = 0") || strings.Contains(cLower, "firewall is disabled") {
+		return store.HardeningCheck{
+			ID:     "firewall_active",
+			Title:  "Host Firewall",
+			Status: "warn",
+			Detail: "Application Firewall is disabled",
+		}, nil
+	}
 
 	if strings.Contains(cLower, "status: active") {
 		return store.HardeningCheck{
@@ -873,4 +1018,149 @@ func parseFirewall(content string) (store.HardeningCheck, []string) {
 		Status: "warn",
 		Detail: "no active firewall detected (ufw, firewalld, nftables, iptables)",
 	}, nil
+}
+
+type softwareUpdateEntry struct {
+	label   string
+	title   string
+	version string
+	action  string
+	rawText string
+}
+
+func parseSoftwareUpdateEntries(output string) []softwareUpdateEntry {
+	lines := strings.Split(output, "\n")
+	var entries []softwareUpdateEntry
+	var cur *softwareUpdateEntry
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "* Label:") || (strings.HasPrefix(trimmed, "* ") && !strings.Contains(trimmed, "* Title:")) {
+			if cur != nil {
+				if cur.title == "" {
+					cur.title = cur.label
+				}
+				entries = append(entries, *cur)
+			}
+			label := strings.TrimSpace(strings.TrimPrefix(trimmed, "* Label:"))
+			if strings.HasPrefix(trimmed, "* ") && !strings.HasPrefix(trimmed, "* Label:") {
+				label = strings.TrimSpace(strings.TrimPrefix(trimmed, "* "))
+			}
+			cur = &softwareUpdateEntry{
+				label:   label,
+				rawText: trimmed,
+			}
+			continue
+		}
+
+		if cur != nil {
+			cur.rawText += " " + trimmed
+			if idx := strings.Index(trimmed, "Title:"); idx != -1 {
+				rest := trimmed[idx+len("Title:"):]
+				if cIdx := strings.Index(rest, ","); cIdx != -1 {
+					cur.title = strings.TrimSpace(rest[:cIdx])
+				} else {
+					cur.title = strings.TrimSpace(rest)
+				}
+			}
+			if idx := strings.Index(trimmed, "Version:"); idx != -1 {
+				rest := trimmed[idx+len("Version:"):]
+				if cIdx := strings.Index(rest, ","); cIdx != -1 {
+					cur.version = strings.TrimSpace(rest[:cIdx])
+				} else {
+					cur.version = strings.TrimSpace(rest)
+				}
+			}
+			if idx := strings.Index(trimmed, "Action:"); idx != -1 {
+				rest := trimmed[idx+len("Action:"):]
+				if cIdx := strings.Index(rest, ","); cIdx != -1 {
+					cur.action = strings.TrimSpace(rest[:cIdx])
+				} else {
+					cur.action = strings.TrimSpace(rest)
+				}
+			}
+		}
+	}
+	if cur != nil {
+		if cur.title == "" {
+			cur.title = cur.label
+		}
+		entries = append(entries, *cur)
+	}
+	return entries
+}
+
+func isMacOSSecurityUpdate(title, label string) bool {
+	tLower := strings.ToLower(title)
+	lLower := strings.ToLower(label)
+	return strings.Contains(tLower, "safari") || strings.Contains(lLower, "safari") ||
+		strings.Contains(tLower, "macos") || strings.Contains(lLower, "macos") ||
+		strings.Contains(tLower, "mac os") || strings.Contains(lLower, "mac os") ||
+		strings.Contains(tLower, "security update") || strings.Contains(lLower, "security update")
+}
+
+// parseSoftwareUpdate parses macOS softwareupdate -l output.
+func parseSoftwareUpdate(output string, osProductVersion string) (findings []store.SecurityFinding, pendingSec, pendingTot int, rebootRequired bool, notes []string) {
+	trimmed := strings.TrimSpace(output)
+	tLower := strings.ToLower(trimmed)
+
+	isClean := strings.Contains(trimmed, "No new software available.")
+	entries := parseSoftwareUpdateEntries(trimmed)
+
+	if len(entries) > 0 {
+		pendingTot = len(entries)
+		for _, entry := range entries {
+			if strings.EqualFold(entry.action, "restart") || strings.Contains(strings.ToLower(entry.rawText), "action: restart") {
+				rebootRequired = true
+			}
+
+			if isMacOSSecurityUpdate(entry.title, entry.label) {
+				pendingSec++
+				installedVer := ""
+				if (strings.Contains(strings.ToLower(entry.title), "macos") || strings.Contains(strings.ToLower(entry.label), "macos")) && osProductVersion != "" {
+					installedVer = osProductVersion
+				}
+				findings = append(findings, store.SecurityFinding{
+					Package:          entry.title,
+					InstalledVersion: installedVer,
+					FixedVersion:     entry.version,
+					Severity:         "unknown",
+					Advisory:         "",
+				})
+			}
+		}
+
+		if osProductVersion != "" {
+			notes = append(notes, fmt.Sprintf("macOS %s does not label security updates; macOS and Safari updates are counted as security updates", osProductVersion))
+		} else {
+			notes = append(notes, "macOS does not label security updates; macOS and Safari updates are counted as security updates")
+		}
+		return findings, pendingSec, pendingTot, rebootRequired, notes
+	}
+
+	if isClean {
+		if osProductVersion != "" {
+			notes = append(notes, fmt.Sprintf("macOS %s does not label security updates; macOS and Safari updates are counted as security updates", osProductVersion))
+		} else {
+			notes = append(notes, "macOS does not label security updates; macOS and Safari updates are counted as security updates")
+		}
+		return findings, 0, 0, false, notes
+	}
+
+	// Check for unreachable / network failure / timeout
+	if strings.Contains(tLower, "can't connect") ||
+		strings.Contains(tLower, "cannot connect") ||
+		strings.Contains(tLower, "network connection was lost") ||
+		strings.Contains(tLower, "timed out") ||
+		strings.Contains(tLower, "could not resolve") ||
+		strings.Contains(tLower, "error:") ||
+		strings.Contains(tLower, "failed") ||
+		trimmed == "" ||
+		trimmed == "MGR:softwareupdate" {
+		notes = append(notes, "softwareupdate failed to reach Apple update servers or timed out; pending updates could not be determined")
+		return findings, 0, 0, false, notes
+	}
+
+	notes = append(notes, "softwareupdate output could not be parsed; pending updates could not be determined")
+	return findings, 0, 0, false, notes
 }

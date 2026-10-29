@@ -2343,7 +2343,7 @@ func (s *Server) handleWSDockerLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	cmd := fmt.Sprintf("docker logs -f --tail 100 %s", shellQuote(container))
+	cmd := fmt.Sprintf("%sdocker logs -f --tail 100 %s", inspector.DarwinPathPrelude, shellQuote(container))
 	_ = runner.Stream(cmd, outWriter)
 }
 

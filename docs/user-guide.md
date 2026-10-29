@@ -14,6 +14,7 @@ Pantau operates **100% agentless** over standard SSH (`port 22`). It requires ze
 2. [Phase 1: Onboarding & Inventory Management](#2-phase-1-onboarding--inventory-management)
    - [Adding a Host & Key Provisioning](#adding-a-host--key-provisioning)
    - [Organizing with Host Groups & Manual Host Order](#organizing-with-host-groups--manual-host-order)
+   - [macOS Hosts — Prerequisites and What is Measured](#macos-hosts--prerequisites-and-what-is-measured)
 3. [Phase 2: Desired State Baselines & System Guardrails](#3-phase-2-desired-state-baselines--system-guardrails)
    - [Capturing a 1-Click Desired State Baseline](#capturing-a-1-click-desired-state-baseline)
    - [Configuring Backup Freshness & Protected Paths](#configuring-backup-freshness--protected-paths)
@@ -112,6 +113,65 @@ As your fleet grows:
 - **Manual Host Order**: Click and drag or prioritize mission-critical hosts to the top of the dashboard.
 - **Host Note & Global Note**: Use **Host Note** for server-specific maintenance checklists (e.g., `"Primary PostgreSQL; failover standby is db-02"`). Use **Global Note** for cluster-wide operational announcements and shift handovers.
 
+### macOS Hosts — Prerequisites and What is Measured
+
+Pantau provides first-class, agentless observability for **macOS (Darwin)** hosts (such as Apple silicon Mac mini, Mac Studio, and Mac Pro servers) over standard OpenSSH connections.
+
+#### Host Detection & Compatibility Scope
+- **Automatic Detection**: Pantau identifies Darwin systems at runtime via `uname -s`. When `Darwin` is detected, Pantau automatically executes tailored macOS telemetry and diagnostic commands while preserving standard Linux routines byte-for-byte unchanged.
+- **Compatibility Scope**: Operates using standard POSIX tooling; verified on **macOS 26 Tahoe on Apple silicon** (validated against real-world captures from Apple M4 Pro and M3 Ultra machines). Intel Macs and legacy OS releases operate via standard POSIX fallbacks without specialized kernel guarantees.
+
+#### Prerequisites & Permissions
+1. **Remote Login**: Enable SSH access under **System Settings > General > Sharing > Remote Login**.
+2. **SSH Credentials**: Connect using an administrative or standard macOS user account with an SSH key (managed via the SSH Key Library or host-specific keys).
+3. **Sudo Privileges**: Pantau inspects telemetry, runs diagnostics, and evaluates security posture **completely unprivileged (zero sudo required)**. Passwordless sudo (`sudo -n`) is **only** required if you use **Elevated File Access** in the File Manager (`sudo -n -u <user> /usr/libexec/sftp-server`).
+4. **Extended Tooling PATH**: macOS non-interactive SSH sessions default strictly to `/usr/bin:/bin:/usr/sbin:/sbin`. Pantau automatically prepends an extended PATH prelude:
+   ```bash
+   case "$(uname -s)" in Darwin) PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Applications/Docker.app/Contents/Resources/bin"; export PATH;; esac;
+   ```
+   This ensures Homebrew CLI tools and Docker Desktop binaries are discoverable without requiring manual profile hacking.
+
+#### Collected Metrics & Measurement Definitions
+- **RAM Usage**: Total physical memory is retrieved via `sysctl -n hw.memsize`. Used memory strictly adheres to Apple's **Activity Monitor "Memory Used"** calculation:
+  $$\text{Memory Used} = (\text{Anonymous pages} - \text{Pages purgeable} + \text{Pages wired down} + \text{Pages occupied by compressor}) \times \text{pagesize}$$
+  The memory page size is extracted dynamically from `vm_stat` (16,384 bytes on Apple silicon).
+- **Swap Memory**: Extracted directly from `sysctl vm.swapusage` (`total`, `used`, `free`), properly parsing MB/GB/KB unit designations.
+- **Disk Capacity**: On modern macOS systems, `/` is a read-only sealed system volume (~12 GB). Pantau queries the shared APFS container via `df -lPk /System/Volumes/Data` (with `/` fallback) and computes:
+  $$\text{Used} = \text{Total} - \text{Available}$$
+  This guarantees reported disk usage accurately reflects actual user and application data storage.
+- **Network Totals & Throughput**: Parsed from `netstat -ibn` rows matching `<Link#`. Only physical interfaces matching `en[0-9]+` are accumulated; virtual bridges, tunnels, loopbacks, and internal interfaces (`lo`, `bridge`, `utun`, `awdl`, `anpi`, `gif`, `stf`) are filtered out to prevent artificial double-counting.
+- **Disk I/O Rate**: Extracted from IOKit registry driver metrics via `ioreg -rd1 -c IOBlockStorageDriver`, parsing and summing cumulative `Bytes (Read)` and `Bytes (Write)` across active block storage drivers.
+- **CPU Cores & Hardware Model**: Core counts are read via `sysctl -n hw.ncpu` (combining performance and efficiency cores). Hardware model and chip details are captured via `system_profiler SPHardwareDataType` (e.g. `Apple Mac Studio (Mac15,14) - Apple M3 Ultra`), with graceful fallback to `sysctl -n hw.model` / `machdep.cpu.brand_string`.
+- **OS Version & Lifecycle EOL**: Extracted from system properties and mapped to official marketing names (macOS 11 Big Sur, 12 Monterey, 13 Ventura, 14 Sonoma, 15 Sequoia, 26 Tahoe). Server lifecycle follows Apple's standard **current + 2 prior major releases** policy (macOS 26, 15, and 14 supported; macOS 13 and older flagged as EOL). Installation birthtime is captured via `stat -f %B /var/db/.AppleSetupDone`.
+- **Privacy-Safe Process Telemetry (`ucomm`)**: Top CPU and Top RAM processes are collected using `ps -Aro pid,user,%cpu,%mem,rss,ucomm` and `ps -Amo ...`. Pantau strictly uses `ucomm` (process short name) instead of `comm` or `args`, ensuring confidential arguments, API keys, and `--token` parameters are never transmitted or stored.
+
+#### Platform Differences & Known Boundaries
+- **No Per-Process Swap**: macOS does not expose per-process virtual memory swap usage in `/proc`; swap columns for individual processes remain blank.
+- **No Failed-Login Counter**: macOS lacks standard POSIX `/var/log/btmp` tracking; failed login telemetry is not assessed.
+- **No Kernel I/O Error Detection Without Root**: Running `dmesg` requires root privileges on macOS; disk I/O error log inspection is omitted on non-root connections.
+- **Docker Desktop Visibility**: Docker containers are visible if Docker Desktop is installed and the SSH user has permission to execute the `docker` binary.
+- **Packages Tab**: The Packages tab remains intentionally empty on macOS. Pantau's package inventory engine audits native Linux system package managers (`dpkg`, `rpm`, `apk`, `pacman`). User-installed Homebrew formula/casks are not cataloged as core OS packages.
+
+#### Network Diagnostics on macOS
+- **Portable Timeouts**: Darwin environments do not bundle GNU `timeout`; Pantau utilizes portable subshell watchdogs and native command deadlines.
+- **Ping Metrics**: Ping probes run with `-t <seconds>` (avoiding `-W` which specifies milliseconds on BSD ping). The parser seamlessly digests Darwin ping summaries (`round-trip min/avg/max/stddev`).
+- **Native Traceroute**: Leverages the system's pre-installed `/usr/sbin/traceroute` directly. Traceroute is **never auto-installed** on macOS.
+
+#### Desired State Rules on macOS
+- **Disk Rules**: Evaluated against `/System/Volumes/Data` (or `/`).
+- **Service Rules**: Validated against `launchd` service units via `launchctl list` or process presence via `pgrep`.
+- **Port Rules**: Verified via native `lsof -iTCP -sTCP:LISTEN -P -n`.
+- **Backup Freshness**: Validated using BSD timestamp extraction via `stat -f %m <path>` or `stat -f %B`.
+
+#### Security Scan & Hardening Checks on macOS
+- **Update Checks**: Inspects pending system patches via non-blocking `/usr/sbin/softwareupdate -l`.
+- **Heuristic Categorization**: Updates labeled with `macOS` or `Safari` are classified as **Security Updates**; other pending packages are accounted for in the total upgradable count.
+- **Honest Partial Status**: If Apple's software update catalog is unreachable or times out, Pantau reports an honest `partial` status rather than a misleading zero-update report.
+- **Native Hardening Checks**:
+  1. `sshd_permit_root_login`: Audits `/etc/ssh/sshd_config` and drop-ins.
+  2. `sshd_password_auth`: Validates OpenSSH password authentication policy.
+  3. `auto_security_updates`: Audits automatic update keys in `/Library/Preferences/com.apple.SoftwareUpdate` (`AutomaticDownload`, `AutomaticallyInstallMacOSUpdates`, `CriticalUpdateInstall`, `ConfigDataInstall`).
+  4. `firewall_active`: Validates Application Firewall state via `socketfilterfw --getglobalstate` or system defaults.
 ---
 
 ## 3. Phase 2: Desired State Baselines & System Guardrails

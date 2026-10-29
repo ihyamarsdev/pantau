@@ -14,6 +14,7 @@ Pantau beroperasi **100% agentless** melalui protokol standar SSH (`port 22`). S
 2. [Fase 1: Onboarding & Manajemen Inventaris Host](#2-fase-1-onboarding--manajemen-inventaris-host)
    - [Menambahkan Host & Key Provisioning](#menambahkan-host--key-provisioning)
    - [Pengelompokan Host Group & Manual Host Order](#pengelompokan-host-group--manual-host-order)
+   - [Host macOS — Prasyarat dan Metrik yang Diukur](#host-macos--prasyarat-dan-metrik-yang-diukur)
 3. [Fase 2: Baseline Desired State & Proteksi Sistem](#3-fase-2-baseline-desired-state--proteksi-sistem)
    - [Membuat 1-Click Desired State Baseline](#membuat-1-click-desired-state-baseline)
    - [Konfigurasi Backup Freshness & Protected Path](#konfigurasi-backup-freshness--protected-path)
@@ -112,6 +113,65 @@ Ketika jumlah server bertambah banyak:
 - **Manual Host Order**: Atur urutan prioritas server utama agar selalu tampil di posisi teratas dashboard melalui pengurutan manual.
 - **Host Note & Global Note**: Gunakan **Host Note** untuk mencatat catatan operasional spesifik per server (misal: `"Master PostgreSQL; node replikasi ada di db-02"`). Gunakan **Global Note** untuk pengumuman sistem bersama atau catatan serah-terima giliran tugas antar-administrator.
 
+### Host macOS — Prasyarat dan Metrik yang Diukur
+
+Pantau menyediakan observabilitas kelas satu (*first-class support*) berbasis agentless untuk **Host macOS (Darwin)** (seperti server workstation Apple silicon Mac mini, Mac Studio, dan Mac Pro) melalui koneksi OpenSSH standar.
+
+#### Deteksi Host & Cakupan Kompatibilitas
+- **Deteksi Otomatis**: Pantau mendeteksi sistem Darwin secara dinamis saat runtime melalui `uname -s`. Apabila terdeteksi `Darwin`, Pantau secara otomatis mengeksekusi skrip telemetri dan diagnostik khusus macOS dengan tetap menjaga alur inspeksi Linux berjalan 100% identik tanpa perubahan.
+- **Cakupan Kompatibilitas**: Beroperasi mengandalkan perkakas standar POSIX; diverifikasi langsung pada **macOS 26 Tahoe berbasis Apple silicon** (divalidasi menggunakan data riil mesin Apple M4 Pro dan M3 Ultra). Host Mac berbasis prosesor Intel dan versi macOS lama beroperasi via fallback POSIX standar tanpa jaminan fitur kernel spesifik.
+
+#### Prasyarat & Hak Akses
+1. **Remote Login**: Aktifkan akses SSH remote melalui menu **System Settings > General > Sharing > Remote Login**.
+2. **Kredensial SSH**: Hubungkan menggunakan akun admin atau pengguna standar macOS dengan autentikasi kunci SSH (dikelola via SSH Key Library atau kunci spesifik host).
+3. **Hak Akses Sudo**: Inspeksi telemetri berkala, diagnostik jaringan, dan pemindaian keamanan berjalan murni **tanpa memerlukan sudo (zero sudo)**. Hak sudo tanpa kata sandi (`sudo -n`) **hanya** dibutuhkan jika Anda memanfaatkan fitur **Elevated File Access** pada File Manager (`sudo -n -u <user> /usr/libexec/sftp-server`).
+4. **Penyelarasan PATH Lingkungan**: Sesi SSH non-interaktif di macOS secara bawaan hanya memiliki `PATH=/usr/bin:/bin:/usr/sbin:/sbin`. Pantau secara otomatis menyisipkan prelude PATH:
+   ```bash
+   case "$(uname -s)" in Darwin) PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Applications/Docker.app/Contents/Resources/bin"; export PATH;; esac;
+   ```
+   Hal ini menjamin biner Homebrew dan Docker Desktop dapat ditemukan tanpa perlu konfigurasi profil shell manual.
+
+#### Metrik yang Dikumpulkan & Definisi Pengukuran
+- **Penggunaan RAM**: Kapasitas total memori fisik diambil via `sysctl -n hw.memsize`. Nilai RAM terpakai secara ketat mengikuti rumusan resmi **Activity Monitor "Memory Used"**:
+  $$\text{Memory Used} = (\text{Anonymous pages} - \text{Pages purgeable} + \text{Pages wired down} + \text{Pages occupied by compressor}) \times \text{pagesize}$$
+  Ukuran halaman memori (*page size*) diekstrak secara dinamis dari baris pertama `vm_stat` (16.384 byte pada Apple silicon).
+- **Memori Swap**: Diekstrak langsung dari perintah `sysctl vm.swapusage` (`total`, `used`, `free`) dengan toleransi penanganan satuan MB/GB/KB.
+- **Kapasitas Disk**: Pada arsitektur macOS modern, volume root `/` adalah sealed system volume yang terkunci (~12 GB). Pantau membaca APFS shared container melalui `df -lPk /System/Volumes/Data` (fallback `/`) dan menghitung:
+  $$\text{Used} = \text{Total} - \text{Available}$$
+  Langkah ini memastikan persentase dan kapasitas disk yang dilaporkan merefleksikan penyimpanan data pengguna dan aplikasi secara nyata.
+- **Throughput & Total Egress Jaringan**: Diparsing dari baris keluaran `netstat -ibn` berawalan `<Link#`. Hanya antarmuka fisik berawalan `en[0-9]+` yang dijumlahkan; antarmuka virtual bridge, tunnel, loopback, dan internal (`lo`, `bridge`, `utun`, `awdl`, `anpi`, `gif`, `stf`) disaring untuk mencegah duplikasi transfer data artifisial.
+- **Laju Disk I/O**: Diekstrak dari properti IOKit registry via `ioreg -rd1 -c IOBlockStorageDriver`, menjumlahkan byte kumulatif `Bytes (Read)` dan `Bytes (Write)` pada seluruh driver penyimpanan blok aktif.
+- **Core CPU & Model Perangkat Keras**: Jumlah core dibaca melalui `sysctl -n hw.ncpu` (menggabungkan performance core dan efficiency core). Identitas chip dan model hardware diambil via `system_profiler SPHardwareDataType` (misal: `Apple Mac Studio (Mac15,14) - Apple M3 Ultra`), dengan fallback ke `sysctl -n hw.model` / `machdep.cpu.brand_string`.
+- **Versi OS & Siklus Hidup EOL**: Dipetakan ke nama pemasaran resmi (macOS 11 Big Sur, 12 Monterey, 13 Ventura, 14 Sonoma, 15 Sequoia, 26 Tahoe). Evaluasi siklus hidup mengikuti kebijakan resmi Apple: **versi rilis terkini + 2 rilis mayor sebelumnya** (macOS 26, 15, dan 14 aktif didukung; macOS 13 dan lebih lama diklasifikasikan sebagai EOL). Waktu instalasi sistem diekstrak dari epoch birthtime `/var/db/.AppleSetupDone`.
+- **Telemetri Proses Aman (`ucomm`)**: Proses teratas dikumpulkan menggunakan `ps -Aro pid,user,%cpu,%mem,rss,ucomm` (Top CPU) dan `ps -Amo ...` (Top RAM). Pantau secara ketat mewajibkan kolom `ucomm` (nama pendek biner proses), melarang penggunaan `comm` atau `args` agar token rahasia, kunci otorisasi, atau parameter sensitif pada argumen baris perintah tidak pernah terekam.
+
+#### Perbedaan Platform & Batasan Operasional
+- **Tanpa Swap per Proses**: Kernel macOS tidak mengekspos alokasi VmSwap per proses; kolom swap per proses tetap kosong secara aman.
+- **Tanpa Penghitung Login Gagal**: macOS tidak memiliki `/var/log/btmp` standar POSIX; telemetri insiden login gagal ditiadakan.
+- **Tanpa Deteksi Error I/O Kernel Tanpa Root**: Perintah `dmesg` memerlukan hak akses root pada Darwin; inspeksi error log I/O disk dilewati pada akun non-root.
+- **Visibilitas Daemon Docker Desktop**: Container Docker terdeteksi jika Docker Desktop terpasang dan akun SSH memiliki izin menjalankan perintah CLI `docker`.
+- **Tab Packages Kosong**: Tab Packages sengaja dikosongkan pada host macOS karena audit paket Pantau dirancang untuk manajer paket distribusi Linux (`dpkg`, `rpm`, `apk`, `pacman`). Paket pihak ketiga dari Homebrew tidak dicatat sebagai paket sistem inti.
+
+#### Diagnostik Jaringan pada macOS
+- **Timeout Portabel**: macOS tidak memiliki GNU `timeout`; Pantau menggunakan subshell watchdog dan deadline bawaan perintah.
+- **Metrik Ping**: Prosedur ping menggunakan argumen `-t <detik>` (bukan `-W` yang bernilai milidetik pada BSD ping). Parser ringkasan latensi disesuaikan untuk format baris Darwin (`round-trip min/avg/max/stddev`).
+- **Traceroute Native**: Menggunakan biner pre-installed `/usr/sbin/traceroute` secara langsung. Traceroute **tidak pernah diinstal otomatis** pada host macOS.
+
+#### Aturan Desired State pada macOS
+- **Aturan Disk**: Dievaluasi pada volume APFS `/System/Volumes/Data` (atau `/`).
+- **Aturan Service**: Diverifikasi terhadap unit layanan `launchd` via `launchctl list` atau deteksi proses via `pgrep`.
+- **Aturan Port**: Diverifikasi via utilitas native `lsof -iTCP -sTCP:LISTEN -P -n`.
+- **Aturan Cadangan (Backup Freshness)**: Diverifikasi menggunakan ekstraksi timestamp BSD via `stat -f %m <path>` atau `stat -f %B`.
+
+#### Pemindaian Keamanan & Pemeriksaan Hardening macOS
+- **Pengecekan Pembaruan Sistem**: Memeriksa patch sistem tertunda via `/usr/sbin/softwareupdate -l`.
+- **Kategorisasi Heuristik**: Pembaruan dengan label `macOS` atau `Safari` dikategorikan sebagai **Pembaruan Keamanan**; pembaruan lainnya dihitung dalam total pembaruan yang tersedia.
+- **Status Transparan Partial**: Apabila katalog pembaruan Apple tidak dapat dihubungi atau mengalami timeout jaringan, Pantau melaporkan status `partial` yang jujur alih-alih klaim aman palsu.
+- **Pemeriksaan Hardening Native**:
+  1. `sshd_permit_root_login`: Mengaudit file `/etc/ssh/sshd_config` dan direktori drop-in.
+  2. `sshd_password_auth`: Memvalidasi kebijakan autentikasi password OpenSSH.
+  3. `auto_security_updates`: Mengaudit kunci pembaruan otomatis di `/Library/Preferences/com.apple.SoftwareUpdate` (`AutomaticDownload`, `AutomaticallyInstallMacOSUpdates`, `CriticalUpdateInstall`, `ConfigDataInstall`).
+  4. `firewall_active`: Memvalidasi status Application Firewall macOS via `socketfilterfw --getglobalstate` atau properti sistem.
 ---
 
 ## 3. Fase 2: Baseline Desired State & Proteksi Sistem

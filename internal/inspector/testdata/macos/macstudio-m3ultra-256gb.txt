@@ -1,0 +1,157 @@
+### whoami
+macuser
+502
+shell=/bin/zsh
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+### sw_vers
+ProductName:		macOS
+ProductVersion:		26.5.1
+BuildVersion:		25F80
+### uname
+Darwin Mac-Host arm64
+Darwin Mac-Host 25.5.0 Darwin Mac-Host Version 25.5.0: Mon Apr 27 20:39:42 PDT 2026; root:xnu-12377.121.6~2/RELEASE_ARM6
+### sysctl_basic
+274877906944
+32
+32
+32
+Mac15,14
+Apple M3 Ultra
+26.5.1
+25F80
+{ sec = 1792060685, usec = 516474 } Thu Oct 15 17:38:05 2026
+### vm_stat
+Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                                   499857.
+Pages active:                                7933012.
+Pages inactive:                              7927958.
+Pages speculative:                             59277.
+Pages throttled:                                   0.
+Pages wired down:                             287766.
+Pages purgeable:                                4173.
+"Translation faults":                     1584831756.
+Pages copy-on-write:                       178555517.
+Pages zero filled:                        1675800781.
+Pages reactivated:                           9194751.
+Pages purged:                               12485080.
+File-backed pages:                           7393946.
+Anonymous pages:                             8526301.
+Pages stored in compressor:                    45581.
+Pages occupied by compressor:                  12538.
+Decompressions:                              1484569.
+Compressions:                                2976792.
+Pageins:                                     6854427.
+Pageouts:                                       3718.
+Swapins:                                           0.
+Swapouts:                                          0.
+### swapusage
+vm.swapusage: total = 0.00M  used = 0.00M  free = 0.00M  (encrypted)
+### memory_pressure
+Pageouts: 3718 
+
+System-wide memory free percentage: 98%
+### uptime
+13:46  up 13 days, 20:09, 1 user, load averages: 1.83 1.61 1.53
+### df_root
+Filesystem     1024-blocks      Used Available Capacity  Mounted on
+/dev/disk3s1s1   971350180  12275304 634071780     2%    /
+### df_data
+Filesystem   1024-blocks      Used Available Capacity  Mounted on
+/dev/disk3s5   971350180 316433304 634071780    34%    /System/Volumes/Data
+### df_all
+Filesystem     1024-blocks      Used Available Capacity  Mounted on
+/dev/disk3s1s1   971350180  12275304 634071780     2%    /
+/dev/disk3s6     971350180        20 634071780     1%    /System/Volumes/VM
+/dev/disk3s2     971350180   7110512 634071780     2%    /System/Volumes/Preboot
+/dev/disk3s4     971350180       272 634071780     1%    /System/Volumes/Update
+/dev/disk1s2        512000      6164    494940     2%    /System/Volumes/xarts
+/dev/disk1s1        512000      5696    494940     2%    /System/Volumes/iSCPreboot
+/dev/disk1s3        512000       340    494940     1%    /System/Volumes/Hardware
+/dev/disk3s5     971350180 316433304 634071780    34%    /System/Volumes/Data
+### ps_cpu
+  PID USER              %CPU %MEM    RSS COMM
+89970 root              11.9  0.0   20640 sshd-session
+  157 _windowserver     10.1  0.0   66784 WindowServer
+  639 root               6.0  0.0  112464 netbird
+89974 macuser            4.8  0.0    2576 zsh
+  126 root               4.6  0.0   15008 opendirectoryd
+### ps_mem
+  PID USER              %CPU %MEM    RSS COMM
+21875 macuser            0.1  0.2  423088 Python
+73969 macuser            0.0  0.1  389264 llmserver_serving_process
+21887 macuser            0.0  0.1  386432 Python
+21902 macuser            0.0  0.1  385968 llmserver_llama_server_rpc_process
+21901 macuser            0.0  0.1  385824 llmserver_rpc_server_process
+### netstat_ib
+Name       Mtu   Network       Address            Ipkts Ierrs     Ibytes    Opkts Oerrs     Obytes  Coll
+lo0        16384 <Link#1>                       2076863     0  525394841  2076863     0  525394841     0
+lo0        16384 127           localhost        2076863     -  525394841  2076863     -  525394841     -
+lo0        16384 localhost   ::1                2076863     -  525394841  2076863     -  525394841     -
+lo0        16384 mac-host fe80:1::1          2076863     -  525394841  2076863     -  525394841     -
+gif0*      1280  <Link#2>                             0     0          0        0     0          0     0
+stf0*      1280  <Link#3>                             0     0          0        0     0          0     0
+anpi1      1500  <Link#4>    aa:bb:cc:dd:ee:ff        0     0          0        0     0          0     0
+anpi5      1500  <Link#5>    aa:bb:cc:dd:ee:ff        0     0          0        0     0          0     0
+anpi3      1500  <Link#6>    aa:bb:cc:dd:ee:ff     3226     0     279673     3234     0     264754     0
+anpi2      1500  <Link#7>    aa:bb:cc:dd:ee:ff       36     0       5586       49     0      10051     0
+anpi4      1500  <Link#8>    aa:bb:cc:dd:ee:ff        0     0          0        0     0          0     0
+anpi0      1500  <Link#9>    aa:bb:cc:dd:ee:ff        0     0          0        0     0          0     0
+en8        1500  <Link#10>   aa:bb:cc:dd:ee:ff        0     0          0        0     0          0     0
+### ping_W
+
+--- 1.1.1.1 ping statistics ---
+1 packets transmitted, 1 packets received, 0.0% packet loss, 1 packets out of wait time
+round-trip min/avg/max/stddev = 3.232/3.232/3.232/0.000 ms
+### ping_t
+
+--- 1.1.1.1 ping statistics ---
+1 packets transmitted, 1 packets received, 0.0% packet loss
+round-trip min/avg/max/stddev = 3.271/3.271/3.271/0.000 ms
+### ping4
+
+--- 1.1.1.1 ping statistics ---
+4 packets transmitted, 4 packets received, 0.0% packet loss
+round-trip min/avg/max/stddev = 3.103/5.767/9.780/2.729 ms
+### tools
+timeout=none
+gtimeout=none
+perl=/usr/bin/perl
+python3=/usr/bin/python3
+curl=/usr/bin/curl
+docker=none
+brew=none
+traceroute=/usr/sbin/traceroute
+tracepath=none
+stdbuf=/usr/bin/stdbuf
+nproc=none
+free=none
+ss=none
+lsof=/usr/sbin/lsof
+system_profiler=/usr/sbin/system_profiler
+softwareupdate=/usr/sbin/softwareupdate
+iostat=/usr/sbin/iostat
+pgrep=/usr/bin/pgrep
+### stat_birth
+1792054964 1792054964
+1779354297 1793208610
+### iostat
+              disk0 
+    KB/t xfrs   MB 
+   93.01 4104212 372766.78 
+### sudo
+sudo: a password is required
+sudo-no
+### sftp
+-rwxr-xr-x  1 root  wheel  238704 May 21 15:57 /usr/libexec/sftp-server
+### sysprof_time
+      Model Name: Mac Studio
+      Model Identifier: Mac15,14
+      Chip: Apple M3 Ultra
+      Total Number of Cores: 32 (24 Performance and 8 Efficiency)
+      Memory: 256 GB
+system_profiler SPHardwareDataType 2>&1  0.03s user 0.05s system 49% cpu 0.157 total
+grep -E   0.00s user 0.00s system 0% cpu 0.157 total
+### bash
+GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)
+### firewall
+Firewall is disabled. (State = 0)

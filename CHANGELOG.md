@@ -38,9 +38,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Visual Indicator & Activity Console Audit Logging: dedicated UI badge indicating active elevation user context, with every elevated file action and refusal deterministically logged to the in-app Activity Console.
 - REST API Elevation Query Parameter: support for `?as=<username>` across `/api/hosts/{id}/files/*` endpoints (list, read, write, upload, size, duplicate, download, delete, chmod) with POSIX username validation (`^[A-Za-z_][A-Za-z0-9_.-]{0,31}$`).
 - Architectural Decision Record: [ADR-0037](docs/adr/0037-elevated-file-manager-access.md).
+- First-Class macOS (Darwin) Host Support: agentless monitoring and management for macOS hosts (Apple silicon Mac mini, Mac Studio, Mac Pro) via native OpenSSH commands without background agents or remote daemons.
+- Activity Monitor Memory Calculation: physical RAM used extracted via `(anonymous - purgeable + wired + compressor) * pagesize` from `vm_stat` matching macOS Activity Monitor, paired with `sysctl vm.swapusage` for swap telemetry.
+- APFS Shared Container Disk Metrics: evaluates `/System/Volumes/Data` via `df -lPk` (`used = total - available`) reporting actual container usage rather than the sealed root volume.
+- IOKit Cumulative Disk I/O: extracts and aggregates cumulative `Bytes (Read)` and `Bytes (Write)` from `ioreg -rd1 -c IOBlockStorageDriver` block storage drivers.
+- Physical Network Filtering: isolates physical `en*` interfaces from `netstat -ibn` `<Link#` rows, filtering out internal, virtual, and bridge interfaces (`lo`, `bridge`, `utun`, `awdl`, `anpi`, `gif`, `stf`).
+- Hardware & CPU Identification: captures hardware model, identifier, and chip name via `system_profiler SPHardwareDataType` (fallback `sysctl -n hw.model` / `machdep.cpu.brand_string`), CPU cores via `sysctl -n hw.ncpu`, and OS install epoch via `/var/db/.AppleSetupDone`.
+- Privacy-Enforcing Process Telemetry: collects top processes via `ps -Aro pid,user,%cpu,%mem,rss,ucomm` and `ps -Amo ...` strictly using `ucomm` to prevent command-line arguments and sensitive tokens from being stored or displayed.
+- macOS Security Scan & Hardening Checks: non-root system update checks via `/usr/sbin/softwareupdate -l` with heuristic security classification (`macOS` and `Safari`), honest `partial` reporting on network timeouts, and 4 native hardening audits (`sshd_permit_root_login`, `sshd_password_auth`, `com.apple.SoftwareUpdate` auto-update keys, and application firewall state).
+- Portable Diagnostics & Desired State Rules: native Darwin ping (`-t <seconds>`), pre-installed `/usr/sbin/traceroute` integration (never auto-installed), APFS disk volume rules, `launchd` service checks, `lsof` port checks, and `stat -f` backup freshness rules.
+- Extended PATH Prelude: automatic PATH extension (`/usr/local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Applications/Docker.app/Contents/Resources/bin`) for third-party CLI tooling discovery.
+- Architectural Decision Record: [ADR-0038](docs/adr/0038-macos-host-support.md).
 
 ### Fixed
 - Network Diagnostics Traceroute returned "No hops detected" (or `timeout: failed to run command 'traceroute': No such file or directory`) on hosts where `tracepath` was present: `tracepath` block-buffers its output when piped, so when the 15s probe deadline killed it no hop ever reached Pantau, and the old `tracepath && … || traceroute` chain fell through to a missing `traceroute` whenever `tracepath` exited non-zero. Pantau now prefers `traceroute`, installs it first when missing (apt, dnf, yum, apk, pacman, zypper; installer output streams to the raw viewer; apt runs with `NEEDRESTART_MODE=l` so no services are restarted), and falls back to line-buffered `tracepath` (`stdbuf -oL`) when installation is not possible. Installing requires root or passwordless `sudo`; if neither tool exists and installation is impossible, the probe stops with a message naming what to install manually.
+- RAM, swap, cores, and network unreadable on macOS hosts: Linux-only polyglot commands (`free`, `/proc`, `nproc`, `ss`, `timeout`, `ps --sort`) caused metric collection failures on Darwin; resolved via runtime `uname -s` Darwin inspection branch while keeping existing Linux behavior byte-for-byte unchanged.
 
 ## [0.25.0] - 2026-10-21
 ### Added
