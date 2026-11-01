@@ -1864,7 +1864,7 @@ body.has-workspace-shelf .container {
     <div class="modal-tabs-bar">
       <div class="tabs" id="hostDetailTabs">
         <div class="tab active" data-tab="overview" onclick="switchTab('overview')" data-i18n="tab_overview">Overview</div>
-        <div class="tab" data-tab="network" onclick="switchTab('network')" data-i18n="tab_network">Network & Security</div>
+        <div class="tab" data-tab="network" onclick="switchTab('network')" data-i18n="tab_network">Network</div>
         <div class="tab" data-tab="netdiag" onclick="switchTab('netdiag')" data-i18n="tab_netdiag">Network Diagnostics</div>
         <div class="tab" data-tab="packages" onclick="switchTab('packages')" data-i18n="tab_packages">Packages</div>
         <div class="tab" data-tab="security" onclick="switchTab('security')" data-i18n="tab_security">Security</div>
@@ -2855,7 +2855,9 @@ const I18N = {
     "inject_key_success": "\u2705 Public key successfully injected to server {name}! Pantau can now access this server via keyless SSH.",
     "inject_key_failed": "\u274c Failed: ",
     "tab_overview": "Overview",
-    "tab_network": "Network & Security",
+    "tab_network": "Network",
+    "sec_exposure_title": "Authentication & Exposure",
+    "failed_logins_na": "Not collected on this OS",
     "tab_packages": "Packages",
     "tab_desired": "Desired State (Drift)",
     "tab_docker": "Docker",
@@ -2953,7 +2955,39 @@ const I18N = {
     "docker_logs_live": "● Live",
     "docker_logs_ended": "Stream ended",
     "docker_menu_title": "Container actions",
-    "docker_loading": "Loading containers...",
+    "docker_loading": "Loading...",
+    "docker_sub_containers": "Containers",
+    "docker_sub_stats": "Stats",
+    "docker_sub_volumes": "Volumes",
+    "docker_sub_networks": "Networks",
+    "docker_auto_refresh": "Auto-refresh (10s)",
+    "docker_col_cpu": "CPU",
+    "docker_col_mem": "Memory",
+    "docker_col_netio": "Net I/O",
+    "docker_col_blockio": "Block I/O",
+    "docker_col_pids": "PIDs",
+    "docker_totals": "{n} running · CPU {cpu}% · Memory {mem}",
+    "docker_no_stats_title": "No Running Containers",
+    "docker_no_stats_desc": "Stats only cover running containers.",
+    "docker_col_volume": "Volume",
+    "docker_col_driver": "Driver",
+    "docker_col_size": "Size",
+    "docker_col_used_by": "Used by",
+    "docker_col_mount": "Mountpoint",
+    "docker_vol_unused": "unused",
+    "docker_vol_anonymous": "anonymous",
+    "docker_vol_summary": "{n} volumes · {u} unused",
+    "docker_no_volumes_title": "No Docker Volumes",
+    "docker_no_volumes_desc": "No named volumes exist on this host.",
+    "docker_col_network": "Network",
+    "docker_col_scope": "Scope",
+    "docker_col_subnet": "Subnet",
+    "docker_col_gateway": "Gateway",
+    "docker_col_attached": "Attached containers",
+    "docker_net_builtin": "built-in",
+    "docker_net_internal": "internal",
+    "docker_no_networks_title": "No Docker Networks",
+    "docker_no_networks_desc": "No networks were reported by Docker.",
     "docker_unavailable": "Cannot read Docker on this host",
     "start": "\u25b6 Start",
     "restart": "\ud83d\udd04 Restart",
@@ -3594,7 +3628,9 @@ const I18N = {
     "inject_key_success": "\u2705 Public key berhasil di-inject ke server {name}! Sekarang Pantau dapat mengakses server via SSH keyless.",
     "inject_key_failed": "\u274c Gagal: ",
     "tab_overview": "Overview",
-    "tab_network": "Network & Keamanan",
+    "tab_network": "Jaringan",
+    "sec_exposure_title": "Autentikasi & Eksposur",
+    "failed_logins_na": "Tidak dikumpulkan pada OS ini",
     "tab_packages": "Paket & Aplikasi",
     "tab_desired": "Desired State (Drift)",
     "tab_docker": "Docker",
@@ -3692,7 +3728,39 @@ const I18N = {
     "docker_logs_live": "● Langsung",
     "docker_logs_ended": "Stream berakhir",
     "docker_menu_title": "Aksi container",
-    "docker_loading": "Memuat container...",
+    "docker_loading": "Memuat...",
+    "docker_sub_containers": "Container",
+    "docker_sub_stats": "Statistik",
+    "docker_sub_volumes": "Volume",
+    "docker_sub_networks": "Jaringan",
+    "docker_auto_refresh": "Segarkan otomatis (10 dtk)",
+    "docker_col_cpu": "CPU",
+    "docker_col_mem": "Memori",
+    "docker_col_netio": "Net I/O",
+    "docker_col_blockio": "Block I/O",
+    "docker_col_pids": "PID",
+    "docker_totals": "{n} berjalan · CPU {cpu}% · Memori {mem}",
+    "docker_no_stats_title": "Tidak Ada Container Berjalan",
+    "docker_no_stats_desc": "Statistik hanya mencakup container yang sedang berjalan.",
+    "docker_col_volume": "Volume",
+    "docker_col_driver": "Driver",
+    "docker_col_size": "Ukuran",
+    "docker_col_used_by": "Dipakai oleh",
+    "docker_col_mount": "Mountpoint",
+    "docker_vol_unused": "tidak dipakai",
+    "docker_vol_anonymous": "anonymous",
+    "docker_vol_summary": "{n} volume · {u} tidak dipakai",
+    "docker_no_volumes_title": "Tidak Ada Volume Docker",
+    "docker_no_volumes_desc": "Tidak ada named volume pada host ini.",
+    "docker_col_network": "Jaringan",
+    "docker_col_scope": "Scope",
+    "docker_col_subnet": "Subnet",
+    "docker_col_gateway": "Gateway",
+    "docker_col_attached": "Container terhubung",
+    "docker_net_builtin": "bawaan",
+    "docker_net_internal": "internal",
+    "docker_no_networks_title": "Tidak Ada Jaringan Docker",
+    "docker_no_networks_desc": "Docker tidak melaporkan jaringan apa pun.",
     "docker_unavailable": "Tidak dapat membaca Docker pada host ini",
     "start": "\u25b6 Start",
     "restart": "\ud83d\udd04 Restart",
@@ -6325,16 +6393,9 @@ function switchTab(tab, presetID) {
           </div>
           <div style="font-size: 0.8rem; color: var(--text-muted);">${topConns.length} ${t('ext_ips_active')}</div>
         </div>
-        <div class="card" style="padding: 14px;">
-          <div style="font-size: 0.8rem; color: var(--text-muted);">${t('security_bruteforce')}</div>
-          <div style="font-size: 1.1rem; font-weight: 700; margin: 4px 0; color: ${h.failed_logins_count > 10 ? '#f87171' : '#34d399'};">
-            ${h.failed_logins_count || 0} ${t('failed_logins')}
-          </div>
-          <div style="font-size: 0.8rem; color: var(--text-muted);">${h.failed_logins_count > 10 ? t('high_failed') : t('normal_auth')}</div>
-        </div>
       </div>
 
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+      <div style="display: grid; grid-template-columns: 1fr; gap: 16px;">
         <div class="card" style="padding: 16px;">
           <h4 style="margin-bottom: 10px;">${t('top_remote_ips')}</h4>
           <table>
@@ -6350,33 +6411,6 @@ function switchTab(tab, presetID) {
                   <td><span class="badge" style="background: rgba(56,189,248,0.15); color: #38bdf8;">${t('established')}</span></td>
                 </tr>
               `).join('')}
-            </tbody>
-          </table>
-        </div>
-
-        <div class="card" style="padding: 16px;">
-          <h4 style="margin-bottom: 10px;">${t('open_ports')}</h4>
-          <table>
-            <thead>
-              <tr><th>${t('port_proto')}</th><th>${t('binding')}</th><th>${t('exposure')}</th><th>${t('risk')}</th></tr>
-            </thead>
-            <tbody>
-              ${ports.length === 0 ? '<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 20px;">' + t('no_listening_ports') + '</td></tr>' : ''}
-              ${ports.map(p => {
-                const isHigh = p.risk === 'high';
-                const riskBadge = isHigh ? '<span class="badge" style="background: rgba(239,68,68,0.2); color: #f87171;">' + t('high_risk') + '</span>' : '<span class="badge" style="background: rgba(52,211,153,0.15); color: #34d399;">' + t('safe_low') + '</span>';
-                const expBadge = p.public 
-                  ? '<span class="badge" style="background: rgba(251,191,36,0.15); color: #fbbf24;">' + t('public_internet') + '</span>' 
-                  : '<span class="badge" style="background: rgba(148,163,184,0.15); color: #94a3b8;">' + t('localhost_only') + '</span>';
-                return `
-                  <tr>
-                    <td><b>${escapeHtml(p.port)}</b> <span style="font-size: 0.75rem; color: var(--text-muted);">(${escapeHtml(p.proto)})</span></td>
-                    <td style="font-family: monospace; font-size: 0.8rem;">${escapeHtml(p.address)}</td>
-                    <td>${expBadge}</td>
-                    <td>${riskBadge}</td>
-                  </tr>
-                `;
-              }).join('')}
             </tbody>
           </table>
         </div>
@@ -6911,6 +6945,7 @@ async function loadSecurityTab() {
         <div style="font-weight: 600; margin-bottom: 4px;">❌ ${t('sec_scan_failed', 'Security scan failed')}</div>
         <div style="font-size: 0.82rem; font-family: monospace;">${escapeHtml(e.message)}</div>
       </div>`;
+    content.insertAdjacentHTML('beforeend', securityExposureHtml());
     return;
   }
 
@@ -6929,6 +6964,7 @@ async function loadSecurityTab() {
         <div style="font-weight: 600; margin-bottom: 4px;">❌ ${t('sec_scan_failed', 'Security scan failed')}</div>
         <div style="font-size: 0.82rem;">${escapeHtml(data?.error || res.statusText)}</div>
       </div>`;
+    content.insertAdjacentHTML('beforeend', securityExposureHtml());
     if (cooldownRem > 0) updateSecCooldownUI(cooldownRem);
     return;
   }
@@ -6949,6 +6985,7 @@ async function loadSecurityTab() {
           </button>
         </div>
       </div>`;
+    content.insertAdjacentHTML('beforeend', securityExposureHtml());
     if (cooldownRem > 0) updateSecCooldownUI(cooldownRem);
     return;
   }
@@ -7154,11 +7191,62 @@ function renderSecurityData(scan, hostID) {
       ${cardsHtml}
       ${findingsHtml}
       ${hardeningHtml}
+      ${securityExposureHtml()}
       ${notesHtml}
     </div>
   `;
 
   filterSecurityFindings();
+}
+
+// Host-reported authentication and attack-surface data from the latest inspection (not part of the update scan),
+// shown in the Security tab in every scan state.
+function securityExposureHtml() {
+  const h = window.detailData && window.detailData.host;
+  if (!h) return '';
+  let ports = [];
+  try {
+    const parsed = JSON.parse(h.listening_ports);
+    if (Array.isArray(parsed)) ports = parsed;
+  } catch (e) {}
+  const failed = h.failed_logins_count || 0;
+  const authNA = /^macos/i.test(h.os_info || '');
+  const authColor = authNA ? 'var(--text-muted)' : (failed > 10 ? '#f87171' : '#34d399');
+  const authValue = authNA ? t('failed_logins_na') : `${failed} ${t('failed_logins')}`;
+  const authNote = authNA ? '' : (failed > 10 ? t('high_failed') : t('normal_auth'));
+  const portRows = ports.map(p => {
+    const riskBadge = p.risk === 'high'
+      ? '<span class="badge" style="background: rgba(239,68,68,0.2); color: #f87171;">' + t('high_risk') + '</span>'
+      : '<span class="badge" style="background: rgba(52,211,153,0.15); color: #34d399;">' + t('safe_low') + '</span>';
+    const expBadge = p.public
+      ? '<span class="badge" style="background: rgba(251,191,36,0.15); color: #fbbf24;">' + t('public_internet') + '</span>'
+      : '<span class="badge" style="background: rgba(148,163,184,0.15); color: #94a3b8;">' + t('localhost_only') + '</span>';
+    return `
+      <tr>
+        <td><b>${escapeHtml(p.port)}</b> <span style="font-size: 0.75rem; color: var(--text-muted);">(${escapeHtml(p.proto)})</span></td>
+        <td style="font-family: monospace; font-size: 0.8rem;">${escapeHtml(p.address)}</td>
+        <td>${expBadge}</td>
+        <td>${riskBadge}</td>
+      </tr>`;
+  }).join('');
+  return `
+    <div class="card" style="padding: 16px; margin-top: 16px;">
+      <h4 style="margin: 0 0 12px 0;">🔐 ${t('sec_exposure_title')}</h4>
+      <div style="font-size: 0.8rem; color: var(--text-muted);">${t('security_bruteforce')}</div>
+      <div style="font-size: 1.1rem; font-weight: 700; margin: 4px 0; color: ${authColor};">${authValue}</div>
+      <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 16px;">${authNote}</div>
+      <h4 style="margin: 0 0 10px 0;">${t('open_ports')}</h4>
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr><th>${t('port_proto')}</th><th>${t('binding')}</th><th>${t('exposure')}</th><th>${t('risk')}</th></tr>
+          </thead>
+          <tbody>
+            ${ports.length === 0 ? '<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 20px;">' + t('no_listening_ports') + '</td></tr>' : portRows}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
 }
 
 function getSecuritySeverityBadge(sev) {
@@ -7419,63 +7507,192 @@ async function deleteRule(id) {
   }
 }
 
-async function loadDockerTab() {
+let dockerSubTab = 'containers';
+let dockerStatsTimer = null;
+let dockerStatsAuto = false;
+let dockerStatsBusy = false;
+
+function stopDockerStatsTimer() {
+  if (dockerStatsTimer) { clearInterval(dockerStatsTimer); dockerStatsTimer = null; }
+}
+
+function startDockerStatsTimer() {
+  stopDockerStatsTimer();
+  dockerStatsTimer = setInterval(() => {
+    const modalOpen = document.getElementById('hostDetailModal').classList.contains('open');
+    if (!modalOpen || currentTab !== 'docker' || dockerSubTab !== 'stats' || !currentHost) { stopDockerStatsTimer(); return; }
+    refreshDockerStats();
+  }, 10000);
+}
+
+function toggleDockerStatsAuto(on) {
+  dockerStatsAuto = on;
+  if (on) startDockerStatsTimer(); else stopDockerStatsTimer();
+}
+
+function setDockerSubTab(view) {
+  dockerSubTab = view;
+  switchTab('docker');
+}
+
+function dockerHeaderHtml() {
+  const views = [['containers', 'docker_sub_containers'], ['stats', 'docker_sub_stats'], ['volumes', 'docker_sub_volumes'], ['networks', 'docker_sub_networks']];
+  const auto = dockerSubTab === 'stats'
+    ? `<label style="display: flex; align-items: center; gap: 4px; font-size: 0.8rem; cursor: pointer;"><input type="checkbox" style="width: auto;" ${dockerStatsAuto ? 'checked' : ''} onchange="toggleDockerStatsAuto(this.checked)" /> ${t('docker_auto_refresh')}</label>`
+    : '';
+  return `
+    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; flex-shrink: 0;">
+      <div style="display: flex; gap: 6px;">${views.map(([v, k]) => `<button class="btn btn-sm ${dockerSubTab === v ? 'btn-primary' : ''}" onclick="setDockerSubTab('${v}')">${t(k)}</button>`).join('')}</div>
+      <div style="display: flex; gap: 10px; align-items: center;">${auto}<button class="btn btn-sm" onclick="switchTab('docker')">${t('refresh')}</button></div>
+    </div>`;
+}
+
+function dockerEmptyHtml(title, desc, mono) {
+  return `
+    <div class="empty-state">
+      <div class="empty-state-icon">🐳</div>
+      <div class="empty-state-title">${title}</div>
+      <div class="empty-state-desc"${mono ? ' style="font-family: monospace; white-space: pre-wrap;"' : ''}>${escapeHtml(desc)}</div>
+    </div>`;
+}
+
+function dockerTableHtml(heads, rows, bodyId) {
+  return `<div style="overflow-x: auto;"><table><thead><tr>${heads.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody${bodyId ? ` id="${bodyId}"` : ''}>${rows}</tbody></table></div>`;
+}
+
+function dockerBar(pct, warnAt, dangerAt) {
+  const cls = pct >= dangerAt ? 'danger' : (pct >= warnAt ? 'warn' : '');
+  return `<div class="progress" style="min-width: 70px;"><div class="progress-fill ${cls}" style="width: ${Math.max(0, Math.min(100, pct))}%"></div></div>`;
+}
+
+function dockerChips(items) {
+  return items.length === 0
+    ? '<span style="color: var(--text-muted);">—</span>'
+    : `<div style="display: flex; flex-wrap: wrap; gap: 4px;">${items.map(([label, title]) => `<span class="badge badge-info" style="text-transform: none;" title="${escapeHtml(title || '')}">${escapeHtml(label)}</span>`).join('')}</div>`;
+}
+
+function renderDockerContainers(data) {
+  const containers = data.containers || [];
+  if (containers.length === 0) return dockerEmptyHtml(t('no_containers_title'), t('no_containers_desc'));
+  dockerContainersCache = containers;
+  return dockerTableHtml(
+    [t('container_name'), t('container_image'), t('status'), t('container_ports'), t('action')],
+    containers.map((c, idx) => {
+      const running = c.state === 'running';
+      return `
+        <tr>
+          <td><b>${escapeHtml(c.name)}</b></td>
+          <td style="font-family: monospace; font-size: 0.8rem;">${escapeHtml(c.image)}</td>
+          <td><span class="badge badge-${running ? 'healthy' : (c.state === 'exited' || c.state === 'dead' ? 'down' : 'warning')}">${escapeHtml(c.status)}</span></td>
+          <td style="font-family: monospace; font-size: 0.75rem; word-break: break-all;">${escapeHtml(c.ports || '')}</td>
+          <td style="text-align: right;"><button class="btn btn-sm btn-icon" title="${t('docker_menu_title')}" aria-label="${t('docker_menu_title')}" onclick="openDockerMenu(event, ${idx})">⋮</button></td>
+        </tr>`;
+    }).join(''));
+}
+
+function dockerStatsRowsHtml(stats) {
+  return stats.map(s => `
+    <tr>
+      <td><b>${escapeHtml(s.name)}</b></td>
+      <td style="min-width: 120px;"><div style="font-size: 0.82rem;">${s.cpu_percent.toFixed(2)}%</div>${dockerBar(s.cpu_percent, 70, 90)}</td>
+      <td style="min-width: 160px;"><div style="font-size: 0.82rem;">${formatBytes(s.mem_used_bytes)} / ${formatBytes(s.mem_limit_bytes)} (${s.mem_percent.toFixed(1)}%)</div>${dockerBar(s.mem_percent, 70, 90)}</td>
+      <td style="font-family: monospace; font-size: 0.78rem; white-space: nowrap;">${escapeHtml(s.net_io)}</td>
+      <td style="font-family: monospace; font-size: 0.78rem; white-space: nowrap;">${escapeHtml(s.block_io)}</td>
+      <td>${s.pids}</td>
+    </tr>`).join('');
+}
+
+function dockerStatsTotalsText(stats) {
+  const cpu = stats.reduce((a, s) => a + s.cpu_percent, 0);
+  const mem = stats.reduce((a, s) => a + s.mem_used_bytes, 0);
+  return t('docker_totals').replace('{n}', stats.length).replace('{cpu}', cpu.toFixed(1)).replace('{mem}', formatBytes(mem));
+}
+
+function renderDockerStats(data) {
+  const stats = data.stats || [];
+  if (stats.length === 0) return dockerEmptyHtml(t('docker_no_stats_title'), t('docker_no_stats_desc'));
+  return `<div id="dockerStatsTotals" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">${dockerStatsTotalsText(stats)}</div>` +
+    dockerTableHtml([t('container_name'), t('docker_col_cpu'), t('docker_col_mem'), t('docker_col_netio'), t('docker_col_blockio'), t('docker_col_pids')], dockerStatsRowsHtml(stats), 'dockerStatsBody');
+}
+
+// Auto-refresh updates the table in place (no spinner flash); a failed or overlapping refresh keeps the last data.
+async function refreshDockerStats() {
   const host = currentHost;
+  if (dockerStatsBusy || !host) return;
+  dockerStatsBusy = true;
+  try {
+    const res = await fetch('/api/hosts/' + host.id + '/docker/stats');
+    const data = await res.json();
+    const body = document.getElementById('dockerStatsBody');
+    if (!data.ok || !body || currentTab !== 'docker' || dockerSubTab !== 'stats' || !currentHost || currentHost.id !== host.id) return;
+    const stats = data.stats || [];
+    if (stats.length === 0) { loadDockerTab(); return; }
+    body.innerHTML = dockerStatsRowsHtml(stats);
+    document.getElementById('dockerStatsTotals').textContent = dockerStatsTotalsText(stats);
+  } catch (e) {
+    // keep the previous snapshot
+  } finally {
+    dockerStatsBusy = false;
+  }
+}
+
+function renderDockerVolumes(data) {
+  const volumes = data.volumes || [];
+  if (volumes.length === 0) return dockerEmptyHtml(t('docker_no_volumes_title'), t('docker_no_volumes_desc'));
+  const unused = volumes.filter(v => v.used_by.length === 0).length;
+  return `<div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">${t('docker_vol_summary').replace('{n}', volumes.length).replace('{u}', unused)}</div>` +
+    dockerTableHtml([t('docker_col_volume'), t('docker_col_driver'), t('docker_col_size'), t('docker_col_used_by'), t('docker_col_mount')], volumes.map(v => {
+      const project = (v.labels || {})['com.docker.compose.project'];
+      return `
+        <tr>
+          <td style="max-width: 280px; word-break: break-all;"><b title="${escapeHtml(v.name)}">${escapeHtml(v.anonymous ? v.name.slice(0, 12) + '…' : v.name)}</b>${v.anonymous ? ` <span class="badge badge-unknown" style="text-transform: none;">${t('docker_vol_anonymous')}</span>` : ''}${project ? `<div style="font-size: 0.72rem; color: var(--text-muted);">compose: ${escapeHtml(project)}</div>` : ''}</td>
+          <td>${escapeHtml(v.driver)}</td>
+          <td style="white-space: nowrap;">${v.size ? escapeHtml(v.size) : '—'}</td>
+          <td>${v.used_by.length === 0 ? `<span class="badge badge-warning">${t('docker_vol_unused')}</span>` : dockerChips(v.used_by.map(n => [n]))}</td>
+          <td style="font-family: monospace; font-size: 0.72rem; word-break: break-all; color: var(--text-muted);">${escapeHtml(v.mountpoint)}</td>
+        </tr>`;
+    }).join(''));
+}
+
+function renderDockerNetworks(data) {
+  const networks = data.networks || [];
+  if (networks.length === 0) return dockerEmptyHtml(t('docker_no_networks_title'), t('docker_no_networks_desc'));
+  return dockerTableHtml([t('docker_col_network'), t('docker_col_driver'), t('docker_col_scope'), t('docker_col_subnet'), t('docker_col_gateway'), t('docker_col_attached')], networks.map(n => {
+    const flags = [n.built_in ? t('docker_net_builtin') : '', n.internal ? t('docker_net_internal') : '', n.ipv6 ? 'IPv6' : ''].filter(Boolean);
+    return `
+      <tr>
+        <td><b>${escapeHtml(n.name)}</b> <span style="font-family: monospace; font-size: 0.72rem; color: var(--text-muted);">${escapeHtml(n.id)}</span>${flags.length ? `<div style="margin-top: 2px;">${flags.map(f => `<span class="badge badge-unknown" style="text-transform: none; margin-right: 4px;">${escapeHtml(f)}</span>`).join('')}</div>` : ''}</td>
+        <td>${escapeHtml(n.driver)}</td>
+        <td>${escapeHtml(n.scope)}</td>
+        <td style="font-family: monospace; font-size: 0.78rem;">${n.subnets.length ? n.subnets.map(escapeHtml).join('<br>') : '—'}</td>
+        <td style="font-family: monospace; font-size: 0.78rem;">${n.gateways.length ? n.gateways.map(escapeHtml).join('<br>') : '—'}</td>
+        <td>${dockerChips(n.containers.map(c => [c.name, [c.ipv4, c.ipv6].filter(Boolean).join('  ')]))}</td>
+      </tr>`;
+  }).join(''));
+}
+
+async function loadDockerTab() {
+  stopDockerStatsTimer();
+  const host = currentHost;
+  const view = dockerSubTab;
   const content = document.getElementById('tabContent');
   if (!host || !content) return;
+  content.innerHTML = dockerHeaderHtml() + `<div style="text-align: center; padding: 30px; color: var(--text-muted);">${t('docker_loading')}</div>`;
   let data;
   try {
-    const res = await fetch('/api/hosts/' + host.id + '/docker');
+    const res = await fetch('/api/hosts/' + host.id + '/docker' + (view === 'containers' ? '' : '/' + view));
     data = await res.json();
   } catch (e) {
     data = { ok: false, error: e.message };
   }
-  if (currentTab !== 'docker' || !currentHost || currentHost.id !== host.id) return;
-  const header = `
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-shrink: 0;">
-      <h4>${t('docker_containers')}</h4>
-      <button class="btn btn-sm" onclick="switchTab('docker')">${t('refresh')}</button>
-    </div>`;
+  if (currentTab !== 'docker' || !currentHost || currentHost.id !== host.id || dockerSubTab !== view) return;
   if (!data.ok) {
-    content.innerHTML = header + `
-      <div class="empty-state">
-        <div class="empty-state-icon">🐳</div>
-        <div class="empty-state-title">${t('docker_unavailable')}</div>
-        <div class="empty-state-desc" style="font-family: monospace; white-space: pre-wrap;">${escapeHtml(data.error || '')}</div>
-      </div>`;
+    content.innerHTML = dockerHeaderHtml() + dockerEmptyHtml(t('docker_unavailable'), data.error || '', true);
     return;
   }
-  const containers = data.containers || [];
-  if (containers.length === 0) {
-    content.innerHTML = header + `
-      <div class="empty-state">
-        <div class="empty-state-icon">🐳</div>
-        <div class="empty-state-title">${t('no_containers_title')}</div>
-        <div class="empty-state-desc">${t('no_containers_desc')}</div>
-      </div>`;
-    return;
-  }
-  dockerContainersCache = containers;
-  content.innerHTML = header + `
-    <table>
-      <thead>
-        <tr><th>${t('container_name')}</th><th>${t('container_image')}</th><th>${t('status')}</th><th>${t('container_ports')}</th><th>${t('action')}</th></tr>
-      </thead>
-      <tbody>
-        ${containers.map((c, idx) => {
-          const running = c.state === 'running';
-          const name = escapeHtml(c.name);
-          return `
-          <tr>
-            <td><b>${name}</b></td>
-            <td style="font-family: monospace; font-size: 0.8rem;">${escapeHtml(c.image)}</td>
-            <td><span class="badge badge-${running ? 'healthy' : (c.state === 'exited' || c.state === 'dead' ? 'down' : 'warning')}">${escapeHtml(c.status)}</span></td>
-            <td style="font-family: monospace; font-size: 0.75rem; word-break: break-all;">${escapeHtml(c.ports || '')}</td>
-            <td style="text-align: right;"><button class="btn btn-sm btn-icon" title="${t('docker_menu_title')}" aria-label="${t('docker_menu_title')}" onclick="openDockerMenu(event, ${idx})">⋮</button></td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table>`;
+  const render = { containers: renderDockerContainers, stats: renderDockerStats, volumes: renderDockerVolumes, networks: renderDockerNetworks }[view];
+  content.innerHTML = dockerHeaderHtml() + render(data);
+  if (view === 'stats' && dockerStatsAuto) startDockerStatsTimer();
 }
 
 let dockerContainersCache = [];

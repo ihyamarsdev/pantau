@@ -384,6 +384,17 @@ Saat menangani kendala konektivitas antar-server, pemblokiran firewall, atau ano
   - Buka secara global via tombol **`⚡ NetDiag`** di header navbar atas (dengan pemilih host sumber aktif).
 - **Proteksi Konkurensi & Keamanan**: Menggunakan kunci singleflight in-memory per host untuk mencegah kehabisan sesi SSH. Host yang sedang offline secara otomatis dinonaktifkan dari daftar target antar-host.
 
+### Tab Docker: Container, Statistik, Volume & Jaringan
+
+Tab **Docker** pada sebuah host membaca engine Docker secara langsung lewat SSH (hanya baca; user SSH harus boleh menjalankan `docker`). Ada empat tampilan:
+
+- **Container**: semua container, berjalan maupun tidak, dengan image, status, dan port, serta menu `⋮` (Logs, Start, Restart, Stop).
+- **Statistik**: hasil `docker stats --no-stream` untuk container yang berjalan, diurutkan menurut CPU: CPU %, memori terpakai / batas, I/O jaringan dan blok, PID, beserta total. Centang **Segarkan otomatis (10 dtk)** agar tampil langsung; tabel diperbarui di tempat dan refresh yang gagal mempertahankan data terakhir. CPU bisa lebih dari 100% pada host multi-core.
+- **Volume**: named volume dengan driver, ukuran, mountpoint, dan container yang memakainya. Volume yang tidak di-mount container mana pun ditandai `tidak dipakai`; volume anonim (nama hash yang dibuat otomatis oleh container) ditampilkan setelah volume bernama. Ukuran berasal dari `docker system df -v`; engine yang tidak bisa melaporkannya (versi Docker lama) atau pemindaian yang melebihi 40 detik membuat ukuran tampil `—`.
+- **Jaringan**: jaringan dengan driver, scope, subnet, gateway, dan container terhubung (beserta IP saat kursor diarahkan); jaringan buatan pengguna tampil lebih dulu dan `bridge`, `host`, `none` ditandai bawaan.
+
+Tampilan diambil sesuai kebutuhan lewat `GET /api/hosts/{id}/docker/stats`, `/docker/volumes`, dan `/docker/networks`. Jika Docker tidak bisa dibaca (belum terpasang, izin ditolak), tab menampilkan pesan error dari Docker sendiri.
+
 ### Evaluasi Kelayakan Server dengan Lifecycle Assessment
 
 Pantau menghitung nilai kelayakan sistem secara transparan melalui **Lifecycle Score** (0–100) berdasarkan 6 faktor evaluasi:

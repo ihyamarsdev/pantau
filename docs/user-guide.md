@@ -384,6 +384,17 @@ When troubleshooting server connectivity issues, firewall blocking, or cross-dat
   - Open globally via the **`⚡ NetDiag`** button in the top navigation header cluster (with host picker).
 - **Concurrency & Safety Guards**: Employs an in-memory singleflight lock per host to prevent SSH session saturation. Offline hosts are automatically disabled in inter-host target dropdowns.
 
+### Docker Tab: Containers, Stats, Volumes & Networks
+
+The **Docker** tab of a host reads the Docker engine live over SSH (read-only; the SSH user needs permission to run `docker`). It has four views:
+
+- **Containers**: all containers, running or not, with image, status and ports, plus the `⋮` menu (Logs, Start, Restart, Stop).
+- **Stats**: a one-shot `docker stats --no-stream` of running containers sorted by CPU: CPU %, memory used / limit, network and block I/O, PIDs, with totals. Tick **Auto-refresh (10s)** to keep it live; the table updates in place and a failed refresh keeps the last snapshot. CPU can exceed 100% on multi-core hosts.
+- **Volumes**: named volumes with driver, size, mountpoint, and the containers using them. Volumes no container mounts are flagged `unused`; anonymous volumes (hash names created implicitly by containers) are listed after named ones. The size comes from `docker system df -v`; engines that cannot report it (older Docker versions) or a scan that exceeds 40 seconds leave the size as `—`.
+- **Networks**: networks with driver, scope, subnets, gateways and attached containers (with their IPs on hover); user-defined networks come first and `bridge`, `host` and `none` are marked built-in.
+
+Views are fetched on demand through `GET /api/hosts/{id}/docker/stats`, `/docker/volumes` and `/docker/networks`. If Docker cannot be read (not installed, permission denied) the tab shows Docker's own error message.
+
 ### Evaluating Server Longevity with Lifecycle Assessment
 
 Pantau continuously calculates an auditable **Lifecycle Score** (0–100) based on six weighted factors:

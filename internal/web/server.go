@@ -1296,6 +1296,37 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "containers": containers})
 			return
 		}
+		// GET /api/hosts/{id}/docker/{stats|volumes|networks} -> read-only live snapshots
+		if len(parts) == 3 && r.Method == http.MethodGet && (parts[2] == "stats" || parts[2] == "volumes" || parts[2] == "networks") {
+			var (
+				payload map[string]interface{}
+				err     error
+			)
+			switch parts[2] {
+			case "stats":
+				var stats []inspector.DockerStat
+				if stats, err = s.inspector.ListDockerStats(hostID); err == nil {
+					payload = map[string]interface{}{"stats": stats}
+				}
+			case "volumes":
+				var volumes []inspector.DockerVolume
+				if volumes, err = s.inspector.ListDockerVolumes(hostID); err == nil {
+					payload = map[string]interface{}{"volumes": volumes}
+				}
+			case "networks":
+				var networks []inspector.DockerNetwork
+				if networks, err = s.inspector.ListDockerNetworks(hostID); err == nil {
+					payload = map[string]interface{}{"networks": networks}
+				}
+			}
+			if err != nil {
+				writeJSON(w, http.StatusOK, map[string]interface{}{"ok": false, "error": err.Error()})
+				return
+			}
+			payload["ok"] = true
+			writeJSON(w, http.StatusOK, payload)
+			return
+		}
 		// /api/hosts/{id}/docker/action
 		if len(parts) >= 3 && parts[2] == "action" && r.Method == http.MethodPost {
 			var act struct {
