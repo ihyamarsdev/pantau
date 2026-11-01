@@ -450,3 +450,15 @@ _Avoid_: Security compliance rule, CIS benchmark check, audit rule
 **Elevated File Access**:
 Akses manajemen berkas SFTP dengan eskalasi hak istimewa pengguna remote (seperti `root` atau akun pengguna lain) yang dijalankan melalui `sudo -n -u <user>` pada subsistem server SFTP remote tanpa transmisi atau penyimpanan kata sandi, memungkinkan penelusuran direktori, pembacaan, penulisan, pengunggahan, pengecekan ukuran, duplikasi, pengunduhan berkas dan arsip folder, penghapusan, serta chmod pada berkas yang dibatasi oleh izin akun SSH standar.
 _Avoid_: Sudo SFTP, root file manager, admin file browse, privileged explorer
+
+**Fleet KPI Strip**:
+Deretan ubin ringkasan armada di atas daftar Host pada dashboard (Total, Healthy, Drift, Offline, Stale, rata-rata RAM beserta puncak disk). Setiap ubin dapat diklik untuk memfilter daftar Host berdasarkan status; hitungannya memakai definisi tunggal yang sama dengan telemetri agregat di footer (Drift = status `degraded`, Offline = `down`, Stale mengikuti ambang Stale Inspection dan disupresi saat Background Inspection dinonaktifkan).
+_Avoid_: Summary bar, stats header, status counter
+
+**Design Token**:
+Variabel CSS pada `:root` (permukaan, teks, aksen, warna semantik status, bentuk, bayangan, tipografi, gerak) yang menjadi satu-satunya sumber nilai visual antarmuka; kode antarmuka tidak boleh memakai warna literal sehingga tema dapat diganti hanya dengan mendefinisikan ulang token.
+_Avoid_: Theme variable, color constant, style config
+
+**Icon Sprite**:
+Kumpulan ikon garis Lucide yang disematkan sebagai satu `<svg id="iconSprite">` inline di awal `<body>` dan dipakai lewat `<use href="#i-NAME">` atau helper `svgIcon('NAME')`; menggantikan seluruh emoji sebagai ikon antarmuka agar tampilan konsisten antar-OS dan tetap berjalan airgapped.
+_Avoid_: Emoji icon, icon font, icon CDN

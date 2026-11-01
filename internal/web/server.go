@@ -1347,6 +1347,19 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		http.Error(w, "not found", http.StatusNotFound)
 
+	case "systemd":
+		// GET /api/hosts/{id}/systemd -> read-only live list of systemd service units
+		if len(parts) == 2 && r.Method == http.MethodGet {
+			services, supported, err := s.inspector.ListSystemdServices(hostID)
+			if err != nil {
+				writeJSON(w, http.StatusOK, map[string]interface{}{"ok": false, "error": err.Error()})
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "supported": supported, "services": services})
+			return
+		}
+		http.Error(w, "not found", http.StatusNotFound)
+
 	case "files":
 		s.handleFilesRoute(hostID, parts[2:], w, r)
 

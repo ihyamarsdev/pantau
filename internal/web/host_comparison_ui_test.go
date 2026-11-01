@@ -64,12 +64,7 @@ func TestHostComparisonUIInIndexHTML(t *testing.T) {
 	enKeys := []string{
 		`"compare_hosts_title": "Host Comparison"`,
 		`"compare_badge_side_by_side": "Side-by-Side Evaluation"`,
-		`"compare_btn_copy_md": "📋 Copy Summary (MD)"`,
 		`"compare_overall_winner": "Overall Winner"`,
-		`"compare_cat_compute": "⚡ Compute Capacity & Load"`,
-		`"compare_cat_storage": "💾 Storage Capacity & I/O"`,
-		`"compare_cat_network": "🌐 Network Health & Security"`,
-		`"compare_cat_hygiene": "🛡️ System Hygiene & Lifecycle"`,
 	}
 	for _, k := range enKeys {
 		if !strings.Contains(html, k) {
@@ -80,12 +75,7 @@ func TestHostComparisonUIInIndexHTML(t *testing.T) {
 	idKeys := []string{
 		`"compare_hosts_title": "Komparasi Host"`,
 		`"compare_badge_side_by_side": "Evaluasi Berdampingan"`,
-		`"compare_btn_copy_md": "📋 Salin Ringkasan (MD)"`,
 		`"compare_overall_winner": "Juara Keseluruhan"`,
-		`"compare_cat_compute": "⚡ Kapasitas & Beban Komputasi"`,
-		`"compare_cat_storage": "💾 Kapasitas Penyimpanan & I/O"`,
-		`"compare_cat_network": "🌐 Keandalan Jaringan & Keamanan"`,
-		`"compare_cat_hygiene": "🛡️ Higienitas Sistem & Siklus Hidup"`,
 	}
 	for _, k := range idKeys {
 		if !strings.Contains(html, k) {

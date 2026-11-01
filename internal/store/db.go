@@ -130,7 +130,10 @@ type ListeningPort struct {
 	Address string `json:"address"`
 	Public  bool   `json:"public"`
 	Process string `json:"process"`
-	Risk    string `json:"risk"` // "low", "high"
+	// ProcessSource says where Process came from: "process" (owner seen via ss/netstat/lsof) or
+	// "port_hint" (owner not visible; name guessed from the well-known port number). Empty when unknown.
+	ProcessSource string `json:"process_source"`
+	Risk          string `json:"risk"` // "low", "high"
 }
 
 type DesiredRule struct {

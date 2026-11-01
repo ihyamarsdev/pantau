@@ -30,12 +30,17 @@ var (
 )
 
 type Inspector struct {
-	db              *store.DB
-	factory         sshrunner.RunnerFactory
-	notifier        *notify.Dispatcher
-	inFlight        sync.Map
-	packageInFlight sync.Map
+	db               *store.DB
+	factory          sshrunner.RunnerFactory
+	notifier         *notify.Dispatcher
+	inFlight         sync.Map
+	packageInFlight  sync.Map
 	securityInFlight sync.Map
+
+	// sudoRetryAt remembers, per host, when passwordless sudo may be probed again after it failed, so a
+	// host that requires a sudo password logs at most one failed attempt per sudoRetryAfter.
+	sudoMu      sync.Mutex
+	sudoRetryAt map[int64]time.Time
 }
 
 func New(db *store.DB, factory sshrunner.RunnerFactory, notifier *notify.Dispatcher) *Inspector {
@@ -330,6 +335,7 @@ func (ins *Inspector) scrapeSystemMetrics(h *store.Host, runner sshrunner.Runner
 		failedSec = sections[11]
 	}
 	parseNetworkMetrics(h, netDevSec, pingSec, pubIPSec, estSec, listenSec, failedSec)
+	ins.enrichListeningProcesses(h, runner)
 
 	var diskStatsSec string
 	if len(sections) >= 17 {
@@ -417,6 +423,33 @@ func parseTopSwap(out string) []store.ProcessInfo {
 		})
 	}
 	return list
+}
+
+var ssProcessNameRe = regexp.MustCompile(`\("([^"]+)"`)
+
+// extractListenProcess returns the owning process name(s) of a listening socket from the trailing
+// columns of `ss -tlpn` (users:(("nginx",pid=12,fd=6),...)) or `netstat -tlpn` (12/nginx).
+// Returns "" when the SSH user lacks permission to see the owner (no -p information).
+func extractListenProcess(cols []string) string {
+	for _, c := range cols {
+		if strings.HasPrefix(c, "users:") {
+			var names []string
+			seen := map[string]bool{}
+			for _, m := range ssProcessNameRe.FindAllStringSubmatch(c, -1) {
+				if !seen[m[1]] {
+					seen[m[1]] = true
+					names = append(names, m[1])
+				}
+			}
+			return strings.Join(names, ", ")
+		}
+		if i := strings.Index(c, "/"); i > 0 {
+			if _, err := strconv.Atoi(c[:i]); err == nil {
+				return c[i+1:]
+			}
+		}
+	}
+	return ""
 }
 
 func parseNetworkMetrics(h *store.Host, netDevSec, pingSec, pubIPSec, estSec, listenSec, failedSec string) {
@@ -531,7 +564,7 @@ func parseNetworkMetrics(h *store.Host, netDevSec, pingSec, pubIPSec, estSec, li
 			addr := parts[1] // e.g. 0.0.0.0:80, *:22, 127.0.0.1:3306
 			proc := ""
 			if len(parts) >= 3 {
-				proc = parts[2]
+				proc = extractListenProcess(parts[2:])
 			}
 			host, port, err := net.SplitHostPort(addr)
 			if err != nil {
@@ -553,13 +586,18 @@ func parseNetworkMetrics(h *store.Host, netDevSec, pingSec, pubIPSec, estSec, li
 			if isPublic && sensitivePorts[port] {
 				risk = "high"
 			}
+			source := ""
+			if proc != "" {
+				source = "process"
+			}
 			listening = append(listening, store.ListeningPort{
-				Proto:   "tcp",
-				Port:    port,
-				Address: addr,
-				Public:  isPublic,
-				Process: proc,
-				Risk:    risk,
+				Proto:         "tcp",
+				Port:          port,
+				Address:       addr,
+				Public:        isPublic,
+				Process:       proc,
+				ProcessSource: source,
+				Risk:          risk,
 			})
 		}
 	}

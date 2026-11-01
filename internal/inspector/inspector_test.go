@@ -1,6 +1,7 @@
 package inspector
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -911,5 +912,32 @@ func TestParseDockerPSIncludesStoppedContainersAndDerivesState(t *testing.T) {
 	}
 	if len(parseDockerPS("")) != 0 {
 		t.Errorf("expected no containers for empty output")
+	}
+}
+
+func TestParseNetworkMetricsListeningServiceNames(t *testing.T) {
+	listen := strings.Join([]string{
+		`LISTEN 0.0.0.0:22 users:(("sshd",pid=812,fd=3))`,
+		`LISTEN *:80 users:(("nginx",pid=901,fd=6),("nginx",pid=902,fd=6))`,
+		`LISTEN 127.0.0.1:5432`,
+		`tcp 0.0.0.0:3306 LISTEN 1456/mysqld`,
+		`tcp 127.0.0.1:631 LISTEN -`,
+	}, "\n")
+
+	h := &store.Host{}
+	parseNetworkMetrics(h, "", "", "", "", listen, "0")
+
+	var ports []store.ListeningPort
+	if err := json.Unmarshal([]byte(h.ListeningPorts), &ports); err != nil {
+		t.Fatalf("invalid listening_ports JSON: %v", err)
+	}
+	want := map[string]string{"22": "sshd", "80": "nginx", "5432": "", "3306": "mysqld", "631": ""}
+	if len(ports) != len(want) {
+		t.Fatalf("expected %d ports, got %d: %+v", len(want), len(ports), ports)
+	}
+	for _, p := range ports {
+		if p.Process != want[p.Port] {
+			t.Errorf("port %s: expected service %q, got %q", p.Port, want[p.Port], p.Process)
+		}
 	}
 }
