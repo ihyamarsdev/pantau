@@ -43,7 +43,7 @@ func (ins *Inspector) ListSystemdServices(hostID int64) (services []SystemdServi
 	}
 	defer runner.Close()
 
-	stdout, stderr, exitCode, err := runner.ExecTimeout("sh -c "+shQuote(systemdScript), systemdScriptTimeout)
+	stdout, stderr, exitCode, err := runner.ExecTimeout("sh -c "+shellQuote(systemdScript), systemdScriptTimeout)
 	if err != nil {
 		return nil, false, err
 	}

@@ -1327,22 +1327,8 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, payload)
 			return
 		}
-		// /api/hosts/{id}/docker/action
-		if len(parts) >= 3 && parts[2] == "action" && r.Method == http.MethodPost {
-			var act struct {
-				Container string `json:"container"`
-				Action    string `json:"action"` // start, stop, restart
-			}
-			if err := json.NewDecoder(r.Body).Decode(&act); err != nil {
-				http.Error(w, "bad request", http.StatusBadRequest)
-				return
-			}
-			out, err := s.inspector.DockerAction(hostID, act.Container, act.Action)
-			if err != nil {
-				writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": err.Error()})
-				return
-			}
-			writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "output": out})
+		// Portainer-style management endpoints (images, system, stacks, inspect, container/image/volume/network ops)
+		if s.handleDockerManage(w, r, hostID, parts) {
 			return
 		}
 		http.Error(w, "not found", http.StatusNotFound)
@@ -1356,6 +1342,46 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "supported": supported, "services": services})
+			return
+		}
+		// GET /api/hosts/{id}/systemd/detail?unit=x.service[&errors=1] -> status, properties, journal, diagnosis
+		if len(parts) == 3 && parts[2] == "detail" && r.Method == http.MethodGet {
+			q := r.URL.Query()
+			detail, err := s.inspector.SystemdDetail(hostID, q.Get("unit"), q.Get("errors") == "1", q.Get("retry_sudo") == "1")
+			if err != nil {
+				status := http.StatusOK
+				if errors.Is(err, inspector.ErrSystemdInvalidUnit) {
+					status = http.StatusBadRequest
+				}
+				writeJSON(w, status, map[string]interface{}{"ok": false, "error": err.Error()})
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "detail": detail})
+			return
+		}
+		// POST /api/hosts/{id}/systemd/action {unit, action: start|stop|restart}
+		if len(parts) == 3 && parts[2] == "action" && r.Method == http.MethodPost {
+			var act struct {
+				Unit   string `json:"unit"`
+				Action string `json:"action"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&act); err != nil {
+				http.Error(w, "bad request", http.StatusBadRequest)
+				return
+			}
+			res, err := s.inspector.SystemdAction(hostID, act.Unit, act.Action)
+			if err != nil {
+				status := http.StatusInternalServerError
+				switch {
+				case errors.Is(err, inspector.ErrSystemdProtected):
+					status = http.StatusForbidden
+				case errors.Is(err, inspector.ErrSystemdInvalidUnit), strings.HasPrefix(err.Error(), "unsupported action"):
+					status = http.StatusBadRequest
+				}
+				writeJSON(w, status, map[string]interface{}{"ok": false, "error": err.Error()})
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]interface{}{"ok": res.Succeeded(), "result": res})
 			return
 		}
 		http.Error(w, "not found", http.StatusNotFound)

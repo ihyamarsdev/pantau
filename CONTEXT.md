@@ -462,3 +462,11 @@ _Avoid_: Theme variable, color constant, style config
 **Icon Sprite**:
 Kumpulan ikon garis Lucide yang disematkan sebagai satu `<svg id="iconSprite">` inline di awal `<body>` dan dipakai lewat `<use href="#i-NAME">` atau helper `svgIcon('NAME')`; menggantikan seluruh emoji sebagai ikon antarmuka agar tampilan konsisten antar-OS dan tetap berjalan airgapped.
 _Avoid_: Emoji icon, icon font, icon CDN
+
+**Docker Stack**:
+Satu proyek Docker Compose pada Host (kumpulan container berlabel `com.docker.compose.project`) yang dikelola sebagai satu unit di sub-tab Stacks: status agregat, up/down/start/stop/restart/pull/recreate/update, serta penyuntingan atau deploy berkas compose. Stack baru dari Pantau disimpan di `~/.pantau/stacks/<nama>/` pada Host.
+_Avoid_: Compose app, docker service, swarm stack
+
+**Docker Privilege Fallback**:
+Aturan bahwa perintah Docker dijalankan sebagai akun SSH biasa dan baru memakai `sudo -n docker` bila socket Docker menolak akses (*permission denied*) dan sudo tanpa kata sandi tersedia; kata sandi tidak pernah dipakai atau disimpan.
+_Avoid_: Sudo docker mode, root docker, privileged docker

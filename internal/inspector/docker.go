@@ -100,7 +100,7 @@ func (ins *Inspector) ListDockerStats(hostID int64) ([]DockerStat, error) {
 	}
 	defer runner.Close()
 
-	stdout, stderr, exitCode, err := runner.ExecTimeout(DarwinPathPrelude+`docker stats --no-stream --no-trunc --format '{{json .}}' 2>&1`, dockerScriptTimeout)
+	stdout, stderr, exitCode, err := runner.ExecTimeout(dockerShell(`docker stats --no-stream --no-trunc --format '{{json .}}' 2>&1`), dockerScriptTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +118,7 @@ func (ins *Inspector) ListDockerVolumes(hostID int64) ([]DockerVolume, error) {
 	}
 	defer runner.Close()
 
-	stdout, stderr, exitCode, err := runner.ExecTimeout("sh -c "+shellQuote(dockerVolumesScript), dockerScriptTimeout)
+	stdout, stderr, exitCode, err := runner.ExecTimeout(dockerShell(dockerVolumesScript), dockerScriptTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func (ins *Inspector) ListDockerNetworks(hostID int64) ([]DockerNetwork, error) 
 	}
 	defer runner.Close()
 
-	stdout, stderr, exitCode, err := runner.ExecTimeout("sh -c "+shellQuote(dockerNetworksScript), dockerScriptTimeout)
+	stdout, stderr, exitCode, err := runner.ExecTimeout(dockerShell(dockerNetworksScript), dockerScriptTimeout)
 	if err != nil {
 		return nil, err
 	}

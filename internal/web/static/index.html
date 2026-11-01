@@ -2736,6 +2736,49 @@ header {
   gap: 8px;
 }
 
+/* systemd service detail / debug dialog */
+.sd-dialog { max-width: 940px; height: 88vh; }
+.sd-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sd-title h3 { margin: 0; font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 48vw; }
+.sd-pre { margin: 0; padding: 12px 14px; max-height: 260px; overflow: auto; background: var(--code-bg); border: 1px solid var(--card-border); border-radius: var(--radius); font-family: var(--font-mono); font-size: var(--fs-xs); line-height: 1.55; white-space: pre-wrap; word-break: break-word; color: var(--text); }
+.sd-logs { max-height: 340px; }
+.sd-log-err { color: var(--danger); }
+.sd-log-warn { color: var(--warning); }
+.sd-section-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; font-weight: 600; font-size: var(--fs-sm); }
+.sd-diag { border: 1px solid var(--danger-border); background: var(--danger-soft); border-radius: var(--radius-lg); padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.sd-diag-item { display: flex; flex-direction: column; gap: 4px; }
+.sd-diag-item + .sd-diag-item { border-top: 1px solid var(--danger-border); padding-top: 10px; }
+.sd-diag-title { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--danger); }
+.sd-diag-hint { font-size: var(--fs-sm); color: var(--text); }
+.sd-diag-evidence { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-muted); background: var(--code-bg); border-radius: var(--radius-sm); padding: 6px 8px; overflow-wrap: anywhere; }
+.sd-note { display: flex; gap: 8px; align-items: flex-start; font-size: var(--fs-xs); padding: 8px 10px; border-radius: var(--radius); margin-bottom: 8px; }
+.sd-note-warn { background: var(--warning-soft); border: 1px solid var(--warning-border); color: var(--warning); }
+.sd-note-info { background: var(--info-soft); border: 1px solid var(--info-border); color: var(--info); }
+.sd-actions { text-align: right; white-space: nowrap; }
+.sd-actions .btn + .btn { margin-left: 4px; }
+.sd-row-failed td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
+.sd-unit-link { color: var(--text); font-weight: 600; text-decoration: none; }
+.sd-unit-link:hover { color: var(--accent-text); text-decoration: underline; }
+.sd-footer { justify-content: space-between; align-items: center; flex-wrap: wrap; }
+.sd-footer-group { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+/* Docker management (Portainer-style) */
+.dk-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.dk-form-grid .dk-full { grid-column: 1 / -1; }
+.dk-field label { display: block; font-size: var(--fs-xs); font-weight: 600; color: var(--text-muted); margin-bottom: 4px; }
+.dk-field .dk-hint { font-size: var(--fs-xs); color: var(--text-faint); margin-top: 3px; }
+.dk-field textarea { font-family: var(--font-mono); font-size: var(--fs-xs); }
+.dk-section { border: 1px solid var(--card-border); border-radius: var(--radius-lg); padding: 12px 14px; }
+.dk-section-title { font-weight: 600; font-size: var(--fs-sm); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+.dk-mono { font-family: var(--font-mono); font-size: var(--fs-xs); word-break: break-all; }
+.dk-actions { text-align: right; white-space: nowrap; }
+.dk-actions .btn + .btn { margin-left: 4px; }
+.dk-toolbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.dk-name-link { color: var(--text); font-weight: 600; text-decoration: none; }
+.dk-name-link:hover { color: var(--accent-text); text-decoration: underline; }
+.dk-prune-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--card-border); }
+.dk-prune-row:first-of-type { border-top: none; }
+.dk-prune-desc { font-size: var(--fs-xs); color: var(--text-muted); }
+@media (max-width: 768px) { .dk-form-grid { grid-template-columns: 1fr; } }
 /* ===== SLICE-B:END ===== */
 /* ----------------------------------------------------------------------------------------------- */
 /* ===== SLICE-C:BEGIN (terminal dock, presets, activity console, link/tunnel UI) ===== */
@@ -4844,6 +4887,56 @@ div.spinner { border: 2px solid var(--card-border); border-top-color: var(--prim
   </div>
 </div>
 
+<!-- Docker generic form modal (add container, pull image, create volume/network, rename, stack editor) -->
+<div id="dockerFormModal" class="modal">
+  <div class="modal-content modal-dialog-lg">
+    <div class="modal-header">
+      <div class="sd-title">
+        <svg class="icon icon-sm text-accent"><use href="#i-container"/></svg>
+        <h3 id="dockerFormTitle" style="font-family: var(--font-sans); font-size: var(--fs-md);"></h3>
+      </div>
+      <button class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('dockerFormModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body" id="dockerFormBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-sm" onclick="closeModal('dockerFormModal')" data-i18n="cancel">Cancel</button>
+      <button class="btn btn-sm btn-primary" id="dockerFormSubmit" onclick="submitDockerForm()"></button>
+    </div>
+  </div>
+</div>
+
+<!-- Docker container inspect modal -->
+<div id="dockerInspectModal" class="modal">
+  <div class="modal-content modal-dialog-lg sd-dialog">
+    <div class="modal-header">
+      <div class="sd-title">
+        <svg class="icon icon-sm text-accent"><use href="#i-container"/></svg>
+        <h3 id="dockerInspectTitle"></h3>
+        <span id="dockerInspectBadge" class="badge badge-unknown"></span>
+      </div>
+      <button class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('dockerInspectModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body" id="dockerInspectBody"></div>
+    <div class="modal-footer sd-footer" id="dockerInspectFooter"></div>
+  </div>
+</div>
+
+<!-- systemd Service Detail / Debug Modal -->
+<div id="systemdDetailModal" class="modal">
+  <div class="modal-content modal-dialog-lg sd-dialog">
+    <div class="modal-header">
+      <div class="sd-title">
+        <svg class="icon icon-sm text-accent"><use href="#i-cog"/></svg>
+        <h3 id="systemdDetailTitle"></h3>
+        <span id="systemdDetailBadge" class="badge badge-unknown"></span>
+      </div>
+      <button class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('systemdDetailModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body" id="systemdDetailBody"></div>
+    <div class="modal-footer sd-footer" id="systemdDetailFooter"></div>
+  </div>
+</div>
+
 <!-- Duplicate File/Folder Modal -->
 <div id="duplicateModal" class="modal">
   <div class="modal-content modal-dialog" style="max-width: 480px;">
@@ -5929,6 +6022,256 @@ const I18N = {
     "write_label": "Write",
     "edit_rule": "Edit Rule",
     "rule_updated": "Rule updated successfully",
+    "systemd_col_actions": "Actions",
+    "systemd_btn_debug": "Status & debug",
+    "systemd_sum_result": "Last result",
+    "systemd_sum_since": "Running since",
+    "systemd_sum_stopped": "Stopped since",
+    "systemd_sum_proc": "Process",
+    "systemd_restarts": "Restarts",
+    "systemd_unit_file": "Unit file",
+    "systemd_user": "Runs as",
+    "systemd_desc": "Description",
+    "systemd_status_output": "systemctl status",
+    "systemd_logs_title": "Recent journal",
+    "systemd_logs_errors_only": "Errors only",
+    "systemd_logs_copy": "Copy",
+    "systemd_logs_empty": "No journal entries.",
+    "systemd_logs_noperm": "The journal is not readable by the SSH user and passwordless sudo is unavailable. Add the user to the systemd-journal group, or allow it to run sudo without a password.",
+    "systemd_logs_unavailable": "journalctl is not available on this host.",
+    "systemd_logs_elevated": "Journal read with passwordless sudo.",
+    "systemd_confirm_restart_title": "Restart {unit}?",
+    "systemd_confirm_restart_msg": "The service will be restarted on {host}. Connections it is handling will be interrupted briefly.",
+    "systemd_confirm_stop_title": "Stop {unit}?",
+    "systemd_confirm_stop_msg": "The service will stop on {host} and stay stopped until it is started again. If it is enabled it will still start at the next boot.",
+    "systemd_confirm_ssh_restart": "This is the SSH daemon. If its configuration is invalid it will fail to start and Pantau may lose access to this host.",
+    "systemd_action_ok": "{unit}: {action} completed ({state})",
+    "systemd_action_failed": "{unit}: {action} failed",
+    "systemd_action_failed_after": "{unit}: {action} was accepted but the service failed right away. See Status & debug for the cause.",
+    "systemd_btn_more": "More",
+    "systemd_reload_title": "Re-read unit files after editing them (systemctl daemon-reload). Does not restart any service.",
+    "systemd_verb_reload": "Reload",
+    "systemd_verb_enable": "Enable at boot",
+    "systemd_verb_disable": "Disable at boot",
+    "systemd_verb_mask": "Mask",
+    "systemd_verb_unmask": "Unmask",
+    "systemd_verb_reset_failed": "Reset failed state",
+    "systemd_verb_daemon_reload": "Reload systemd",
+    "systemd_confirm_disable_title": "Disable {unit} at boot?",
+    "systemd_confirm_disable_msg": "{host} will no longer start this service automatically at boot. A running service keeps running until it is stopped.",
+    "systemd_confirm_mask_title": "Mask {unit}?",
+    "systemd_confirm_mask_msg": "A masked service cannot be started by anyone, manually or as a dependency, until it is unmasked. A running service is not stopped.",
+    "systemd_logs_sudo_skipped": "The journal is not readable by the SSH user. Passwordless sudo failed recently on this host, so it was not tried again (to avoid repeated failed-sudo entries in the host's auth log).",
+    "systemd_logs_retry_sudo": "Retry with sudo",
+    "docker_sub_images": "Images",
+    "docker_sub_stacks": "Stacks",
+    "docker_sub_system": "System",
+    "dk_add_container": "Add container",
+    "dk_pull_image": "Pull image",
+    "dk_create_volume": "Create volume",
+    "dk_create_network": "Create network",
+    "dk_new_stack": "New stack",
+    "dk_prune": "Prune",
+    "dk_prune_images": "Prune dangling images",
+    "dk_prune_volumes": "Prune unused volumes",
+    "dk_prune_networks": "Prune unused networks",
+    "dk_prune_containers": "Remove stopped containers",
+    "dk_prune_images_all": "Remove all unused images",
+    "dk_prune_builder": "Clear build cache",
+    "dk_prune_containers_desc": "Deletes every stopped container.",
+    "dk_prune_images_desc": "Deletes untagged images that nothing uses.",
+    "dk_prune_images_all_desc": "Deletes every image no container uses, tagged ones included.",
+    "dk_prune_volumes_desc": "Deletes every volume no container uses, together with its data.",
+    "dk_prune_networks_desc": "Deletes user-defined networks with no containers attached.",
+    "dk_prune_builder_desc": "Deletes the image build cache.",
+    "dk_confirm_prune_containers_title": "Remove all stopped containers?",
+    "dk_confirm_prune_containers_msg": "Every stopped container on {host} is deleted. Running containers are not touched.",
+    "dk_confirm_prune_images_title": "Remove dangling images?",
+    "dk_confirm_prune_images_msg": "Untagged images that no container uses are deleted from {host}.",
+    "dk_confirm_prune_images_all_title": "Remove all unused images?",
+    "dk_confirm_prune_images_all_msg": "Every image on {host} that no container uses is deleted, including tagged ones. They must be pulled again before use.",
+    "dk_confirm_prune_volumes_title": "Remove unused volumes?",
+    "dk_confirm_prune_volumes_msg": "Every volume on {host} that no container uses is deleted PERMANENTLY together with its data. This cannot be undone.",
+    "dk_confirm_prune_networks_title": "Remove unused networks?",
+    "dk_confirm_prune_networks_msg": "User-defined networks on {host} with no attached containers are deleted.",
+    "dk_confirm_prune_builder_title": "Clear the build cache?",
+    "dk_confirm_prune_builder_msg": "The image build cache on {host} is deleted. Later builds will be slower once.",
+    "dk_inspect": "Inspect",
+    "dk_console": "Console",
+    "dk_pause": "Pause",
+    "dk_unpause": "Resume",
+    "dk_kill": "Kill",
+    "dk_rename": "Rename",
+    "dk_remove": "Remove",
+    "dk_connect": "Connect container",
+    "dk_disconnect": "Disconnect",
+    "dk_in_use_hint": "In use: detach or remove what uses it first.",
+    "dk_verb_start": "start",
+    "dk_verb_stop": "stop",
+    "dk_verb_restart": "restart",
+    "dk_verb_pause": "pause",
+    "dk_verb_unpause": "resume",
+    "dk_verb_kill": "kill",
+    "dk_verb_remove": "remove",
+    "dk_verb_rename": "rename",
+    "dk_confirm_kill_title": "Kill {name}?",
+    "dk_confirm_kill_msg": "The container receives SIGKILL and stops immediately without shutting down cleanly.",
+    "dk_confirm_remove_title": "Remove {name}?",
+    "dk_confirm_remove_msg": "The container is deleted. Anything stored only in its writable layer is lost; named volumes are kept.",
+    "dk_confirm_remove_running": "It is still running, so it will be stopped and force-removed.",
+    "dk_confirm_disconnect_title": "Disconnect from {name}?",
+    "dk_confirm_disconnect_msg": "{container} loses access to this network immediately.",
+    "dk_confirm_image_remove_title": "Remove image {name}?",
+    "dk_confirm_image_remove_msg": "The image is deleted from this host. It can be pulled again later.",
+    "dk_confirm_volume_remove_title": "Remove volume {name}?",
+    "dk_confirm_volume_remove_msg": "The volume and all data in it are deleted permanently.",
+    "dk_confirm_network_remove_title": "Remove network {name}?",
+    "dk_confirm_network_remove_msg": "The network is deleted. Containers must be detached from it first.",
+    "dk_confirm_stack_down_title": "Take down {name}?",
+    "dk_confirm_stack_down_msg": "docker compose down stops and removes the stack's containers and networks. Named volumes are kept.",
+    "dk_confirm_stack_recreate_title": "Recreate {name}?",
+    "dk_confirm_stack_recreate_msg": "Every container of the stack is recreated, which restarts all of its services.",
+    "dk_confirm_stack_update_title": "Update {name}?",
+    "dk_confirm_stack_update_msg": "Pulls newer images and recreates the containers whose image changed.",
+    "dk_working": "Working…",
+    "dk_done": "Done",
+    "dk_required": "{field} is required",
+    "dk_deploy": "Deploy",
+    "dk_create": "Create",
+    "dk_pull": "Pull",
+    "dk_pull_intro": "Downloads the image to this host. Large images can take several minutes.",
+    "dk_container_created": "Container created",
+    "dk_console_timeout": "The terminal did not connect in time; open the console again.",
+    "dk_restart_no": "no (default)",
+    "dk_f_image": "Image",
+    "dk_f_name": "Name",
+    "dk_f_new_name": "New name",
+    "dk_f_restart": "Restart policy",
+    "dk_f_ports": "Published ports",
+    "dk_f_env": "Environment",
+    "dk_f_volumes": "Volumes",
+    "dk_f_network": "Network",
+    "dk_f_command": "Command",
+    "dk_f_memory": "Memory limit",
+    "dk_f_cpus": "CPU limit",
+    "dk_f_internal": "Internal network",
+    "dk_f_container": "Container",
+    "dk_f_stack_name": "Stack name",
+    "dk_h_ports": "One per line: 8080:80 or 127.0.0.1:8443:443/tcp",
+    "dk_h_env": "One per line: KEY=value",
+    "dk_h_volumes": "One per line: /host/path:/container/path[:ro] or volume-name:/container/path",
+    "dk_h_command": "Optional: replaces the image's default command",
+    "dk_h_internal": "No outbound access to the outside world.",
+    "dk_h_stack_name": "Lowercase letters, digits, - and _. The file is stored under ~/.pantau/stacks/<name>/ on the host.",
+    "dk_h_stack_yaml": "Validated with docker compose config before deploying; the previous file is kept as .pantau-bak.",
+    "dk_stack_new_intro": "Creates a Compose project on this host and starts it.",
+    "dk_no_images_title": "No images",
+    "dk_no_images_desc": "Pull an image to get started.",
+    "dk_img_summary": "{n} images · {u} unused · {size} total",
+    "dk_col_tag": "Tag",
+    "dk_col_created": "Created",
+    "dk_in_use": "In use",
+    "dk_unused": "Unused",
+    "dk_dangling": "Dangling",
+    "dk_run_image": "Run a container from this image",
+    "dk_no_stacks_title": "No stacks",
+    "dk_no_stacks_desc": "No Docker Compose projects were found. Create one with New stack.",
+    "dk_col_stack": "Stack",
+    "dk_col_services": "Services",
+    "dk_col_file": "Compose file",
+    "dk_stack_running": "Running",
+    "dk_stack_partial": "Partial",
+    "dk_stack_stopped": "Stopped",
+    "dk_stack_edit": "Edit",
+    "dk_stack_update": "Update (pull + up)",
+    "dk_stack_pull": "Pull images",
+    "dk_stack_up": "Up (create/start)",
+    "dk_stack_recreate": "Recreate",
+    "dk_stack_down": "Down",
+    "dk_stack_start": "Start",
+    "dk_stack_stop": "Stop",
+    "dk_stack_restart": "Restart",
+    "dk_sys_engine": "Docker engine",
+    "dk_sys_host": "Host",
+    "dk_sys_resources": "Resources",
+    "dk_sys_containers": "Containers (running / total)",
+    "dk_stopped": "stopped",
+    "dk_sub_images_count": "Images",
+    "dk_sys_storage": "Storage driver",
+    "dk_sys_df": "Disk usage",
+    "dk_sys_total": "Total",
+    "dk_sys_active": "Active",
+    "dk_sys_reclaimable": "Reclaimable",
+    "dk_sys_maintenance": "Maintenance",
+    "dk_attention": "Needs attention",
+    "dk_oom_killed": "The container was killed because it ran out of memory (OOM).",
+    "dk_exit_code": "Exited with code {code}",
+    "dk_started": "Started",
+    "dk_finished": "Finished",
+    "dk_limits": "Limits",
+    "dk_unlimited": "unlimited",
+    "dk_created": "Created",
+    "dk_command": "Command",
+    "dk_entrypoint": "Entrypoint",
+    "dk_workdir": "Working dir",
+    "dk_network_mode": "Network mode",
+    "dk_privileged": "Privileged",
+    "dk_yes": "yes",
+    "dk_no": "no",
+    "dk_sec_config": "Configuration",
+    "dk_sec_ports": "Ports",
+    "dk_sec_mounts": "Mounts",
+    "dk_sec_networks": "Networks",
+    "dk_sec_env": "Environment",
+    "dk_sec_labels": "Labels",
+    "dk_container_port": "Container port",
+    "dk_host_binding": "Host binding",
+    "dk_not_published": "not published",
+    "dk_type": "Type",
+    "dk_source": "Source",
+    "dk_destination": "Destination",
+    "dk_key": "Key",
+    "dk_value": "Value",
+    "dk_show_values": "Show values",
+    "dk_hide_values": "Hide values",
+    "systemd_action_nopriv": "Needs root, or passwordless sudo (sudo -n) for the SSH user.",
+    "systemd_diag_title": "Probable causes",
+    "systemd_diag_start_limit": "Restart limit reached",
+    "systemd_diag_start_limit_hint": "systemd stopped retrying because the service failed too many times in a short period. Fix the cause shown in the journal, run systemctl reset-failed on the unit, then start it again.",
+    "systemd_diag_port_in_use": "Port already in use",
+    "systemd_diag_port_in_use_hint": "Another process is listening on the port this service needs. Find it in Security → open ports, then stop it or change this service's port.",
+    "systemd_diag_exec_not_found": "Executable cannot be started",
+    "systemd_diag_exec_not_found_hint": "The ExecStart binary is missing, not executable, or has the wrong architecture or shebang. Check the path in the unit file.",
+    "systemd_diag_bad_user": "Run-as user is invalid",
+    "systemd_diag_bad_user_hint": "The User= or Group= in the unit file does not exist on this host.",
+    "systemd_diag_bad_workdir": "Working directory is missing",
+    "systemd_diag_bad_workdir_hint": "WorkingDirectory= points to a directory that does not exist or is not accessible.",
+    "systemd_diag_env_file": "Environment file is missing",
+    "systemd_diag_env_file_hint": "EnvironmentFile= points to a file that does not exist or cannot be read.",
+    "systemd_diag_oom_killed": "Killed for lack of memory",
+    "systemd_diag_oom_killed_hint": "The kernel or systemd-oomd killed the process because memory ran out. Reduce memory use, add RAM or swap, or set MemoryMax= for the unit.",
+    "systemd_diag_disk_full": "Disk is full",
+    "systemd_diag_disk_full_hint": "The service could not write because the filesystem has no space left. Free space on the affected volume.",
+    "systemd_diag_config_error": "Configuration error",
+    "systemd_diag_config_error_hint": "The service rejected its configuration. Run its own config test (for example nginx -t) and fix the reported line.",
+    "systemd_diag_dependency_failed": "A dependency failed",
+    "systemd_diag_dependency_failed_hint": "A unit this service requires did not start. Inspect it with systemctl list-dependencies.",
+    "systemd_diag_timeout": "Start or stop timed out",
+    "systemd_diag_timeout_hint": "The service did not become ready in time. Check what it waits for (database, network, slow disk) or raise TimeoutStartSec=.",
+    "systemd_diag_permission_denied": "Permission denied",
+    "systemd_diag_permission_denied_hint": "The service user cannot access a file, socket or port (ports below 1024 need privileges). Check ownership, SELinux/AppArmor and the unit's sandbox options.",
+    "systemd_diag_missing_file": "File or directory not found",
+    "systemd_diag_missing_file_hint": "The service looks for a path that does not exist. Check the paths in its configuration.",
+    "systemd_diag_connection_refused": "A dependency refused the connection",
+    "systemd_diag_connection_refused_hint": "The service could not reach something it depends on (database, API, socket). Make sure that backend is running and the address is correct.",
+    "systemd_diag_masked": "Unit is masked",
+    "systemd_diag_masked_hint": "A masked unit cannot be started. Run systemctl unmask on it first.",
+    "systemd_diag_not_found": "Unit file not found",
+    "systemd_diag_not_found_hint": "systemd does not know this service. It may have been uninstalled or renamed.",
+    "systemd_diag_restart_loop": "Restart loop",
+    "systemd_diag_restart_loop_hint": "The service has been restarted many times by its Restart= policy. Look for the repeating failure in the journal.",
+    "systemd_diag_exit_code": "Process exited with an error",
+    "systemd_diag_exit_code_hint": "The main process ended abnormally and the journal shows no known cause. Read the journal around the failure.",
     // ===== SLICE-B:END =====
     // ---------------------------------
     // ===== SLICE-C:BEGIN i18n =====
@@ -6820,6 +7163,256 @@ const I18N = {
     "write_label": "Tulis",
     "edit_rule": "Ubah Aturan",
     "rule_updated": "Aturan berhasil diperbarui",
+    "systemd_col_actions": "Aksi",
+    "systemd_btn_debug": "Status & debug",
+    "systemd_sum_result": "Hasil terakhir",
+    "systemd_sum_since": "Berjalan sejak",
+    "systemd_sum_stopped": "Berhenti sejak",
+    "systemd_sum_proc": "Proses",
+    "systemd_restarts": "Restart",
+    "systemd_unit_file": "Berkas unit",
+    "systemd_user": "Dijalankan sebagai",
+    "systemd_desc": "Deskripsi",
+    "systemd_status_output": "systemctl status",
+    "systemd_logs_title": "Journal terbaru",
+    "systemd_logs_errors_only": "Hanya error",
+    "systemd_logs_copy": "Salin",
+    "systemd_logs_empty": "Tidak ada entri journal.",
+    "systemd_logs_noperm": "Journal tidak dapat dibaca user SSH dan sudo tanpa password tidak tersedia. Tambahkan user ke grup systemd-journal, atau izinkan menjalankan sudo tanpa password.",
+    "systemd_logs_unavailable": "journalctl tidak tersedia pada host ini.",
+    "systemd_logs_elevated": "Journal dibaca dengan sudo tanpa password.",
+    "systemd_confirm_restart_title": "Restart {unit}?",
+    "systemd_confirm_restart_msg": "Layanan akan di-restart di {host}. Koneksi yang sedang dilayaninya akan terputus sesaat.",
+    "systemd_confirm_stop_title": "Hentikan {unit}?",
+    "systemd_confirm_stop_msg": "Layanan akan berhenti di {host} dan tetap berhenti sampai dijalankan lagi. Jika diaktifkan saat boot, layanan tetap menyala pada boot berikutnya.",
+    "systemd_confirm_ssh_restart": "Ini adalah daemon SSH. Jika konfigurasinya tidak valid, layanan gagal menyala dan Pantau bisa kehilangan akses ke host ini.",
+    "systemd_action_ok": "{unit}: {action} selesai ({state})",
+    "systemd_action_failed": "{unit}: {action} gagal",
+    "systemd_action_failed_after": "{unit}: {action} diterima tetapi layanan langsung gagal. Lihat Status & debug untuk penyebabnya.",
+    "systemd_btn_more": "Lainnya",
+    "systemd_reload_title": "Baca ulang berkas unit setelah diedit (systemctl daemon-reload). Tidak me-restart layanan apa pun.",
+    "systemd_verb_reload": "Reload",
+    "systemd_verb_enable": "Aktifkan saat boot",
+    "systemd_verb_disable": "Nonaktifkan saat boot",
+    "systemd_verb_mask": "Mask",
+    "systemd_verb_unmask": "Unmask",
+    "systemd_verb_reset_failed": "Reset status gagal",
+    "systemd_verb_daemon_reload": "Reload systemd",
+    "systemd_confirm_disable_title": "Nonaktifkan {unit} saat boot?",
+    "systemd_confirm_disable_msg": "{host} tidak akan lagi menjalankan layanan ini otomatis saat boot. Layanan yang sedang berjalan tetap berjalan sampai dihentikan.",
+    "systemd_confirm_mask_title": "Mask {unit}?",
+    "systemd_confirm_mask_msg": "Layanan yang di-mask tidak dapat dijalankan siapa pun, baik manual maupun sebagai dependensi, sampai di-unmask. Layanan yang sedang berjalan tidak dihentikan.",
+    "systemd_logs_sudo_skipped": "Journal tidak dapat dibaca user SSH. Sudo tanpa password gagal baru-baru ini pada host ini sehingga tidak dicoba lagi (agar log autentikasi host tidak dipenuhi catatan sudo gagal).",
+    "systemd_logs_retry_sudo": "Coba lagi dengan sudo",
+    "docker_sub_images": "Image",
+    "docker_sub_stacks": "Stack",
+    "docker_sub_system": "Sistem",
+    "dk_add_container": "Tambah container",
+    "dk_pull_image": "Tarik image",
+    "dk_create_volume": "Buat volume",
+    "dk_create_network": "Buat network",
+    "dk_new_stack": "Stack baru",
+    "dk_prune": "Bersihkan",
+    "dk_prune_images": "Bersihkan image dangling",
+    "dk_prune_volumes": "Bersihkan volume tak terpakai",
+    "dk_prune_networks": "Bersihkan network tak terpakai",
+    "dk_prune_containers": "Hapus container yang berhenti",
+    "dk_prune_images_all": "Hapus semua image tak terpakai",
+    "dk_prune_builder": "Bersihkan cache build",
+    "dk_prune_containers_desc": "Menghapus semua container yang berhenti.",
+    "dk_prune_images_desc": "Menghapus image tanpa tag yang tidak dipakai apa pun.",
+    "dk_prune_images_all_desc": "Menghapus semua image yang tidak dipakai container, termasuk yang bertag.",
+    "dk_prune_volumes_desc": "Menghapus semua volume yang tidak dipakai container beserta datanya.",
+    "dk_prune_networks_desc": "Menghapus network buatan pengguna yang tidak punya container terhubung.",
+    "dk_prune_builder_desc": "Menghapus cache build image.",
+    "dk_confirm_prune_containers_title": "Hapus semua container yang berhenti?",
+    "dk_confirm_prune_containers_msg": "Semua container yang berhenti di {host} dihapus. Container yang berjalan tidak disentuh.",
+    "dk_confirm_prune_images_title": "Hapus image dangling?",
+    "dk_confirm_prune_images_msg": "Image tanpa tag yang tidak dipakai container dihapus dari {host}.",
+    "dk_confirm_prune_images_all_title": "Hapus semua image tak terpakai?",
+    "dk_confirm_prune_images_all_msg": "Semua image di {host} yang tidak dipakai container dihapus, termasuk yang bertag. Image harus ditarik lagi sebelum dipakai.",
+    "dk_confirm_prune_volumes_title": "Hapus volume tak terpakai?",
+    "dk_confirm_prune_volumes_msg": "Semua volume di {host} yang tidak dipakai container dihapus PERMANEN beserta datanya. Tindakan ini tidak dapat dibatalkan.",
+    "dk_confirm_prune_networks_title": "Hapus network tak terpakai?",
+    "dk_confirm_prune_networks_msg": "Network buatan pengguna di {host} yang tidak punya container terhubung dihapus.",
+    "dk_confirm_prune_builder_title": "Bersihkan cache build?",
+    "dk_confirm_prune_builder_msg": "Cache build image di {host} dihapus. Build berikutnya akan lebih lambat satu kali.",
+    "dk_inspect": "Inspeksi",
+    "dk_console": "Console",
+    "dk_pause": "Jeda",
+    "dk_unpause": "Lanjutkan",
+    "dk_kill": "Kill",
+    "dk_rename": "Ganti nama",
+    "dk_remove": "Hapus",
+    "dk_connect": "Hubungkan container",
+    "dk_disconnect": "Putuskan",
+    "dk_in_use_hint": "Sedang dipakai: lepaskan atau hapus yang memakainya terlebih dahulu.",
+    "dk_verb_start": "start",
+    "dk_verb_stop": "stop",
+    "dk_verb_restart": "restart",
+    "dk_verb_pause": "jeda",
+    "dk_verb_unpause": "lanjut",
+    "dk_verb_kill": "kill",
+    "dk_verb_remove": "hapus",
+    "dk_verb_rename": "ganti nama",
+    "dk_confirm_kill_title": "Kill {name}?",
+    "dk_confirm_kill_msg": "Container menerima SIGKILL dan langsung berhenti tanpa shutdown yang rapi.",
+    "dk_confirm_remove_title": "Hapus {name}?",
+    "dk_confirm_remove_msg": "Container dihapus. Data yang hanya ada di writable layer-nya hilang; named volume tetap ada.",
+    "dk_confirm_remove_running": "Container masih berjalan sehingga akan dihentikan dan dihapus paksa.",
+    "dk_confirm_disconnect_title": "Putuskan dari {name}?",
+    "dk_confirm_disconnect_msg": "{container} langsung kehilangan akses ke network ini.",
+    "dk_confirm_image_remove_title": "Hapus image {name}?",
+    "dk_confirm_image_remove_msg": "Image dihapus dari host ini. Dapat ditarik lagi nanti.",
+    "dk_confirm_volume_remove_title": "Hapus volume {name}?",
+    "dk_confirm_volume_remove_msg": "Volume beserta semua data di dalamnya dihapus permanen.",
+    "dk_confirm_network_remove_title": "Hapus network {name}?",
+    "dk_confirm_network_remove_msg": "Network dihapus. Container harus dilepas dari network ini terlebih dahulu.",
+    "dk_confirm_stack_down_title": "Turunkan {name}?",
+    "dk_confirm_stack_down_msg": "docker compose down menghentikan dan menghapus container serta network stack. Named volume tetap ada.",
+    "dk_confirm_stack_recreate_title": "Buat ulang {name}?",
+    "dk_confirm_stack_recreate_msg": "Semua container stack dibuat ulang sehingga seluruh layanannya restart.",
+    "dk_confirm_stack_update_title": "Perbarui {name}?",
+    "dk_confirm_stack_update_msg": "Menarik image yang lebih baru dan membuat ulang container yang image-nya berubah.",
+    "dk_working": "Memproses…",
+    "dk_done": "Selesai",
+    "dk_required": "{field} wajib diisi",
+    "dk_deploy": "Deploy",
+    "dk_create": "Buat",
+    "dk_pull": "Tarik",
+    "dk_pull_intro": "Mengunduh image ke host ini. Image besar dapat memakan beberapa menit.",
+    "dk_container_created": "Container dibuat",
+    "dk_console_timeout": "Terminal tidak terhubung tepat waktu; buka console lagi.",
+    "dk_restart_no": "no (bawaan)",
+    "dk_f_image": "Image",
+    "dk_f_name": "Nama",
+    "dk_f_new_name": "Nama baru",
+    "dk_f_restart": "Kebijakan restart",
+    "dk_f_ports": "Port yang dipublikasikan",
+    "dk_f_env": "Environment",
+    "dk_f_volumes": "Volume",
+    "dk_f_network": "Network",
+    "dk_f_command": "Perintah",
+    "dk_f_memory": "Batas memori",
+    "dk_f_cpus": "Batas CPU",
+    "dk_f_internal": "Network internal",
+    "dk_f_container": "Container",
+    "dk_f_stack_name": "Nama stack",
+    "dk_h_ports": "Satu per baris: 8080:80 atau 127.0.0.1:8443:443/tcp",
+    "dk_h_env": "Satu per baris: KEY=value",
+    "dk_h_volumes": "Satu per baris: /path/host:/path/container[:ro] atau nama-volume:/path/container",
+    "dk_h_command": "Opsional: menggantikan perintah bawaan image",
+    "dk_h_internal": "Tanpa akses keluar ke dunia luar.",
+    "dk_h_stack_name": "Huruf kecil, angka, - dan _. Berkas disimpan di ~/.pantau/stacks/<nama>/ pada host.",
+    "dk_h_stack_yaml": "Divalidasi dengan docker compose config sebelum deploy; berkas sebelumnya disimpan sebagai .pantau-bak.",
+    "dk_stack_new_intro": "Membuat proyek Compose pada host ini dan menjalankannya.",
+    "dk_no_images_title": "Tidak ada image",
+    "dk_no_images_desc": "Tarik sebuah image untuk memulai.",
+    "dk_img_summary": "{n} image · {u} tak terpakai · total {size}",
+    "dk_col_tag": "Tag",
+    "dk_col_created": "Dibuat",
+    "dk_in_use": "Dipakai",
+    "dk_unused": "Tak terpakai",
+    "dk_dangling": "Dangling",
+    "dk_run_image": "Jalankan container dari image ini",
+    "dk_no_stacks_title": "Tidak ada stack",
+    "dk_no_stacks_desc": "Tidak ditemukan proyek Docker Compose. Buat dengan Stack baru.",
+    "dk_col_stack": "Stack",
+    "dk_col_services": "Layanan",
+    "dk_col_file": "Berkas compose",
+    "dk_stack_running": "Berjalan",
+    "dk_stack_partial": "Sebagian",
+    "dk_stack_stopped": "Berhenti",
+    "dk_stack_edit": "Ubah",
+    "dk_stack_update": "Perbarui (pull + up)",
+    "dk_stack_pull": "Tarik image",
+    "dk_stack_up": "Up (buat/jalankan)",
+    "dk_stack_recreate": "Buat ulang",
+    "dk_stack_down": "Down",
+    "dk_stack_start": "Start",
+    "dk_stack_stop": "Stop",
+    "dk_stack_restart": "Restart",
+    "dk_sys_engine": "Docker engine",
+    "dk_sys_host": "Host",
+    "dk_sys_resources": "Resource",
+    "dk_sys_containers": "Container (berjalan / total)",
+    "dk_stopped": "berhenti",
+    "dk_sub_images_count": "Image",
+    "dk_sys_storage": "Storage driver",
+    "dk_sys_df": "Pemakaian disk",
+    "dk_sys_total": "Total",
+    "dk_sys_active": "Aktif",
+    "dk_sys_reclaimable": "Dapat dibebaskan",
+    "dk_sys_maintenance": "Pemeliharaan",
+    "dk_attention": "Perlu perhatian",
+    "dk_oom_killed": "Container dimatikan karena kehabisan memori (OOM).",
+    "dk_exit_code": "Berhenti dengan kode {code}",
+    "dk_started": "Dimulai",
+    "dk_finished": "Selesai",
+    "dk_limits": "Batas",
+    "dk_unlimited": "tanpa batas",
+    "dk_created": "Dibuat",
+    "dk_command": "Perintah",
+    "dk_entrypoint": "Entrypoint",
+    "dk_workdir": "Direktori kerja",
+    "dk_network_mode": "Mode network",
+    "dk_privileged": "Privileged",
+    "dk_yes": "ya",
+    "dk_no": "tidak",
+    "dk_sec_config": "Konfigurasi",
+    "dk_sec_ports": "Port",
+    "dk_sec_mounts": "Mount",
+    "dk_sec_networks": "Network",
+    "dk_sec_env": "Environment",
+    "dk_sec_labels": "Label",
+    "dk_container_port": "Port container",
+    "dk_host_binding": "Binding host",
+    "dk_not_published": "tidak dipublikasikan",
+    "dk_type": "Tipe",
+    "dk_source": "Sumber",
+    "dk_destination": "Tujuan",
+    "dk_key": "Kunci",
+    "dk_value": "Nilai",
+    "dk_show_values": "Tampilkan nilai",
+    "dk_hide_values": "Sembunyikan nilai",
+    "systemd_action_nopriv": "Perlu root, atau sudo tanpa password (sudo -n) untuk user SSH.",
+    "systemd_diag_title": "Kemungkinan penyebab",
+    "systemd_diag_start_limit": "Batas restart tercapai",
+    "systemd_diag_start_limit_hint": "systemd berhenti mencoba ulang karena layanan gagal terlalu sering dalam waktu singkat. Perbaiki penyebab di journal, jalankan systemctl reset-failed pada unit, lalu start lagi.",
+    "systemd_diag_port_in_use": "Port sudah dipakai",
+    "systemd_diag_port_in_use_hint": "Proses lain mendengarkan port yang dibutuhkan layanan ini. Cari di Security → port terbuka, lalu hentikan atau ganti port layanan ini.",
+    "systemd_diag_exec_not_found": "Executable tidak dapat dijalankan",
+    "systemd_diag_exec_not_found_hint": "Biner ExecStart tidak ada, tidak executable, atau arsitektur/shebang salah. Periksa path pada berkas unit.",
+    "systemd_diag_bad_user": "User penjalan tidak valid",
+    "systemd_diag_bad_user_hint": "User= atau Group= pada berkas unit tidak ada di host ini.",
+    "systemd_diag_bad_workdir": "Direktori kerja tidak ada",
+    "systemd_diag_bad_workdir_hint": "WorkingDirectory= menunjuk direktori yang tidak ada atau tidak dapat diakses.",
+    "systemd_diag_env_file": "Berkas environment tidak ada",
+    "systemd_diag_env_file_hint": "EnvironmentFile= menunjuk berkas yang tidak ada atau tidak dapat dibaca.",
+    "systemd_diag_oom_killed": "Dimatikan karena kehabisan memori",
+    "systemd_diag_oom_killed_hint": "Kernel atau systemd-oomd mematikan proses karena memori habis. Kurangi pemakaian memori, tambah RAM atau swap, atau atur MemoryMax= pada unit.",
+    "systemd_diag_disk_full": "Disk penuh",
+    "systemd_diag_disk_full_hint": "Layanan tidak dapat menulis karena filesystem kehabisan ruang. Kosongkan ruang pada volume terkait.",
+    "systemd_diag_config_error": "Kesalahan konfigurasi",
+    "systemd_diag_config_error_hint": "Layanan menolak konfigurasinya. Jalankan uji konfigurasi bawaannya (misalnya nginx -t) dan perbaiki baris yang dilaporkan.",
+    "systemd_diag_dependency_failed": "Dependensi gagal",
+    "systemd_diag_dependency_failed_hint": "Unit yang dibutuhkan layanan ini tidak menyala. Periksa dengan systemctl list-dependencies.",
+    "systemd_diag_timeout": "Start atau stop melewati batas waktu",
+    "systemd_diag_timeout_hint": "Layanan tidak siap tepat waktu. Periksa yang ditunggunya (database, jaringan, disk lambat) atau naikkan TimeoutStartSec=.",
+    "systemd_diag_permission_denied": "Akses ditolak",
+    "systemd_diag_permission_denied_hint": "User layanan tidak dapat mengakses berkas, soket atau port (port di bawah 1024 butuh hak istimewa). Periksa kepemilikan, SELinux/AppArmor, dan opsi sandbox unit.",
+    "systemd_diag_missing_file": "Berkas atau direktori tidak ditemukan",
+    "systemd_diag_missing_file_hint": "Layanan mencari path yang tidak ada. Periksa path pada konfigurasinya.",
+    "systemd_diag_connection_refused": "Dependensi menolak koneksi",
+    "systemd_diag_connection_refused_hint": "Layanan tidak dapat menjangkau yang dibutuhkannya (database, API, soket). Pastikan backend itu berjalan dan alamatnya benar.",
+    "systemd_diag_masked": "Unit di-mask",
+    "systemd_diag_masked_hint": "Unit yang di-mask tidak dapat dijalankan. Jalankan systemctl unmask terlebih dahulu.",
+    "systemd_diag_not_found": "Berkas unit tidak ditemukan",
+    "systemd_diag_not_found_hint": "systemd tidak mengenal layanan ini. Mungkin sudah dihapus atau diganti nama.",
+    "systemd_diag_restart_loop": "Loop restart",
+    "systemd_diag_restart_loop_hint": "Layanan sudah di-restart berkali-kali oleh kebijakan Restart=. Cari kegagalan yang berulang di journal.",
+    "systemd_diag_exit_code": "Proses berakhir dengan error",
+    "systemd_diag_exit_code_hint": "Proses utama berakhir tidak normal dan journal tidak menunjukkan penyebab yang dikenal. Baca journal di sekitar kegagalan.",
     // ===== SLICE-B:END =====
     // ---------------------------------
     // ===== SLICE-C:BEGIN i18n =====
@@ -10813,17 +11406,31 @@ function setDockerSubTab(view) {
 }
 
 function dockerHeaderHtml() {
-  const views = [['containers', 'docker_sub_containers'], ['stats', 'docker_sub_stats'], ['volumes', 'docker_sub_volumes'], ['networks', 'docker_sub_networks']];
+  const views = [['containers', 'docker_sub_containers'], ['images', 'docker_sub_images'], ['volumes', 'docker_sub_volumes'], ['networks', 'docker_sub_networks'], ['stacks', 'docker_sub_stacks'], ['stats', 'docker_sub_stats'], ['system', 'docker_sub_system']];
   const auto = dockerSubTab === 'stats'
     ? `<label style="display: flex; align-items: center; gap: 4px; font-size: var(--fs-xs); cursor: pointer; color: var(--text-muted);"><input type="checkbox" style="width: auto;" ${dockerStatsAuto ? 'checked' : ''} onchange="toggleDockerStatsAuto(this.checked)" /> <span>${t('docker_auto_refresh')}</span></label>`
     : '';
+  const primary = {
+    containers: ['dk_add_container', 'openDockerRunForm()', 'plus'],
+    images: ['dk_pull_image', 'openDockerPullForm()', 'download'],
+    volumes: ['dk_create_volume', 'openDockerVolumeForm()', 'plus'],
+    networks: ['dk_create_network', 'openDockerNetworkForm()', 'plus'],
+    stacks: ['dk_new_stack', 'openDockerStackForm()', 'plus']
+  }[dockerSubTab];
+  const prune = {
+    images: ['dk_prune_images', "dockerPrune('images')"],
+    volumes: ['dk_prune_volumes', "dockerPrune('volumes')"],
+    networks: ['dk_prune_networks', "dockerPrune('networks')"]
+  }[dockerSubTab];
   return `
     <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; flex-shrink: 0;">
-      <div style="display: inline-flex; background: var(--surface-2); border: 1px solid var(--card-border); border-radius: var(--radius-sm); padding: 2px;">
+      <div style="display: inline-flex; flex-wrap: wrap; background: var(--surface-2); border: 1px solid var(--card-border); border-radius: var(--radius-sm); padding: 2px;">
         ${views.map(([v, k]) => `<button class="btn btn-sm ${dockerSubTab === v ? 'btn-primary' : 'btn-ghost'}" style="padding: 4px 10px; font-size: var(--fs-xs);" onclick="setDockerSubTab('${v}')">${t(k)}</button>`).join('')}
       </div>
-      <div style="display: flex; gap: 8px; align-items: center;">
+      <div class="dk-toolbar">
         ${auto}
+        ${prune ? `<button class="btn btn-sm btn-ghost" onclick="${prune[1]}">${svgIcon('trash-2', 'icon-sm')} <span>${t(prune[0])}</span></button>` : ''}
+        ${primary ? `<button class="btn btn-sm btn-primary" onclick="${primary[1]}">${svgIcon(primary[2], 'icon-sm')} <span>${t(primary[0])}</span></button>` : ''}
         <button class="btn btn-sm btn-ghost" onclick="switchTab('docker')" style="display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs);">
           ${svgIcon('refresh-cw', 'icon-sm')} <span>${t('refresh')}</span>
         </button>
@@ -10865,11 +11472,15 @@ function renderDockerContainers(data) {
       const running = c.state === 'running';
       return `
         <tr>
-          <td><b style="color: var(--text);">${escapeHtml(c.name)}</b></td>
+          <td><a href="javascript:void(0)" class="dk-name-link" data-name="${escapeHtml(c.name)}" onclick="openDockerInspect(this.dataset.name)">${escapeHtml(c.name)}</a></td>
           <td style="font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-muted);">${escapeHtml(c.image)}</td>
           <td><span class="badge badge-${running ? 'healthy' : (c.state === 'exited' || c.state === 'dead' ? 'down' : 'warning')}">${escapeHtml(c.status)}</span></td>
           <td style="font-family: var(--font-mono); font-size: var(--fs-xs); word-break: break-all; color: var(--text-muted);">${escapeHtml(c.ports || '')}</td>
-          <td style="text-align: right;"><button class="btn btn-sm btn-ghost btn-icon" title="${t('docker_menu_title')}" aria-label="${t('docker_menu_title')}" onclick="openDockerMenu(event, ${idx})">${svgIcon('ellipsis-vertical', 'icon-sm')}</button></td>
+          <td class="dk-actions">
+            <button class="btn btn-sm btn-ghost btn-icon" title="${t('dk_inspect')}" data-name="${escapeHtml(c.name)}" onclick="openDockerInspect(this.dataset.name)">${svgIcon('search', 'icon-sm')}</button>
+            <button class="btn btn-sm btn-ghost btn-icon" title="${t('docker_logs')}" data-name="${escapeHtml(c.name)}" onclick="openDockerLogs(this.dataset.name)">${svgIcon('scroll-text', 'icon-sm')}</button>
+            <button class="btn btn-sm btn-ghost btn-icon" title="${t('docker_menu_title')}" aria-label="${t('docker_menu_title')}" onclick="openDockerMenu(event, ${idx})">${svgIcon('ellipsis-vertical', 'icon-sm')}</button>
+          </td>
         </tr>`;
     }).join(''));
 }
@@ -10925,8 +11536,9 @@ function renderDockerVolumes(data) {
   if (volumes.length === 0) return dockerEmptyHtml(t('docker_no_volumes_title'), t('docker_no_volumes_desc'));
   const unused = volumes.filter(v => v.used_by.length === 0).length;
   return `<div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">${t('docker_vol_summary').replace('{n}', volumes.length).replace('{u}', unused)}</div>` +
-    dockerTableHtml([t('docker_col_volume'), t('docker_col_driver'), t('docker_col_size'), t('docker_col_used_by'), t('docker_col_mount')], volumes.map(v => {
+    dockerTableHtml([t('docker_col_volume'), t('docker_col_driver'), t('docker_col_size'), t('docker_col_used_by'), t('docker_col_mount'), ''], volumes.map(v => {
       const project = (v.labels || {})['com.docker.compose.project'];
+      const inUse = v.used_by.length > 0;
       return `
         <tr>
           <td style="max-width: 280px; word-break: break-all;"><b title="${escapeHtml(v.name)}">${escapeHtml(v.anonymous ? v.name.slice(0, 12) + '…' : v.name)}</b>${v.anonymous ? ` <span class="badge badge-unknown" style="text-transform: none;">${t('docker_vol_anonymous')}</span>` : ''}${project ? `<div style="font-size: 0.72rem; color: var(--text-muted);">compose: ${escapeHtml(project)}</div>` : ''}</td>
@@ -10934,6 +11546,7 @@ function renderDockerVolumes(data) {
           <td style="white-space: nowrap;">${v.size ? escapeHtml(v.size) : '—'}</td>
           <td>${v.used_by.length === 0 ? `<span class="badge badge-warning">${t('docker_vol_unused')}</span>` : dockerChips(v.used_by.map(n => [n]))}</td>
           <td style="font-family: var(--font-mono); font-size: 0.72rem; word-break: break-all; color: var(--text-muted);">${escapeHtml(v.mountpoint)}</td>
+          <td class="dk-actions"><button class="btn btn-sm btn-danger btn-icon" ${inUse ? 'disabled' : ''} title="${escapeHtml(inUse ? t('dk_in_use_hint') : t('dk_remove'))}" data-name="${escapeHtml(v.name)}" onclick="dockerVolumeRemove(this.dataset.name)">${svgIcon('trash-2', 'icon-sm')}</button></td>
         </tr>`;
     }).join(''));
 }
@@ -10941,19 +11554,27 @@ function renderDockerVolumes(data) {
 function renderDockerNetworks(data) {
   const networks = data.networks || [];
   if (networks.length === 0) return dockerEmptyHtml(t('docker_no_networks_title'), t('docker_no_networks_desc'));
-  return dockerTableHtml([t('docker_col_network'), t('docker_col_driver'), t('docker_col_scope'), t('docker_col_subnet'), t('docker_col_gateway'), t('docker_col_attached')], networks.map(n => {
+  return dockerTableHtml([t('docker_col_network'), t('docker_col_driver'), t('docker_col_scope'), t('docker_col_subnet'), t('docker_col_gateway'), t('docker_col_attached'), ''], networks.map(n => {
     const flags = [n.built_in ? t('docker_net_builtin') : '', n.internal ? t('docker_net_internal') : '', n.ipv6 ? 'IPv6' : ''].filter(Boolean);
+    const nm = escapeHtml(n.name);
+    const removable = !n.built_in && n.containers.length === 0;
     return `
       <tr>
-        <td><b>${escapeHtml(n.name)}</b> <span style="font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted);">${escapeHtml(n.id)}</span>${flags.length ? `<div style="margin-top: 2px;">${flags.map(f => `<span class="badge badge-unknown" style="text-transform: none; margin-right: 4px;">${escapeHtml(f)}</span>`).join('')}</div>` : ''}</td>
+        <td><b>${nm}</b> <span style="font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted);">${escapeHtml(n.id)}</span>${flags.length ? `<div style="margin-top: 2px;">${flags.map(f => `<span class="badge badge-unknown" style="text-transform: none; margin-right: 4px;">${escapeHtml(f)}</span>`).join('')}</div>` : ''}</td>
         <td>${escapeHtml(n.driver)}</td>
         <td>${escapeHtml(n.scope)}</td>
         <td style="font-family: var(--font-mono); font-size: 0.78rem;">${n.subnets.length ? n.subnets.map(escapeHtml).join('<br>') : '—'}</td>
         <td style="font-family: var(--font-mono); font-size: 0.78rem;">${n.gateways.length ? n.gateways.map(escapeHtml).join('<br>') : '—'}</td>
         <td>${dockerChips(n.containers.map(c => [c.name, [c.ipv4, c.ipv6].filter(Boolean).join('  ')]))}</td>
+        <td class="dk-actions">
+          ${n.built_in ? '' : `<button class="btn btn-sm btn-ghost btn-icon" title="${t('dk_connect')}" data-name="${nm}" onclick="openDockerConnectForm(this.dataset.name)">${svgIcon('plug', 'icon-sm')}</button>`}
+          ${n.built_in ? '' : `<button class="btn btn-sm btn-danger btn-icon" ${removable ? '' : 'disabled'} title="${escapeHtml(removable ? t('dk_remove') : t('dk_in_use_hint'))}" data-name="${nm}" onclick="dockerNetworkRemove(this.dataset.name)">${svgIcon('trash-2', 'icon-sm')}</button>`}
+        </td>
       </tr>`;
   }).join(''));
 }
+
+const DOCKER_VIEW_PATH = { containers: '', images: '/images', volumes: '/volumes', networks: '/networks', stacks: '/stacks', stats: '/stats', system: '/system' };
 
 async function loadDockerTab() {
   stopDockerStatsTimer();
@@ -10964,7 +11585,7 @@ async function loadDockerTab() {
   content.innerHTML = dockerHeaderHtml() + `<div style="text-align: center; padding: 30px; color: var(--text-muted);">${t('docker_loading')}</div>`;
   let data;
   try {
-    const res = await fetch('/api/hosts/' + host.id + '/docker' + (view === 'containers' ? '' : '/' + view));
+    const res = await fetch('/api/hosts/' + host.id + '/docker' + (DOCKER_VIEW_PATH[view] || ''));
     data = await res.json();
   } catch (e) {
     data = { ok: false, error: e.message };
@@ -10974,7 +11595,7 @@ async function loadDockerTab() {
     content.innerHTML = dockerHeaderHtml() + dockerEmptyHtml(t('docker_unavailable'), data.error || '', true);
     return;
   }
-  const render = { containers: renderDockerContainers, stats: renderDockerStats, volumes: renderDockerVolumes, networks: renderDockerNetworks }[view];
+  const render = { containers: renderDockerContainers, images: renderDockerImages, stats: renderDockerStats, volumes: renderDockerVolumes, networks: renderDockerNetworks, stacks: renderDockerStacks, system: renderDockerSystem }[view];
   content.innerHTML = dockerHeaderHtml() + render(data);
   if (view === 'stats' && dockerStatsAuto) startDockerStatsTimer();
 }
@@ -10990,46 +11611,29 @@ window.addEventListener('click', closeDockerMenu);
 window.addEventListener('scroll', closeDockerMenu, true);
 
 function openDockerMenu(e, idx) {
-  e.stopPropagation();
-  const existing = document.getElementById('dockerActionMenu');
-  const toggleOff = existing && existing.dataset.idx === String(idx);
-  closeDockerMenu();
-  closeAllDropdowns();
-  if (toggleOff) return;
   const c = dockerContainersCache[idx];
   if (!c) return;
   const running = c.state === 'running';
-  const items = [{ label: t('docker_logs'), run: () => openDockerLogs(c.name) }, null];
-  if (!running) items.push({ label: t('start'), run: () => dockerAction(c.name, 'start') });
-  if (running) {
-    items.push({ label: t('restart'), run: () => dockerAction(c.name, 'restart') });
-    items.push({ label: t('stop'), danger: true, run: () => dockerAction(c.name, 'stop') });
+  const paused = c.state === 'paused';
+  const n = c.name;
+  const items = [
+    { label: t('dk_inspect'), run: () => openDockerInspect(n) },
+    { label: t('docker_logs'), run: () => openDockerLogs(n) },
+    { label: t('dk_console'), run: () => dockerConsole(n), disabled: !running },
+    null
+  ];
+  if (!running && !paused) items.push({ label: t('start'), run: () => dockerAction(n, 'start') });
+  if (running || paused) {
+    items.push({ label: t('restart'), run: () => dockerAction(n, 'restart') });
+    items.push({ label: t('stop'), run: () => dockerAction(n, 'stop') });
   }
-  const menu = document.createElement('div');
-  menu.id = 'dockerActionMenu';
-  menu.className = 'dropdown-menu';
-  menu.dataset.idx = String(idx);
-  menu.style.cssText = 'display: block; position: fixed; margin: 0; right: auto; bottom: auto; z-index: ' + (modalZIndexCounter + 100) + ';';
-  items.forEach(it => {
-    if (!it) {
-      const hr = document.createElement('div');
-      hr.className = 'dropdown-divider';
-      menu.appendChild(hr);
-      return;
-    }
-    const b = document.createElement('button');
-    b.className = 'dropdown-item' + (it.danger ? ' danger' : '');
-    b.textContent = it.label;
-    b.addEventListener('click', () => { closeDockerMenu(); it.run(); });
-    menu.appendChild(b);
-  });
-  document.body.appendChild(menu);
-  const rect = e.currentTarget.getBoundingClientRect();
-  let left = rect.right - menu.offsetWidth;
-  let top = rect.bottom + 4;
-  if (top + menu.offsetHeight > window.innerHeight) top = rect.top - menu.offsetHeight - 4;
-  menu.style.left = Math.max(4, left) + 'px';
-  menu.style.top = Math.max(4, top) + 'px';
+  if (running) items.push({ label: t('dk_pause'), run: () => dockerAction(n, 'pause') });
+  if (paused) items.push({ label: t('dk_unpause'), run: () => dockerAction(n, 'unpause') });
+  if (running) items.push({ label: t('dk_kill'), danger: true, run: () => dockerAction(n, 'kill') });
+  items.push(null);
+  items.push({ label: t('dk_rename'), run: () => openDockerRenameForm(n) });
+  items.push({ label: t('dk_remove'), danger: true, run: () => dockerRemoveContainer(c) });
+  dockerFloatingMenu(e, String(idx), items);
 }
 
 function stopDockerLogs() {
@@ -11091,23 +11695,43 @@ function openDockerLogs(container) {
   };
 }
 
-async function dockerAction(container, action) {
-  try {
-    const res = await fetch('/api/hosts/' + currentHost.id + '/docker/action', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ container, action })
+async function dockerAction(container, action, opts) {
+  if (action === 'kill') {
+    const ok = await showConfirm({
+      title: t('dk_confirm_kill_title').replace('{name}', container),
+      message: t('dk_confirm_kill_msg'),
+      confirmText: t('dk_kill'),
+      danger: true
     });
-    const data = await res.json();
-    if (data.ok) {
-      showToast(t('docker_action_success', 'Docker {action} completed successfully').replace('{action}', action), 'success');
-      loadDockerTab();
-    } else {
-      showToast(t('error_prefix', 'Error: ') + (data.error || 'Docker action failed'), 'error');
-    }
-  } catch(e) {
-    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+    if (!ok) return;
   }
+  const data = await dockerPost('action', Object.assign({ container, action }, opts || {}));
+  if (data.ok) {
+    showToast(t('docker_action_success', 'Docker {action} completed successfully').replace('{action}', dockerVerb(action)), 'success');
+    if (currentTab === 'docker') loadDockerTab();
+    if (dkInspectState.name === container && document.getElementById('dockerInspectModal').classList.contains('open')) loadDockerInspect();
+  } else {
+    showToast(t('error_prefix', 'Error: ') + (data.error || 'Docker action failed'), 'error', 8000);
+  }
+  return data;
+}
+
+function dockerVerb(action) {
+  const v = t('dk_verb_' + action, '');
+  return v || action;
+}
+
+async function dockerRemoveContainer(c) {
+  const running = c.state === 'running' || c.state === 'paused' || c.state === 'restarting';
+  const ok = await showConfirm({
+    title: t('dk_confirm_remove_title').replace('{name}', c.name),
+    message: t('dk_confirm_remove_msg') + (running ? '\n\n' + t('dk_confirm_remove_running') : ''),
+    confirmText: t('dk_remove'),
+    danger: true
+  });
+  if (!ok) return;
+  const data = await dockerAction(c.name, 'remove', { force: running });
+  if (data && data.ok && document.getElementById('dockerInspectModal').classList.contains('open') && dkInspectState.name === c.name) closeModal('dockerInspectModal');
 }
 
 // SFTP File Manager State
@@ -17961,11 +18585,13 @@ function getHostTopIssues(h) {
 // ---- Services (systemd) tab ----
 let systemdState = { hostId: null, data: null, filter: 'all', query: '' };
 
-async function loadSystemdTab() {
+async function loadSystemdTab(quiet) {
   const host = currentHost;
   const content = document.getElementById('tabContent');
   if (!host || !content) return;
-  content.innerHTML = `<div class="empty-state"><div class="empty-state-icon">${svgIcon('cog', 'icon-xl')}</div><div class="empty-state-desc">${t('systemd_loading', 'Reading services...')}</div></div>`;
+  if (!quiet) {
+    content.innerHTML = `<div class="empty-state"><div class="empty-state-icon">${svgIcon('cog', 'icon-xl')}</div><div class="empty-state-desc">${t('systemd_loading', 'Reading services...')}</div></div>`;
+  }
   let data;
   try {
     const res = await fetch('/api/hosts/' + host.id + '/systemd');
@@ -18008,18 +18634,31 @@ function systemdEnabledBadge(s) {
 
 function systemdRowsHtml(services) {
   if (services.length === 0) {
-    return `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 24px;">${t('systemd_empty', 'No services match your filter')}</td></tr>`;
+    return `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">${t('systemd_empty', 'No services match your filter')}</td></tr>`;
   }
-  return services.map(s => `
-    <tr>
+  return services.map(s => {
+    const u = escapeHtml(s.name);
+    const up = s.active === 'active' || s.active === 'activating' || s.active === 'reloading';
+    const canAct = s.load !== 'masked' && s.load !== 'not-found';
+    const btn = (action, icon, extra) => `<button class="btn btn-icon btn-sm ${extra || 'btn-ghost'}" data-unit="${u}" onclick="systemdAction(this.dataset.unit, '${action}')" title="${escapeHtml(t(action))}">${svgIcon(icon, 'icon-sm')}</button>`;
+    const acts = [`<button class="btn btn-icon btn-sm ${s.active === 'failed' ? 'btn-danger' : 'btn-ghost'}" data-unit="${u}" onclick="openSystemdDetail(this.dataset.unit)" title="${escapeHtml(t('systemd_btn_debug'))}">${svgIcon('stethoscope', 'icon-sm')}</button>`];
+    if (canAct) {
+      if (!up) acts.push(btn('start', 'play'));
+      acts.push(btn('restart', 'rotate-ccw'));
+      if (up) acts.push(btn('stop', 'square'));
+    }
+    return `
+    <tr class="${s.active === 'failed' ? 'sd-row-failed' : ''}">
       <td>
-        <div class="mono" style="font-weight: 600; color: var(--text);">${escapeHtml(s.name)}</div>
+        <a href="javascript:void(0)" class="sd-unit-link mono" data-unit="${u}" onclick="openSystemdDetail(this.dataset.unit)">${u}</a>
         ${s.description && s.description !== s.name ? `<div style="font-size: var(--fs-xs); color: var(--text-muted);">${escapeHtml(s.description)}</div>` : ''}
       </td>
       <td>${systemdActiveBadge(s)}</td>
       <td class="mono text-muted">${escapeHtml(s.sub)}</td>
       <td>${systemdEnabledBadge(s)}</td>
-    </tr>`).join('');
+      <td class="sd-actions">${acts.join('')}</td>
+    </tr>`;
+  }).join('');
 }
 
 function setSystemdFilter(f) {
@@ -18042,10 +18681,11 @@ function renderSystemdTab() {
   const data = systemdState.data;
   if (!content || !data) return;
   const refreshBtn = `<button class="btn btn-sm btn-ghost" onclick="loadSystemdTab()">${svgIcon('refresh-cw', 'icon-sm')} <span>${t('refresh')}</span></button>`;
+  const reloadBtn = `<button class="btn btn-sm btn-ghost" onclick="systemdAction('', 'daemon-reload')" title="${escapeHtml(t('systemd_reload_title'))}">${svgIcon('rotate-ccw', 'icon-sm')} <span>${systemdVerb('daemon-reload')}</span></button>`;
   const header = `
     <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; flex-shrink: 0;">
       <h4 style="margin: 0; display: flex; align-items: center; gap: 6px;">${svgIcon('cog', 'icon-sm')} <span>${t('systemd_title', 'systemd Services')}</span></h4>
-      ${refreshBtn}
+      <span style="display: flex; gap: 4px;">${data.ok && data.supported ? reloadBtn : ''}${refreshBtn}</span>
     </div>`;
   if (!data.ok) {
     content.innerHTML = header + `<div class="empty-state"><div class="empty-state-icon">${svgIcon('triangle-alert', 'icon-xl')}</div><div class="empty-state-title">${t('systemd_unavailable', 'Could not read services')}</div><div class="empty-state-desc" style="font-family: var(--font-mono); font-size: var(--fs-xs); white-space: pre-wrap;">${escapeHtml(data.error || '')}</div></div>`;
@@ -18091,11 +18731,829 @@ function renderSystemdTab() {
     </div>
     <div style="overflow-x: auto;">
       <table>
-        <thead><tr><th>${t('systemd_col_service', 'Service')}</th><th>${t('systemd_col_state', 'State')}</th><th>${t('systemd_col_sub', 'Sub-state')}</th><th>${t('systemd_col_enabled', 'Boot')}</th></tr></thead>
+        <thead><tr><th>${t('systemd_col_service', 'Service')}</th><th>${t('systemd_col_state', 'State')}</th><th>${t('systemd_col_sub', 'Sub-state')}</th><th>${t('systemd_col_enabled', 'Boot')}</th><th style="text-align: right;">${t('systemd_col_actions', 'Actions')}</th></tr></thead>
         <tbody id="systemdRows">${systemdRowsHtml(shown)}</tbody>
       </table>
     </div>
     <div id="systemdCount" style="font-size: var(--fs-xs); color: var(--text-muted); margin-top: 8px;">${t('systemd_showing', 'Showing {shown} of {total} services').replace('{shown}', shown.length).replace('{total}', services.length)}</div>`;
+}
+
+// ---- systemd status / debug dialog and start-stop-restart ----
+let systemdDetailState = { unit: null, errorsOnly: false, data: null, error: null, loading: false, acting: false, forceSudo: false };
+
+function openSystemdDetail(unit) {
+  if (!unit) return;
+  systemdDetailState = { unit, errorsOnly: false, data: null, error: null, loading: true, acting: false, forceSudo: false };
+  document.getElementById('systemdDetailTitle').textContent = unit;
+  const badge = document.getElementById('systemdDetailBadge');
+  badge.className = 'badge badge-unknown';
+  badge.textContent = '…';
+  openModal('systemdDetailModal');
+  loadSystemdDetail();
+}
+
+async function loadSystemdDetail() {
+  const st = systemdDetailState;
+  const host = currentHost;
+  if (!st.unit || !host) return;
+  st.loading = true;
+  renderSystemdDetail();
+  let res;
+  try {
+    const forceSudo = st.forceSudo;
+    st.forceSudo = false;
+    const r = await fetch('/api/hosts/' + host.id + '/systemd/detail?unit=' + encodeURIComponent(st.unit) + (st.errorsOnly ? '&errors=1' : '') + (forceSudo ? '&retry_sudo=1' : ''));
+    res = await r.json();
+  } catch (e) {
+    res = { ok: false, error: e.message };
+  }
+  if (systemdDetailState !== st) return;
+  st.loading = false;
+  if (res.ok) { st.data = res.detail; st.error = null; } else { st.error = res.error || 'error'; }
+  renderSystemdDetail();
+}
+
+function toggleSystemdErrorsOnly(on) {
+  systemdDetailState.errorsOnly = on;
+  loadSystemdDetail();
+}
+
+function retrySystemdSudo() {
+  systemdDetailState.forceSudo = true;
+  loadSystemdDetail();
+}
+
+function systemdMemoryText(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 && n < 1.8e19 ? formatBytes(n) : '—';
+}
+
+function systemdLogsHtml(text) {
+  return text.split('\n').map(line => {
+    const cls = /\b(error|failed|failure|fatal|emerg|crit|alert|denied|refused|killed)\b/i.test(line) ? 'sd-log-err'
+      : (/\bwarn(ing)?\b/i.test(line) ? 'sd-log-warn' : '');
+    return cls ? `<span class="${cls}">${escapeHtml(line)}</span>` : escapeHtml(line);
+  }).join('\n');
+}
+
+function renderSystemdDetail() {
+  const st = systemdDetailState;
+  const body = document.getElementById('systemdDetailBody');
+  const footer = document.getElementById('systemdDetailFooter');
+  const badge = document.getElementById('systemdDetailBadge');
+  if (!body || !footer || !st.unit) return;
+  const closeBtn = `<button class="btn btn-sm" onclick="closeModal('systemdDetailModal')">${t('close', 'Close')}</button>`;
+  const d = st.data;
+  if (!d) {
+    if (st.loading) {
+      body.innerHTML = `<div class="empty-state"><div class="empty-state-icon">${svgIcon('cog', 'icon-xl')}</div><div class="empty-state-desc">${t('systemd_loading', 'Reading services...')}</div></div>`;
+      footer.innerHTML = `<span></span><div class="sd-footer-group">${closeBtn}</div>`;
+    } else {
+      body.innerHTML = `<div class="empty-state"><div class="empty-state-icon">${svgIcon('triangle-alert', 'icon-xl')}</div><div class="empty-state-title">${t('systemd_unavailable', 'Could not read services')}</div><div class="empty-state-desc" style="font-family: var(--font-mono); font-size: var(--fs-xs); white-space: pre-wrap;">${escapeHtml(st.error || '')}</div></div>`;
+      footer.innerHTML = `<span></span><div class="sd-footer-group"><button class="btn btn-sm" onclick="loadSystemdDetail()">${svgIcon('refresh-cw', 'icon-sm')} <span>${t('refresh')}</span></button>${closeBtn}</div>`;
+    }
+    return;
+  }
+
+  const p = d.properties || {};
+  const state = p.ActiveState || '';
+  const up = state === 'active' || state === 'activating' || state === 'reloading';
+  const canAct = p.LoadState !== 'masked' && p.LoadState !== 'not-found';
+  badge.className = 'badge ' + (state === 'failed' ? 'badge-danger' : (state === 'active' ? 'badge-success' : (state === 'inactive' ? 'badge-unknown' : 'badge-warning')));
+  badge.textContent = state + (p.SubState ? ' · ' + p.SubState : '');
+
+  const since = state === 'active' ? p.ActiveEnterTimestamp : p.InactiveEnterTimestamp;
+  const result = p.Result || '—';
+  const exitCode = p.ExecMainStatus && p.ExecMainStatus !== '0' ? ` (exit ${escapeHtml(p.ExecMainStatus)})` : '';
+  const tiles = `
+    <div class="b-stat-grid">
+      <div class="b-stat-tile">
+        <div class="b-stat-tile-label">${svgIcon('activity', 'icon-sm')} <span>${t('systemd_sum_result', 'Last result')}</span></div>
+        <div class="b-stat-tile-val ${result !== 'success' && result !== '—' ? 'text-danger' : ''}" style="font-size: var(--fs-md);">${escapeHtml(result)}${exitCode}</div>
+      </div>
+      <div class="b-stat-tile">
+        <div class="b-stat-tile-label">${svgIcon('clock', 'icon-sm')} <span>${state === 'active' ? t('systemd_sum_since', 'Running since') : t('systemd_sum_stopped', 'Stopped since')}</span></div>
+        <div class="b-stat-tile-val" style="font-size: var(--fs-sm);">${escapeHtml(since || '—')}</div>
+      </div>
+      <div class="b-stat-tile">
+        <div class="b-stat-tile-label">${svgIcon('cpu', 'icon-sm')} <span>${t('systemd_sum_proc', 'Process')}</span></div>
+        <div class="b-stat-tile-val mono" style="font-size: var(--fs-sm);">PID ${escapeHtml(p.MainPID && p.MainPID !== '0' ? p.MainPID : '—')} · ${escapeHtml(systemdMemoryText(p.MemoryCurrent))}</div>
+        <div class="b-stat-tile-sub">${t('systemd_restarts', 'Restarts')}: ${escapeHtml(p.NRestarts || '0')}</div>
+      </div>
+    </div>`;
+
+  const diags = d.diagnoses || [];
+  const diagHtml = diags.length === 0 ? '' : `
+    <div class="sd-diag">
+      <div style="font-weight: 600; display: flex; align-items: center; gap: 6px;">${svgIcon('triangle-alert', 'icon-sm')} <span>${t('systemd_diag_title', 'Probable causes')}</span></div>
+      ${diags.map(x => `
+        <div class="sd-diag-item">
+          <div class="sd-diag-title">${escapeHtml(t('systemd_diag_' + x.code, x.code))}</div>
+          <div class="sd-diag-hint">${escapeHtml(t('systemd_diag_' + x.code + '_hint', ''))}</div>
+          ${x.evidence ? `<div class="sd-diag-evidence">${escapeHtml(x.evidence)}</div>` : ''}
+        </div>`).join('')}
+    </div>`;
+
+  const kv = `
+    <div class="b-kv-grid">
+      <span class="b-kv-label">${t('systemd_unit_file', 'Unit file')}:</span><span class="b-kv-val mono">${escapeHtml(p.FragmentPath || '—')}</span>
+      <span class="b-kv-label">${t('systemd_col_enabled', 'Boot')}:</span><span class="b-kv-val">${escapeHtml(p.UnitFileState || '—')}</span>
+      <span class="b-kv-label">${t('systemd_user', 'Runs as')}:</span><span class="b-kv-val mono">${escapeHtml(p.User || 'root')}</span>
+      <span class="b-kv-label">${t('systemd_desc', 'Description')}:</span><span class="b-kv-val">${escapeHtml(p.Description || '—')}</span>
+    </div>`;
+
+  let note = '';
+  if (d.logs_note === 'no_permission' && d.logs_sudo_skipped) {
+    note = `<div class="sd-note sd-note-warn">${svgIcon('lock', 'icon-sm')} <span style="flex: 1;">${t('systemd_logs_sudo_skipped')}</span><button class="btn btn-sm" onclick="retrySystemdSudo()">${t('systemd_logs_retry_sudo', 'Retry with sudo')}</button></div>`;
+  } else if (d.logs_note === 'no_permission') {
+    note = `<div class="sd-note sd-note-warn">${svgIcon('lock', 'icon-sm')} <span style="flex: 1;">${t('systemd_logs_noperm')}</span><button class="btn btn-sm" onclick="retrySystemdSudo()">${t('systemd_logs_retry_sudo', 'Retry with sudo')}</button></div>`;
+  } else if (d.logs_note === 'unavailable') {
+    note = `<div class="sd-note sd-note-info">${svgIcon('info', 'icon-sm')} <span>${t('systemd_logs_unavailable')}</span></div>`;
+  } else if (d.logs_elevated) {
+    note = `<div class="sd-note sd-note-info">${svgIcon('shield-check', 'icon-sm')} <span>${t('systemd_logs_elevated')}</span></div>`;
+  }
+  const logsText = st.loading ? t('systemd_loading', 'Reading services...') : (d.logs ? '' : t('systemd_logs_empty', 'No journal entries.'));
+  const logsInner = st.loading || !d.logs ? escapeHtml(logsText) : systemdLogsHtml(d.logs);
+
+  body.innerHTML = `
+    ${diagHtml}
+    ${tiles}
+    ${kv}
+    <div>
+      <div class="sd-section-title">
+        <span>${svgIcon('scroll-text', 'icon-sm')} ${t('systemd_logs_title', 'Recent journal')}</span>
+        <span style="display: flex; align-items: center; gap: 10px;">
+          <label class="switch" style="margin: 0;">
+            <input type="checkbox" ${st.errorsOnly ? 'checked' : ''} onchange="toggleSystemdErrorsOnly(this.checked)" />
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+            <span class="switch-label">${t('systemd_logs_errors_only', 'Errors only')}</span>
+          </label>
+          <button class="btn btn-sm btn-ghost" onclick="copySystemdLogs()">${svgIcon('copy', 'icon-sm')} <span>${t('systemd_logs_copy', 'Copy')}</span></button>
+        </span>
+      </div>
+      ${note}
+      <pre class="sd-pre sd-logs" id="systemdLogsPre">${logsInner}</pre>
+    </div>
+    <details>
+      <summary style="cursor: pointer; font-weight: 600; font-size: var(--fs-sm); margin-bottom: 8px;">${t('systemd_status_output', 'systemctl status')}</summary>
+      <pre class="sd-pre">${escapeHtml(d.status || '—')}</pre>
+    </details>`;
+
+  const dis = st.acting ? 'disabled' : '';
+  const u = escapeHtml(st.unit);
+  const isSSH = SYSTEMD_SSH_RE.test(st.unit);
+  const act = (action, cls, icon) => `<button class="btn btn-sm ${cls}" ${dis} data-unit="${u}" onclick="systemdAction(this.dataset.unit, '${action}')">${svgIcon(icon, 'icon-sm')} <span>${t(action)}</span></button>`;
+  const buttons = [];
+  if (canAct) {
+    if (!up) buttons.push(act('start', 'btn-primary', 'play'));
+    buttons.push(act('restart', up ? 'btn-primary' : '', 'rotate-ccw'));
+    if (up && !isSSH) buttons.push(act('stop', 'btn-danger', 'square'));
+  }
+  // Secondary actions live in a "More" menu (stop/disable/mask are not offered for the SSH daemon).
+  const unitFile = p.UnitFileState || '';
+  const more = [];
+  const item = (action, icon) => `<button class="dropdown-item" data-unit="${u}" onclick="systemdAction(this.dataset.unit, '${action}')">${svgIcon(icon, 'icon-sm')} <span>${systemdVerb(action)}</span></button>`;
+  if (canAct && up) more.push(item('reload', 'refresh-cw'));
+  if (state === 'failed') more.push(item('reset-failed', 'rotate-ccw'));
+  if (canAct && unitFile === 'disabled') more.push(item('enable', 'power'));
+  if (canAct && unitFile === 'enabled' && !isSSH) more.push(item('disable', 'ban'));
+  if (p.LoadState === 'masked' || unitFile === 'masked') more.push(item('unmask', 'lock-open'));
+  else if (p.LoadState !== 'not-found' && !isSSH) more.push(item('mask', 'lock'));
+  const moreMenu = more.length === 0 ? '' : `
+    <div class="dropdown">
+      <button class="btn btn-sm btn-ghost" ${dis} onclick="toggleDropdown(event, 'sd-more')">${svgIcon('ellipsis', 'icon-sm')} <span>${t('systemd_btn_more', 'More')}</span></button>
+      <div class="dropdown-menu" id="dropdown-sd-more" style="left: 0; right: auto;">${more.join('')}</div>
+    </div>`;
+  footer.innerHTML = `
+    <div class="sd-footer-group">${buttons.join('')}${moreMenu}</div>
+    <div class="sd-footer-group">
+      <button class="btn btn-sm btn-ghost" ${dis} onclick="loadSystemdDetail()">${svgIcon('refresh-cw', 'icon-sm')} <span>${t('refresh')}</span></button>
+      ${closeBtn}
+    </div>`;
+}
+
+function copySystemdLogs() {
+  const d = systemdDetailState.data;
+  if (!d || !d.logs) return;
+  copyTextToClipboard(d.logs);
+  showToast(t('copied', 'Copied!'), 'success', 1500);
+}
+
+// action -> confirmation required before it runs (danger = destructive styling)
+const SYSTEMD_CONFIRM = { stop: true, restart: false, disable: true, mask: true };
+const SYSTEMD_SSH_RE = /^(ssh|sshd)(@.*)?\.service$/;
+
+function systemdVerb(action) {
+  const v = t('systemd_verb_' + action.replace(/-/g, '_'), '');
+  return v || t(action);
+}
+
+async function systemdAction(unit, action) {
+  const host = currentHost;
+  if (!host || (!unit && action !== 'daemon-reload')) return;
+  if (action in SYSTEMD_CONFIRM) {
+    let message = t('systemd_confirm_' + action + '_msg').replace('{host}', host.name);
+    if (action === 'restart' && SYSTEMD_SSH_RE.test(unit)) message += '\n\n' + t('systemd_confirm_ssh_restart');
+    const ok = await showConfirm({
+      title: t('systemd_confirm_' + action + '_title').replace('{unit}', unit),
+      message,
+      confirmText: systemdVerb(action),
+      danger: SYSTEMD_CONFIRM[action]
+    });
+    if (!ok) return;
+  }
+  const label = unit || host.name;
+  const detailOpen = !!unit && systemdDetailState.unit === unit && document.getElementById('systemdDetailModal').classList.contains('open');
+  if (detailOpen) { systemdDetailState.acting = true; renderSystemdDetail(); }
+  let res;
+  try {
+    const r = await fetch('/api/hosts/' + host.id + '/systemd/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ unit, action })
+    });
+    res = await r.json();
+  } catch (e) {
+    res = { ok: false, error: e.message };
+  }
+  const r = res.result || {};
+  const state = [r.active_state, r.sub_state].filter(Boolean).join('/') || r.enabled_state || '—';
+  if (res.ok) {
+    showToast(t('systemd_action_ok').replace('{unit}', label).replace('{action}', systemdVerb(action)).replace('{state}', state), 'success');
+  } else if (r.exit_code === 0) {
+    // systemctl accepted the request but the unit dropped straight into "failed": show why.
+    showToast(t('systemd_action_failed_after').replace('{unit}', label).replace('{action}', systemdVerb(action)), 'error', 8000);
+    if (unit && !detailOpen) openSystemdDetail(unit);
+  } else {
+    let msg = res.error || r.output || t('systemd_action_failed').replace('{unit}', label).replace('{action}', systemdVerb(action));
+    if (r.mode === 'none') msg += ' — ' + t('systemd_action_nopriv');
+    showToast(msg, 'error', 8000);
+  }
+  if (detailOpen && systemdDetailState.unit === unit) { systemdDetailState.acting = false; loadSystemdDetail(); }
+  if (currentTab === 'systemd') loadSystemdTab(true);
+}
+
+// ---- Docker management (Portainer-style) ----
+async function dockerPost(sub, payload) {
+  const host = currentHost;
+  if (!host) return { ok: false, error: 'no host' };
+  try {
+    const res = await fetch('/api/hosts/' + host.id + '/docker/' + sub, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+// Long-output results (pull, compose up, prune) are shown in the shared log viewer.
+function showDockerOutput(title, text) {
+  stopDockerLogs();
+  document.getElementById('dockerLogsTitle').textContent = title;
+  document.getElementById('dockerLogsOutput').textContent = text;
+  const status = document.getElementById('dockerLogsStatus');
+  status.textContent = t('dk_done');
+  status.className = 'badge badge-healthy';
+  openModal('dockerLogsModal');
+}
+
+// Runs one management call: toast, optional output viewer, reload of the current sub-tab.
+async function dockerExecute(o) {
+  if (o.long) showToast(t('dk_working'), 'info', 2500);
+  const data = await dockerPost(o.sub, o.payload);
+  if (!data.ok) {
+    showToast(t('error_prefix', 'Error: ') + (data.error || 'failed'), 'error', 9000);
+    return data;
+  }
+  showToast(o.okMsg || t('dk_done'), 'success');
+  if (o.outputTitle && data.output) showDockerOutput(o.outputTitle, data.output);
+  if (currentTab === 'docker') loadDockerTab();
+  return data;
+}
+
+function dockerLines(s) {
+  return String(s || '').split('\n').map(x => x.trim()).filter(Boolean);
+}
+
+// ---- generic form modal ----
+let dkForm = null;
+
+function openDockerForm(cfg) {
+  dkForm = cfg;
+  document.getElementById('dockerFormTitle').textContent = cfg.title;
+  const fieldHtml = f => {
+    const id = 'dkf_' + f.id;
+    const common = `id="${id}"${f.readonly ? ' readonly' : ''}${f.placeholder ? ` placeholder="${escapeHtml(f.placeholder)}"` : ''}`;
+    let input;
+    if (f.type === 'textarea') input = `<textarea ${common} rows="${f.rows || 3}">${escapeHtml(f.value || '')}</textarea>`;
+    else if (f.type === 'select') input = `<select id="${id}">${(f.options || []).map(([v, l]) => `<option value="${escapeHtml(v)}" ${v === f.value ? 'selected' : ''}>${escapeHtml(l)}</option>`).join('')}</select>`;
+    else if (f.type === 'checkbox') return `<div class="dk-field ${f.full ? 'dk-full' : ''}"><label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="${id}" style="width: auto;" ${f.value ? 'checked' : ''} /> <span>${escapeHtml(f.label)}</span></label>${f.hint ? `<div class="dk-hint">${escapeHtml(f.hint)}</div>` : ''}</div>`;
+    else input = `<input type="text" ${common} value="${escapeHtml(f.value || '')}" ${f.mono ? 'class="mono"' : ''} />`;
+    return `<div class="dk-field ${f.full ? 'dk-full' : ''}"><label for="${id}">${escapeHtml(f.label)}${f.required ? ' *' : ''}</label>${input}${f.hint ? `<div class="dk-hint">${escapeHtml(f.hint)}</div>` : ''}</div>`;
+  };
+  document.getElementById('dockerFormBody').innerHTML = (cfg.intro ? `<div style="font-size: var(--fs-sm); color: var(--text-muted);">${escapeHtml(cfg.intro)}</div>` : '') +
+    `<div class="dk-form-grid">${cfg.fields.map(fieldHtml).join('')}</div>`;
+  const submit = document.getElementById('dockerFormSubmit');
+  submit.textContent = cfg.submit;
+  submit.disabled = false;
+  openModal('dockerFormModal');
+  const first = cfg.fields.find(f => !f.readonly);
+  if (first) setTimeout(() => { const el = document.getElementById('dkf_' + first.id); if (el) el.focus(); }, 50);
+}
+
+function dockerFormValues() {
+  const v = {};
+  (dkForm ? dkForm.fields : []).forEach(f => {
+    const el = document.getElementById('dkf_' + f.id);
+    if (!el) return;
+    v[f.id] = f.type === 'checkbox' ? el.checked : el.value;
+  });
+  return v;
+}
+
+async function submitDockerForm() {
+  const cfg = dkForm;
+  if (!cfg) return;
+  const values = dockerFormValues();
+  const missing = cfg.fields.find(f => f.required && !String(values[f.id] || '').trim());
+  if (missing) {
+    showToast(t('dk_required').replace('{field}', missing.label), 'warning');
+    const el = document.getElementById('dkf_' + missing.id);
+    if (el) el.focus();
+    return;
+  }
+  const btn = document.getElementById('dockerFormSubmit');
+  btn.disabled = true;
+  let ok = false;
+  try {
+    ok = await cfg.onSubmit(values);
+  } finally {
+    btn.disabled = false;
+  }
+  if (ok) closeModal('dockerFormModal');
+}
+
+// ---- containers: create, rename, console ----
+function openDockerRunForm(image) {
+  openDockerForm({
+    title: t('dk_add_container'),
+    submit: t('dk_deploy'),
+    fields: [
+      { id: 'image', label: t('dk_f_image'), value: image || '', placeholder: 'nginx:1.27-alpine', required: true, mono: true, full: true },
+      { id: 'name', label: t('dk_f_name'), placeholder: 'web' },
+      { id: 'restart', label: t('dk_f_restart'), type: 'select', value: '', options: [['', t('dk_restart_no')], ['unless-stopped', 'unless-stopped'], ['always', 'always'], ['on-failure', 'on-failure']] },
+      { id: 'ports', label: t('dk_f_ports'), type: 'textarea', rows: 3, placeholder: '8080:80', hint: t('dk_h_ports') },
+      { id: 'env', label: t('dk_f_env'), type: 'textarea', rows: 3, placeholder: 'KEY=value', hint: t('dk_h_env') },
+      { id: 'volumes', label: t('dk_f_volumes'), type: 'textarea', rows: 3, placeholder: '/srv/data:/data', hint: t('dk_h_volumes'), full: true },
+      { id: 'network', label: t('dk_f_network'), placeholder: 'bridge' },
+      { id: 'command', label: t('dk_f_command'), placeholder: 'sleep 3600', hint: t('dk_h_command'), mono: true },
+      { id: 'memory', label: t('dk_f_memory'), placeholder: '512m' },
+      { id: 'cpus', label: t('dk_f_cpus'), placeholder: '1.5' }
+    ],
+    onSubmit: async v => {
+      const data = await dockerExecute({
+        sub: 'run', long: true,
+        payload: { image: v.image.trim(), name: v.name.trim(), restart: v.restart, network: v.network.trim(), command: v.command, memory: v.memory.trim(), cpus: v.cpus.trim(), ports: dockerLines(v.ports), env: dockerLines(v.env), volumes: dockerLines(v.volumes) },
+        okMsg: t('dk_container_created')
+      });
+      return data.ok;
+    }
+  });
+}
+
+function openDockerRenameForm(name) {
+  openDockerForm({
+    title: t('dk_rename') + ': ' + name,
+    submit: t('dk_rename'),
+    fields: [{ id: 'new_name', label: t('dk_f_new_name'), value: name, required: true, full: true }],
+    onSubmit: async v => {
+      const data = await dockerAction(name, 'rename', { new_name: v.new_name.trim() });
+      return !!(data && data.ok);
+    }
+  });
+}
+
+// Opens an interactive shell inside the container in the Terminal Dock (bash when present, else sh; sudo only
+// when the Docker socket needs it).
+async function dockerConsole(name) {
+  const host = currentHost;
+  if (!host) return;
+  const tab = openTerminalForHost(host.id, null, true, 'exec ' + name);
+  if (!tab) return;
+  const shell = `command -v bash >/dev/null 2>&1 && exec bash || exec sh`;
+  const cmd = `d=docker; docker ps -q >/dev/null 2>&1 || d="sudo docker"; $d exec -it ${dkShq(name)} sh -c ${dkShq(shell)}`;
+  for (let i = 0; i < 60; i++) {
+    if (tab.socketLeft && tab.socketLeft.readyState === WebSocket.OPEN) {
+      setTimeout(() => sendTabCommand(tab.id, cmd), 400);
+      return;
+    }
+    await new Promise(r => setTimeout(r, 200));
+  }
+  showToast(t('dk_console_timeout'), 'warning');
+}
+
+function dkShq(s) {
+  return "'" + String(s).replace(/'/g, "'\\''") + "'";
+}
+
+// ---- container inspect ----
+let dkInspectState = { name: null, data: null, reveal: false, loading: false, error: null };
+
+function openDockerInspect(name) {
+  if (!name) return;
+  dkInspectState = { name, data: null, reveal: false, loading: true, error: null };
+  document.getElementById('dockerInspectTitle').textContent = name;
+  const badge = document.getElementById('dockerInspectBadge');
+  badge.className = 'badge badge-unknown';
+  badge.textContent = '…';
+  openModal('dockerInspectModal');
+  loadDockerInspect();
+}
+
+async function loadDockerInspect() {
+  const st = dkInspectState;
+  const host = currentHost;
+  if (!st.name || !host) return;
+  st.loading = true;
+  renderDockerInspect();
+  let res;
+  try {
+    const r = await fetch('/api/hosts/' + host.id + '/docker/inspect?name=' + encodeURIComponent(st.name));
+    res = await r.json();
+  } catch (e) {
+    res = { ok: false, error: e.message };
+  }
+  if (dkInspectState !== st) return;
+  st.loading = false;
+  if (res.ok) { st.data = res.container; st.error = null; } else { st.error = res.error || 'error'; }
+  renderDockerInspect();
+}
+
+function toggleDockerEnvReveal() {
+  dkInspectState.reveal = !dkInspectState.reveal;
+  renderDockerInspect();
+}
+
+async function dockerDisconnect(network, container) {
+  const ok = await showConfirm({
+    title: t('dk_confirm_disconnect_title').replace('{name}', network),
+    message: t('dk_confirm_disconnect_msg').replace('{container}', container),
+    confirmText: t('dk_disconnect'),
+    danger: true
+  });
+  if (!ok) return;
+  const data = await dockerPost('network', { action: 'disconnect', name: network, container });
+  if (data.ok) { showToast(t('dk_done'), 'success'); loadDockerInspect(); } else showToast(t('error_prefix', 'Error: ') + (data.error || 'failed'), 'error', 8000);
+}
+
+function dockerKv(rows) {
+  return `<div class="b-kv-grid">${rows.filter(r => r[1] !== undefined && r[1] !== '').map(([k, v, mono]) => `<span class="b-kv-label">${escapeHtml(k)}:</span><span class="b-kv-val${mono ? ' dk-mono' : ''}">${v}</span>`).join('')}</div>`;
+}
+
+function dockerSection(title, inner, right) {
+  return `<div class="dk-section"><div class="dk-section-title"><span>${title}</span>${right || ''}</div>${inner}</div>`;
+}
+
+function dockerMiniTable(heads, rows) {
+  return `<div style="overflow-x: auto;"><table><thead><tr>${heads.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function renderDockerInspect() {
+  const st = dkInspectState;
+  const body = document.getElementById('dockerInspectBody');
+  const footer = document.getElementById('dockerInspectFooter');
+  const badge = document.getElementById('dockerInspectBadge');
+  if (!body || !footer || !st.name) return;
+  const closeBtn = `<button class="btn btn-sm" onclick="closeModal('dockerInspectModal')">${t('close', 'Close')}</button>`;
+  const d = st.data;
+  if (!d) {
+    body.innerHTML = st.loading
+      ? `<div class="empty-state"><div class="empty-state-icon">${svgIcon('container', 'icon-xl')}</div><div class="empty-state-desc">${t('docker_loading')}</div></div>`
+      : dockerEmptyHtml(t('docker_unavailable'), st.error || '', true);
+    footer.innerHTML = `<span></span><div class="sd-footer-group">${st.loading ? '' : `<button class="btn btn-sm" onclick="loadDockerInspect()">${svgIcon('refresh-cw', 'icon-sm')} <span>${t('refresh')}</span></button>`}${closeBtn}</div>`;
+    return;
+  }
+  const state = d.paused ? 'paused' : d.status;
+  badge.className = 'badge ' + (d.running && !d.paused ? 'badge-success' : (d.status === 'exited' || d.status === 'dead' ? 'badge-danger' : 'badge-warning'));
+  badge.textContent = state + (d.health ? ' · ' + d.health : '');
+
+  const problems = [];
+  if (d.oom_killed) problems.push(t('dk_oom_killed'));
+  if (!d.running && d.exit_code !== 0) problems.push(t('dk_exit_code').replace('{code}', d.exit_code));
+  if (d.error) problems.push(d.error);
+  if (d.health === 'unhealthy' && d.health_log) problems.push(d.health_log);
+  const alert = problems.length === 0 ? '' : `<div class="sd-diag"><div style="font-weight: 600; display: flex; align-items: center; gap: 6px;">${svgIcon('triangle-alert', 'icon-sm')} <span>${t('dk_attention')}</span></div>${problems.map(p => `<div class="sd-diag-evidence">${escapeHtml(p)}</div>`).join('')}</div>`;
+
+  const tiles = `
+    <div class="b-stat-grid">
+      <div class="b-stat-tile"><div class="b-stat-tile-label">${svgIcon('clock', 'icon-sm')} <span>${d.running ? t('dk_started') : t('dk_finished')}</span></div><div class="b-stat-tile-val" style="font-size: var(--fs-sm);">${escapeHtml(((d.running ? d.started_at : d.finished_at) || '').replace('T', ' ').replace(/\.\d+Z$/, ' UTC') || '—')}</div></div>
+      <div class="b-stat-tile"><div class="b-stat-tile-label">${svgIcon('rotate-ccw', 'icon-sm')} <span>${t('systemd_restarts')}</span></div><div class="b-stat-tile-val">${d.restart_count}</div><div class="b-stat-tile-sub">${t('dk_f_restart')}: ${escapeHtml(d.restart_policy)}</div></div>
+      <div class="b-stat-tile"><div class="b-stat-tile-label">${svgIcon('cpu', 'icon-sm')} <span>${t('dk_limits')}</span></div><div class="b-stat-tile-val" style="font-size: var(--fs-sm);">${d.memory_limit > 0 ? formatBytes(d.memory_limit) : t('dk_unlimited')} · ${d.cpus > 0 ? d.cpus + ' CPU' : t('dk_unlimited')}</div></div>
+    </div>`;
+
+  const overview = dockerSection(t('dk_sec_config'), dockerKv([
+    ['ID', escapeHtml(d.id.slice(0, 12)) + `<span class="text-faint" title="${escapeHtml(d.id)}"> …</span>`, true],
+    [t('container_image'), escapeHtml(d.image), true],
+    [t('dk_created'), escapeHtml((d.created || '').replace('T', ' ').replace(/\.\d+Z$/, ' UTC'))],
+    [t('dk_command'), d.command ? escapeHtml(d.command) : '', true],
+    [t('dk_entrypoint'), d.entrypoint ? escapeHtml(d.entrypoint) : '', true],
+    [t('dk_workdir'), d.working_dir ? escapeHtml(d.working_dir) : '', true],
+    [t('systemd_user'), d.user ? escapeHtml(d.user) : '', true],
+    ['Hostname', escapeHtml(d.hostname), true],
+    [t('dk_network_mode'), escapeHtml(d.network_mode), true],
+    [t('dk_privileged'), d.privileged ? `<span class="badge badge-warning">${t('dk_yes')}</span>` : t('dk_no')]
+  ]));
+
+  const ports = d.ports.length === 0 ? '' : dockerSection(t('dk_sec_ports'), dockerMiniTable([t('dk_container_port'), t('dk_host_binding')], d.ports.map(p => `<tr><td class="dk-mono">${escapeHtml(p.container_port)}</td><td class="dk-mono">${p.host_port ? escapeHtml((p.host_ip || '0.0.0.0') + ':' + p.host_port) : `<span class="text-faint">${t('dk_not_published')}</span>`}</td></tr>`).join('')));
+  const mounts = d.mounts.length === 0 ? '' : dockerSection(t('dk_sec_mounts'), dockerMiniTable([t('dk_type'), t('dk_source'), t('dk_destination'), 'RW'], d.mounts.map(m => `<tr><td>${escapeHtml(m.type)}</td><td class="dk-mono">${escapeHtml(m.name || m.source)}</td><td class="dk-mono">${escapeHtml(m.destination)}</td><td>${m.rw ? t('dk_yes') : '<span class="badge badge-info">ro</span>'}</td></tr>`).join('')));
+  const nets = d.networks.length === 0 ? '' : dockerSection(t('dk_sec_networks'), dockerMiniTable([t('docker_col_network'), 'IP', t('docker_col_gateway'), 'MAC', ''], d.networks.map(n => `<tr><td><b>${escapeHtml(n.name)}</b>${(n.aliases || []).length ? `<div class="dk-mono text-faint">${escapeHtml(n.aliases.join(', '))}</div>` : ''}</td><td class="dk-mono">${escapeHtml(n.ip || '—')}</td><td class="dk-mono">${escapeHtml(n.gateway || '—')}</td><td class="dk-mono">${escapeHtml(n.mac || '—')}</td><td class="dk-actions">${['host', 'none'].includes(n.name) ? '' : `<button class="btn btn-sm btn-ghost btn-icon" title="${t('dk_disconnect')}" data-net="${escapeHtml(n.name)}" data-c="${escapeHtml(d.name)}" onclick="dockerDisconnect(this.dataset.net, this.dataset.c)">${svgIcon('unplug', 'icon-sm')}</button>`}</td></tr>`).join('')));
+  const envRows = d.env.map(e => { const i = e.indexOf('='); const k = i < 0 ? e : e.slice(0, i); const v = i < 0 ? '' : e.slice(i + 1); return `<tr><td class="dk-mono" style="font-weight: 600;">${escapeHtml(k)}</td><td class="dk-mono">${st.reveal ? escapeHtml(v) : '••••••••'}</td></tr>`; }).join('');
+  const env = d.env.length === 0 ? '' : dockerSection(t('dk_sec_env'), dockerMiniTable([t('dk_key'), t('dk_value')], envRows), `<button class="btn btn-sm btn-ghost" onclick="toggleDockerEnvReveal()">${svgIcon(st.reveal ? 'eye-off' : 'eye', 'icon-sm')} <span>${st.reveal ? t('dk_hide_values') : t('dk_show_values')}</span></button>`);
+  const labelKeys = Object.keys(d.labels || {}).sort();
+  const labels = labelKeys.length === 0 ? '' : `<details><summary style="cursor: pointer; font-weight: 600; font-size: var(--fs-sm);">${t('dk_sec_labels')} (${labelKeys.length})</summary>${dockerMiniTable([t('dk_key'), t('dk_value')], labelKeys.map(k => `<tr><td class="dk-mono">${escapeHtml(k)}</td><td class="dk-mono">${escapeHtml(d.labels[k])}</td></tr>`).join(''))}</details>`;
+
+  body.innerHTML = [alert, tiles, overview, ports, mounts, nets, env, labels].filter(Boolean).join('');
+
+  const n = escapeHtml(d.name);
+  const act = (action, cls, icon, label) => `<button class="btn btn-sm ${cls}" data-name="${n}" onclick="dockerAction(this.dataset.name, '${action}')">${svgIcon(icon, 'icon-sm')} <span>${label}</span></button>`;
+  const buttons = [];
+  if (d.paused) buttons.push(act('unpause', 'btn-primary', 'play', t('dk_unpause')));
+  else if (!d.running) buttons.push(act('start', 'btn-primary', 'play', t('start')));
+  if (d.running || d.paused) {
+    buttons.push(act('restart', d.paused ? '' : 'btn-primary', 'rotate-ccw', t('restart')));
+    buttons.push(act('stop', 'btn-danger', 'square', t('stop')));
+  }
+  buttons.push(`<button class="btn btn-sm" data-name="${n}" onclick="openDockerLogs(this.dataset.name)">${svgIcon('scroll-text', 'icon-sm')} <span>${t('docker_logs')}</span></button>`);
+  if (d.running) buttons.push(`<button class="btn btn-sm" data-name="${n}" onclick="dockerConsole(this.dataset.name)">${svgIcon('square-terminal', 'icon-sm')} <span>${t('dk_console')}</span></button>`);
+  footer.innerHTML = `<div class="sd-footer-group">${buttons.join('')}</div><div class="sd-footer-group"><button class="btn btn-sm btn-ghost" onclick="loadDockerInspect()">${svgIcon('refresh-cw', 'icon-sm')} <span>${t('refresh')}</span></button>${closeBtn}</div>`;
+}
+
+// ---- images ----
+function renderDockerImages(data) {
+  const images = data.images || [];
+  if (images.length === 0) return dockerEmptyHtml(t('dk_no_images_title'), t('dk_no_images_desc'));
+  const total = images.reduce((a, i) => a + i.size, 0);
+  const unused = images.filter(i => !i.in_use).length;
+  return `<div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">${t('dk_img_summary').replace('{n}', images.length).replace('{u}', unused).replace('{size}', formatBytes(total))}</div>` +
+    dockerTableHtml([t('dk_f_image'), t('dk_col_tag'), 'ID', t('docker_col_size'), t('dk_col_created'), t('status'), ''], images.map(i => {
+      const ref = i.dangling ? i.id : i.repository + ':' + i.tag;
+      const status = i.in_use ? `<span class="badge badge-success">${t('dk_in_use')}</span>` : (i.dangling ? `<span class="badge badge-warning">${t('dk_dangling')}</span>` : `<span class="badge badge-unknown">${t('dk_unused')}</span>`);
+      return `
+        <tr>
+          <td class="dk-mono" style="font-weight: 600; color: var(--text);">${escapeHtml(i.dangling ? '<none>' : i.repository)}</td>
+          <td class="dk-mono">${escapeHtml(i.dangling ? '<none>' : i.tag)}</td>
+          <td class="dk-mono text-muted" title="${escapeHtml(i.full_id)}">${escapeHtml(i.id)}</td>
+          <td style="white-space: nowrap;">${formatBytes(i.size)}</td>
+          <td class="text-muted" style="white-space: nowrap;" title="${escapeHtml(i.created)}">${escapeHtml(i.age)}</td>
+          <td>${status}</td>
+          <td class="dk-actions">
+            ${i.dangling ? '' : `<button class="btn btn-sm btn-ghost btn-icon" title="${t('dk_run_image')}" data-ref="${escapeHtml(ref)}" onclick="openDockerRunForm(this.dataset.ref)">${svgIcon('play', 'icon-sm')}</button>`}
+            <button class="btn btn-sm btn-danger btn-icon" ${i.in_use ? 'disabled' : ''} title="${escapeHtml(i.in_use ? t('dk_in_use_hint') : t('dk_remove'))}" data-ref="${escapeHtml(ref)}" onclick="dockerImageRemove(this.dataset.ref)">${svgIcon('trash-2', 'icon-sm')}</button>
+          </td>
+        </tr>`;
+    }).join(''));
+}
+
+function openDockerPullForm() {
+  openDockerForm({
+    title: t('dk_pull_image'),
+    submit: t('dk_pull'),
+    intro: t('dk_pull_intro'),
+    fields: [{ id: 'image', label: t('dk_f_image'), placeholder: 'nginx:1.27-alpine', required: true, mono: true, full: true }],
+    onSubmit: async v => {
+      const data = await dockerExecute({ sub: 'image', long: true, payload: { action: 'pull', image: v.image.trim() }, outputTitle: t('dk_pull_image') + ': ' + v.image.trim() });
+      return data.ok;
+    }
+  });
+}
+
+async function dockerImageRemove(ref) {
+  const ok = await showConfirm({
+    title: t('dk_confirm_image_remove_title').replace('{name}', ref),
+    message: t('dk_confirm_image_remove_msg'),
+    confirmText: t('dk_remove'),
+    danger: true
+  });
+  if (!ok) return;
+  await dockerExecute({ sub: 'image', payload: { action: 'remove', image: ref } });
+}
+
+// ---- volumes and networks ----
+function openDockerVolumeForm() {
+  openDockerForm({
+    title: t('dk_create_volume'),
+    submit: t('dk_create'),
+    fields: [{ id: 'name', label: t('dk_f_name'), placeholder: 'app-data', required: true, mono: true, full: true }],
+    onSubmit: async v => (await dockerExecute({ sub: 'volume', payload: { action: 'create', name: v.name.trim() } })).ok
+  });
+}
+
+async function dockerVolumeRemove(name) {
+  const ok = await showConfirm({
+    title: t('dk_confirm_volume_remove_title').replace('{name}', name),
+    message: t('dk_confirm_volume_remove_msg'),
+    confirmText: t('dk_remove'),
+    danger: true
+  });
+  if (!ok) return;
+  await dockerExecute({ sub: 'volume', payload: { action: 'remove', name } });
+}
+
+function openDockerNetworkForm() {
+  openDockerForm({
+    title: t('dk_create_network'),
+    submit: t('dk_create'),
+    fields: [
+      { id: 'name', label: t('dk_f_name'), placeholder: 'app-net', required: true, mono: true },
+      { id: 'driver', label: t('docker_col_driver'), type: 'select', value: 'bridge', options: [['bridge', 'bridge'], ['macvlan', 'macvlan'], ['ipvlan', 'ipvlan']] },
+      { id: 'subnet', label: t('docker_col_subnet'), placeholder: '172.30.0.0/16', mono: true },
+      { id: 'gateway', label: t('docker_col_gateway'), placeholder: '172.30.0.1', mono: true },
+      { id: 'internal', label: t('dk_f_internal'), type: 'checkbox', hint: t('dk_h_internal'), full: true }
+    ],
+    onSubmit: async v => (await dockerExecute({ sub: 'network', payload: { action: 'create', name: v.name.trim(), driver: v.driver, subnet: v.subnet.trim(), gateway: v.gateway.trim(), internal: v.internal } })).ok
+  });
+}
+
+async function openDockerConnectForm(network) {
+  let names = [];
+  try {
+    const res = await fetch('/api/hosts/' + currentHost.id + '/docker');
+    const data = await res.json();
+    names = (data.containers || []).map(c => c.name);
+  } catch (e) {}
+  if (names.length === 0) { showToast(t('no_containers_title'), 'info'); return; }
+  openDockerForm({
+    title: t('dk_connect') + ': ' + network,
+    submit: t('dk_connect'),
+    fields: [{ id: 'container', label: t('dk_f_container'), type: 'select', value: names[0], options: names.map(n => [n, n]), full: true }],
+    onSubmit: async v => (await dockerExecute({ sub: 'network', payload: { action: 'connect', name: network, container: v.container } })).ok
+  });
+}
+
+async function dockerNetworkRemove(name) {
+  const ok = await showConfirm({
+    title: t('dk_confirm_network_remove_title').replace('{name}', name),
+    message: t('dk_confirm_network_remove_msg'),
+    confirmText: t('dk_remove'),
+    danger: true
+  });
+  if (!ok) return;
+  await dockerExecute({ sub: 'network', payload: { action: 'remove', name } });
+}
+
+// ---- stacks (Docker Compose projects) ----
+function renderDockerStacks(data) {
+  const stacks = data.stacks || [];
+  dockerStacksCache = stacks;
+  if (stacks.length === 0) return dockerEmptyHtml(t('dk_no_stacks_title'), t('dk_no_stacks_desc'));
+  return dockerTableHtml([t('dk_col_stack'), t('status'), t('dk_col_services'), t('dk_col_file'), ''], stacks.map((s, idx) => {
+    const cls = s.status === 'running' ? 'badge-success' : (s.status === 'partial' ? 'badge-warning' : 'badge-unknown');
+    const n = escapeHtml(s.name);
+    return `
+      <tr>
+        <td><b style="color: var(--text);">${n}</b></td>
+        <td><span class="badge ${cls}">${t('dk_stack_' + s.status)} · ${s.running}/${s.total}</span></td>
+        <td>${dockerChips(s.services.map(x => [x]))}</td>
+        <td class="dk-mono text-muted">${s.config_files.length ? s.config_files.map(escapeHtml).join('<br>') : '—'}</td>
+        <td class="dk-actions">
+          <button class="btn btn-sm btn-ghost btn-icon" title="${t('dk_stack_edit')}" ${s.config_files.length === 1 ? '' : 'disabled'} data-name="${n}" onclick="openDockerStackForm(this.dataset.name)">${svgIcon('pencil', 'icon-sm')}</button>
+          <button class="btn btn-sm btn-ghost btn-icon" title="${t('dk_stack_update')}" ${s.config_files.length ? '' : 'disabled'} data-name="${n}" onclick="dockerStackAction(this.dataset.name, 'update')">${svgIcon('download', 'icon-sm')}</button>
+          <button class="btn btn-sm btn-ghost btn-icon" title="${t('docker_menu_title')}" ${s.config_files.length ? '' : 'disabled'} onclick="openDockerStackMenu(event, ${idx})">${svgIcon('ellipsis-vertical', 'icon-sm')}</button>
+        </td>
+      </tr>`;
+  }).join(''));
+}
+
+let dockerStacksCache = [];
+
+function dockerFloatingMenu(e, id, items) {
+  e.stopPropagation();
+  const existing = document.getElementById('dockerActionMenu');
+  const toggleOff = existing && existing.dataset.idx === id;
+  closeDockerMenu();
+  closeAllDropdowns();
+  if (toggleOff) return;
+  const menu = document.createElement('div');
+  menu.id = 'dockerActionMenu';
+  menu.className = 'dropdown-menu';
+  menu.dataset.idx = id;
+  menu.style.cssText = 'display: block; position: fixed; margin: 0; right: auto; bottom: auto; z-index: ' + (modalZIndexCounter + 100) + ';';
+  items.forEach(it => {
+    if (!it) {
+      const hr = document.createElement('div');
+      hr.className = 'dropdown-divider';
+      menu.appendChild(hr);
+      return;
+    }
+    const b = document.createElement('button');
+    b.className = 'dropdown-item' + (it.danger ? ' danger' : '');
+    b.textContent = it.label;
+    if (it.disabled) b.disabled = true;
+    else b.addEventListener('click', () => { closeDockerMenu(); it.run(); });
+    menu.appendChild(b);
+  });
+  document.body.appendChild(menu);
+  const rect = e.currentTarget.getBoundingClientRect();
+  let top = rect.bottom + 4;
+  if (top + menu.offsetHeight > window.innerHeight) top = rect.top - menu.offsetHeight - 4;
+  menu.style.left = Math.max(4, rect.right - menu.offsetWidth) + 'px';
+  menu.style.top = Math.max(4, top) + 'px';
+}
+
+function openDockerStackMenu(e, idx) {
+  const s = (dockerStacksCache || [])[idx];
+  if (!s) return;
+  const n = s.name;
+  dockerFloatingMenu(e, 'stack' + idx, [
+    { label: t('start'), run: () => dockerStackAction(n, 'start') },
+    { label: t('restart'), run: () => dockerStackAction(n, 'restart') },
+    { label: t('stop'), run: () => dockerStackAction(n, 'stop') },
+    null,
+    { label: t('dk_stack_pull'), run: () => dockerStackAction(n, 'pull') },
+    { label: t('dk_stack_up'), run: () => dockerStackAction(n, 'up') },
+    { label: t('dk_stack_recreate'), run: () => dockerStackAction(n, 'recreate') },
+    null,
+    { label: t('dk_stack_down'), danger: true, run: () => dockerStackAction(n, 'down') }
+  ]);
+}
+
+async function dockerStackAction(name, action) {
+  if (action === 'down' || action === 'recreate' || action === 'update') {
+    const ok = await showConfirm({
+      title: t('dk_confirm_stack_' + action + '_title').replace('{name}', name),
+      message: t('dk_confirm_stack_' + action + '_msg'),
+      confirmText: t('dk_stack_' + action),
+      danger: action === 'down'
+    });
+    if (!ok) return;
+  }
+  await dockerExecute({ sub: 'stack', long: true, payload: { project: name, action }, outputTitle: t('dk_stack_' + action) + ': ' + name });
+}
+
+const DOCKER_STACK_SAMPLE = 'services:\n  web:\n    image: nginx:1.27-alpine\n    ports:\n      - "8080:80"\n    restart: unless-stopped\n';
+
+async function openDockerStackForm(name) {
+  let yaml = DOCKER_STACK_SAMPLE;
+  let path = '';
+  if (name) {
+    let data;
+    try {
+      const res = await fetch('/api/hosts/' + currentHost.id + '/docker/stack/file?project=' + encodeURIComponent(name));
+      data = await res.json();
+    } catch (e) {
+      data = { ok: false, error: e.message };
+    }
+    if (!data.ok) { showToast(t('error_prefix', 'Error: ') + (data.error || 'failed'), 'error', 8000); return; }
+    yaml = data.content;
+    path = data.path;
+  }
+  openDockerForm({
+    title: name ? t('dk_stack_edit') + ': ' + name : t('dk_new_stack'),
+    submit: t('dk_deploy'),
+    intro: name ? path : t('dk_stack_new_intro'),
+    fields: [
+      { id: 'name', label: t('dk_f_stack_name'), value: name || '', placeholder: 'myapp', readonly: !!name, required: true, mono: true, full: true, hint: name ? '' : t('dk_h_stack_name') },
+      { id: 'yaml', label: 'docker-compose.yml', type: 'textarea', rows: 18, value: yaml, required: true, full: true, hint: t('dk_h_stack_yaml') }
+    ],
+    onSubmit: async v => (await dockerExecute({ sub: 'stack/deploy', long: true, payload: { name: v.name.trim(), yaml: v.yaml }, outputTitle: t('dk_deploy') + ': ' + v.name.trim() })).ok
+  });
+}
+
+// ---- system ----
+function renderDockerSystem(data) {
+  const s = data.system;
+  const tile = (icon, label, val, sub) => `<div class="b-stat-tile"><div class="b-stat-tile-label">${svgIcon(icon, 'icon-sm')} <span>${label}</span></div><div class="b-stat-tile-val" style="font-size: var(--fs-md);">${val}</div>${sub ? `<div class="b-stat-tile-sub">${sub}</div>` : ''}</div>`;
+  const tiles = `
+    <div class="b-stat-grid" style="margin-bottom: 16px;">
+      ${tile('container', t('dk_sys_engine'), escapeHtml(s.server_version || '—'), 'Client ' + escapeHtml(s.client_version || '—') + (s.compose_version ? ' · Compose ' + escapeHtml(s.compose_version) : ''))}
+      ${tile('server', t('dk_sys_host'), escapeHtml(s.os || '—'), escapeHtml(s.architecture) + ' · ' + escapeHtml(s.kernel))}
+      ${tile('cpu', t('dk_sys_resources'), s.cpus + ' CPU · ' + formatBytes(s.memory_bytes))}
+      ${tile('layers', t('dk_sys_containers'), s.containers_running + ' / ' + s.containers, s.containers_paused + ' ' + t('dk_pause').toLowerCase() + ' · ' + s.containers_stopped + ' ' + t('dk_stopped'))}
+      ${tile('boxes', t('dk_sub_images_count'), s.images)}
+      ${tile('hard-drive', t('dk_sys_storage'), escapeHtml(s.storage_driver || '—'), `<span class="dk-mono">${escapeHtml(s.root_dir)}</span>`)}
+    </div>`;
+  const usage = (s.usage || []).length === 0 ? '' : dockerSection(t('dk_sys_df'), dockerMiniTable([t('dk_type'), t('dk_sys_total'), t('dk_sys_active'), t('docker_col_size'), t('dk_sys_reclaimable')], s.usage.map(u => `<tr><td><b>${escapeHtml(u.type)}</b></td><td>${escapeHtml(u.total)}</td><td>${escapeHtml(u.active)}</td><td>${escapeHtml(u.size)}</td><td>${escapeHtml(u.reclaimable)}</td></tr>`).join('')));
+  const prune = [['containers', 'dk_prune_containers'], ['images', 'dk_prune_images'], ['images_all', 'dk_prune_images_all'], ['volumes', 'dk_prune_volumes'], ['networks', 'dk_prune_networks'], ['builder', 'dk_prune_builder']];
+  const maintenance = dockerSection(t('dk_sys_maintenance'), prune.map(([target, key]) => `
+    <div class="dk-prune-row">
+      <div><div style="font-weight: 600; font-size: var(--fs-sm);">${t(key)}</div><div class="dk-prune-desc">${t('dk_prune_' + target + '_desc')}</div></div>
+      <button class="btn btn-sm btn-danger" onclick="dockerPrune('${target}')">${svgIcon('trash-2', 'icon-sm')} <span>${t('dk_prune')}</span></button>
+    </div>`).join(''));
+  return `<div style="display: flex; flex-direction: column; gap: 16px;">${tiles}${usage}${maintenance}</div>`;
+}
+
+async function dockerPrune(target) {
+  const ok = await showConfirm({
+    title: t('dk_confirm_prune_' + target + '_title'),
+    message: t('dk_confirm_prune_' + target + '_msg').replace('{host}', currentHost ? currentHost.name : ''),
+    confirmText: t('dk_prune'),
+    danger: true
+  });
+  if (!ok) return;
+  await dockerExecute({ sub: 'prune', long: true, payload: { target }, outputTitle: t('dk_prune') + ': ' + target });
 }
 // ===== SLICE-B:END =====
 // ---------------------------------

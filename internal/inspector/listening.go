@@ -35,11 +35,6 @@ var wellKnownPortServices = map[string]string{
 	"9200": "elasticsearch", "11211": "memcached", "15672": "rabbitmq-mgmt", "27017": "mongodb",
 }
 
-// shQuote single-quotes s for a POSIX shell so the script runs under `sh` regardless of the login shell.
-func shQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
 // linuxListenOwnerScript lists listening sockets with their owner process. Plain `ss -p` only reveals the SSH
 // user's own processes; with passwordless sudo (tried only when allowed) it reveals every owner. Root needs no
 // help: the main metrics batch already ran as root.
@@ -195,7 +190,7 @@ func (ins *Inspector) enrichListeningProcesses(h *store.Host, runner sshrunner.R
 		script = darwinListenOwnerScript(try)
 	}
 	owners := map[string]string{}
-	if out, _, _, err := runner.ExecTimeout("sh -c "+shQuote(script), listenEnrichTimeout); err == nil {
+	if out, _, _, err := runner.ExecTimeout("sh -c "+shellQuote(script), listenEnrichTimeout); err == nil {
 		res := parseListenOwnerOutput(out)
 		owners = res.owners
 		switch {

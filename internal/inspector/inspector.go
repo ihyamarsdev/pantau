@@ -1723,7 +1723,7 @@ func (ins *Inspector) ListDockerContainers(hostID int64) ([]DockerContainer, err
 	}
 	defer runner.Close()
 
-	stdout, stderr, exitCode, err := runner.Exec(DarwinPathPrelude + `docker ps -a --no-trunc --format '{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}'`)
+	stdout, stderr, exitCode, err := runner.Exec(dockerShell(`docker ps -a --no-trunc --format '{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}'`))
 	if err != nil {
 		return nil, err
 	}
@@ -1774,37 +1774,6 @@ func dockerStateFromStatus(status string) string {
 		return "dead"
 	}
 	return "unknown"
-}
-
-// DockerActions
-func (ins *Inspector) DockerAction(hostID int64, containerName, action string) (string, error) {
-	if action != "start" && action != "stop" && action != "restart" {
-		return "", fmt.Errorf("unsupported action: %s", action)
-	}
-
-	// Basic safety check on container name
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_\.\-]+$`, containerName); !matched {
-		return "", fmt.Errorf("invalid container name: %s", containerName)
-	}
-
-	host, err := ins.db.GetHost(hostID)
-	if err != nil || host == nil {
-		return "", fmt.Errorf("host not found")
-	}
-
-	runner, err := ins.GetRunnerForHost(host)
-	if err != nil {
-		return "", err
-	}
-	defer runner.Close()
-
-	cmd := fmt.Sprintf("%sdocker %s %s", DarwinPathPrelude, action, shellQuote(containerName))
-	stdout, stderr, exitCode, err := runner.Exec(cmd)
-	if err != nil || exitCode != 0 {
-		return "", fmt.Errorf("docker %s failed (exit %d): %s %s", action, exitCode, stdout, stderr)
-	}
-
-	return stdout, nil
 }
 
 func (ins *Inspector) RecalculateHostLifecycle(hostID int64) error {

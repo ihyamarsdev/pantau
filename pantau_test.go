@@ -424,10 +424,10 @@ func TestTicket03_04_05_DockerDriftAndRootCause(t *testing.T) {
 	}
 
 	// Verify Docker action control
-	env.mockRunner.Handlers["docker restart web-app"] = func() (string, string, int, error) {
+	env.mockRunner.Handlers["docker restart"] = func() (string, string, int, error) {
 		return "web-app", "", 0, nil
 	}
-	out, err := env.inspector.DockerAction(hostID, "web-app", "restart")
+	out, err := env.inspector.DockerContainerOp(hostID, "web-app", "restart", inspector.DockerContainerOpts{})
 	if err != nil || strings.TrimSpace(out) != "web-app" {
 		t.Fatalf("docker restart failed: %v, out: %s", err, out)
 	}
