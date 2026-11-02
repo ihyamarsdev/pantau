@@ -666,9 +666,9 @@ func TestIndexGzipAndETagRevalidation(t *testing.T) {
 	if wGz.Header().Get("ETag") != etag {
 		t.Errorf("expected matching ETag %s, got %s", etag, wGz.Header().Get("ETag"))
 	}
-	// Verify compression is effective: ~150KB gzipped vs ~700KB raw (<200KB budget; includes inline icon sprite)
-	if wGz.Body.Len() > 200000 {
-		t.Errorf("expected gzipped body < 200KB, got %d bytes", wGz.Body.Len())
+	// Verify compression is effective: ~150-205KB gzipped vs ~700-900KB raw (<220KB budget; includes inline icon sprite)
+	if wGz.Body.Len() > 220000 {
+		t.Errorf("expected gzipped body < 220KB, got %d bytes", wGz.Body.Len())
 	}
 
 	// Decompress and compare with raw

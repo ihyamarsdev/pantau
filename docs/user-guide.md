@@ -395,6 +395,24 @@ The **Docker** tab of a host reads the Docker engine live over SSH (read-only; t
 
 Views are fetched on demand through `GET /api/hosts/{id}/docker/stats`, `/docker/volumes` and `/docker/networks`. If Docker cannot be read (not installed, permission denied) the tab shows Docker's own error message.
 
+### Global Side Panel, Docker & Kubernetes Management
+
+Pantau provides a persistent left-hand **Side Panel** navigation bar positioned between the fixed header and footer:
+
+- **Navigation & Collapsible Icon Rail**: Switch between **Hosts** (default fleet dashboard), **Docker** (dedicated multi-host container overview), and **Kubernetes** (lightweight k3s/rke2 management). Collapse the panel into a compact icon rail via the collapse toggle at the bottom; the collapsed state is persisted in `localStorage`. On mobile screens (<768px), the panel becomes an off-canvas drawer toggled via the menu icon button in the header.
+- **Docker Section**: A fleet-wide host picker with live status and search filter. Selecting a host seamlessly launches the Portainer-style Docker management interface with container lifecycles, image pulling, volumes, networks, compose stacks, and terminal console access.
+- **Kubernetes Section (k3s / rke2)**: Provides agentless cluster control plane inspection for lightweight Kubernetes installations.
+  - **Searchable Host Picker**: Fast search by host name and IP address with live status dots, replacing static selectors.
+  - **Auto-Detection**: Queries `/api/hosts/{id}/kube/detect` to discover control plane distribution (`k3s` or `rke2`), version, and server role without installing agents or storing cluster credentials.
+  - **Cluster Telemetry Tabs**:
+    - **Nodes**: Real-time node inventory, readiness state, roles, memory capacity in normalized GB, and one-click cordon / uncordon / describe actions.
+    - **Workloads**: Deployments, StatefulSets, and DaemonSets with replicas tracking, on-demand replica scaling (0–1000), rollout restarts, and resource describe dialogs.
+    - **Pods**: Pod statuses across namespaces with restart counters, interactive shell **Exec** console in the Terminal Dock, live WebSocket **Logs** streaming (multi-container picker, configurable tail, previous container instance toggle, auto-scroll, and copy), describe diagnostics, and pod deletion.
+    - **Services & Ingresses**: Service definitions, cluster/external IPs, ports, ingress hosts, backend targets, and describe views.
+    - **Configuration & Storage**: ConfigMaps, Secrets (with zero data value retrieval guarantee), PersistentVolumeClaims (PVCs), and cluster-scoped PersistentVolumes (PVs).
+    - **Batch Jobs**: Jobs and CronJobs with completion tracking, schedules, suspension status, and describe diagnostics.
+    - **Events**: Cluster-wide informational and warning events with occurrence counts and relative age.
+    - **Apply Manifest**: In-app YAML editor supporting arbitrary Kubernetes manifests with automated server-side dry-run validation (`--dry-run=server`) prior to applying changes.
 ### Evaluating Server Longevity with Lifecycle Assessment
 
 Pantau continuously calculates an auditable **Lifecycle Score** (0–100) based on six weighted factors:

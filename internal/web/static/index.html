@@ -3423,6 +3423,41 @@ div.spinner { border: 2px solid var(--card-border); border-top-color: var(--prim
 #settingsPanelSecurity > .form-grid-2 { grid-template-columns: 1fr; }
 #settingPubKey { height: auto; min-height: 96px; }
 /* ===== SLICE-E:END ===== */
+:root { --side-panel-width: 200px; }
+body.side-panel-collapsed { --side-panel-width: 56px; }
+.side-panel { position: fixed; top: 52px; bottom: 36px; left: 0; width: var(--side-panel-width); background: color-mix(in srgb, var(--card-bg) 85%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-right: 1px solid var(--card-border); box-shadow: 4px 0 20px rgba(0, 0, 0, 0.25); z-index: 38; display: flex; flex-direction: column; justify-content: space-between; transition: width var(--dur) var(--ease), transform var(--dur) var(--ease); box-sizing: border-box; }
+.side-panel-nav { display: flex; flex-direction: column; gap: 4px; padding: 12px 8px; }
+.side-panel-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--radius-md); border: none; background: transparent; color: var(--text-muted); font-size: var(--fs-sm); font-weight: 500; cursor: pointer; text-align: left; width: 100%; box-sizing: border-box; transition: all var(--dur) var(--ease); white-space: nowrap; overflow: hidden; position: relative; }
+.side-panel-item .icon { flex-shrink: 0; }
+.side-panel-item:hover { background: var(--hover); color: var(--text); }
+.side-panel-item:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: -2px; }
+.side-panel-item.active { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+.side-panel-item.active::before { content: ''; position: absolute; left: 0; top: 6px; bottom: 6px; width: 3px; border-radius: 0 2px 2px 0; background: var(--primary); }
+.side-panel-footer { padding: 8px; border-top: 1px solid var(--card-border); }
+.side-panel-collapse-btn { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: var(--radius-md); border: none; background: transparent; color: var(--text-muted); font-size: var(--fs-xs); cursor: pointer; width: 100%; box-sizing: border-box; transition: all var(--dur) var(--ease); white-space: nowrap; overflow: hidden; }
+.side-panel-collapse-btn:hover { background: var(--hover); color: var(--text); }
+.side-panel-collapse-btn:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: -2px; }
+body.side-panel-collapsed .side-panel-label { display: none; }
+body.side-panel-collapsed .side-panel-item { justify-content: center; padding: 10px 0; }
+body.side-panel-collapsed .side-panel-collapse-btn { justify-content: center; padding: 8px 0; }
+body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180deg); }
+@media (min-width: 769px) {
+  .side-panel-mobile-toggle { display: none !important; }
+  .container { margin-left: var(--side-panel-width) !important; width: calc(100% - var(--side-panel-width)) !important; max-width: calc(1400px + var(--side-panel-width)) !important; transition: margin-left var(--dur) var(--ease), width var(--dur) var(--ease); }
+  .workspace-shelf { left: var(--side-panel-width) !important; transition: left var(--dur) var(--ease); }
+  .activity-console-drawer { left: var(--side-panel-width) !important; transition: left var(--dur) var(--ease); }
+}
+@media (max-width: 768px) {
+  .side-panel { top: 48px; bottom: 32px; width: 220px !important; transform: translateX(-100%); z-index: 46; }
+  body.side-panel-mobile-open .side-panel { transform: translateX(0); }
+  .side-panel-backdrop { display: none; position: fixed; inset: 0; top: 48px; bottom: 32px; background: var(--overlay); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); z-index: 45; }
+  body.side-panel-mobile-open .side-panel-backdrop { display: block !important; }
+  .side-panel-footer { display: none; }
+}
+.kube-apply-output { display: none; margin-top: 10px; padding: 12px; background: var(--bg); border: 1px solid var(--card-border); border-radius: var(--radius-md); font-family: var(--font-mono); font-size: var(--fs-xs); max-height: 280px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+.kube-apply-output.success { border-color: var(--success-border); color: var(--text); }
+.kube-apply-output.error { border-color: var(--danger-border); color: var(--danger); }
+.kube-host-picker-item:hover, .kube-host-picker-item.active { background: var(--hover) !important; }
 </style>
 </head>
 <body>
@@ -3561,6 +3596,7 @@ div.spinner { border: 2px solid var(--card-border); border-top-color: var(--prim
 <symbol id="i-text-cursor-input" viewBox="0 0 24 24"><path d="M12 20h-1a2 2 0 0 1-2-2 2 2 0 0 1-2 2H6" /><path d="M13 8h7a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-7" /><path d="M5 16H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h1" /><path d="M6 4h1a2 2 0 0 1 2 2 2 2 0 0 1 2-2h1" /><path d="M9 6v12" /></symbol>
 <symbol id="i-type" viewBox="0 0 24 24"><path d="M12 4v16" /><path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2" /><path d="M9 20h6" /></symbol>
 <symbol id="i-image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></symbol>
+<symbol id="i-menu" viewBox="0 0 24 24"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></symbol>
 </svg>
 
 <div id="loginView" class="login-view-wrapper" style="display: none;">
@@ -3605,9 +3641,12 @@ div.spinner { border: 2px solid var(--card-border); border-top-color: var(--prim
 
 <div id="appView" style="display: none; flex-direction: column; flex: 1;">
   <header>
-    <div class="logo">
-      <span class="logo-mark"><svg class="icon icon-sm"><use href="#i-shield"/></svg></span>
-      <span class="logo-wordmark">Pantau</span>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <button class="btn btn-icon header-btn side-panel-mobile-toggle" id="btnSidePanelMobile" onclick="toggleSidePanelMobile()" title="Menu" aria-label="Toggle navigation menu"><svg class="icon"><use href="#i-menu"/></svg></button>
+      <div class="logo">
+        <span class="logo-mark"><svg class="icon icon-sm"><use href="#i-shield"/></svg></span>
+        <span class="logo-wordmark">Pantau</span>
+      </div>
     </div>
     <div style="display: flex; gap: 8px; align-items: center;">
       <div class="header-cluster">
@@ -3637,6 +3676,31 @@ div.spinner { border: 2px solid var(--card-border); border-top-color: var(--prim
     </div>
   </header>
 
+  <!-- Side Panel App Navigation -->
+  <nav id="sidePanel" class="side-panel" aria-label="Application Navigation">
+    <div class="side-panel-nav" role="tablist">
+      <button type="button" class="side-panel-item active" id="navItemHosts" onclick="switchSideNav('hosts')" role="tab" aria-selected="true" aria-current="page" title="Hosts" data-i18n-title="nav_hosts">
+        <svg class="icon"><use href="#i-server"/></svg>
+        <span class="side-panel-label" data-i18n="nav_hosts">Hosts</span>
+      </button>
+      <button type="button" class="side-panel-item" id="navItemDocker" onclick="switchSideNav('docker')" role="tab" aria-selected="false" title="Docker" data-i18n-title="nav_docker">
+        <svg class="icon"><use href="#i-container"/></svg>
+        <span class="side-panel-label" data-i18n="nav_docker">Docker</span>
+      </button>
+      <button type="button" class="side-panel-item" id="navItemKube" onclick="switchSideNav('kube')" role="tab" aria-selected="false" title="Kubernetes" data-i18n-title="nav_kubernetes">
+        <svg class="icon"><use href="#i-boxes"/></svg>
+        <span class="side-panel-label" data-i18n="nav_kubernetes">Kubernetes</span>
+      </button>
+    </div>
+    <div class="side-panel-footer">
+      <button type="button" class="side-panel-collapse-btn" id="btnSidePanelCollapse" onclick="toggleSidePanelCollapse()" title="Collapse navigation" data-i18n-title="nav_collapse_title" aria-label="Collapse navigation">
+        <svg class="icon icon-sm"><use href="#i-chevron-left"/></svg>
+        <span class="side-panel-label" data-i18n="nav_collapse">Collapse</span>
+      </button>
+    </div>
+  </nav>
+  <div id="sidePanelBackdrop" class="side-panel-backdrop" onclick="toggleSidePanelMobile(false)" style="display:none;"></div>
+
   <!-- Sub-Header Workspace Shelf (ADR-0026) -->
   <div id="workspaceShelf" class="workspace-shelf" style="display: none;">
     <div class="workspace-shelf-inner">
@@ -3649,6 +3713,7 @@ div.spinner { border: 2px solid var(--card-border); border-top-color: var(--prim
   </div>
 
   <div class="container">
+    <div id="sectionHosts" class="app-section">
     <div id="alertBannerArea"></div>
     <!-- New KPI Strip -->
     <div id="kpiStrip" class="kpi-strip"></div>
@@ -3690,6 +3755,100 @@ div.spinner { border: 2px solid var(--card-border); border-top-color: var(--prim
 
     <div id="hostGrid" class="grid"></div>
     <div id="hostList" class="host-list-view" style="display: none;"></div>
+    </div>
+    <div id="sectionDocker" class="app-section" style="display:none;">
+      <div class="section-header" style="margin-bottom:20px;">
+        <h2 style="margin:0 0 4px 0;font-size:var(--fs-xl);font-weight:600;" data-i18n="docker_section_title">Docker Management</h2>
+        <p style="margin:0;color:var(--text-muted);font-size:var(--fs-sm);" data-i18n="docker_section_desc">Select a host to manage containers, images, volumes, networks, and stacks.</p>
+      </div>
+      <div class="dashboard-toolbar">
+        <div class="search-box">
+          <svg class="icon icon-sm text-muted"><use href="#i-search"/></svg>
+          <input type="text" id="dockerHostSearchInput" placeholder="Search hosts by name, IP..." data-i18n-placeholder="search_hosts_ph" oninput="filterDockerSectionHosts()" />
+          <button id="clearDockerSearchBtn" class="btn btn-sm" style="display:none;padding:2px 6px;background:transparent;color:var(--text-muted);" onclick="clearDockerSectionSearch()"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+        </div>
+      </div>
+      <div id="dockerHostsGrid" class="grid"></div>
+      <div id="dockerHostsEmpty" class="empty-state" style="display:none;">
+        <div class="empty-state-icon"><svg class="icon icon-xl"><use href="#i-container"/></svg></div>
+        <div class="empty-state-desc" data-i18n="kube_no_data">No items found</div>
+      </div>
+    </div>
+    <div id="sectionKube" class="app-section" style="display:none;">
+      <div class="section-header" style="margin-bottom:20px;position:relative;z-index:20;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <div>
+            <h2 style="margin:0 0 4px 0;font-size:var(--fs-xl);font-weight:600;" data-i18n="kube_section_title">Kubernetes Management</h2>
+            <p style="margin:0;color:var(--text-muted);font-size:var(--fs-sm);" data-i18n="kube_section_desc">Manage k3s and rke2 clusters on target hosts.</p>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              <label for="kubeHostPickerBtn" style="font-size:var(--fs-xs);color:var(--text-muted);font-weight:600;text-transform:uppercase;">Host:</label>
+              <div class="custom-host-picker" id="kubeHostPicker" style="position:relative;z-index:100;">
+                <button type="button" id="kubeHostPickerBtn" class="form-input" style="height:34px;padding:0 10px;font-size:var(--fs-sm);min-width:220px;display:inline-flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;background:var(--card-bg);text-align:left;" onclick="toggleKubeHostPicker(event)" onkeydown="onKubeHostPickerBtnKeydown(event)" aria-haspopup="listbox" aria-expanded="false">
+                  <span id="kubeHostPickerSelected" style="display:inline-flex;align-items:center;gap:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                    <span class="text-muted" data-i18n="kube_select_host">Select a host...</span>
+                  </span>
+                  <svg class="icon icon-xs text-muted" style="flex-shrink:0;"><use href="#i-chevron-down"/></svg>
+                </button>
+                <div id="kubeHostPickerMenu" style="display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:100;min-width:280px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);padding:6px;flex-direction:column;gap:6px;box-sizing:border-box;">
+                  <div class="search-box" style="margin:0;width:100%;box-sizing:border-box;">
+                    <svg class="icon icon-sm text-muted"><use href="#i-search"/></svg>
+                    <input type="text" id="kubeHostSearchInput" placeholder="Search hosts by name, IP..." data-i18n-placeholder="search_hosts_ph" style="height:30px;font-size:var(--fs-xs);width:100%;box-sizing:border-box;" oninput="renderKubeHostPickerList()" onkeydown="onKubeHostPickerKeydown(event)" />
+                  </div>
+                  <div id="kubeHostPickerList" role="listbox" style="max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;"></div>
+                </div>
+              </div>
+              <select id="kubeHostSelect" style="display:none;" onchange="onSelectKubeHost(this.value)">
+                <option value="" data-i18n="kube_select_host">Select a host...</option>
+              </select>
+            </div>
+            <button id="btnKubeRefresh" class="btn btn-sm header-btn" onclick="refreshKubeCurrentTab()" title="Refresh" data-i18n-title="refresh" style="height:34px;display:inline-flex;align-items:center;gap:6px;">
+              <svg class="icon icon-sm"><use href="#i-refresh-cw"/></svg> <span data-i18n="refresh">Refresh</span>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div id="kubeClusterBar" class="card" style="display:none;padding:12px 18px;margin-bottom:16px;flex-direction:row;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+        <div id="kubeClusterChips" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span class="badge badge-info" id="kubeDistroChip" style="font-family:var(--font-mono);text-transform:uppercase;">k3s</span>
+          <span class="badge" id="kubeVersionChip" style="font-family:var(--font-mono);background:var(--surface-2);border:1px solid var(--card-border);">v1.30</span>
+          <span class="badge badge-healthy" id="kubeRoleChip" style="font-family:var(--font-mono);">server</span>
+        </div>
+        <div id="kubeNamespaceSelectorWrapper" style="display:flex;align-items:center;gap:8px;">
+          <label for="kubeNamespaceSelect" style="font-size:var(--fs-xs);color:var(--text-muted);font-weight:600;" data-i18n="kube_namespace">Namespace:</label>
+          <select id="kubeNamespaceSelect" class="form-input" style="height:30px;font-size:var(--fs-xs);min-width:150px;" onchange="onKubeNamespaceChange(this.value)">
+            <option value="" data-i18n="kube_all_namespaces">All Namespaces</option>
+          </select>
+        </div>
+      </div>
+      <div id="kubeNoClusterState" class="card" style="display:none;padding:30px 20px;text-align:center;">
+        <div style="color:var(--text-muted);margin-bottom:8px;"><svg class="icon icon-xl"><use href="#i-boxes"/></svg></div>
+        <div id="kubeNoClusterMsg" style="color:var(--text-muted);font-size:var(--fs-base);" data-i18n="kube_no_cluster">No k3s or rke2 control plane found on this host.</div>
+      </div>
+      <div id="kubeSelectHostPrompt" class="card" style="display:block;padding:30px 20px;text-align:center;">
+        <div style="color:var(--text-muted);margin-bottom:8px;"><svg class="icon icon-xl"><use href="#i-server"/></svg></div>
+        <div style="color:var(--text-muted);font-size:var(--fs-base);" data-i18n="kube_select_host">Select a host to manage its Kubernetes cluster.</div>
+      </div>
+      <div id="kubeViewsContainer" style="display:none;flex-direction:column;gap:16px;">
+        <div class="tabs" style="border-bottom:1px solid var(--card-border);margin-bottom:12px;flex-wrap:wrap;gap:4px;" role="tablist">
+          <div class="tab active" id="tabKubeNodes" onclick="switchKubeTab('nodes')" role="tab" data-i18n="kube_tab_nodes">Nodes</div>
+          <div class="tab" id="tabKubeWorkloads" onclick="switchKubeTab('workloads')" role="tab" data-i18n="kube_tab_workloads">Workloads</div>
+          <div class="tab" id="tabKubePods" onclick="switchKubeTab('pods')" role="tab" data-i18n="kube_tab_pods">Pods</div>
+          <div class="tab" id="tabKubeServices" onclick="switchKubeTab('services')" role="tab" data-i18n="kube_tab_services">Services</div>
+          <div class="tab" id="tabKubeIngresses" onclick="switchKubeTab('ingresses')" role="tab" data-i18n="kube_tab_ingresses">Ingresses</div>
+          <div class="tab" id="tabKubeConfigmaps" onclick="switchKubeTab('configmaps')" role="tab" data-i18n="kube_tab_configmaps">ConfigMaps</div>
+          <div class="tab" id="tabKubeSecrets" onclick="switchKubeTab('secrets')" role="tab" data-i18n="kube_tab_secrets">Secrets</div>
+          <div class="tab" id="tabKubePvcs" onclick="switchKubeTab('pvcs')" role="tab" data-i18n="kube_tab_pvcs">PVCs</div>
+          <div class="tab" id="tabKubePvs" onclick="switchKubeTab('pvs')" role="tab" data-i18n="kube_tab_pvs">PVs</div>
+          <div class="tab" id="tabKubeJobs" onclick="switchKubeTab('jobs')" role="tab" data-i18n="kube_tab_jobs">Jobs</div>
+          <div class="tab" id="tabKubeCronjobs" onclick="switchKubeTab('cronjobs')" role="tab" data-i18n="kube_tab_cronjobs">CronJobs</div>
+          <div class="tab" id="tabKubeEvents" onclick="switchKubeTab('events')" role="tab" data-i18n="kube_tab_events">Events</div>
+          <div class="tab" id="tabKubeApply" onclick="switchKubeTab('apply')" role="tab" data-i18n="kube_tab_apply">Apply</div>
+        </div>
+        <div id="kubeTabContent" style="min-height:250px;"></div>
+      </div>
+    </div>
   </div>
 
   <!-- Activity Console Drawer -->
@@ -3819,6 +3978,96 @@ div.spinner { border: 2px solid var(--card-border); border-top-color: var(--prim
         <button class="btn btn-ghost" onclick="closeModal('injectKeyModal')" data-i18n="cancel">Cancel</button>
         <button class="btn btn-warning" id="btnSubmitInjectKey" onclick="submitInjectKey()"><svg class="icon"><use href="#i-key-round"/></svg> <span data-i18n="btn_inject_key">Inject Key</span></button>
       </div>
+    </div>
+  </div>
+</div>
+
+<div id="kubeScaleModal" class="modal">
+  <div class="modal-content modal-dialog" style="max-width:400px;">
+    <div class="modal-header">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <svg class="icon icon-sm" style="color:var(--accent-text);"><use href="#i-boxes"/></svg>
+        <h3 id="kubeScaleModalTitle" style="font-size:var(--fs-md);margin:0;" data-i18n="kube_scale_title">Scale Workload</h3>
+      </div>
+      <button class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('kubeScaleModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body" style="padding:16px 20px;">
+      <div style="margin-bottom:12px;font-size:var(--fs-sm);color:var(--text-muted);" id="kubeScaleWorkloadDesc"></div>
+      <div class="form-group">
+        <label for="kubeScaleReplicas" style="font-size:var(--fs-xs);font-weight:600;color:var(--text-muted);margin-bottom:6px;display:block;" data-i18n="kube_scale_replicas">Replicas (0 - 1000)</label>
+        <input type="number" id="kubeScaleReplicas" class="form-input" min="0" max="1000" value="1" style="width:100%;box-sizing:border-box;" />
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-sm" onclick="closeModal('kubeScaleModal')" data-i18n="cancel">Cancel</button>
+      <button class="btn btn-sm btn-primary" id="kubeScaleSubmitBtn" onclick="submitKubeScale()"><span data-i18n="kube_btn_scale">Scale</span></button>
+    </div>
+  </div>
+</div>
+
+<div id="kubeContainerModal" class="modal">
+  <div class="modal-content modal-dialog" style="max-width:400px;">
+    <div class="modal-header">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <svg class="icon icon-sm" style="color:var(--accent-text);"><use href="#i-boxes"/></svg>
+        <h3 id="kubeContainerModalTitle" style="font-size:var(--fs-md);margin:0;" data-i18n="kube_select_container">Select Container</h3>
+      </div>
+      <button class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('kubeContainerModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body" style="padding:16px 20px;">
+      <div style="margin-bottom:12px;font-size:var(--fs-sm);color:var(--text-muted);" id="kubeContainerModalDesc"></div>
+      <div class="form-group">
+        <label for="kubeContainerSelect" style="font-size:var(--fs-xs);font-weight:600;color:var(--text-muted);margin-bottom:6px;display:block;" data-i18n="kube_container">Container</label>
+        <select id="kubeContainerSelect" class="form-input" style="width:100%;box-sizing:border-box;"></select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-sm" onclick="closeModal('kubeContainerModal')" data-i18n="cancel">Cancel</button>
+      <button class="btn btn-sm btn-primary" id="kubeContainerModalSubmit" onclick="submitKubeContainerChoice()"><span data-i18n="confirm">Confirm</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- Kubernetes Pod Logs Modal (Live Streaming over WebSocket) -->
+<div id="kubeLogsModal" class="modal">
+  <div class="modal-content modal-workspace">
+    <div class="modal-header" style="flex-wrap:wrap;gap:8px;">
+      <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;">
+        <svg class="icon icon-sm" style="color:var(--accent-text);"><use href="#i-boxes"/></svg>
+        <h3 id="kubeLogsTitle" style="font-family:var(--font-mono);font-size:var(--fs-sm);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0;"></h3>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;flex-shrink:0;">
+        <span id="kubeLogsStatus" class="badge badge-info"></span>
+        <div id="kubeLogsContainerWrap" style="display:none;align-items:center;gap:4px;">
+          <label for="kubeLogsContainerSelect" style="font-size:var(--fs-xs);color:var(--text-muted);"><span data-i18n="kube_container">Container</span>:</label>
+          <select id="kubeLogsContainerSelect" class="form-input" style="height:26px;font-size:var(--fs-xs);padding:0 6px;" onchange="onKubeLogsParamChange()"></select>
+        </div>
+        <div style="display:inline-flex;align-items:center;gap:4px;">
+          <label for="kubeLogsTailSelect" style="font-size:var(--fs-xs);color:var(--text-muted);"><span data-i18n="kube_logs_tail">Tail</span>:</label>
+          <select id="kubeLogsTailSelect" class="form-input" style="height:26px;font-size:var(--fs-xs);padding:0 6px;" onchange="onKubeLogsParamChange()">
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="200" selected>200</option>
+            <option value="500">500</option>
+            <option value="1000">1000</option>
+            <option value="2000">2000</option>
+          </select>
+        </div>
+        <label style="display:flex;align-items:center;gap:4px;font-size:var(--fs-xs);cursor:pointer;color:var(--text-muted);" title="Show logs from previous terminated container instance">
+          <input type="checkbox" id="kubeLogsPreviousToggle" style="width:auto;" onchange="onKubeLogsParamChange()" />
+          <span data-i18n="kube_logs_previous">Previous</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:var(--fs-xs);cursor:pointer;color:var(--text-muted);">
+          <input type="checkbox" id="kubeLogsAutoScroll" checked style="width:auto;" />
+          <span data-i18n="docker_logs_autoscroll">Auto-scroll</span>
+        </label>
+        <button class="btn btn-sm" onclick="copyKubeLogs()" data-i18n="copy">Copy</button>
+        <button class="btn btn-sm" onclick="document.getElementById('kubeLogsOutput').textContent=''" data-i18n="docker_logs_clear">Clear</button>
+        <button class="btn btn-icon btn-sm" onclick="closeModal('kubeLogsModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+      </div>
+    </div>
+    <div class="modal-body" style="padding:0;flex:1;min-height:0;gap:0;background:var(--bg);">
+      <pre id="kubeLogsOutput" style="flex:1;min-height:0;max-height:none;margin:0;padding:12px 16px;border-radius:0;overflow:auto;white-space:pre-wrap;word-break:break-all;font-family:var(--font-mono);font-size:var(--fs-xs);line-height:1.5;color:var(--text);"></pre>
     </div>
   </div>
 </div>
@@ -6334,6 +6583,69 @@ const I18N = {
     "test_connection": "Test Connection",
     "ssh_pass_hint": "Only used once in RAM to append Pantau public key to authorized_keys.",
     // ===== SLICE-E:END =====
+    "nav_hosts": "Hosts",
+    "nav_docker": "Docker",
+    "nav_kubernetes": "Kubernetes",
+    "nav_collapse": "Collapse",
+    "nav_collapse_title": "Collapse navigation",
+    "docker_section_title": "Docker Management",
+    "docker_section_desc": "Select a host to manage containers, images, volumes, networks, and stacks.",
+    "docker_open_btn": "Manage Docker",
+    "kube_section_title": "Kubernetes Management",
+    "kube_section_desc": "Manage k3s and rke2 clusters on target hosts.",
+    "kube_select_host": "Select a host...",
+    "kube_no_cluster": "No k3s or rke2 control plane found on this host.",
+    "kube_tab_nodes": "Nodes",
+    "kube_tab_workloads": "Workloads",
+    "kube_tab_pods": "Pods",
+    "kube_tab_services": "Services",
+    "kube_tab_events": "Events",
+    "kube_tab_apply": "Apply",
+    "kube_all_namespaces": "All Namespaces",
+    "kube_namespace": "Namespace",
+    "kube_btn_apply": "Apply YAML",
+    "kube_btn_scale": "Scale",
+    "kube_scale_title": "Scale Workload",
+    "kube_scale_replicas": "Replicas (0 - 1000)",
+    "kube_restart_workload": "Restart Rollout",
+    "kube_cordon": "Cordon Node",
+    "kube_uncordon": "Uncordon Node",
+    "kube_describe": "Describe",
+    "kube_delete_pod_title": "Delete Pod",
+    "kube_delete_pod_confirm": "Are you sure you want to delete pod {name} in namespace {ns}?",
+    "kube_logs": "Pod Logs",
+    "kube_loading": "Loading cluster data...",
+    "kube_no_data": "No items found",
+    "kube_apply_empty": "Please enter a YAML manifest",
+    "kube_apply_success": "Manifest applied successfully",
+    "kube_tab_ingresses": "Ingresses",
+    "kube_tab_configmaps": "ConfigMaps",
+    "kube_tab_secrets": "Secrets",
+    "kube_tab_pvcs": "PVCs",
+    "kube_tab_pvs": "PVs",
+    "kube_tab_jobs": "Jobs",
+    "kube_tab_cronjobs": "CronJobs",
+    "kube_secrets_note": "Secret values are never transmitted or displayed.",
+    "kube_cluster_scoped": "Cluster-scoped resource",
+    "kube_exec": "Exec Console",
+    "kube_logs_previous": "Previous",
+    "kube_logs_tail": "Tail",
+    "kube_container": "Container",
+    "kube_select_container": "Select Container",
+    "col_keys": "Keys",
+    "col_claim": "Claim",
+    "col_storageclass": "StorageClass",
+    "col_capacity": "Capacity",
+    "col_volume": "Volume",
+    "col_schedule": "Schedule",
+    "col_suspend": "Suspend",
+    "col_lastschedule": "Last Schedule",
+    "col_completions": "Completions",
+    "col_hosts": "Hosts",
+    "col_address": "Address",
+    "col_class": "Class",
+    "col_namespace": "Namespace",
+    "col_type": "Type",
   },
   id: {
     "brand_subtitle": "Manajemen Server Agentless",
@@ -7475,6 +7787,69 @@ const I18N = {
     "test_connection": "Uji Koneksi",
     "ssh_pass_hint": "Hanya digunakan sekali di RAM untuk menambahkan public key Pantau ke authorized_keys.",
     // ===== SLICE-E:END =====
+    "nav_hosts": "Host",
+    "nav_docker": "Docker",
+    "nav_kubernetes": "Kubernetes",
+    "nav_collapse": "Ciutkan",
+    "nav_collapse_title": "Ciutkan navigasi",
+    "docker_section_title": "Manajemen Docker",
+    "docker_section_desc": "Pilih host untuk mengelola container, image, volume, network, dan stack.",
+    "docker_open_btn": "Kelola Docker",
+    "kube_section_title": "Manajemen Kubernetes",
+    "kube_section_desc": "Kelola klaster k3s dan rke2 pada host target.",
+    "kube_select_host": "Pilih host...",
+    "kube_no_cluster": "Tidak ada control plane k3s atau rke2 ditemukan pada host ini.",
+    "kube_tab_nodes": "Node",
+    "kube_tab_workloads": "Workload",
+    "kube_tab_pods": "Pod",
+    "kube_tab_services": "Service",
+    "kube_tab_events": "Event",
+    "kube_tab_apply": "Terapkan",
+    "kube_all_namespaces": "Semua Namespace",
+    "kube_namespace": "Namespace",
+    "kube_btn_apply": "Terapkan YAML",
+    "kube_btn_scale": "Ubah Skala",
+    "kube_scale_title": "Ubah Skala Workload",
+    "kube_scale_replicas": "Replika (0 - 1000)",
+    "kube_restart_workload": "Restart Rollout",
+    "kube_cordon": "Cordon Node",
+    "kube_uncordon": "Uncordon Node",
+    "kube_describe": "Describe",
+    "kube_delete_pod_title": "Hapus Pod",
+    "kube_delete_pod_confirm": "Apakah Anda yakin ingin menghapus pod {name} di namespace {ns}?",
+    "kube_logs": "Log Pod",
+    "kube_loading": "Memuat data klaster...",
+    "kube_no_data": "Tidak ada item ditemukan",
+    "kube_apply_empty": "Silakan masukkan manifest YAML",
+    "kube_apply_success": "Manifest berhasil diterapkan",
+    "kube_tab_ingresses": "Ingress",
+    "kube_tab_configmaps": "ConfigMap",
+    "kube_tab_secrets": "Secret",
+    "kube_tab_pvcs": "PVC",
+    "kube_tab_pvs": "PV",
+    "kube_tab_jobs": "Job",
+    "kube_tab_cronjobs": "CronJob",
+    "kube_secrets_note": "Nilai rahasia tidak pernah dikirim atau ditampilkan.",
+    "kube_cluster_scoped": "Resource berlingkup klaster",
+    "kube_exec": "Konsol Exec",
+    "kube_logs_previous": "Sebelumnya",
+    "kube_logs_tail": "Tail",
+    "kube_container": "Kontainer",
+    "kube_select_container": "Pilih Kontainer",
+    "col_keys": "Kunci",
+    "col_claim": "Klaim",
+    "col_storageclass": "StorageClass",
+    "col_capacity": "Kapasitas",
+    "col_volume": "Volume",
+    "col_schedule": "Jadwal",
+    "col_suspend": "Tangguhkan",
+    "col_lastschedule": "Jadwal Terakhir",
+    "col_completions": "Selesai",
+    "col_hosts": "Host",
+    "col_address": "Alamat",
+    "col_class": "Kelas",
+    "col_namespace": "Namespace",
+    "col_type": "Tipe",
   }
 };
 
@@ -8749,6 +9124,7 @@ async function loadHosts() {
     setEngineStatus(true);
     updateFooterMetrics();
     renderHosts();
+    if (typeof updateSideNavData === 'function') updateSideNavData();
     if (!window._tabsRestoredOnce) {
       window._tabsRestoredOnce = true;
       restoreSavedTerminalTabs();
@@ -16271,6 +16647,9 @@ function closeModal(id) {
   if (id === 'dockerLogsModal') {
     stopDockerLogs();
   }
+  if (id === 'kubeLogsModal') {
+    stopKubeLogs();
+  }
   if (id === 'terminalDockModal') {
     minimizeTerminalDock();
     return;
@@ -19609,6 +19988,855 @@ async function testHostFromModal() {
   const id = document.getElementById('editHostId')?.value;
   if (!id) return;
   await testHostSSH(Number(id));
+}
+let currentSideNav = 'hosts';
+function initSidePanel() {
+  if (localStorage.getItem('pantau_side_panel_collapsed') === 'true') {
+    document.body.classList.add('side-panel-collapsed');
+  }
+}
+initSidePanel();
+function toggleSidePanelCollapse() {
+  const isCollapsed = document.body.classList.toggle('side-panel-collapsed');
+  localStorage.setItem('pantau_side_panel_collapsed', isCollapsed ? 'true' : 'false');
+}
+function toggleSidePanelMobile(force) {
+  const isOpen = typeof force === 'boolean' ? force : !document.body.classList.contains('side-panel-mobile-open');
+  document.body.classList.toggle('side-panel-mobile-open', isOpen);
+  const backdrop = document.getElementById('sidePanelBackdrop');
+  if (backdrop) backdrop.style.display = isOpen ? 'block' : 'none';
+}
+function switchSideNav(section) {
+  currentSideNav = section;
+  document.querySelectorAll('.side-panel-item').forEach(el => {
+    const isAct = el.id === ('navItem' + section.charAt(0).toUpperCase() + section.slice(1));
+    el.classList.toggle('active', isAct);
+    if (isAct) { el.setAttribute('aria-current', 'page'); el.setAttribute('aria-selected', 'true'); }
+    else { el.removeAttribute('aria-current'); el.setAttribute('aria-selected', 'false'); }
+  });
+  const secHosts = document.getElementById('sectionHosts');
+  const secDocker = document.getElementById('sectionDocker');
+  const secKube = document.getElementById('sectionKube');
+  if (secHosts) secHosts.style.display = section === 'hosts' ? 'block' : 'none';
+  if (secDocker) secDocker.style.display = section === 'docker' ? 'block' : 'none';
+  if (secKube) secKube.style.display = section === 'kube' ? 'block' : 'none';
+  toggleSidePanelMobile(false);
+  if (section === 'docker') renderDockerSection();
+  else if (section === 'kube') populateKubeHostSelect();
+}
+function updateSideNavData() {
+  if (currentSideNav === 'docker') renderDockerSection();
+  if (currentSideNav === 'kube') populateKubeHostSelect();
+}
+async function openHostDocker(hostId) {
+  setHostActiveTab(hostId, 'docker');
+  await openHostDetail(hostId);
+  switchTab('docker');
+}
+function renderDockerSection() {
+  const input = document.getElementById('dockerHostSearchInput');
+  const q = (input ? input.value : '').toLowerCase().trim();
+  const hosts = allRawHosts || [];
+  const filtered = q ? hosts.filter(h => (h.name || '').toLowerCase().includes(q) || (h.host || '').toLowerCase().includes(q) || (h.os_info || '').toLowerCase().includes(q)) : hosts;
+  const grid = document.getElementById('dockerHostsGrid');
+  const empty = document.getElementById('dockerHostsEmpty');
+  if (!grid || !empty) return;
+  if (filtered.length === 0) { grid.style.display = 'none'; empty.style.display = 'block'; return; }
+  grid.style.display = 'grid';
+  empty.style.display = 'none';
+  grid.innerHTML = filtered.map(h => {
+    const status = h.status || 'unknown';
+    return `<div class="card host-card" style="cursor:pointer;" onclick="openHostDocker(${h.id})">
+      <div class="host-card-header">
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+          <span class="status-dot ${status}"></span>
+          <span style="font-weight:600;font-size:var(--fs-md);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(h.name)}</span>
+        </div>
+        <span class="badge badge-${status}">${escapeHtml(status)}</span>
+      </div>
+      <div class="mono text-muted">${escapeHtml(h.host)}</div>
+      <div style="font-size:var(--fs-xs);color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(h.os_info || '-')}</div>
+      <div style="margin-top:auto;display:flex;justify-content:flex-end;">
+        <button class="btn btn-sm btn-primary" onclick="event.stopPropagation();openHostDocker(${h.id})" style="display:inline-flex;align-items:center;gap:6px;">
+          ${svgIcon('container', 'icon-sm')} <span>${t('docker_open_btn', 'Manage Docker')}</span>
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+}
+function filterDockerSectionHosts() {
+  const input = document.getElementById('dockerHostSearchInput');
+  const clearBtn = document.getElementById('clearDockerSearchBtn');
+  if (clearBtn && input) clearBtn.style.display = input.value ? 'inline-flex' : 'none';
+  renderDockerSection();
+}
+function clearDockerSectionSearch() {
+  const input = document.getElementById('dockerHostSearchInput');
+  if (input) input.value = '';
+  filterDockerSectionHosts();
+}
+let selectedKubeHostId = null, currentKubeCluster = null, currentKubeTab = 'nodes', currentKubeNamespace = '';
+let kubeNodesCache = [], kubeWorkloadsCache = [], kubePodsCache = [], kubeServicesCache = [], kubeNamespacesList = [], currentScaleTarget = null;
+let kubeGenericCache = {}, kubePickerActiveIndex = -1;
+
+function formatKubeMemory(val) {
+  if (!val) return '-';
+  const s = String(val).trim();
+  const m = s.match(/^([0-9]+(?:\.[0-9]+)?)\s*([A-Za-z]+)?$/);
+  if (!m) return s;
+  const num = parseFloat(m[1]);
+  const unit = (m[2] || '').toLowerCase();
+  let bytes = num;
+  if (unit === 'ki' || unit === 'kib' || unit === 'k') bytes = num * 1024;
+  else if (unit === 'mi' || unit === 'mib' || unit === 'm') bytes = num * 1024 * 1024;
+  else if (unit === 'gi' || unit === 'gib' || unit === 'g') bytes = num * 1024 * 1024 * 1024;
+  else if (unit === 'ti' || unit === 'tib' || unit === 't') bytes = num * 1024 * 1024 * 1024 * 1024;
+  else if (unit === 'pi' || unit === 'pib' || unit === 'p') bytes = num * 1024 * 1024 * 1024 * 1024 * 1024;
+  else if (unit === 'ei' || unit === 'eib' || unit === 'e') bytes = num * 1024 * 1024 * 1024 * 1024 * 1024 * 1024;
+  else if (!unit) bytes = num;
+  else return s;
+  return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+}
+
+function kubeAge(created) {
+  if (!created) return '-';
+  const r = formatRelativeTime(created);
+  return r.relative || '-';
+}
+function kubeEmptyHtml(title, desc, isError) {
+  return `<div class="empty-state" style="padding:40px 20px;">
+    <div class="empty-state-icon" style="color:${isError ? 'var(--danger)' : 'var(--text-muted)'};">${svgIcon(isError ? 'triangle-alert' : 'boxes', 'icon-xl')}</div>
+    <div class="empty-state-title" style="font-weight:600;margin-bottom:4px;">${escapeHtml(title)}</div>
+    ${desc ? `<div class="empty-state-desc" style="color:var(--text-muted);font-size:var(--fs-sm);">${escapeHtml(desc)}</div>` : ''}
+  </div>`;
+}
+
+function populateKubeHostSelect() {
+  const sel = document.getElementById('kubeHostSelect');
+  if (sel) {
+    const currentVal = sel.value;
+    sel.innerHTML = `<option value="">${t('kube_select_host', 'Select a host...')}</option>` +
+      (allRawHosts || []).map(h => `<option value="${h.id}">${escapeHtml(h.name)} (${escapeHtml(h.host)})</option>`).join('');
+    if (selectedKubeHostId && (allRawHosts || []).some(h => String(h.id) === String(selectedKubeHostId))) {
+      sel.value = String(selectedKubeHostId);
+    } else if (currentVal && (allRawHosts || []).some(h => String(h.id) === String(currentVal))) {
+      sel.value = currentVal;
+    }
+  }
+  updateKubeHostPickerBtn();
+  renderKubeHostPickerList();
+}
+
+function updateKubeHostPickerBtn() {
+  const label = document.getElementById('kubeHostPickerSelected');
+  if (!label) return;
+  const h = (allRawHosts || []).find(x => String(x.id) === String(selectedKubeHostId));
+  if (h) {
+    const status = h.status || 'unknown';
+    label.innerHTML = `<span class="status-dot ${status}"></span> <span style="font-weight:600;">${escapeHtml(h.name)}</span> <span class="mono text-muted" style="font-size:var(--fs-xs);">(${escapeHtml(h.host)})</span>`;
+  } else {
+    label.innerHTML = `<span class="text-muted" data-i18n="kube_select_host">${t('kube_select_host', 'Select a host...')}</span>`;
+  }
+}
+
+function toggleKubeHostPicker(e) {
+  if (e) e.stopPropagation();
+  const menu = document.getElementById('kubeHostPickerMenu');
+  if (!menu) return;
+  const isOpening = menu.style.display !== 'flex';
+  if (isOpening) {
+    menu.style.display = 'flex';
+    const btn = document.getElementById('kubeHostPickerBtn');
+    if (btn) btn.setAttribute('aria-expanded', 'true');
+    const input = document.getElementById('kubeHostSearchInput');
+    if (input) {
+      input.value = '';
+      renderKubeHostPickerList();
+      input.focus();
+    }
+  } else {
+    closeKubeHostPicker();
+  }
+}
+
+function closeKubeHostPicker() {
+  const menu = document.getElementById('kubeHostPickerMenu');
+  if (menu) menu.style.display = 'none';
+  const btn = document.getElementById('kubeHostPickerBtn');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+  kubePickerActiveIndex = -1;
+}
+
+function onKubeHostPickerBtnKeydown(e) {
+  if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    toggleKubeHostPicker();
+  }
+}
+
+function onKubeHostPickerKeydown(e) {
+  const list = document.getElementById('kubeHostPickerList');
+  if (!list) return;
+  const items = list.querySelectorAll('.kube-host-picker-item');
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (items.length === 0) return;
+    kubePickerActiveIndex = (kubePickerActiveIndex + 1) % items.length;
+    updateKubePickerHighlight(items);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (items.length === 0) return;
+    kubePickerActiveIndex = (kubePickerActiveIndex - 1 + items.length) % items.length;
+    updateKubePickerHighlight(items);
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (kubePickerActiveIndex >= 0 && items[kubePickerActiveIndex]) {
+      items[kubePickerActiveIndex].click();
+    } else if (items.length > 0) {
+      items[0].click();
+    }
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    closeKubeHostPicker();
+    const btn = document.getElementById('kubeHostPickerBtn');
+    if (btn) btn.focus();
+  } else if (e.key === 'Tab') {
+    closeKubeHostPicker();
+  }
+}
+
+function updateKubePickerHighlight(items) {
+  items.forEach((item, idx) => {
+    const isAct = idx === kubePickerActiveIndex;
+    item.classList.toggle('active', isAct);
+    if (isAct) item.scrollIntoView({ block: 'nearest' });
+  });
+}
+
+function renderKubeHostPickerList() {
+  const list = document.getElementById('kubeHostPickerList');
+  const input = document.getElementById('kubeHostSearchInput');
+  if (!list) return;
+  const q = (input ? input.value : '').toLowerCase().trim();
+  const hosts = allRawHosts || [];
+  const filtered = q ? hosts.filter(h => (h.name || '').toLowerCase().includes(q) || (h.host || '').toLowerCase().includes(q)) : hosts;
+  kubePickerActiveIndex = -1;
+  if (filtered.length === 0) {
+    list.innerHTML = `<div style="padding:10px;text-align:center;color:var(--text-muted);font-size:var(--fs-xs);">${t('kube_no_data', 'No items found')}</div>`;
+    return;
+  }
+  list.innerHTML = filtered.map(h => {
+    const isSelected = selectedKubeHostId && String(h.id) === String(selectedKubeHostId);
+    const status = h.status || 'unknown';
+    return `<div class="kube-host-picker-item" role="option" aria-selected="${isSelected}" onclick="pickKubeHost(${h.id})" style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:var(--radius-sm);cursor:pointer;font-size:var(--fs-xs);transition:background var(--dur);background:${isSelected ? 'var(--accent-soft)' : 'transparent'};">
+      <span class="status-dot ${status}"></span>
+      <span style="font-weight:600;color:var(--text);">${escapeHtml(h.name)}</span>
+      <span class="mono text-muted">(${escapeHtml(h.host)})</span>
+      <span class="badge badge-${status}" style="margin-left:auto;font-size:10px;padding:1px 6px;">${escapeHtml(status)}</span>
+    </div>`;
+  }).join('');
+}
+
+function pickKubeHost(hostId) {
+  closeKubeHostPicker();
+  onSelectKubeHost(hostId);
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('#kubeHostPicker')) closeKubeHostPicker();
+});
+
+async function onSelectKubeHost(hostId) {
+  selectedKubeHostId = hostId ? parseInt(hostId, 10) : null;
+  updateKubeHostPickerBtn();
+  renderKubeHostPickerList();
+  const hostSel = document.getElementById('kubeHostSelect');
+  if (hostSel) hostSel.value = selectedKubeHostId ? String(selectedKubeHostId) : '';
+  const promptEl = document.getElementById('kubeSelectHostPrompt');
+  const noClusterEl = document.getElementById('kubeNoClusterState');
+  const clusterBar = document.getElementById('kubeClusterBar');
+  const viewsContainer = document.getElementById('kubeViewsContainer');
+  if (!selectedKubeHostId) {
+    if (promptEl) promptEl.style.display = 'block';
+    if (noClusterEl) noClusterEl.style.display = 'none';
+    if (clusterBar) clusterBar.style.display = 'none';
+    if (viewsContainer) viewsContainer.style.display = 'none';
+    return;
+  }
+  if (promptEl) promptEl.style.display = 'none';
+  if (noClusterEl) noClusterEl.style.display = 'none';
+  if (clusterBar) clusterBar.style.display = 'none';
+  if (viewsContainer) viewsContainer.style.display = 'none';
+  showToast(t('kube_loading', 'Loading cluster data...'), 'info', 1500);
+  try {
+    const res = await fetch(`/api/hosts/${selectedKubeHostId}/kube/detect`);
+    const data = await res.json();
+    if (!data.ok || !data.cluster) {
+      if (noClusterEl) {
+        noClusterEl.style.display = 'block';
+        const msg = document.getElementById('kubeNoClusterMsg');
+        if (msg) msg.textContent = data.error || t('kube_no_cluster', 'No k3s or rke2 control plane found on this host.');
+      }
+      return;
+    }
+    currentKubeCluster = data.cluster;
+    if (clusterBar) clusterBar.style.display = 'flex';
+    document.getElementById('kubeDistroChip').textContent = (currentKubeCluster.distro || 'k3s').toUpperCase();
+    document.getElementById('kubeVersionChip').textContent = currentKubeCluster.version || '-';
+    document.getElementById('kubeRoleChip').textContent = currentKubeCluster.role || 'server';
+    if (viewsContainer) viewsContainer.style.display = 'flex';
+    await loadKubeNamespaces();
+    loadKubeTabData(currentKubeTab);
+  } catch(e) {
+    if (noClusterEl) {
+      noClusterEl.style.display = 'block';
+      const msg = document.getElementById('kubeNoClusterMsg');
+      if (msg) msg.textContent = e.message;
+    }
+  }
+}
+async function loadKubeNamespaces() {
+  if (!selectedKubeHostId) return;
+  try {
+    const res = await fetch(`/api/hosts/${selectedKubeHostId}/kube/namespaces`);
+    const data = await res.json();
+    kubeNamespacesList = (data.ok && Array.isArray(data.namespaces)) ? data.namespaces : [];
+  } catch(e) { kubeNamespacesList = []; }
+  const sel = document.getElementById('kubeNamespaceSelect');
+  if (sel) {
+    sel.innerHTML = `<option value="">${t('kube_all_namespaces', 'All Namespaces')}</option>` +
+      kubeNamespacesList.map(ns => `<option value="${escapeHtml(ns.name)}" ${ns.name === currentKubeNamespace ? 'selected' : ''}>${escapeHtml(ns.name)}</option>`).join('');
+  }
+}
+function switchKubeTab(tab) {
+  currentKubeTab = tab;
+  document.querySelectorAll('#kubeViewsContainer .tabs .tab').forEach(el => {
+    el.classList.toggle('active', el.id.toLowerCase() === ('tabkube' + tab.toLowerCase()));
+  });
+  const nsWrapper = document.getElementById('kubeNamespaceSelectorWrapper');
+  const nsSelect = document.getElementById('kubeNamespaceSelect');
+  if (nsWrapper) {
+    nsWrapper.style.visibility = (tab === 'nodes' || tab === 'apply') ? 'hidden' : 'visible';
+    if (nsSelect) {
+      nsSelect.disabled = (tab === 'pvs');
+      nsSelect.title = (tab === 'pvs') ? t('kube_cluster_scoped', 'Cluster-scoped resource') : '';
+    }
+  }
+  loadKubeTabData(tab);
+}
+function onKubeNamespaceChange(ns) {
+  currentKubeNamespace = ns;
+  loadKubeTabData(currentKubeTab);
+}
+function refreshKubeCurrentTab() {
+  if (!selectedKubeHostId) return;
+  loadKubeNamespaces();
+  loadKubeTabData(currentKubeTab);
+}
+function loadKubeTabData(tab) {
+  if (tab === 'nodes') loadKubeNodes();
+  else if (tab === 'workloads') loadKubeWorkloads();
+  else if (tab === 'pods') loadKubePods();
+  else if (tab === 'services') loadKubeServices();
+  else if (tab === 'events') loadKubeEvents();
+  else if (tab === 'apply') loadKubeApply();
+  else if (['ingresses', 'configmaps', 'secrets', 'pvcs', 'pvs', 'jobs', 'cronjobs'].includes(tab)) {
+    loadKubeGenericResource(tab);
+  }
+}
+async function kubeFetchTab(url, key, heads, rowFn) {
+  const content = document.getElementById('kubeTabContent');
+  if (!content || !selectedKubeHostId) return;
+  content.innerHTML = `<div style="text-align:center;padding:30px;color:var(--text-muted);">${t('kube_loading')}</div>`;
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!data.ok) { content.innerHTML = kubeEmptyHtml(t('error_prefix', 'Error: '), data.error || 'Failed to load', true); return; }
+    const items = data[key] || [];
+    if (key === 'nodes') kubeNodesCache = items;
+    else if (key === 'workloads') kubeWorkloadsCache = items;
+    else if (key === 'pods') kubePodsCache = items;
+    else if (key === 'services') kubeServicesCache = items;
+    if (items.length === 0) { content.innerHTML = kubeEmptyHtml(t('kube_no_data', 'No items found'), ''); return; }
+    content.innerHTML = dockerTableHtml(heads, items.map(rowFn).join(''));
+  } catch(e) {
+    content.innerHTML = kubeEmptyHtml(t('error_prefix', 'Error: '), e.message, true);
+  }
+}
+function loadKubeNodes() {
+  kubeFetchTab(`/api/hosts/${selectedKubeHostId}/kube/nodes`, 'nodes',
+    [t('col_name', 'Name'), t('col_status', 'Status'), 'Roles', 'Version', t('col_ip', 'Internal IP'), 'CPU / Memory', t('col_age', 'Age'), ''],
+    (n, idx) => `<tr>
+      <td><b>${escapeHtml(n.name)}</b></td>
+      <td><span class="badge ${n.status === 'Ready' ? 'badge-healthy' : 'badge-degraded'}">${escapeHtml(n.status)}</span>${n.unschedulable ? '<span class="badge badge-warning" style="margin-left:4px;">SchedulingDisabled</span>' : ''}</td>
+      <td>${escapeHtml(Array.isArray(n.roles) ? n.roles.join(', ') : (n.roles || '<none>'))}</td>
+      <td class="mono">${escapeHtml(n.version || '-')}</td>
+      <td class="mono">${escapeHtml(n.internalIP || '-')}</td>
+      <td>${escapeHtml(n.cpu || '-')} / ${escapeHtml(formatKubeMemory(n.memory))}</td>
+      <td style="color:var(--text-muted);font-size:var(--fs-xs);">${kubeAge(n.created)}</td>
+      <td style="text-align:right;"><button class="btn btn-icon btn-sm btn-ghost" onclick="openKubeNodeMenu(event,${idx})" title="Actions">${svgIcon('ellipsis-vertical','icon-sm')}</button></td>
+    </tr>`
+  );
+}
+function loadKubeWorkloads() {
+  kubeFetchTab(`/api/hosts/${selectedKubeHostId}/kube/workloads?ns=${encodeURIComponent(currentKubeNamespace)}`, 'workloads',
+    ['Kind', t('kube_namespace', 'Namespace'), t('col_name', 'Name'), 'Ready', 'Images', t('col_age', 'Age'), ''],
+    (w, idx) => {
+      const imgs = Array.isArray(w.images) ? w.images.join(', ') : (w.images || '-');
+      return `<tr>
+        <td><span class="badge" style="background:var(--surface-2);border:1px solid var(--card-border);">${escapeHtml(w.kind)}</span></td>
+        <td style="font-size:var(--fs-xs);color:var(--text-muted);">${escapeHtml(w.namespace)}</td>
+        <td><b>${escapeHtml(w.name)}</b></td>
+        <td><span class="badge ${w.ready >= w.desired ? 'badge-healthy' : 'badge-degraded'}">${w.ready || 0}/${w.desired || 0}</span></td>
+        <td class="mono" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(imgs)}">${escapeHtml(imgs)}</td>
+        <td style="color:var(--text-muted);font-size:var(--fs-xs);">${kubeAge(w.created)}</td>
+        <td style="text-align:right;"><button class="btn btn-icon btn-sm btn-ghost" onclick="openKubeWorkloadMenu(event,${idx})" title="Actions">${svgIcon('ellipsis-vertical','icon-sm')}</button></td>
+      </tr>`;
+    }
+  );
+}
+function loadKubePods() {
+  kubeFetchTab(`/api/hosts/${selectedKubeHostId}/kube/pods?ns=${encodeURIComponent(currentKubeNamespace)}`, 'pods',
+    [t('kube_namespace', 'Namespace'), t('col_name', 'Name'), 'Ready', t('col_status', 'Status'), 'Restarts', 'Node', 'IP', t('col_age', 'Age'), ''],
+    (p, idx) => `<tr>
+      <td style="font-size:var(--fs-xs);color:var(--text-muted);">${escapeHtml(p.namespace)}</td>
+      <td><b>${escapeHtml(p.name)}</b></td>
+      <td style="font-size:var(--fs-xs);">${escapeHtml(p.ready || '-')}</td>
+      <td><span class="badge ${p.status === 'Running' || p.status === 'Completed' ? 'badge-healthy' : 'badge-degraded'}">${escapeHtml(p.status)}</span></td>
+      <td style="font-size:var(--fs-xs);">${p.restarts !== undefined ? p.restarts : 0}</td>
+      <td style="font-size:var(--fs-xs);color:var(--text-muted);">${escapeHtml(p.node || '-')}</td>
+      <td class="mono">${escapeHtml(p.ip || '-')}</td>
+      <td style="color:var(--text-muted);font-size:var(--fs-xs);">${kubeAge(p.created)}</td>
+      <td style="text-align:right;"><button class="btn btn-icon btn-sm btn-ghost" onclick="openKubePodMenu(event,${idx})" title="Actions">${svgIcon('ellipsis-vertical','icon-sm')}</button></td>
+    </tr>`
+  );
+}
+function loadKubeServices() {
+  kubeFetchTab(`/api/hosts/${selectedKubeHostId}/kube/services?ns=${encodeURIComponent(currentKubeNamespace)}`, 'services',
+    [t('kube_namespace', 'Namespace'), t('col_name', 'Name'), 'Type', 'Cluster IP', 'External IP', 'Ports', t('col_age', 'Age'), ''],
+    (s, idx) => {
+      const ports = Array.isArray(s.ports) ? s.ports.join(', ') : (s.ports || '-');
+      return `<tr>
+        <td style="font-size:var(--fs-xs);color:var(--text-muted);">${escapeHtml(s.namespace)}</td>
+        <td><b>${escapeHtml(s.name)}</b></td>
+        <td><span class="badge" style="background:var(--surface-2);border:1px solid var(--card-border);">${escapeHtml(s.type || 'ClusterIP')}</span></td>
+        <td class="mono">${escapeHtml(s.clusterIP || '-')}</td>
+        <td class="mono">${escapeHtml(s.externalIP || '-')}</td>
+        <td class="mono" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(ports)}">${escapeHtml(ports)}</td>
+        <td style="color:var(--text-muted);font-size:var(--fs-xs);">${kubeAge(s.created)}</td>
+        <td style="text-align:right;"><button class="btn btn-icon btn-sm btn-ghost" onclick="openKubeServiceMenu(event,${idx})" title="Actions">${svgIcon('ellipsis-vertical','icon-sm')}</button></td>
+      </tr>`;
+    }
+  );
+}
+function loadKubeEvents() {
+  kubeFetchTab(`/api/hosts/${selectedKubeHostId}/kube/events?ns=${encodeURIComponent(currentKubeNamespace)}`, 'events',
+    [t('kube_namespace', 'Namespace'), t('col_status', 'Type'), 'Reason', 'Object', 'Message', 'Count', 'Last Seen'],
+    ev => `<tr>
+      <td style="font-size:var(--fs-xs);color:var(--text-muted);">${escapeHtml(ev.namespace || '-')}</td>
+      <td><span class="badge ${ev.type === 'Warning' ? 'badge-warning' : 'badge-info'}">${escapeHtml(ev.type || 'Normal')}</span></td>
+      <td><b>${escapeHtml(ev.reason || '-')}</b></td>
+      <td class="mono text-muted">${escapeHtml(ev.object || '-')}</td>
+      <td style="font-size:var(--fs-xs);word-break:break-word;">${escapeHtml(ev.message || '-')}</td>
+      <td style="font-size:var(--fs-xs);">${ev.count || 1}</td>
+      <td style="color:var(--text-muted);font-size:var(--fs-xs);">${kubeAge(ev.last)}</td>
+    </tr>`
+  );
+}
+async function loadKubeGenericResource(kind) {
+  const content = document.getElementById('kubeTabContent');
+  if (!content || !selectedKubeHostId) return;
+  content.innerHTML = `<div style="text-align:center;padding:30px;color:var(--text-muted);">${t('kube_loading')}</div>`;
+  const isClusterScoped = (kind === 'pvs');
+  const nsParam = isClusterScoped ? '' : encodeURIComponent(currentKubeNamespace);
+  const url = `/api/hosts/${selectedKubeHostId}/kube/resources?kind=${encodeURIComponent(kind)}&ns=${nsParam}`;
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!data.ok) {
+      content.innerHTML = kubeEmptyHtml(t('error_prefix', 'Error: '), data.error || 'Failed to load', true);
+      return;
+    }
+    kubeGenericCache[kind] = data;
+    const columns = data.columns || [];
+    const rows = data.rows || [];
+    const isSecrets = (kind === 'secrets');
+    const noteHtml = isSecrets ? `<div class="card" style="padding:10px 14px;margin-bottom:12px;background:var(--surface-2);border:1px solid var(--card-border);font-size:var(--fs-xs);color:var(--text-muted);display:flex;align-items:center;gap:8px;"><svg class="icon icon-sm text-accent"><use href="#i-shield"/></svg> <span>${t('kube_secrets_note', 'Secret values are never transmitted or displayed.')}</span></div>` : '';
+
+    if (rows.length === 0) {
+      content.innerHTML = noteHtml + kubeEmptyHtml(t('kube_no_data', 'No items found'), '');
+      return;
+    }
+
+    const heads = columns.map(c => t('col_' + c.toLowerCase(), c.charAt(0).toUpperCase() + c.slice(1)));
+    if (!isSecrets) heads.push('');
+
+    const bodyHtml = rows.map((r, rowIdx) => {
+      const cells = columns.map((col, colIdx) => {
+        const val = r[colIdx] != null ? String(r[colIdx]) : '-';
+        if (col === 'created' || col === 'lastSchedule') {
+          return `<td style="color:var(--text-muted);font-size:var(--fs-xs);">${kubeAge(val)}</td>`;
+        }
+        if (col === 'name') {
+          return `<td><b>${escapeHtml(val)}</b></td>`;
+        }
+        if (col === 'namespace') {
+          return `<td style="font-size:var(--fs-xs);color:var(--text-muted);">${escapeHtml(val)}</td>`;
+        }
+        if (col === 'status') {
+          const isOk = val === 'Bound' || val === 'Complete' || val === 'Active';
+          return `<td><span class="badge ${isOk ? 'badge-healthy' : 'badge-info'}">${escapeHtml(val)}</span></td>`;
+        }
+        return `<td>${escapeHtml(val)}</td>`;
+      }).join('');
+      const actionCell = isSecrets ? '' : `<td style="text-align:right;"><button class="btn btn-icon btn-sm btn-ghost" onclick="openKubeGenericMenu(event, '${kind}', ${rowIdx})" title="Actions">${svgIcon('ellipsis-vertical', 'icon-sm')}</button></td>`;
+      return `<tr>${cells}${actionCell}</tr>`;
+    }).join('');
+
+    content.innerHTML = noteHtml + dockerTableHtml(heads, bodyHtml);
+  } catch(e) {
+    content.innerHTML = kubeEmptyHtml(t('error_prefix', 'Error: '), e.message, true);
+  }
+}
+function openKubeGenericMenu(e, kind, rowIdx) {
+  const data = kubeGenericCache[kind];
+  if (!data || !data.rows || !data.rows[rowIdx]) return;
+  const row = data.rows[rowIdx];
+  const columns = data.columns || [];
+  const nsIdx = columns.indexOf('namespace');
+  const nameIdx = columns.indexOf('name');
+  const ns = nsIdx >= 0 ? row[nsIdx] : '';
+  const name = nameIdx >= 0 ? row[nameIdx] : '';
+  const singular = { ingresses: 'ingress', configmaps: 'configmap', pvcs: 'pvc', pvs: 'pv', jobs: 'job', cronjobs: 'cronjob' }[kind] || kind;
+  dockerFloatingMenu(e, 'kg_' + kind + '_' + rowIdx, [
+    { label: t('kube_describe', 'Describe'), run: () => kubeDescribe(singular, ns, name) }
+  ]);
+}
+function loadKubeApply() {
+  const content = document.getElementById('kubeTabContent');
+  if (!content) return;
+  content.innerHTML = `<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+    <div style="font-size:var(--fs-sm);color:var(--text-muted);">Paste a Kubernetes manifest (YAML) to apply to the cluster. Server-side dry-run is executed first.</div>
+    <textarea id="kubeApplyYaml" class="form-input font-mono" rows="14" style="width:100%;box-sizing:border-box;font-family:var(--font-mono);font-size:var(--fs-xs);resize:vertical;min-height:250px;" placeholder="${escapeHtml(t('kube_apply_placeholder', '# Paste Kubernetes YAML here...'))}"></textarea>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-ghost" onclick="document.getElementById('kubeApplyYaml').value='';document.getElementById('kubeApplyOutput').style.display='none';">${t('clear', 'Clear')}</button>
+      <button class="btn btn-primary" id="btnKubeApplySubmit" onclick="submitKubeApply()" style="display:inline-flex;align-items:center;gap:6px;">
+        ${svgIcon('play', 'icon-sm')} <span>${t('kube_btn_apply', 'Apply YAML')}</span>
+      </button>
+    </div>
+    <pre id="kubeApplyOutput" class="kube-apply-output"></pre>
+  </div>`;
+}
+async function kubeAction(payload, okMsg, refreshTab) {
+  if (!selectedKubeHostId) return;
+  showToast(t('working', 'Working...'), 'info', 2000);
+  try {
+    const res = await fetch(`/api/hosts/${selectedKubeHostId}/kube/action`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showToast(okMsg || t('dk_done', 'Done'), 'success');
+      if (data.output) showDockerOutput((payload.op || '') + ' ' + (payload.name || ''), data.output);
+      if (refreshTab) loadKubeTabData(refreshTab);
+      return data;
+    }
+    showToast(t('error_prefix', 'Error: ') + (data.error || 'Action failed'), 'error', 9000);
+  } catch(e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error', 9000);
+  }
+}
+async function kubeGetOutput(url, title) {
+  if (!selectedKubeHostId) return;
+  showToast(t('working', 'Working...'), 'info', 2000);
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.ok) showDockerOutput(title, data.output || '(No output)');
+    else showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed'), 'error', 9000);
+  } catch(e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error', 9000);
+  }
+}
+async function submitKubeApply() {
+  if (!selectedKubeHostId) return;
+  const yamlEl = document.getElementById('kubeApplyYaml');
+  const yaml = (yamlEl ? yamlEl.value : '').trim();
+  if (!yaml) { showToast(t('kube_apply_empty', 'Please enter a YAML manifest'), 'warning'); return; }
+  const btn = document.getElementById('btnKubeApplySubmit');
+  if (btn) btn.disabled = true;
+  showToast(t('working', 'Working...'), 'info', 2000);
+  try {
+    const res = await fetch(`/api/hosts/${selectedKubeHostId}/kube/apply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yaml })
+    });
+    const data = await res.json();
+    const outEl = document.getElementById('kubeApplyOutput');
+    if (outEl) {
+      outEl.style.display = 'block';
+      outEl.textContent = data.output || (data.ok ? t('kube_apply_success') : ('Error: ' + (data.error || 'Apply failed')));
+      outEl.className = 'kube-apply-output ' + (data.ok ? 'success' : 'error');
+    }
+    if (data.ok) showToast(t('kube_apply_success', 'Manifest applied successfully'), 'success');
+    else showToast(t('error_prefix', 'Error: ') + (data.error || 'Apply failed'), 'error', 9000);
+  } catch(e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error', 9000);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+function openKubeNodeMenu(e, idx) {
+  const n = kubeNodesCache[idx];
+  if (!n) return;
+  const isCordoned = !!n.unschedulable;
+  dockerFloatingMenu(e, 'kn_' + idx, [
+    { label: isCordoned ? t('kube_uncordon', 'Uncordon Node') : t('kube_cordon', 'Cordon Node'), run: () => kubeAction({ op: isCordoned ? 'uncordon' : 'cordon', kind: 'node', ns: '', name: n.name }, null, 'nodes') },
+    { label: t('kube_describe', 'Describe'), run: () => kubeDescribe('node', '', n.name) }
+  ]);
+}
+function openKubeWorkloadMenu(e, idx) {
+  const wl = kubeWorkloadsCache[idx];
+  if (!wl) return;
+  const items = [];
+  if (wl.kind === 'Deployment' || wl.kind === 'StatefulSet') {
+    items.push({ label: t('kube_btn_scale', 'Scale'), run: () => openKubeScaleModal(wl) });
+  }
+  items.push({ label: t('kube_restart_workload', 'Restart Rollout'), run: () => kubeAction({ op: 'restart', kind: wl.kind.toLowerCase(), ns: wl.namespace, name: wl.name }, null, 'workloads') });
+  items.push({ label: t('kube_describe', 'Describe'), run: () => kubeDescribe(wl.kind.toLowerCase(), wl.namespace, wl.name) });
+  dockerFloatingMenu(e, 'kw_' + idx, items);
+}
+function openKubePodMenu(e, idx) {
+  const p = kubePodsCache[idx];
+  if (!p) return;
+  dockerFloatingMenu(e, 'kp_' + idx, [
+    { label: t('kube_exec', 'Exec Console'), run: () => promptKubeContainer(p, t('kube_exec', 'Exec Console'), c => kubePodExec(p, c)) },
+    { label: t('kube_logs', 'Pod Logs'), run: () => promptKubeContainer(p, t('kube_logs', 'Pod Logs'), c => openKubeLogs(p, c)) },
+    { label: t('kube_describe', 'Describe'), run: () => kubeDescribe('pod', p.namespace, p.name) },
+    null,
+    { label: t('delete', 'Delete'), danger: true, run: () => kubeDeletePod(p) }
+  ]);
+}
+function openKubeServiceMenu(e, idx) {
+  const s = kubeServicesCache[idx];
+  if (!s) return;
+  dockerFloatingMenu(e, 'ks_' + idx, [
+    { label: t('kube_describe', 'Describe'), run: () => kubeDescribe('service', s.namespace, s.name) }
+  ]);
+}
+function openKubeScaleModal(wl) {
+  currentScaleTarget = wl;
+  document.getElementById('kubeScaleModalTitle').textContent = `${t('kube_scale_title')}: ${wl.name}`;
+  document.getElementById('kubeScaleWorkloadDesc').textContent = `${wl.kind} • ${wl.namespace}/${wl.name} (Current desired: ${wl.desired || 1})`;
+  document.getElementById('kubeScaleReplicas').value = wl.desired || 1;
+  openModal('kubeScaleModal');
+}
+async function submitKubeScale() {
+  if (!currentScaleTarget || !selectedKubeHostId) return;
+  const repInput = document.getElementById('kubeScaleReplicas');
+  const replicas = parseInt(repInput ? repInput.value : '1', 10);
+  if (isNaN(replicas) || replicas < 0 || replicas > 1000) {
+    showToast('Replicas must be between 0 and 1000', 'warning');
+    return;
+  }
+  const btn = document.getElementById('kubeScaleSubmitBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await kubeAction({ op: 'scale', kind: currentScaleTarget.kind.toLowerCase(), ns: currentScaleTarget.namespace, name: currentScaleTarget.name, replicas }, null, 'workloads');
+    if (res && res.ok) closeModal('kubeScaleModal');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+async function kubeDeletePod(pod) {
+  if (!selectedKubeHostId) return;
+  const msg = t('kube_delete_pod_confirm', `Are you sure you want to delete pod ${pod.name} in namespace ${pod.namespace}?`)
+    .replace('{name}', pod.name).replace('{ns}', pod.namespace);
+  const confirmed = await showConfirm({
+    title: t('kube_delete_pod_title', 'Delete Pod'),
+    message: msg,
+    danger: true,
+    confirmText: t('delete', 'Delete')
+  });
+  if (!confirmed) return;
+  kubeAction({ op: 'delete', kind: 'pod', ns: pod.namespace, name: pod.name }, null, 'pods');
+}
+function kubeDescribe(kind, ns, name) {
+  kubeGetOutput(`/api/hosts/${selectedKubeHostId}/kube/describe?kind=${encodeURIComponent(kind)}&ns=${encodeURIComponent(ns || '')}&name=${encodeURIComponent(name)}`, t('kube_describe', 'Describe') + ': ' + kind + '/' + name);
+}
+function kubePodLogs(pod) {
+  const container = (pod.containers && pod.containers.length > 0) ? pod.containers[0] : '';
+  kubeGetOutput(`/api/hosts/${selectedKubeHostId}/kube/logs?ns=${encodeURIComponent(pod.namespace)}&pod=${encodeURIComponent(pod.name)}&container=${encodeURIComponent(container)}&tail=200`, t('kube_logs', 'Pod Logs') + ': ' + pod.name + (container ? ` (${container})` : ''));
+}
+let kubeContainerChoiceCallback = null;
+function promptKubeContainer(pod, title, onSelected) {
+  const containers = Array.isArray(pod.containers) ? pod.containers : [];
+  if (containers.length <= 1) {
+    onSelected(containers[0] || '');
+    return;
+  }
+  kubeContainerChoiceCallback = onSelected;
+  document.getElementById('kubeContainerModalTitle').textContent = `${title}: ${pod.name}`;
+  document.getElementById('kubeContainerModalDesc').textContent = `${pod.namespace}/${pod.name}`;
+  const sel = document.getElementById('kubeContainerSelect');
+  if (sel) {
+    sel.innerHTML = containers.map((c, i) => `<option value="${escapeHtml(c)}" ${i === 0 ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
+  }
+  openModal('kubeContainerModal');
+}
+function submitKubeContainerChoice() {
+  const sel = document.getElementById('kubeContainerSelect');
+  const val = sel ? sel.value : '';
+  closeModal('kubeContainerModal');
+  if (typeof kubeContainerChoiceCallback === 'function') {
+    const cb = kubeContainerChoiceCallback;
+    kubeContainerChoiceCallback = null;
+    cb(val);
+  }
+}
+async function kubePodExec(pod, container) {
+  if (!selectedKubeHostId) return;
+  showToast(t('working', 'Working...'), 'info', 1500);
+  try {
+    const res = await fetch(`/api/hosts/${selectedKubeHostId}/kube/exec-cmd?ns=${encodeURIComponent(pod.namespace)}&pod=${encodeURIComponent(pod.name)}&container=${encodeURIComponent(container || '')}`);
+    const data = await res.json();
+    if (!data.ok || !data.cmd) {
+      showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to get exec command'), 'error', 8000);
+      return;
+    }
+    const tab = openTerminalForHost(selectedKubeHostId, null, true, 'exec ' + pod.name);
+    if (!tab) return;
+    for (let i = 0; i < 60; i++) {
+      if (tab.socketLeft && tab.socketLeft.readyState === WebSocket.OPEN) {
+        setTimeout(() => sendTabCommand(tab.id, data.cmd), 400);
+        return;
+      }
+      await new Promise(r => setTimeout(r, 200));
+    }
+    showToast(t('dk_console_timeout', 'Terminal connection timed out'), 'warning');
+  } catch(e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error', 8000);
+  }
+}
+let kubeLogsSocket = null, currentKubeLogsPod = null, currentKubeLogsContainer = null;
+function stopKubeLogs() {
+  if (kubeLogsSocket) {
+    try { kubeLogsSocket.close(); } catch(e) {}
+    kubeLogsSocket = null;
+  }
+}
+function openKubeLogs(pod, container) {
+  stopKubeLogs();
+  currentKubeLogsPod = pod;
+  currentKubeLogsContainer = container || ((pod.containers && pod.containers[0]) || '');
+  const out = document.getElementById('kubeLogsOutput');
+  const status = document.getElementById('kubeLogsStatus');
+  const titleEl = document.getElementById('kubeLogsTitle');
+  const host = (allRawHosts || []).find(h => String(h.id) === String(selectedKubeHostId));
+  const hostName = host ? host.name : selectedKubeHostId;
+
+  if (titleEl) titleEl.textContent = `${t('kube_logs', 'Pod Logs')}: ${pod.name} @ ${hostName}`;
+  if (out) out.textContent = '';
+  if (status) {
+    status.textContent = t('docker_logs_connecting', 'Connecting...');
+    status.className = 'badge badge-info';
+  }
+
+  const cWrap = document.getElementById('kubeLogsContainerWrap');
+  const cSel = document.getElementById('kubeLogsContainerSelect');
+  const containers = Array.isArray(pod.containers) ? pod.containers : [];
+  if (cWrap && cSel) {
+    if (containers.length > 1) {
+      cWrap.style.display = 'inline-flex';
+      cSel.innerHTML = containers.map(c => `<option value="${escapeHtml(c)}" ${c === currentKubeLogsContainer ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
+    } else {
+      cWrap.style.display = 'none';
+      cSel.innerHTML = '';
+    }
+  }
+
+  openModal('kubeLogsModal');
+  connectKubeLogsStream();
+}
+function onKubeLogsParamChange() {
+  if (!currentKubeLogsPod) return;
+  const cSel = document.getElementById('kubeLogsContainerSelect');
+  if (cSel && cSel.value) currentKubeLogsContainer = cSel.value;
+  connectKubeLogsStream();
+}
+function connectKubeLogsStream() {
+  stopKubeLogs();
+  const pod = currentKubeLogsPod;
+  if (!pod || !selectedKubeHostId) return;
+
+  const out = document.getElementById('kubeLogsOutput');
+  const status = document.getElementById('kubeLogsStatus');
+  if (out) out.textContent = '';
+  if (status) {
+    status.textContent = t('docker_logs_connecting', 'Connecting...');
+    status.className = 'badge badge-info';
+  }
+
+  const tailSel = document.getElementById('kubeLogsTailSelect');
+  const tail = tailSel ? (tailSel.value || '200') : '200';
+  const prevToggle = document.getElementById('kubeLogsPreviousToggle');
+  const isPrevious = prevToggle ? prevToggle.checked : false;
+
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = `${protocol}//${location.host}/ws/kube/logs?host_id=${selectedKubeHostId}&ns=${encodeURIComponent(pod.namespace)}&pod=${encodeURIComponent(pod.name)}&container=${encodeURIComponent(currentKubeLogsContainer || '')}&tail=${encodeURIComponent(tail)}${isPrevious ? '&previous=1' : ''}`;
+
+  const ws = new WebSocket(url);
+  ws.binaryType = 'arraybuffer';
+  kubeLogsSocket = ws;
+  const decoder = new TextDecoder('utf-8');
+  let scrollQueued = false;
+  const maxChars = 500000;
+  let chars = 0;
+
+  ws.onopen = () => {
+    if (kubeLogsSocket !== ws) return;
+    status.textContent = isPrevious ? t('completed', 'Completed') : t('docker_logs_live', 'Live');
+    status.className = isPrevious ? 'badge badge-info' : 'badge badge-healthy';
+  };
+
+  ws.onmessage = (ev) => {
+    if (kubeLogsSocket !== ws) return;
+    if (!document.getElementById('kubeLogsModal').classList.contains('open')) {
+      stopKubeLogs();
+      return;
+    }
+    let text = typeof ev.data === 'string' ? ev.data : decoder.decode(ev.data, { stream: true });
+    text = text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+    if (!text) return;
+    out.appendChild(document.createTextNode(text));
+    chars += text.length;
+    while (chars > maxChars && out.firstChild && out.firstChild !== out.lastChild) {
+      chars -= out.firstChild.textContent.length;
+      out.removeChild(out.firstChild);
+    }
+    const autoScrollEl = document.getElementById('kubeLogsAutoScroll');
+    if (autoScrollEl && autoScrollEl.checked && !scrollQueued) {
+      scrollQueued = true;
+      requestAnimationFrame(() => { scrollQueued = false; out.scrollTop = out.scrollHeight; });
+    }
+  };
+
+  ws.onclose = () => {
+    if (kubeLogsSocket !== ws) return;
+    kubeLogsSocket = null;
+    status.textContent = t('docker_logs_ended', 'Ended');
+    status.className = 'badge badge-unknown';
+  };
+}
+function copyKubeLogs() {
+  const out = document.getElementById('kubeLogsOutput');
+  const txt = out ? out.textContent : '';
+  if (!txt) return;
+  copyTextToClipboard(txt);
+  showToast(t('copied', 'Copied!'), 'success');
 }
 // ===== SLICE-E:END =====
 </script>

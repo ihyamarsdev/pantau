@@ -395,6 +395,24 @@ Tab **Docker** pada sebuah host membaca engine Docker secara langsung lewat SSH 
 
 Tampilan diambil sesuai kebutuhan lewat `GET /api/hosts/{id}/docker/stats`, `/docker/volumes`, dan `/docker/networks`. Jika Docker tidak bisa dibaca (belum terpasang, izin ditolak), tab menampilkan pesan error dari Docker sendiri.
 
+### Side Panel Global, Manajemen Docker & Kubernetes
+
+Pantau menyediakan bilah navigasi kiri (**Side Panel**) permanen di antara header dan footer:
+
+- **Navigasi & Rel Ikon Ciut (*Icon Rail*)**: Beralih antara **Host** (dashboard armada utama), **Docker** (ringkasan kontainer multi-host), dan **Kubernetes** (pengelolaan klaster k3s/rke2 ringan). Bilah dapat diciutkan menjadi rel ikon ramping via tombol ciut di bagian bawah; status simpanan tersimpan di `localStorage`. Pada layar mobile (<768px), panel beralih menjadi laci *off-canvas* yang dibuka lewat tombol ikon menu di header.
+- **Bagian Docker**: Pemilih host dengan indikator status live dan filter pencarian. Memilih host langsung membuka antarmuka manajemen Docker ala Portainer: siklus hidup container, penarikan image, volume, jaringan, stack compose, serta konsol terminal.
+- **Bagian Kubernetes (k3s / rke2)**: Menyediakan inspeksi control plane klaster secara agentless untuk instalasi Kubernetes ringan.
+  - **Pemilih Host dengan Pencarian**: Pencarian cepat berdasarkan nama host dan alamat IP dengan indikator status live, menggantikan pemilih statis.
+  - **Deteksi Otomatis**: Memeriksa `/api/hosts/{id}/kube/detect` untuk mendeteksi distribusi (`k3s` atau `rke2`), versi, dan peran server tanpa agen maupun penyimpanan kredensial klaster.
+  - **Tab Telemetri Klaster**:
+    - **Node**: Inventaris node, status kesiapan (*Ready*), peran (*roles*), kapasitas memori dalam format GB standar, dan aksi sekali klik untuk cordon, uncordon, serta describe.
+    - **Workload**: Deployment, StatefulSet, dan DaemonSet dengan pelacakan replika, pengubahan skala (*scale* 0–1000), restart rollout, dan dialog describe.
+    - **Pod**: Status pod lintas namespace dengan hitungan restart, konsol interaktif **Exec** di Terminal Dock, streaming **Log** langsung via WebSocket (pemilih multi-kontainer, tail baris kustom, toggle instans kontainer sebelumnya, auto-scroll, dan salin ke clipboard), diagnostik describe, dan penghapusan pod.
+    - **Service & Ingress**: Definisi service, IP klaster/eksternal, port, host ingress, target backend, dan dialog describe.
+    - **Konfigurasi & Penyimpanan**: ConfigMap, Secret (dengan jaminan keamanan tanpa pembacaan nilai rahasia), PersistentVolumeClaims (PVC), serta PersistentVolumes (PV, berlingkup klaster).
+    - **Batch Job**: Job dan CronJob dengan pemantauan penyelesaian, jadwal, status penangguhan, dan inspeksi describe.
+    - **Event**: Catatan event informasional dan peringatan pada klaster beserta frekuensi kemunculan dan usia relatif.
+    - **Terapkan Manifest**: Editor YAML terintegrasi untuk menerapkan manifest Kubernetes dengan validasi server-side dry-run (`--dry-run=server`) otomatis sebelum penerapan.
 ### Evaluasi Kelayakan Server dengan Lifecycle Assessment
 
 Pantau menghitung nilai kelayakan sistem secara transparan melalui **Lifecycle Score** (0–100) berdasarkan 6 faktor evaluasi:

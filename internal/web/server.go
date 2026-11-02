@@ -218,6 +218,7 @@ func (s *Server) routes() {
 	// WebSockets (Terminal & Docker Logs)
 	s.mux.HandleFunc("/ws/terminal", s.authMiddleware(s.handleWSTerminal))
 	s.mux.HandleFunc("/ws/docker/logs", s.authMiddleware(s.handleWSDockerLogs))
+	s.mux.HandleFunc("/ws/kube/logs", s.authMiddleware(s.handleWSKubeLogs))
 
 	// SSH Direct-TCPIP Reverse Proxy Tunnel
 	s.mux.HandleFunc("/api/tunnel/", s.authMiddleware(s.handleTunnel))
@@ -1329,6 +1330,12 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		// Portainer-style management endpoints (images, system, stacks, inspect, container/image/volume/network ops)
 		if s.handleDockerManage(w, r, hostID, parts) {
+			return
+		}
+		http.Error(w, "not found", http.StatusNotFound)
+
+	case "kube":
+		if s.handleKubeManage(w, r, hostID, parts) {
 			return
 		}
 		http.Error(w, "not found", http.StatusNotFound)

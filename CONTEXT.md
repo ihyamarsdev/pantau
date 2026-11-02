@@ -470,3 +470,15 @@ _Avoid_: Compose app, docker service, swarm stack
 **Docker Privilege Fallback**:
 Aturan bahwa perintah Docker dijalankan sebagai akun SSH biasa dan baru memakai `sudo -n docker` bila socket Docker menolak akses (*permission denied*) dan sudo tanpa kata sandi tersedia; kata sandi tidak pernah dipakai atau disimpan.
 _Avoid_: Sudo docker mode, root docker, privileged docker
+
+**Side Panel**:
+Bilah navigasi tetap di sisi kiri antarmuka Pantau (di bawah header, di atas footer) dengan bagian Hosts, Docker, dan Kubernetes; dapat diciutkan menjadi rel ikon, dan menjadi off-canvas pada layar sempit.
+_Avoid_: Sidebar, menu samping, navigation drawer
+
+**Kubernetes Cluster Host**:
+Host yang menjalankan control plane (server) k3s atau RKE2 dan dikelola Pantau lewat `kubectl` di atas SSH; klaster dideteksi per permintaan dan tidak disimpan. Node agent saja tidak didukung.
+_Avoid_: K8s node, cluster entry, kubeconfig target
+
+**Kubernetes Privilege Fallback**:
+Aturan bahwa `kubectl` dijalankan sebagai akun SSH biasa dan baru memakai `sudo -n` (dengan `KUBECONFIG` k3s/RKE2) bila kubeconfig ditolak (*permission denied*) dan sudo tanpa kata sandi tersedia; kata sandi tidak pernah dipakai atau disimpan.
+_Avoid_: Sudo kubectl mode, root kubectl, privileged kubectl
