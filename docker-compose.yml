@@ -7,6 +7,7 @@ services:
       - "8080:8080"
     volumes:
       - ./data:/app/data
+      - ${HOME}/.ssh/config:/root/.ssh/config:ro
     environment:
       - PANTAU_PORT=8080
       - PANTAU_DB=/app/data/pantau.db
