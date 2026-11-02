@@ -1233,6 +1233,7 @@ func (ins *Inspector) evaluateDesiredRules(h *store.Host, runner sshrunner.Runne
 		}
 	}
 
+	_ = ins.db.PruneActualItems(h.ID) // legacy leftovers of rules deleted before pruning existed
 	return driftFound, driftSummaries, checkedCount, nil
 }
 

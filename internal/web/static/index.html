@@ -6094,6 +6094,10 @@ const I18N = {
     "prompt_target": "Target (e.g. nginx, /, /var/backups/db.sql.gz):",
     "prompt_expected": "Expected (e.g. running, <85%, fresh_24h, active):",
     "confirm_delete_rule": "Delete this rule?",
+    "delete_selected": "Delete selected",
+    "confirm_delete_rules": "Delete {n} selected rules?",
+    "rules_deleted_n": "{n} rules deleted",
+    "rules_delete_partial": "{ok} deleted, {fail} failed",
     "docker_containers": "Docker Containers",
     "no_containers_title": "No Docker Containers",
     "no_containers_desc": "No active Docker daemon or running containers found on this host.",
@@ -7393,6 +7397,10 @@ const I18N = {
     "prompt_target": "Target (contoh: nginx, /, /var/backups/db.sql.gz):",
     "prompt_expected": "Ekspektasi (contoh: running, <85%, fresh_24h, active):",
     "confirm_delete_rule": "Hapus aturan ini?",
+    "delete_selected": "Hapus terpilih",
+    "confirm_delete_rules": "Hapus {n} aturan terpilih?",
+    "rules_deleted_n": "{n} aturan dihapus",
+    "rules_delete_partial": "{ok} dihapus, {fail} gagal",
     "docker_containers": "Container Docker",
     "no_containers_title": "Tidak Ada Container Docker",
     "no_containers_desc": "Tidak ditemukan daemon Docker aktif atau container yang sedang berjalan pada host ini.",
@@ -10321,7 +10329,7 @@ async function testHostSSH(id) {
   }
 }
 
-async function inspectHost(id, e) {
+async function inspectHost(id, e, quietCooldown) {
   if (e) e.stopPropagation();
   const modalBtn = (currentHost && currentHost.id === id) ? document.getElementById('inspectBtnModal') : null;
   const btns = [document.getElementById('inspectBtn-' + id), document.getElementById('inspectBtnList-' + id), modalBtn].filter(Boolean);
@@ -10341,7 +10349,7 @@ async function inspectHost(id, e) {
     } else if (res.status === 409 || data.in_flight) {
       showToast(data.error || t('inspect_in_flight', 'Inspection is already in progress for this host'), 'warning');
     } else if (res.status === 429 || data.cooldown) {
-      showToast(data.error || t('inspect_cooldown', 'Host was recently inspected. Please wait a moment.'), 'warning');
+      if (!quietCooldown) showToast(data.error || t('inspect_cooldown', 'Host was recently inspected. Please wait a moment.'), 'warning');
     } else {
       showToast(t('inspect_failed', 'Inspection failed: ') + (data.error || 'Unknown error'), 'error');
     }
@@ -11058,6 +11066,9 @@ function switchTab(tab, presetID) {
           <button class="btn btn-primary btn-sm" onclick="addRulePrompt(${d.host.id})" style="display: inline-flex; align-items: center; gap: 4px;">
             ${svgIcon('plus', 'icon-sm')} <span>${t('add_rule')}</span>
           </button>
+          ${rules.length > 0 ? `<button class="btn btn-danger btn-sm" id="btnDeleteSelectedRules" onclick="deleteSelectedRules()" disabled style="display: inline-flex; align-items: center; gap: 4px;">
+            ${svgIcon('trash-2', 'icon-sm')} <span>${t('delete_selected', 'Delete selected')}<span id="ruleSelCount"></span></span>
+          </button>` : ''}
         </div>
       </div>
       ${rules.length === 0 ? `
@@ -11080,6 +11091,7 @@ function switchTab(tab, presetID) {
             <table style="width: 100%; font-size: var(--fs-xs); margin: 0;">
               <thead>
                 <tr>
+                  <th style="width: 28px;"><input type="checkbox" id="ruleSelectAll" style="width: auto;" onchange="toggleAllRules(this.checked)" /></th>
                   <th>${t('kind')}</th>
                   <th>${t('target')}</th>
                   <th>${t('expected')}</th>
@@ -11096,6 +11108,7 @@ function switchTab(tab, presetID) {
                   const iconName = kindIcons[r.kind] || 'circle-dot';
                   return `
                     <tr>
+                      <td><input type="checkbox" class="rule-cb" value="${r.id}" style="width: auto;" onchange="updateRuleSelection()" /></td>
                       <td style="white-space: nowrap;">
                         <span style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600;">
                           ${svgIcon(iconName, 'icon-sm')}
@@ -12260,7 +12273,8 @@ async function submitRuleForm() {
       }
       closeModal('ruleModal');
       showToast(editId ? t('rule_updated', 'Rule updated successfully') : t('rule_added', 'Rule added successfully'), 'success');
-      inspectHost(hostID);
+      refreshHostDetailAfterRuleChange(hostID);
+      inspectHost(hostID, null, true); // evaluates the new rule; the cooldown may refuse it, the refresh above already shows the rule
     } else {
       const raw = (await res.text()).trim();
       let msg = raw;
@@ -12279,10 +12293,52 @@ async function deleteRule(id) {
   const res = await fetch('/api/rules/' + id, { method: 'DELETE' });
   if (res.ok) {
     showToast(t('rule_deleted', 'Rule deleted successfully'), 'success');
-    inspectHost(currentHost.id);
+    refreshHostDetailAfterRuleChange(currentHost.id);
   } else {
     showToast(t('failed_prefix', 'Failed to delete rule'), 'error');
   }
+}
+
+// Re-render Host Detail straight from the server after a rule change. It used to go through inspectHost(), which
+// the 15 s Inspection Cooldown refuses after the first call, and the view only refreshed when an inspection
+// succeeded, so deleting several rules in a row looked stuck ("please wait") with the deleted rules still listed.
+// The server now clears a removed rule's result immediately, so no inspection is needed.
+function refreshHostDetailAfterRuleChange(hostID) {
+  loadHosts();
+  if (currentHost && String(currentHost.id) === String(hostID)) openHostDetail(currentHost.id);
+}
+
+// Multi-select delete for the Desired State table: one confirmation, then the rules are removed one by one and the
+// list is refreshed once.
+function updateRuleSelection() {
+  const all = [...document.querySelectorAll('.rule-cb')];
+  const n = all.filter(c => c.checked).length;
+  const btn = document.getElementById('btnDeleteSelectedRules');
+  if (btn) btn.disabled = n === 0;
+  const cnt = document.getElementById('ruleSelCount');
+  if (cnt) cnt.textContent = n ? ` (${n})` : '';
+  const head = document.getElementById('ruleSelectAll');
+  if (head) { head.checked = n > 0 && n === all.length; head.indeterminate = n > 0 && n < all.length; }
+}
+function toggleAllRules(checked) {
+  document.querySelectorAll('.rule-cb').forEach(c => { c.checked = checked; });
+  updateRuleSelection();
+}
+async function deleteSelectedRules() {
+  const ids = [...document.querySelectorAll('.rule-cb')].filter(c => c.checked).map(c => c.value);
+  if (!ids.length) return;
+  const message = t('confirm_delete_rules', 'Delete {n} selected rules?').replace('{n}', ids.length);
+  if (!await showConfirm({ message, confirmText: t('delete', 'Delete'), danger: true })) return;
+  let failed = 0;
+  for (const id of ids) {
+    try {
+      const res = await fetch('/api/rules/' + encodeURIComponent(id), { method: 'DELETE' });
+      if (!res.ok) failed++;
+    } catch (e) { failed++; }
+  }
+  if (failed) showToast(t('rules_delete_partial', '{ok} deleted, {fail} failed').replace('{ok}', ids.length - failed).replace('{fail}', failed), 'warning');
+  else showToast(t('rules_deleted_n', '{n} rules deleted').replace('{n}', ids.length), 'success');
+  refreshHostDetailAfterRuleChange(currentHost.id);
 }
 
 let dockerSubTab = 'containers';

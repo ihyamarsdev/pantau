@@ -839,3 +839,80 @@ func TestKubeClusterIDAndModeStore(t *testing.T) {
 	}
 }
 
+
+// A deleted or disabled rule must not keep showing as Drift: the Host Detail banner reads actual_items, which
+// used to outlive the rule.
+func TestRuleRemovalPrunesActualItems(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	hostID, err := db.CreateHost(&Host{Name: "h", Host: "10.0.0.1", Port: 22, User: "root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []DesiredRule{
+		{HostID: hostID, Kind: "service", Target: "nginx", Expected: "active", Enabled: true},
+		{HostID: hostID, Kind: "disk", Target: "/", Expected: "<85", Enabled: true},
+		{HostID: hostID, Kind: "port", Target: "443", Expected: "open", Enabled: true},
+	} {
+		r := r
+		if err := db.SaveDesiredRule(&r); err != nil {
+			t.Fatal(err)
+		}
+		status := "ok"
+		if r.Kind == "service" || r.Kind == "port" {
+			status = "drift"
+		}
+		if err := db.UpsertActualItem(&ActualItem{HostID: hostID, Kind: r.Kind, Target: r.Target, Current: "x", Status: status}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`UPDATE hosts SET status='degraded' WHERE id=?`, hostID); err != nil {
+		t.Fatal(err)
+	}
+	kinds := func() string {
+		items, _ := db.ListActualItems(hostID)
+		var ks []string
+		for _, it := range items {
+			ks = append(ks, it.Kind)
+		}
+		return strings.Join(ks, ",")
+	}
+	hostStatus := func() string {
+		h, _ := db.GetHost(hostID)
+		return h.Status
+	}
+	ruleID := func(kind string) int64 {
+		rules, _ := db.ListDesiredRules(hostID)
+		for _, r := range rules {
+			if r.Kind == kind {
+				return r.ID
+			}
+		}
+		t.Fatalf("rule %s not found", kind)
+		return 0
+	}
+
+	// Deleting one of two drifting rules removes only its item; the Host stays degraded.
+	if err := db.DeleteDesiredRule(ruleID("service")); err != nil {
+		t.Fatal(err)
+	}
+	if got := kinds(); got != "disk,port" || hostStatus() != "degraded" {
+		t.Fatalf("after deleting service: items=%q status=%s", got, hostStatus())
+	}
+	// Disabling the last drifting rule clears it too, and the Host recovers without waiting for an inspection.
+	port := DesiredRule{HostID: hostID, Kind: "port", Target: "443", Expected: "open", Enabled: false}
+	if err := db.SaveDesiredRule(&port); err != nil {
+		t.Fatal(err)
+	}
+	if got := kinds(); got != "disk" || hostStatus() != "healthy" {
+		t.Fatalf("after disabling port: items=%q status=%s", got, hostStatus())
+	}
+	// Deleting an unknown rule is a no-op.
+	if err := db.DeleteDesiredRule(99999); err != nil {
+		t.Fatal(err)
+	}
+}
