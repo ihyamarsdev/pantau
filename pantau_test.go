@@ -455,7 +455,8 @@ func TestTicket06_BackupFreshness(t *testing.T) {
 
 	// Case 1: Fresh backup file (size 1048576 bytes, modified 2 hours ago)
 	twoHoursAgo := time.Now().Add(-2 * time.Hour).Unix()
-	env.mockRunner.Handlers[fmt.Sprintf(`stat -c "%%s %%Y" %s 2>/dev/null || ls -l %s 2>/dev/null`, backupPath, backupPath)] = func() (string, string, int, error) {
+	// Match on the target only: how the stat/ls pipeline is spelled is an implementation detail.
+	env.mockRunner.Handlers[backupPath] = func() (string, string, int, error) {
 		return fmt.Sprintf("1048576 %d", twoHoursAgo), "", 0, nil
 	}
 
@@ -478,7 +479,7 @@ func TestTicket06_BackupFreshness(t *testing.T) {
 
 	// Case 2: Stale backup file (modified 48 hours ago)
 	twoDaysAgo := time.Now().Add(-48 * time.Hour).Unix()
-	env.mockRunner.Handlers[fmt.Sprintf(`stat -c "%%s %%Y" %s 2>/dev/null || ls -l %s 2>/dev/null`, backupPath, backupPath)] = func() (string, string, int, error) {
+	env.mockRunner.Handlers[backupPath] = func() (string, string, int, error) {
 		return fmt.Sprintf("1048576 %d", twoDaysAgo), "", 0, nil
 	}
 

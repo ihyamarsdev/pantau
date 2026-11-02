@@ -189,7 +189,7 @@ Pantau tidak hanya menampilkan metrik pasif; sistem ini secara aktif memverifika
 
 ### Tabel Referensi Aturan Desired State
 
-Pantau mendukung 8 jenis aturan Desired State yang dievaluasi secara otomatis pada setiap siklus inspeksi:
+Pantau mendukung 10 jenis aturan Desired State yang dievaluasi secara otomatis pada setiap siklus inspeksi:
 | Jenis (`Kind`) | Target Identifier | Kondisi Diharapkan (`Expected`) | Contoh Target & Expected | Kriteria Drift & Root Cause Excerpt |
 | :--- | :--- | :--- | :--- | :--- |
 | **`container`** | Nama kontainer Docker | `running` | `nginx` &rarr; `running` | Kontainer `exited`, `dead`, crash. Menyajikan exit code, OOMKilled, dan 50 baris log kontainer. |
@@ -197,10 +197,11 @@ Pantau mendukung 8 jenis aturan Desired State yang dievaluasi secara otomatis pa
 | **`port`** | Port TCP atau `ip:port` | `listening` (atau `closed`) | `80` &rarr; `listening` | Port tidak terbuka / proses mati. Memeriksa `ss`/`netstat`. |
 | **`disk`** | Mount point partisi | `<N%` (ambang batas) | `/` &rarr; `<85%` | Utilisasi partisi >= ambang batas atau storage IO timeout 5s (hung NFS). |
 | **`cron`** | Kata kunci / perintah cron | `configured` | `backup.sh` &rarr; `configured` | Baris perintah tidak ditemukan dalam `crontab -l` user SSH. |
-| **`backup`** | Path absolut berkas backup | `fresh_<N>h` (default: 24h) | `/backup/db.sql.gz` &rarr; `fresh_24h` | Berkas tidak ditemukan, berukuran 0 byte, atau usia berkas melampaui N jam. |
+| **`backup`** | Path absolut berkas backup atau pola glob | `fresh_<N>h[,verify=<gzip\|tar\|zstd\|xz\|sha256>]` (default: 24h) | `/backup/*.sql.gz` &rarr; `fresh_24h,verify=gzip` | Berkas tidak ditemukan, berukuran 0 byte, usang, atau verifikasi integritas isi gagal (`gzip -t`, `tar -tf`, dll). Mengevaluasi berkas terbaru yang cocok. |
+| **`http`** | URL HTTP/HTTPS lengkap | Token status dan batas latensi opsional | `https://api.internal/health` &rarr; `2xx,<1500ms` | Endpoint tidak dapat dihubungi dari Host via `curl`, kode status tidak cocok, atau latensi melampaui batas. Dievaluasi dari perspektif Host via SSH. |
+| **`tls`** | Hostname/port atau URL HTTPS | `>=Nd` (sisa hari minimum sebelum sertifikat kedaluwarsa) | `api.example.com:443` &rarr; `>=14d` | Sertifikat kedaluwarsa dalam N hari atau handshake TLS gagal. Dievaluasi dari perspektif Host via `openssl`. |
 | **`process`** | Pola atau nama proses | `running` (atau `stopped`) | `celery` &rarr; `running` | Proses tidak aktif pada sistem (memeriksa `pgrep`/`ps`). |
 | **`security_updates`** | `security` (tetap) | `none` atau `<=N` (ambang batas) | `security` &rarr; `none` | Pembaruan keamanan melebihi ambang batas N, belum pernah dipindai, hasil scan >72 jam, atau berstatus `unsupported`/`error`. Dievaluasi dari cache scan terbaru. |
-
 ### Konfigurasi Backup Freshness & Protected Path
 
 - **Backup Freshness**: Daftarkan lokasi file backup target (contoh: `/backup/postgres/daily.sql.gz`) beserta batas kedaluwarsa waktu (misal: harus diperbarui dalam 24 jam terakhir dan ukuran berkas `> 0 byte`). Pantau akan menandai **Drift** jika berkas backup hilang, kosong, atau usang.
@@ -401,18 +402,28 @@ Pantau menyediakan bilah navigasi kiri (**Side Panel**) permanen di antara heade
 
 - **Navigasi & Rel Ikon Ciut (*Icon Rail*)**: Beralih antara **Host** (dashboard armada utama), **Docker** (ringkasan kontainer multi-host), dan **Kubernetes** (pengelolaan klaster k3s/rke2 ringan). Bilah dapat diciutkan menjadi rel ikon ramping via tombol ciut di bagian bawah; status simpanan tersimpan di `localStorage`. Pada layar mobile (<768px), panel beralih menjadi laci *off-canvas* yang dibuka lewat tombol ikon menu di header.
 - **Bagian Docker**: Pemilih host dengan indikator status live dan filter pencarian. Memilih host langsung membuka antarmuka manajemen Docker ala Portainer: siklus hidup container, penarikan image, volume, jaringan, stack compose, serta konsol terminal.
-- **Bagian Kubernetes (k3s / rke2)**: Menyediakan inspeksi control plane klaster secara agentless untuk instalasi Kubernetes ringan.
-  - **Pemilih Host dengan Pencarian**: Pencarian cepat berdasarkan nama host dan alamat IP dengan indikator status live, menggantikan pemilih statis.
-  - **Deteksi Otomatis**: Memeriksa `/api/hosts/{id}/kube/detect` untuk mendeteksi distribusi (`k3s` atau `rke2`), versi, dan peran server tanpa agen maupun penyimpanan kredensial klaster.
+- **Bagian Kubernetes (k3s / rke2)**: Menyediakan inspeksi dan operasional control plane klaster secara agentless untuk instalasi Kubernetes ringan.
+  - **Pemilih Host Terkelompok Klaster**: Menampilkan klaster dengan ketersediaan tinggi (*high-availability*) sebagai satu entri terkelompok berdasarkan ID klaster dengan jumlah anggota dan status kesehatan gabungan; host mandiri (*standalone*) ditampilkan terpisah. Tombol **Deteksi klaster** memindai host armada dengan konkurensi terbatas (5).
+  - **Gateway Host & Failover Mulus**: Permintaan klaster dieksekusi melalui Host Gateway terpilih. Jika host utama tidak dapat dihubungi, Pantau secara otomatis mengalihkan permintaan (*failover*) ke peer server yang sehat, menampilkan notifikasi non-blocking dan lencana Gateway (`Gateway: thor (failover dari odin)`).
+  - **Mode Kubernetes**: Kebijakan operasional per-host (`full`, `no-exec`, atau `read-only`):
+    - `full`: Akses penuh untuk baca, tulis, ubah skala, rollout, hapus, dan exec ke kontainer.
+    - `no-exec`: Menonaktifkan konsol terminal exec interaktif sambil tetap mengizinkan siklus hidup workload dan inspeksi log. *Catatan: ini adalah pembatas tingkat aplikasi; batas keamanan sesungguhnya tetap berada pada izin kubeconfig, sudoers, dan RBAC pada host target.*
+    - `read-only`: Melarang exec, pengubahan skala, restart, cordon node, penghapusan, dan penerapan manifest.
+  - **Keamanan Aksi & Konfirmasi Berdampak Konkret**: Aksi berbahaya memerlukan konfirmasi dengan penjelasan dampak operasional secara rinci:
+    - **Ubah Skala ke 0**: Memperingatkan jumlah pod yang akan dihentikan dan menegaskan bahwa PersistentVolumeClaims (PVC) StatefulSet tetap dipertahankan.
+    - **Restart Rollout**: Mengonfirmasi pembuatan ulang replika secara bertahap (*rolling update*).
+    - **Hapus Pod**: Menampilkan node target dan memperingatkan bahwa pod yang tidak dikelola oleh controller (Deployment/StatefulSet/DaemonSet) akan hilang permanen.
+    - **Cordon & Drain Node**: Cordon menjaga workload tetap berjalan sambil memblokir pod baru. Node **Drain** menyediakan alur dua langkah: pratinjau dry-run server menampilkan pod terevakuasi dan hambatan PodDisruptionBudget, opsi flag (abaikan DaemonSet, hapus data emptyDir, evict pod mandiri), peringatan kuorum etcd/HA untuk control-plane, dan tombol cepat **Uncordon** pada notifikasi toast.
   - **Tab Telemetri Klaster**:
-    - **Node**: Inventaris node, status kesiapan (*Ready*), peran (*roles*), kapasitas memori dalam format GB standar, dan aksi sekali klik untuk cordon, uncordon, serta describe.
-    - **Workload**: Deployment, StatefulSet, dan DaemonSet dengan pelacakan replika, pengubahan skala (*scale* 0–1000), restart rollout, dan dialog describe.
-    - **Pod**: Status pod lintas namespace dengan hitungan restart, konsol interaktif **Exec** di Terminal Dock, streaming **Log** langsung via WebSocket (pemilih multi-kontainer, tail baris kustom, toggle instans kontainer sebelumnya, auto-scroll, dan salin ke clipboard), diagnostik describe, dan penghapusan pod.
-    - **Service & Ingress**: Definisi service, IP klaster/eksternal, port, host ingress, target backend, dan dialog describe.
-    - **Konfigurasi & Penyimpanan**: ConfigMap, Secret (dengan jaminan keamanan tanpa pembacaan nilai rahasia), PersistentVolumeClaims (PVC), serta PersistentVolumes (PV, berlingkup klaster).
-    - **Batch Job**: Job dan CronJob dengan pemantauan penyelesaian, jadwal, status penangguhan, dan inspeksi describe.
-    - **Event**: Catatan event informasional dan peringatan pada klaster beserta frekuensi kemunculan dan usia relatif.
-    - **Terapkan Manifest**: Editor YAML terintegrasi untuk menerapkan manifest Kubernetes dengan validasi server-side dry-run (`--dry-run=server`) otomatis sebelum penerapan.
+    - **Node**: Inventaris node dengan pemetaan ke Host Pantau, status Ready, peran, metrik pemakaian CPU dan RAM dengan progress bar (`dockerBar`), kapasitas allocatable, aksi drain, serta cordon/describe.
+    - **Workload**: Deployment, StatefulSet, dan DaemonSet dengan pelacakan replika, pengubahan skala (0–1000), restart rollout, streaming teragregasi **Log Workload** berawalan kontainer, menu baris **Edit YAML** (manifest bersih, resourceVersion dipertahankan, dan diff gate), serta dialog describe.
+    - **Pod**: Status pod lintas namespace dengan pod bermasalah diprioritaskan di atas dan diberi penanda visual, filter **Hanya bermasalah**, hitungan restart, konsol **Exec** di Terminal Dock, streaming **Log** langsung dengan kotak cari/filter teks klien, penghitung kecocokan, toggle **Timestamp**, riwayat kontainer lama, dan penghapusan pod.
+    - **Service & Ingress**: Definisi service, IP klaster/eksternal, port, host ingress, target backend, menu **Edit YAML**, dan dialog describe.
+    - **Konfigurasi & Penyimpanan**: ConfigMap, Secret (tanpa akses intip rahasia dan tanpa Edit YAML), PersistentVolumeClaims (PVC) dengan **Edit YAML**, dan PersistentVolumes (PV).
+    - **Batch Job**: Job dan CronJob dengan pemantauan penyelesaian, jadwal, status penangguhan, menu **Edit YAML**, dan inspeksi describe.
+    - **Event**: Catatan event informasional dan peringatan dengan filter khusus **Hanya Warning**.
+    - **Auto-refresh Opsional**: Pembaruan data otomatis per-tab (Mati / 10 dtk / 30 dtk / 60 dtk) yang berhenti saat tab browser tidak aktif, saat berpindah bagian/tab, atau saat modal terbuka, dan tidak menumpuk permintaan in-flight.
+    - **Terapkan Manifest & Pratinjau Diff**: Editor YAML terintegrasi dengan kewajiban menjalankan **Pratinjau Diff** (`kc diff` dry-run terhadap status klaster aktif). Tombol **Terapkan** terkunci hingga isi manifest saat ini telah selesai ditinjau perubahannya, dan mutasi meminta konfirmasi sebelum diterapkan.
 ### Evaluasi Kelayakan Server dengan Lifecycle Assessment
 
 Pantau menghitung nilai kelayakan sistem secara transparan melalui **Lifecycle Score** (0–100) berdasarkan 6 faktor evaluasi:
@@ -440,7 +451,22 @@ Saat mengevaluasi disparitas performa infrastruktur, memilih server tujuan migra
 - **Sintesis Keputusan Eksekutif**: Merangkum kesimpulan operasional secara otomatis dalam bahasa manusia, menyoroti juara tiap kategori (*category champions*), rekomendasi penempatan beban kerja, dan peringatan risiko server tersaturasi.
 - **Ekspor Markdown Sekali Klik**: Salin papan skor matriks perbandingan dan ringkasan eksekutif ke clipboard dalam format Markdown rapi (tetap berfungsi pada koneksi LAN HTTP polos via mekanisme fallback browser).
 
----
+### Eksekusi Perintah Massal (Action Dialog)
+
+Saat mengelola banyak server secara bersamaan:
+- **Action Dialog**: Buka melalui tombol **Perintah Massal** di bilah header dashboard.
+- **Pemilihan Host**: Saring host via kotak pencarian, pilih per Host Group, atau gunakan **Pilih Semua (Maks 20)** untuk memilih hingga 20 server tujuan.
+- **Eksekusi Aman**: Meminta konfirmasi via `showConfirm` yang mencantumkan jumlah server dan cuplikan perintah yang akan dijalankan.
+- **Streaming Hasil**: Menjalankan perintah secara konkuren (hingga 5 proses bersamaan) dengan hasil NDJSON yang mengalir secara langsung per server (badge status, exit code, durasi, detail output yang dapat dibuka, dan tombol **Salin Semua**).
+- **Dukungan Sudo**: Opsi elevasi `sudo -n` tanpa interaksi kata sandi (langsung gagal dengan aman bila memerlukan kata sandi).
+
+### Pembaruan Paket & Log Streaming Pembaruan
+
+Pantau mendukung pembaruan paket perangkat lunak secara agentless langsung dari tab **Packages** atau **Security** di Host Detail:
+- **Pratinjau Pembaruan**: Menampilkan daftar paket tertunda, rincian paket umum vs keamanan, pengelola paket (`apt`, `dnf`, `yum`), serta banner peringatan kebutuhan reboot sistem.
+- **Pilihan Mode**: Mendukung pembaruan penuh seluruh paket (`all`) atau hanya pembaruan keamanan (`--security` pada dnf/yum).
+- **Peringatan Keselamatan**: Konfirmasi tindakan dengan peringatan tegas bahwa layanan remote dapat restart dan tidak tersedia mekanisme rollback otomatis.
+- **Modal Log Streaming**: Mengalirkan keluaran log terminal pembaruan secara real-time melalui WebSocket (`/ws/pkg/upgrade`), memantau baris log dan kode keluar akhir (`[pantau] exit=N`). Pemindaian paket dan keamanan akan otomatis diperbarui setelah proses tuntas.
 
 ## 5. Fase 4: Operasi Berkas & Aliran Data Lintas-Host
 
@@ -595,6 +621,19 @@ Seluruh rute membutuhkan cookie sesi autentikasi yang valid (`authMiddleware`):
 - `DELETE /api/ssh-keys/{id}`: Menghapus kunci jika tidak lagi digunakan. Mengembalikan `200` jika berhasil, `404` jika ID tidak ditemukan, atau `409` jika masih aktif dirujuk oleh host.
 - `POST /api/hosts` dan rute update: Menerima parameter `key_id`. Mengisi `key_id` yang tidak valid menghasilkan respons `400 Bad Request`.
 
+### Kanal Notifikasi Multi-Kanal & Debounce Alert (Settings → Notifikasi)
+
+Pantau mengirimkan notifikasi instan ketika terjadi deteksi drift atau pemulihan insiden ke berbagai kanal:
+- **Kanal yang Didukung**:
+  - **Telegram**: Bot Token dan Chat ID.
+  - **Webhook Umum**: HTTP POST dengan muatan payload JSON.
+  - **ntfy**: URL Topik (contoh: `https://ntfy.sh/my-topic`), token otorisasi Bearer opsional, dan prioritas tinggi.
+  - **Slack**: Incoming Webhook URL.
+  - **Discord**: Webhook URL (dipotong otomatis ke 1.800 karakter agar sesuai batas API).
+  - **SMTP**: Pengirim email dengan dukungan STARTTLS (port standar 587), TLS langsung (465), atau plaintext, banyak penerima (dipisah koma), dan autentikasi standar.
+- **Perlindungan Kolom Rahasia**: Token dan password sensitif (`ntfy_token`, `smtp_pass`) tidak pernah dikembalikan dalam respons GET (hanya flag `*_set` boolean). Pengiriman tanpa kunci mempertahankan rahasia lama, sedangkan nilai kosong menghapusnya.
+- **Debounce Alert**: Atur parameter `alert_debounce_runs` (1..10, default 1). Insiden dan notifikasi hanya dipicu bila drift bertahan selama N siklus inspeksi berturut-turut, mencegah alarm palsu akibat anomali jaringan sesaat.
+- **Uji Kanal Notifikasi**: Klik **Uji Notifikasi** untuk memicu pengiriman pesan pengujian ke seluruh kanal aktif secara bersamaan dan meninjau badge status keberhasilan masing-masing kanal.
 ### System Snapshot Terenkripsi & Disaster Recovery GitHub
 
 **System Snapshot** adalah berkas arsip mandiri terenkripsi yang memuat seluruh basis data Pantau (inventaris host, kredensial SSH terenkripsi, aturan Desired State, dan preferensi aplikasi).

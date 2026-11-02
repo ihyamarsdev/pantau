@@ -772,5 +772,70 @@ func TestSnapshotRoundTripWithSSHKeys(t *testing.T) {
 	if legacyHost.KeyID != 0 {
 		t.Errorf("expected KeyID 0 for legacy host, got %d", legacyHost.KeyID)
 	}
+	if legacyHost.KubeMode != "full" {
+		t.Errorf("expected default KubeMode 'full' for legacy host, got %q", legacyHost.KubeMode)
+	}
+	if legacyHost.KubeClusterID != "" {
+		t.Errorf("expected empty KubeClusterID for legacy host, got %q", legacyHost.KubeClusterID)
+	}
+}
+
+func TestKubeClusterIDAndModeStore(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "pantau-kube-db-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dbPath := filepath.Join(tmpDir, "test.db")
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	// 1. Create host without specifying KubeMode -> should default to "full"
+	id1, err := db.CreateHost(&Host{Name: "Node1", Host: "10.0.0.1", Port: 22, User: "root"})
+	if err != nil {
+		t.Fatalf("create host: %v", err)
+	}
+	h1, err := db.GetHost(id1)
+	if err != nil || h1 == nil {
+		t.Fatalf("get host 1: %v", err)
+	}
+	if h1.KubeMode != "full" {
+		t.Errorf("expected KubeMode 'full', got %q", h1.KubeMode)
+	}
+	if h1.KubeClusterID != "" {
+		t.Errorf("expected empty KubeClusterID, got %q", h1.KubeClusterID)
+	}
+
+	// 2. SetHostKubeClusterID
+	if err := db.SetHostKubeClusterID(id1, "k8s-uid-1234"); err != nil {
+		t.Fatalf("set cluster id: %v", err)
+	}
+	h1Updated, err := db.GetHost(id1)
+	if err != nil || h1Updated == nil {
+		t.Fatalf("get host 1 updated: %v", err)
+	}
+	if h1Updated.KubeClusterID != "k8s-uid-1234" {
+		t.Errorf("expected KubeClusterID 'k8s-uid-1234', got %q", h1Updated.KubeClusterID)
+	}
+
+	// 3. UpdateHost with new mode, should preserve KubeClusterID
+	h1Updated.KubeMode = "read-only"
+	if err := db.UpdateHost(h1Updated); err != nil {
+		t.Fatalf("update host: %v", err)
+	}
+	h1AfterUpdate, err := db.GetHost(id1)
+	if err != nil || h1AfterUpdate == nil {
+		t.Fatalf("get host after update: %v", err)
+	}
+	if h1AfterUpdate.KubeMode != "read-only" {
+		t.Errorf("expected KubeMode 'read-only', got %q", h1AfterUpdate.KubeMode)
+	}
+	if h1AfterUpdate.KubeClusterID != "k8s-uid-1234" {
+		t.Errorf("expected preserved KubeClusterID 'k8s-uid-1234', got %q", h1AfterUpdate.KubeClusterID)
+	}
 }
 

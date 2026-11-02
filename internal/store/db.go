@@ -93,6 +93,8 @@ type Host struct {
 	TopCPUProcesses   string `json:"top_cpu_processes"`  // JSON serialized []ProcessInfo
 	TopRAMProcesses   string `json:"top_ram_processes"`  // JSON serialized []ProcessInfo
 	TopSwapProcesses  string `json:"top_swap_processes"` // JSON serialized []ProcessInfo
+	KubeClusterID     string `json:"kube_cluster_id,omitempty"`
+	KubeMode          string `json:"kube_mode"`
 }
 
 type ProcessInfo struct {
@@ -299,7 +301,9 @@ func (d *DB) migrate() error {
 		os_install_epoch INTEGER DEFAULT 0,
 		top_cpu_processes TEXT DEFAULT '',
 		top_ram_processes TEXT DEFAULT '',
-		top_swap_processes TEXT DEFAULT ''
+		top_swap_processes TEXT DEFAULT '',
+		kube_cluster_id TEXT DEFAULT '',
+		kube_mode TEXT NOT NULL DEFAULT 'full'
 	);
 
 	CREATE TABLE IF NOT EXISTS host_packages (
@@ -456,6 +460,8 @@ func (d *DB) migrate() error {
 	_ = d.alterAddColumn("hosts", "top_ram_processes", "TEXT DEFAULT ''")
 	_ = d.alterAddColumn("hosts", "top_swap_processes", "TEXT DEFAULT ''")
 	_ = d.alterAddColumn("hosts", "key_id", "INTEGER DEFAULT 0")
+	_ = d.alterAddColumn("hosts", "kube_cluster_id", "TEXT DEFAULT ''")
+	_ = d.alterAddColumn("hosts", "kube_mode", "TEXT NOT NULL DEFAULT 'full'")
 
 	return nil
 }
@@ -624,7 +630,8 @@ const hostSelectCols = `SELECT id, name, host, port, user, COALESCE(custom_key,'
 	COALESCE(notes, ''), COALESCE(sort_order, 0), COALESCE(group_name, ''),
 	COALESCE(cpu_cores, 1), COALESCE(hardware_model, ''), COALESCE(swap_used_bytes, 0), COALESCE(swap_total_bytes, 0),
 	COALESCE(last_duration_ms, 0), COALESCE(commission_date, ''), COALESCE(bios_date, ''), COALESCE(os_install_epoch, 0),
-	COALESCE(top_cpu_processes, ''), COALESCE(top_ram_processes, ''), COALESCE(top_swap_processes, '')
+	COALESCE(top_cpu_processes, ''), COALESCE(top_ram_processes, ''), COALESCE(top_swap_processes, ''),
+	COALESCE(kube_cluster_id, ''), COALESCE(kube_mode, 'full')
 	FROM hosts `
 
 func scanHost(s rowScanner) (*Host, error) {
@@ -639,13 +646,17 @@ func scanHost(s rowScanner) (*Host, error) {
 		&h.Notes, &h.SortOrder, &h.GroupName,
 		&h.CPUCores, &h.HardwareModel, &h.SwapUsedBytes, &h.SwapTotalBytes,
 		&h.LastDurationMs, &h.CommissionDate, &h.BIOSDate, &h.OSInstallEpoch,
-		&h.TopCPUProcesses, &h.TopRAMProcesses, &h.TopSwapProcesses)
+		&h.TopCPUProcesses, &h.TopRAMProcesses, &h.TopSwapProcesses,
+		&h.KubeClusterID, &h.KubeMode)
 	if err != nil {
 		return nil, err
 	}
 	h.InternetOnline = online == 1
 	if inspected.Valid {
 		h.LastInspected = &inspected.Time
+	}
+	if h.KubeMode == "" {
+		h.KubeMode = "full"
 	}
 	return &h, nil
 }
@@ -686,7 +697,10 @@ func (d *DB) CreateHost(h *Host) (int64, error) {
 	}
 	var maxOrder int
 	_ = d.QueryRow(`SELECT COALESCE(MAX(sort_order), 0) FROM hosts`).Scan(&maxOrder)
-	res, err := d.Exec(`INSERT INTO hosts (name, host, port, user, custom_key, key_id, status, notes, sort_order, group_name, commission_date, bios_date) VALUES (?, ?, ?, ?, ?, ?, 'unknown', ?, ?, ?, ?, ?)`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, maxOrder+1, h.GroupName, h.CommissionDate, h.BIOSDate)
+	if h.KubeMode == "" {
+		h.KubeMode = "full"
+	}
+	res, err := d.Exec(`INSERT INTO hosts (name, host, port, user, custom_key, key_id, status, notes, sort_order, group_name, commission_date, bios_date, kube_cluster_id, kube_mode) VALUES (?, ?, ?, ?, ?, ?, 'unknown', ?, ?, ?, ?, ?, ?, ?)`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, maxOrder+1, h.GroupName, h.CommissionDate, h.BIOSDate, h.KubeClusterID, h.KubeMode)
 	if err != nil {
 		return 0, err
 	}
@@ -697,7 +711,15 @@ func (d *DB) UpdateHost(h *Host) error {
 	if h.KeyID > 0 {
 		h.CustomKey = ""
 	}
-	_, err := d.Exec(`UPDATE hosts SET name=?, host=?, port=?, user=?, custom_key=?, key_id=?, notes=?, group_name=?, commission_date=? WHERE id=?`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, h.GroupName, h.CommissionDate, h.ID)
+	if h.KubeMode == "" {
+		h.KubeMode = "full"
+	}
+	_, err := d.Exec(`UPDATE hosts SET name=?, host=?, port=?, user=?, custom_key=?, key_id=?, notes=?, group_name=?, commission_date=?, kube_mode=? WHERE id=?`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, h.GroupName, h.CommissionDate, h.KubeMode, h.ID)
+	return err
+}
+
+func (d *DB) SetHostKubeClusterID(id int64, clusterID string) error {
+	_, err := d.Exec(`UPDATE hosts SET kube_cluster_id=? WHERE id=?`, clusterID, id)
 	return err
 }
 func (d *DB) UpdateHostNotes(id int64, notes string) error {
@@ -1297,6 +1319,10 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 		if h.InternetOnline {
 			onlineInt = 1
 		}
+		kubeMode := h.KubeMode
+		if kubeMode == "" {
+			kubeMode = "full"
+		}
 		_, err := tx.Exec(`INSERT INTO hosts (
 			id, name, host, port, user, custom_key, key_id, status, os_info, kernel, uptime, cpu_load,
 			ram_used_bytes, ram_total_bytes, disk_used_bytes, disk_total_bytes, lifecycle_score, lifecycle_notes, lifecycle_breakdown,
@@ -1304,8 +1330,9 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 			disk_read_bytes, disk_write_bytes, disk_read_speed_bps, disk_write_speed_bps,
 			internet_online, internet_latency_ms, public_ip, active_conn_count, failed_logins_count,
 			top_connections, listening_ports, notes, sort_order, group_name,
-			commission_date, bios_date, os_install_epoch
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			commission_date, bios_date, os_install_epoch,
+			kube_cluster_id, kube_mode
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			h.ID, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Status, h.OSInfo, h.Kernel, h.Uptime, h.CPULoad,
 			h.RAMUsedBytes, h.RAMTotalBytes, h.DiskUsedBytes, h.DiskTotalBytes, h.LifecycleScore, h.LifecycleNotes, h.LifecycleBreakdown,
 			h.CreatedAt, h.NetRxBytes, h.NetTxBytes, h.NetRxSpeedBps, h.NetTxSpeedBps,
@@ -1313,6 +1340,7 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 			onlineInt, h.InternetLatencyMs, h.PublicIP, h.ActiveConnCount, h.FailedLoginsCount,
 			h.TopConnections, h.ListeningPorts, h.Notes, h.SortOrder, h.GroupName,
 			h.CommissionDate, h.BIOSDate, h.OSInstallEpoch,
+			h.KubeClusterID, kubeMode,
 		)
 		if err != nil {
 			return fmt.Errorf("insert host %d: %w", h.ID, err)

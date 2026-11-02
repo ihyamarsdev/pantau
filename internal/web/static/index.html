@@ -3663,6 +3663,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <button class="btn btn-icon header-btn" id="btnInspectAll" onclick="inspectAllHosts()" title="Inspect All Hosts" data-i18n-title="btn_inspect_all_title" aria-label="Inspect All Hosts">
           <svg id="inspectAllIcon" class="icon"><use href="#i-rotate-ccw"/></svg>
         </button>
+        <button class="btn btn-sm header-btn" onclick="openBulkExecModal()" title="Run Bulk Command" data-i18n-title="bulk_exec_title" style="height: 32px; display: inline-flex; align-items: center; gap: 4px;"><svg class="icon icon-sm"><use href="#i-square-terminal"/></svg> <span data-i18n="bulk_exec_btn">Bulk Exec</span></button>
         <button class="btn btn-primary btn-sm" onclick="openAddHostModal()" data-i18n="add_host" style="height: 32px; display: inline-flex; align-items: center; gap: 4px;"><svg class="icon icon-sm"><use href="#i-plus"/></svg> <span>+ Add Host</span></button>
         <button class="btn btn-sm header-btn" onclick="openImportHostsModal()" title="Import Hosts from SSH Config" data-i18n-title="import_hosts_title" style="height: 32px; display: inline-flex; align-items: center; gap: 4px;"><svg class="icon icon-sm"><use href="#i-download"/></svg> <span data-i18n="import_hosts_btn">Import</span></button>
       </div>
@@ -3803,6 +3804,9 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
                 <option value="" data-i18n="kube_select_host">Select a host...</option>
               </select>
             </div>
+            <button id="btnKubeDetectClusters" class="btn btn-sm header-btn" onclick="detectKubeClusters()" title="Detect clusters" data-i18n-title="kube_btn_detect_clusters" style="height:34px;display:inline-flex;align-items:center;gap:6px;">
+              <svg class="icon icon-sm"><use href="#i-search"/></svg> <span data-i18n="kube_btn_detect_clusters">Detect clusters</span>
+            </button>
             <button id="btnKubeRefresh" class="btn btn-sm header-btn" onclick="refreshKubeCurrentTab()" title="Refresh" data-i18n-title="refresh" style="height:34px;display:inline-flex;align-items:center;gap:6px;">
               <svg class="icon icon-sm"><use href="#i-refresh-cw"/></svg> <span data-i18n="refresh">Refresh</span>
             </button>
@@ -3814,6 +3818,8 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
           <span class="badge badge-info" id="kubeDistroChip" style="font-family:var(--font-mono);text-transform:uppercase;">k3s</span>
           <span class="badge" id="kubeVersionChip" style="font-family:var(--font-mono);background:var(--surface-2);border:1px solid var(--card-border);">v1.30</span>
           <span class="badge badge-healthy" id="kubeRoleChip" style="font-family:var(--font-mono);">server</span>
+          <span class="badge" id="kubeGatewayChip" style="display:none;font-family:var(--font-mono);background:var(--surface-2);border:1px solid var(--card-border);"></span>
+          <span class="badge badge-warning" id="kubeModeChip" style="display:none;"></span>
         </div>
         <div id="kubeNamespaceSelectorWrapper" style="display:flex;align-items:center;gap:8px;">
           <label for="kubeNamespaceSelect" style="font-size:var(--fs-xs);color:var(--text-muted);font-weight:600;" data-i18n="kube_namespace">Namespace:</label>
@@ -3845,6 +3851,17 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
           <div class="tab" id="tabKubeCronjobs" onclick="switchKubeTab('cronjobs')" role="tab" data-i18n="kube_tab_cronjobs">CronJobs</div>
           <div class="tab" id="tabKubeEvents" onclick="switchKubeTab('events')" role="tab" data-i18n="kube_tab_events">Events</div>
           <div class="tab" id="tabKubeApply" onclick="switchKubeTab('apply')" role="tab" data-i18n="kube_tab_apply">Apply</div>
+          <label id="kubeEventsFilterWrap" style="display:none;align-items:center;gap:4px;margin-left:auto;font-size:var(--fs-xs);color:var(--text-muted);cursor:pointer;"><input type="checkbox" id="kubeEventsWarningFilter" style="width:auto;" onchange="onKubeEventsFilterChange()" /> <span data-i18n="kube_warning_only">Warning only</span></label>
+          <label id="kubePodsFilterWrap" style="display:none;align-items:center;gap:4px;margin-left:auto;font-size:var(--fs-xs);color:var(--text-muted);cursor:pointer;"><input type="checkbox" id="kubePodsOnlyProblemsFilter" style="width:auto;" onchange="onKubePodsFilterChange()" /> <span data-i18n="kube_pods_only_problems">Only problems</span></label>
+          <span id="kubeAutorefreshWrap" style="display:none;align-items:center;gap:6px;margin-left:auto;font-size:var(--fs-xs);color:var(--text-muted);">
+            <span data-i18n="kube_autorefresh">Auto-refresh</span>:
+            <select id="kubeAutorefreshSelect" class="form-input" style="height:26px;font-size:var(--fs-xs);padding:0 6px;min-width:70px;" onchange="restartKubeAutorefresh()">
+              <option value="0" data-i18n="kube_autorefresh_off">Off</option>
+              <option value="10">10s</option>
+              <option value="30">30s</option>
+              <option value="60">60s</option>
+            </select>
+          </span>
         </div>
         <div id="kubeTabContent" style="min-height:250px;"></div>
       </div>
@@ -4053,21 +4070,82 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
             <option value="2000">2000</option>
           </select>
         </div>
+        <div style="display:inline-flex;align-items:center;gap:4px;">
+          <svg class="icon icon-sm text-muted"><use href="#i-search"/></svg>
+          <input type="text" id="kubeLogsFilterInput" class="form-input" style="height:26px;font-size:var(--fs-xs);width:150px;padding:0 6px;" placeholder="Filter..." data-i18n-placeholder="kube_logs_filter_ph" oninput="onKubeLogsFilterInput()" />
+          <span id="kubeLogsMatchCount" style="font-size:var(--fs-xs);color:var(--text-muted);"></span>
+        </div>
         <label style="display:flex;align-items:center;gap:4px;font-size:var(--fs-xs);cursor:pointer;color:var(--text-muted);" title="Show logs from previous terminated container instance">
           <input type="checkbox" id="kubeLogsPreviousToggle" style="width:auto;" onchange="onKubeLogsParamChange()" />
           <span data-i18n="kube_logs_previous">Previous</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:var(--fs-xs);cursor:pointer;color:var(--text-muted);">
+          <input type="checkbox" id="kubeLogsTimestampsToggle" style="width:auto;" onchange="onKubeLogsParamChange()" />
+          <span data-i18n="kube_logs_timestamps">Timestamps</span>
         </label>
         <label style="display:flex;align-items:center;gap:4px;font-size:var(--fs-xs);cursor:pointer;color:var(--text-muted);">
           <input type="checkbox" id="kubeLogsAutoScroll" checked style="width:auto;" />
           <span data-i18n="docker_logs_autoscroll">Auto-scroll</span>
         </label>
         <button class="btn btn-sm" onclick="copyKubeLogs()" data-i18n="copy">Copy</button>
-        <button class="btn btn-sm" onclick="document.getElementById('kubeLogsOutput').textContent=''" data-i18n="docker_logs_clear">Clear</button>
+        <button class="btn btn-sm" onclick="document.getElementById('kubeLogsOutput').textContent='';onKubeLogsFilterInput()" data-i18n="docker_logs_clear">Clear</button>
         <button class="btn btn-icon btn-sm" onclick="closeModal('kubeLogsModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
       </div>
     </div>
     <div class="modal-body" style="padding:0;flex:1;min-height:0;gap:0;background:var(--bg);">
       <pre id="kubeLogsOutput" style="flex:1;min-height:0;max-height:none;margin:0;padding:12px 16px;border-radius:0;overflow:auto;white-space:pre-wrap;word-break:break-all;font-family:var(--font-mono);font-size:var(--fs-xs);line-height:1.5;color:var(--text);"></pre>
+    </div>
+  </div>
+</div>
+
+<!-- Kubernetes Edit YAML Modal -->
+<div id="kubeYamlModal" class="modal">
+  <div class="modal-content modal-workspace" style="max-width:900px;">
+    <div class="modal-header">
+      <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+        <svg class="icon icon-sm" style="color:var(--accent-text);"><use href="#i-file-code"/></svg>
+        <h3 id="kubeYamlTitle" style="font-family:var(--font-mono);font-size:var(--fs-sm);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></h3>
+      </div>
+      <button class="btn btn-sm btn-ghost" onclick="closeModal('kubeYamlModal')" aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body" style="display:flex;flex-direction:column;gap:10px;min-height:0;">
+      <div id="kubeYamlRoNote" style="display:none;align-items:center;gap:6px;padding:8px 12px;background:var(--warning-soft, rgba(234,179,8,0.1));border:1px solid var(--warning-border, #eab308);border-radius:var(--radius-sm);font-size:var(--fs-xs);color:var(--text);">
+        <svg class="icon icon-xs"><use href="#i-shield-alert"/></svg><span id="kubeYamlRoNoteText"></span>
+      </div>
+      <div style="font-size:var(--fs-xs);color:var(--text-muted);" data-i18n="kube_yaml_desc">resourceVersion is preserved: an apply failing with "object has been modified" means the object changed since it was opened; re-open the YAML. Comments are not preserved.</div>
+      <textarea id="kubeYamlEditorArea"></textarea>
+      <pre id="kubeYamlOutput" class="kube-apply-output"></pre>
+    </div>
+    <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;align-items:center;">
+      <span id="kubeYamlHint" style="font-size:var(--fs-xs);color:var(--text-muted);margin-right:auto;"></span>
+      <button class="btn btn-sm" id="btnKubeYamlPreviewDiff" onclick="submitKubeYamlDiff()" style="display:inline-flex;align-items:center;gap:6px;">
+        <svg class="icon icon-sm"><use href="#i-git-compare"/></svg> <span data-i18n="kube_btn_preview_diff">Preview Diff</span>
+      </button>
+      <button class="btn btn-sm btn-primary" id="btnKubeYamlApply" disabled onclick="submitKubeYamlApply()" style="display:inline-flex;align-items:center;gap:6px;">
+        <svg class="icon icon-sm"><use href="#i-play"/></svg> <span data-i18n="kube_btn_apply">Apply YAML</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Kubernetes Drain Modal -->
+<div id="kubeDrainModal" class="modal">
+  <div class="modal-content modal-dialog" style="max-width:560px;">
+    <div class="modal-header">
+      <h3 data-i18n="kube_drain_title">Drain Node</h3>
+      <button class="btn btn-sm btn-ghost" onclick="closeModal('kubeDrainModal')" aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body" style="display:flex;flex-direction:column;gap:10px;">
+      <div id="kubeDrainSummary" style="font-size:var(--fs-sm);"></div>
+      <pre id="kubeDrainPods" style="display:none;margin:0;max-height:180px;overflow:auto;background:var(--bg);border:1px solid var(--card-border);border-radius:var(--radius-md);padding:10px;font-family:var(--font-mono);font-size:var(--fs-xs);white-space:pre-wrap;"></pre>
+      <div id="kubeDrainBlockedNote" style="display:none;padding:8px 12px;background:var(--warning-soft, rgba(234,179,8,0.1));border:1px solid var(--warning-border, #eab308);border-radius:var(--radius-sm);font-size:var(--fs-xs);color:var(--text);"></div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-xs);cursor:pointer;"><input type="checkbox" id="kubeDrainFlagIgnoreDS" checked style="width:auto;" /><span data-i18n="kube_drain_flag_ignore_ds">Ignore DaemonSet-managed pods</span></label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-xs);cursor:pointer;"><input type="checkbox" id="kubeDrainFlagEmptyDir" style="width:auto;" /><span data-i18n="kube_drain_flag_emptydir">Delete EmptyDir data</span></label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-xs);cursor:pointer;"><input type="checkbox" id="kubeDrainFlagForce" style="width:auto;" /><span data-i18n="kube_drain_flag_force">Force (evict pods not managed by a controller)</span></label>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-sm" onclick="closeModal('kubeDrainModal')" data-i18n="cancel">Cancel</button>
+      <button class="btn btn-sm btn-danger" id="btnKubeDrainConfirm" onclick="confirmKubeDrain()" data-i18n="kube_drain">Drain</button>
     </div>
   </div>
 </div>
@@ -4155,8 +4233,9 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
           <option value="service">service</option>
           <option value="port">port</option>
           <option value="disk">disk</option>
-          <option value="cron">cron</option>
           <option value="backup">backup</option>
+          <option value="http">http</option>
+          <option value="tls">tls</option>
           <option value="process">process</option>
           <option value="security_updates">security_updates</option>
         </select>
@@ -4258,6 +4337,15 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <label class="form-label" data-i18n="host_group">Host Group</label>
         <input type="text" id="hostGroup" list="groupSuggestions" placeholder="e.g. Server Utama, Testing, DB Cluster" data-i18n-placeholder="host_group_ph" />
         <datalist id="groupSuggestions"></datalist>
+      </div>
+      <div class="form-group">
+        <label class="form-label" data-i18n="host_kube_mode">Kubernetes Mode</label>
+        <select id="hostKubeMode" class="form-input">
+          <option value="full" data-i18n="kube_mode_full">Full (Read, Write &amp; Exec)</option>
+          <option value="no-exec" data-i18n="kube_mode_no_exec">No Exec (Block pod exec console)</option>
+          <option value="read-only" data-i18n="kube_mode_read_only">Read-Only (Block mutations &amp; exec)</option>
+        </select>
+        <span class="form-hint" data-i18n="kube_mode_hint">Application guardrail only; actual security boundary is kubeconfig/sudoers/RBAC permissions on the host.</span>
       </div>
       <div class="form-group">
         <label class="form-label" data-i18n="commission_date_label">Hardware Commission Date (Optional for New Old Stock)</label>
@@ -4848,10 +4936,72 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
               <label class="form-label" data-i18n="webhook_url">Webhook URL (HTTP POST JSON)</label>
               <input type="text" id="settingWebhook" placeholder="https://webhook.site/..." />
             </div>
+            <div class="form-group">
+              <label class="form-label">ntfy URL</label>
+              <input type="text" id="settingNtfyUrl" placeholder="https://ntfy.sh/my-topic" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">ntfy Token</label>
+              <input type="password" id="settingNtfyToken" placeholder="tk_..." />
+              <span id="settingNtfyTokenSaved" class="badge badge-info" style="display: none; margin-top: 4px;" data-i18n="secret_saved">Saved</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Slack Webhook URL</label>
+              <input type="text" id="settingSlackUrl" placeholder="https://hooks.slack.com/services/..." />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Discord Webhook URL</label>
+              <input type="text" id="settingDiscordUrl" placeholder="https://discord.com/api/webhooks/..." />
+            </div>
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px;">
+              <div class="form-group">
+                <label class="form-label">SMTP Host</label>
+                <input type="text" id="settingSmtpHost" placeholder="smtp.example.com" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">SMTP Port</label>
+                <input type="number" id="settingSmtpPort" placeholder="587" />
+              </div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <div class="form-group">
+                <label class="form-label">SMTP User</label>
+                <input type="text" id="settingSmtpUser" placeholder="ops@example.com" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">SMTP Password</label>
+                <input type="password" id="settingSmtpPass" placeholder="••••••••" />
+                <span id="settingSmtpPassSaved" class="badge badge-info" style="display: none; margin-top: 4px;" data-i18n="secret_saved">Saved</span>
+              </div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <div class="form-group">
+                <label class="form-label">SMTP From</label>
+                <input type="text" id="settingSmtpFrom" placeholder="pantau@example.com" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">SMTP Security</label>
+                <select id="settingSmtpSecurity" class="input">
+                  <option value="starttls">STARTTLS</option>
+                  <option value="tls">TLS</option>
+                  <option value="none">None</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">SMTP Recipients (comma-separated)</label>
+              <input type="text" id="settingSmtpTo" placeholder="alice@example.com, bob@example.com" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-i18n="alert_debounce_label">Alert Debounce Runs (1..10)</label>
+              <input type="number" id="settingAlertDebounce" min="1" max="10" placeholder="1" />
+              <p class="set-desc" style="margin-top: 4px;" data-i18n="alert_debounce_desc">Require N consecutive drift inspections before triggering an Incident, Alert, or notifications.</p>
+            </div>
             <div style="display: flex; gap: 8px; margin-top: 8px;">
               <button class="btn btn-primary btn-sm" onclick="saveSettings()"><svg class="icon"><use href="#i-save"/></svg> <span data-i18n="save_notif_settings">Save Notification Settings</span></button>
-              <button class="btn btn-ghost btn-sm" onclick="testNotification()"><svg class="icon"><use href="#i-bell"/></svg> <span data-i18n="test_notif">Test Notification</span></button>
+              <button class="btn btn-ghost btn-sm" id="btnTestNotif" onclick="testNotification()"><svg class="icon"><use href="#i-bell"/></svg> <span data-i18n="test_notif">Test Notification</span></button>
             </div>
+            <div id="testNotifResults" style="display: none; margin-top: 10px; font-size: var(--fs-xs);"></div>
           </div>
         </div>
 
@@ -5427,6 +5577,181 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
     </div>
   </div>
 </div>
+
+<!-- Bulk Command Execution Modal (Action Dialog) -->
+<div id="bulkExecModal" class="modal">
+  <div class="modal-content modal-dialog-lg" style="max-width: 800px; display: flex; flex-direction: column; max-height: 90vh;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <svg class="icon"><use href="#i-square-terminal"/></svg>
+        <h3 data-i18n="bulk_exec_title">Bulk Command Execution</h3>
+      </div>
+      <button class="btn btn-sm btn-ghost btn-icon" onclick="closeModal('bulkExecModal')" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body" style="padding: 16px 20px; gap: 14px; overflow-y: auto; flex: 1;">
+      <!-- Host Selection Area -->
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <label class="form-label" style="font-weight: 600; margin: 0;" data-i18n="bulk_select_hosts">Select Target Hosts (Max 20)</label>
+          <span id="bulkSelectedCount" style="font-size: var(--fs-xs); color: var(--text-muted);">0 / 20</span>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <input type="text" id="bulkHostSearch" class="input" placeholder="Search hosts..." data-i18n-placeholder="bulk_search_ph" oninput="renderBulkHostPicker()" style="height: 30px; font-size: var(--fs-xs); width: 180px;" />
+          <select id="bulkGroupFilter" class="input" onchange="renderBulkHostPicker()" style="height: 30px; font-size: var(--fs-xs); width: auto; max-width: 180px;">
+            <option value="all" data-i18n="bulk_all_groups">All Groups</option>
+          </select>
+          <button type="button" class="btn btn-sm" onclick="bulkSelectAllFiltered()" data-i18n="bulk_select_all">Select All (Max 20)</button>
+          <button type="button" class="btn btn-sm btn-ghost" onclick="bulkClearSelection()" data-i18n="clear">Clear</button>
+        </div>
+        <div id="bulkHostPicker" style="max-height: 160px; overflow-y: auto; border: 1px solid var(--card-border); border-radius: var(--radius); padding: 8px; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; background: var(--surface-2);"></div>
+      </div>
+
+      <!-- Command Area -->
+      <div class="form-group" style="margin: 0;">
+        <label class="form-label" style="font-weight: 600;" data-i18n="command">Command</label>
+        <textarea id="bulkCommandInput" rows="4" spellcheck="false" placeholder="uname -a&#10;df -h" style="font-family: var(--font-mono); font-size: var(--fs-xs); background: var(--code-bg); width: 100%;"></textarea>
+      </div>
+
+      <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+        <div class="form-group" style="margin: 0; display: flex; align-items: center; gap: 8px;">
+          <label class="form-label" style="margin: 0; white-space: nowrap;" data-i18n="timeout_sec">Timeout (sec):</label>
+          <input type="number" id="bulkTimeoutInput" value="30" min="5" max="120" style="width: 70px; height: 30px; font-size: var(--fs-xs);" />
+        </div>
+        <label class="switch" style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;">
+          <input type="checkbox" id="bulkSudoInput" />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+          <span class="switch-label" style="font-size: var(--fs-xs); font-weight: 500;">sudo (passwordless sudo -n)</span>
+        </label>
+        <div style="margin-left: auto; display: flex; gap: 8px;">
+          <button class="btn btn-ghost btn-sm" onclick="closeModal('bulkExecModal')" data-i18n="cancel">Cancel</button>
+          <button class="btn btn-primary btn-sm" id="btnRunBulkExec" onclick="runBulkExec()"><svg class="icon icon-sm"><use href="#i-play"/></svg> <span data-i18n="bulk_run_btn">Run Command</span></button>
+        </div>
+      </div>
+
+      <!-- Streaming Results Table -->
+      <div id="bulkResultsContainer" style="display: none; flex-direction: column; gap: 8px; border-top: 1px solid var(--card-border); padding-top: 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div style="font-weight: 600; font-size: var(--fs-xs); display: flex; align-items: center; gap: 6px;">
+            <span data-i18n="bulk_results">Execution Results</span>
+            <span id="bulkStatusSummary" class="badge badge-info">0 / 0</span>
+          </div>
+          <button class="btn btn-sm btn-ghost" onclick="copyAllBulkResults()"><svg class="icon icon-sm"><use href="#i-copy"/></svg> <span data-i18n="bulk_copy_all">Copy All</span></button>
+        </div>
+        <div style="max-height: 240px; overflow-y: auto; border: 1px solid var(--card-border); border-radius: var(--radius); background: var(--surface-1);">
+          <table style="width: 100%; font-size: var(--fs-xs); border-collapse: collapse;">
+            <thead>
+              <tr style="border-bottom: 1px solid var(--card-border); background: var(--surface-2); text-align: left;">
+                <th style="padding: 6px 10px;" data-i18n="col_name">Host</th>
+                <th style="padding: 6px 10px;" data-i18n="status">Status</th>
+                <th style="padding: 6px 10px;">Exit</th>
+                <th style="padding: 6px 10px;">Duration</th>
+                <th style="padding: 6px 10px; width: 45%;">Output</th>
+              </tr>
+            </thead>
+            <tbody id="bulkResultsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Package Upgrade Preview Modal (Action Dialog) -->
+<div id="pkgUpgradePreviewModal" class="modal">
+  <div class="modal-content modal-dialog-lg" style="max-width: 680px; display: flex; flex-direction: column; max-height: 85vh;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <svg class="icon"><use href="#i-package"/></svg>
+        <h3 id="pkgUpgradePreviewTitle" data-i18n="pkg_upgrade_title">Upgrade Packages</h3>
+      </div>
+      <button class="btn btn-sm btn-ghost btn-icon" onclick="closeModal('pkgUpgradePreviewModal')" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body" style="padding: 16px 20px; gap: 14px; overflow-y: auto; flex: 1;">
+      <div id="pkgUpgradePreviewLoading" style="text-align: center; padding: 24px; color: var(--text-muted); font-size: var(--fs-sm);">
+        <span class="spinner" style="display: inline-block; margin-right: 6px;">${svgIcon('loader-circle', 'icon-sm')}</span> <span data-i18n="loading">Loading preview...</span>
+      </div>
+      <div id="pkgUpgradePreviewContent" style="display: none; flex-direction: column; gap: 12px;">
+        <!-- Summary Row -->
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+          <div class="sec-stat-card" style="flex: 1; min-width: 120px; padding: 10px 14px;">
+            <div class="sec-stat-label" data-i18n="pkg_pending_total">Total Pending</div>
+            <div id="pkgPreviewPendingTotal" style="font-size: 1.4rem; font-weight: 700; font-family: var(--font-mono); color: var(--text);">0</div>
+          </div>
+          <div class="sec-stat-card" style="flex: 1; min-width: 120px; padding: 10px 14px;">
+            <div class="sec-stat-label" data-i18n="pkg_pending_sec">Security Pending</div>
+            <div id="pkgPreviewPendingSec" style="font-size: 1.4rem; font-weight: 700; font-family: var(--font-mono); color: var(--danger);">0</div>
+          </div>
+          <div class="sec-stat-card" style="flex: 1; min-width: 120px; padding: 10px 14px;">
+            <div class="sec-stat-label">Package Manager</div>
+            <div id="pkgPreviewManager" style="font-size: 1.2rem; font-weight: 700; font-family: var(--font-mono); color: var(--primary);">apt</div>
+          </div>
+        </div>
+        <div id="pkgPreviewRebootBanner" style="display: none; background: var(--warning-soft); border: 1px solid var(--warning-border); padding: 8px 12px; border-radius: var(--radius); font-size: var(--fs-xs); color: var(--warning); display: flex; align-items: center; gap: 6px;">
+          <svg class="icon icon-sm"><use href="#i-triangle-alert"/></svg>
+          <span data-i18n="sec_reboot_yes">System reboot is currently required by existing pending updates.</span>
+        </div>
+        <!-- Package list table -->
+        <div style="max-height: 200px; overflow-y: auto; border: 1px solid var(--card-border); border-radius: var(--radius); background: var(--surface-1);">
+          <table style="width: 100%; font-size: var(--fs-xs); border-collapse: collapse;">
+            <thead>
+              <tr style="border-bottom: 1px solid var(--card-border); background: var(--surface-2); text-align: left;">
+                <th style="padding: 6px 10px;">Package</th>
+                <th style="padding: 6px 10px;">Current Version</th>
+                <th style="padding: 6px 10px;">Candidate Version</th>
+                <th style="padding: 6px 10px;">Type</th>
+              </tr>
+            </thead>
+            <tbody id="pkgPreviewTableBody"></tbody>
+          </table>
+        </div>
+        <!-- Mode Choice -->
+        <div class="form-group" style="margin: 0;">
+          <label class="form-label" style="font-weight: 600;" data-i18n="pkg_upgrade_mode">Upgrade Scope / Mode</label>
+          <div style="display: flex; gap: 14px; align-items: center;">
+            <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: var(--fs-xs);">
+              <input type="radio" name="pkgUpgradeMode" value="all" checked onchange="onPkgUpgradeModeChange()" />
+              <span data-i18n="pkg_mode_all">All packages (full upgrade)</span>
+            </label>
+            <label id="pkgModeSecurityOption" style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: var(--fs-xs);">
+              <input type="radio" name="pkgUpgradeMode" value="security" onchange="onPkgUpgradeModeChange()" />
+              <span data-i18n="pkg_mode_sec">Security updates only (--security)</span>
+            </label>
+          </div>
+          <p id="pkgModeNote" style="margin: 4px 0 0; font-size: var(--fs-xs); color: var(--text-muted);"></p>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px;">
+          <button class="btn btn-ghost btn-sm" onclick="closeModal('pkgUpgradePreviewModal')" data-i18n="cancel">Cancel</button>
+          <button class="btn btn-primary btn-sm" id="btnStartPkgUpgrade" onclick="startHostPackageUpgrade()"><svg class="icon icon-sm"><use href="#i-play"/></svg> <span data-i18n="pkg_confirm_upgrade_btn">Start Upgrade</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Package Upgrade Streaming Log Modal (Workspace Modal layout) -->
+<div id="pkgUpgradeLogsModal" class="modal">
+  <div class="modal-content modal-workspace" style="display: flex; flex-direction: column;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
+        <svg class="icon icon-sm" style="color: var(--accent-text);"><use href="#i-package"/></svg>
+        <h3 id="pkgUpgradeLogsTitle" style="font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55vw; margin: 0;">Package Upgrade Logs</h3>
+      </div>
+      <div style="display: flex; gap: 8px; align-items: center; flex-shrink: 0;">
+        <span id="pkgUpgradeLogsStatus" class="badge badge-info">Connecting</span>
+        <label style="display: flex; align-items: center; gap: 4px; font-size: var(--fs-xs); cursor: pointer; color: var(--text-muted);">
+          <input type="checkbox" id="pkgUpgradeLogsAutoScroll" checked style="width: auto;" />
+          <span data-i18n="docker_logs_autoscroll">Auto-scroll</span>
+        </label>
+        <button class="btn btn-sm" onclick="document.getElementById('pkgUpgradeLogsOutput').textContent = ''" data-i18n="docker_logs_clear">Clear</button>
+        <button class="btn btn-icon btn-sm" onclick="closeModal('pkgUpgradeLogsModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+      </div>
+    </div>
+    <div class="modal-body" style="padding: 0; flex: 1; min-height: 0; gap: 0; background: var(--bg);">
+      <pre id="pkgUpgradeLogsOutput" style="flex: 1; min-height: 0; max-height: none; margin: 0; padding: 12px 16px; border-radius: 0; overflow: auto; white-space: pre-wrap; word-break: break-all; font-family: var(--font-mono); font-size: var(--fs-xs); line-height: 1.5; color: var(--text);"></pre>
+    </div>
+  </div>
+</div>
+
 
 <script src="/vendor/xterm.js"></script>
 <script src="/vendor/xterm-addon-fit.js"></script>
@@ -6632,6 +6957,71 @@ const I18N = {
     "kube_logs_tail": "Tail",
     "kube_container": "Container",
     "kube_select_container": "Select Container",
+    "kube_btn_detect_clusters": "Detect clusters",
+    "kube_detecting_clusters": "Detecting Kubernetes clusters...",
+    "kube_detect_complete": "Cluster detection complete",
+    "kube_standalone": "Standalone",
+    "kube_node_single": "node",
+    "kube_node_multi": "nodes",
+    "kube_failover_from": "failover from",
+    "kube_failover_notice": "Failover active: request served by",
+    "host_kube_mode": "Kubernetes Mode",
+    "kube_mode_full": "Full (Read, Write & Exec)",
+    "kube_mode_no_exec": "No Exec (Block pod exec console)",
+    "kube_mode_read_only": "Read-Only (Block mutations & exec)",
+    "kube_mode_hint": "Application guardrail only; actual security boundary is kubeconfig/sudoers/RBAC permissions on the host.",
+    "kube_mode_read_only_badge": "Read-Only",
+    "kube_mode_no_exec_badge": "No-Exec",
+    "kube_mode_blocked_ro": "Disabled in Read-Only mode",
+    "kube_mode_blocked_exec": "Exec console is disabled in this mode",
+    "kube_apply_ro_warning": "Applying manifests is blocked in Read-Only mode.",
+    "kube_apply_desc": "Paste a Kubernetes manifest (YAML) to preview changes and apply to the cluster.",
+    "kube_btn_preview_diff": "Preview Diff",
+    "kube_apply_locked_hint": "Run Preview Diff first",
+    "kube_diffing": "Running dry-run diff...",
+    "kube_diff_no_changes": "No changes detected. Cluster state matches manifest.",
+    "kube_apply_diff_needed": "Manifest has changed. Please preview diff before applying.",
+    "kube_confirm_apply_title": "Apply Manifest",
+    "kube_confirm_apply_msg": "Are you sure you want to apply this manifest to the cluster?",
+    "kube_confirm_scale_0_title": "Scale to 0 Replicas",
+    "kube_confirm_scale_0_msg": "Scaling {name} to 0 will terminate {count} running pod(s).{pvc}",
+    "kube_confirm_scale_0_pvc": "PersistentVolumeClaims (PVCs) will be preserved.",
+    "kube_confirm_restart_msg": "Restarting {name} will recreate {count} replica(s) in a rolling update.",
+    "kube_confirm_cordon_msg": "Cordoning node {name} will mark it unschedulable. Existing workloads continue running, but no new pods will be scheduled on this node.",
+    "kube_confirm_delete_pod_msg": "Delete pod {name} on node {node} in namespace {ns}? {warn}",
+    "kube_confirm_delete_pod_unmanaged": "If not managed by a workload controller, this pod will be permanently deleted.",
+    "kube_edit_yaml": "Edit YAML",
+    "kube_yaml_desc": "resourceVersion is preserved: an apply failing with \"object has been modified\" means the object changed since it was opened; re-open the YAML. Comments are not preserved.",
+    "kube_yaml_ro_note": "Read-only mode: viewing is allowed but Apply is disabled.",
+    "kube_yaml_conflict_hint": "The object changed since it was opened (resourceVersion conflict). Re-open the YAML to get the latest version.",
+    "kube_logs_workload": "Workload Logs",
+    "kube_logs_filter_ph": "Filter...",
+    "kube_logs_timestamps": "Timestamps",
+    "kube_logs_matches": "{n} match(es)",
+    "kube_logs_previous_workload": "Previous is not available for workload logs.",
+    "kube_drain": "Drain",
+    "kube_drain_title": "Drain Node",
+    "kube_drain_previewing": "Running drain preview (dry-run)...",
+    "kube_drain_pods_header": "{n} pod(s) will be evicted and rescheduled:",
+    "kube_drain_daemonset_skipped": "DaemonSet-managed pods (skipped): {list}",
+    "kube_drain_blocked_note": "{n} pod(s) blocked by PodDisruptionBudget; the drain may run until the timeout.",
+    "kube_drain_confirm_title": "Drain Node",
+    "kube_drain_confirm_base": "Drain node {name}? {count} pod(s) will be evicted and rescheduled; single-replica workloads will experience downtime.",
+    "kube_drain_confirm_emptydir": "EmptyDir data will be lost permanently.",
+    "kube_drain_confirm_force": "Pods without a controller may not come back.",
+    "kube_drain_confirm_etcd": "{name} is a control-plane and etcd member of the HA cluster: draining removes one etcd vote; if one other node fails during the drain, quorum is lost and all workloads stop.",
+    "kube_drain_confirm_blocked": "{n} pod(s) are blocked by PDB; the drain may run until the timeout.",
+    "kube_drain_flag_ignore_ds": "Ignore DaemonSet-managed pods",
+    "kube_drain_flag_emptydir": "Delete EmptyDir data",
+    "kube_drain_flag_force": "Force (evict pods without a controller)",
+    "kube_drain_started": "Drain started; this can take minutes...",
+    "kube_drain_done": "Drain completed",
+    "kube_drain_timeout": "Drain timeout: the node stays cordoned and pods may be partially evicted. Run Uncordon to undo.",
+    "kube_warning_only": "Warning only",
+    "kube_pods_only_problems": "Only problems",
+    "kube_pod_problem": "Problem pod",
+    "kube_autorefresh": "Auto-refresh",
+    "kube_autorefresh_off": "Off",
     "col_keys": "Keys",
     "col_claim": "Claim",
     "col_storageclass": "StorageClass",
@@ -6646,6 +7036,35 @@ const I18N = {
     "col_class": "Class",
     "col_namespace": "Namespace",
     "col_type": "Type",
+    "bulk_exec_title": "Bulk Command Execution",
+    "timeout_sec": "Timeout (sec):",
+    "clear": "Clear",
+    "copy": "Copy",
+    "loading": "Loading...",
+    "actions": "Actions",
+    "bulk_exec_btn": "Bulk Exec",
+    "bulk_select_hosts": "Select Target Hosts (Max 20)",
+    "bulk_search_ph": "Search hosts...",
+    "bulk_all_groups": "All Groups",
+    "bulk_select_all": "Select All (Max 20)",
+    "bulk_run_btn": "Run Command",
+    "bulk_results": "Execution Results",
+    "bulk_copy_all": "Copy All",
+    "bulk_no_hosts_selected": "Please select at least 1 host.",
+    "bulk_max_hosts_reached": "Maximum 20 hosts can be selected.",
+    "bulk_confirm_msg": "Execute command across {count} host(s)? Command: {cmd}",
+    "pkg_upgrade_title": "Upgrade Packages",
+    "pkg_upgrade_btn": "Upgrade packages",
+    "pkg_pending_total": "Total Pending",
+    "pkg_pending_sec": "Security Pending",
+    "pkg_upgrade_mode": "Upgrade Scope / Mode",
+    "pkg_mode_all": "All packages (full upgrade)",
+    "pkg_mode_sec": "Security updates only (--security)",
+    "pkg_confirm_upgrade_btn": "Start Upgrade",
+    "pkg_upgrade_confirm_msg": "Apply package upgrades to this host? Remote services may restart automatically. There is NO automatic rollback mechanism. Consider taking a System Snapshot or disk snapshot beforehand.",
+    "alert_debounce_label": "Alert Debounce Runs (1..10)",
+    "alert_debounce_desc": "Require N consecutive drift inspections before triggering an Incident, Alert, or notifications.",
+    "secret_saved": "Saved",
   },
   id: {
     "brand_subtitle": "Manajemen Server Agentless",
@@ -7836,6 +8255,71 @@ const I18N = {
     "kube_logs_tail": "Tail",
     "kube_container": "Kontainer",
     "kube_select_container": "Pilih Kontainer",
+    "kube_btn_detect_clusters": "Deteksi klaster",
+    "kube_detecting_clusters": "Mendeteksi klaster Kubernetes...",
+    "kube_detect_complete": "Deteksi klaster selesai",
+    "kube_standalone": "Mandiri",
+    "kube_node_single": "node",
+    "kube_node_multi": "node",
+    "kube_failover_from": "failover dari",
+    "kube_failover_notice": "Failover aktif: permintaan dilayani oleh",
+    "host_kube_mode": "Mode Kubernetes",
+    "kube_mode_full": "Penuh (Baca, Tulis & Exec)",
+    "kube_mode_no_exec": "Tanpa Exec (Blokir konsol exec pod)",
+    "kube_mode_read_only": "Hanya Baca (Blokir mutasi & exec)",
+    "kube_mode_hint": "Hanya pembatas aplikasi; batas keamanan sebenarnya adalah izin kubeconfig/sudoers/RBAC pada host.",
+    "kube_mode_read_only_badge": "Hanya Baca",
+    "kube_mode_no_exec_badge": "Tanpa Exec",
+    "kube_mode_blocked_ro": "Dinonaktifkan dalam mode Hanya Baca",
+    "kube_mode_blocked_exec": "Konsol exec dinonaktifkan dalam mode ini",
+    "kube_apply_ro_warning": "Penerapan manifest diblokir dalam mode Hanya Baca.",
+    "kube_apply_desc": "Tempel manifest Kubernetes (YAML) untuk melihat pratinjau perubahan dan menerapkannya ke klaster.",
+    "kube_btn_preview_diff": "Pratinjau Diff",
+    "kube_apply_locked_hint": "Jalankan Pratinjau Diff terlebih dahulu",
+    "kube_diffing": "Menjalankan diff dry-run...",
+    "kube_diff_no_changes": "Tidak ada perubahan terdeteksi. Status klaster cocok dengan manifest.",
+    "kube_apply_diff_needed": "Manifest telah berubah. Harap tinjau diff sebelum menerapkan.",
+    "kube_confirm_apply_title": "Terapkan Manifest",
+    "kube_confirm_apply_msg": "Apakah Anda yakin ingin menerapkan manifest ini ke klaster?",
+    "kube_confirm_scale_0_title": "Ubah Skala ke 0 Replika",
+    "kube_confirm_scale_0_msg": "Mengubah skala {name} ke 0 akan menghentikan {count} pod yang berjalan.{pvc}",
+    "kube_confirm_scale_0_pvc": "PersistentVolumeClaims (PVC) akan tetap dipertahankan.",
+    "kube_confirm_restart_msg": "Me-restart {name} akan membuat ulang {count} replika secara bertahap (rolling update).",
+    "kube_confirm_cordon_msg": "Melakukan cordon pada node {name} akan menandainya tidak dapat dijadwalkan. Workload yang ada tetap berjalan, tetapi tidak ada pod baru yang dijadwalkan pada node ini.",
+    "kube_confirm_delete_pod_msg": "Hapus pod {name} pada node {node} di namespace {ns}? {warn}",
+    "kube_confirm_delete_pod_unmanaged": "Jika tidak dikelola oleh controller workload, pod ini akan terhapus secara permanen.",
+    "kube_edit_yaml": "Edit YAML",
+    "kube_yaml_desc": "resourceVersion dipertahankan: apply yang gagal dengan \"object has been modified\" berarti objek berubah sejak dibuka; buka ulang YAML. Komentar tidak dipertahankan.",
+    "kube_yaml_ro_note": "Mode Hanya Baca: melihat diizinkan tetapi Apply dinonaktifkan.",
+    "kube_yaml_conflict_hint": "Objek berubah sejak dibuka (konflik resourceVersion). Buka ulang YAML untuk mendapatkan versi terbaru.",
+    "kube_logs_workload": "Log Workload",
+    "kube_logs_filter_ph": "Filter...",
+    "kube_logs_timestamps": "Timestamp",
+    "kube_logs_matches": "{n} kecocokan",
+    "kube_logs_previous_workload": "Previous tidak tersedia untuk log workload.",
+    "kube_drain": "Drain",
+    "kube_drain_title": "Drain Node",
+    "kube_drain_previewing": "Menjalankan pratinjau drain (dry-run)...",
+    "kube_drain_pods_header": "{n} pod akan dievakuasi dan dijadwalkan ulang:",
+    "kube_drain_daemonset_skipped": "Pod milik DaemonSet (dilewati): {list}",
+    "kube_drain_blocked_note": "{n} pod diblokir PodDisruptionBudget; drain dapat berjalan sampai batas waktu.",
+    "kube_drain_confirm_title": "Drain Node",
+    "kube_drain_confirm_base": "Drain node {name}? {count} pod akan dievakuasi dan dijadwalkan ulang; workload satu replika akan mengalami downtime.",
+    "kube_drain_confirm_emptydir": "Data emptyDir hilang permanen.",
+    "kube_drain_confirm_force": "Pod tanpa controller mungkin tidak kembali.",
+    "kube_drain_confirm_etcd": "{name} adalah anggota control-plane dan etcd klaster HA: men-drain mengurangi satu suara etcd; bila satu node lain gagal saat drain, kuorum hilang dan semua workload berhenti.",
+    "kube_drain_confirm_blocked": "{n} pod terblokir PDB; drain dapat berjalan sampai batas waktu.",
+    "kube_drain_flag_ignore_ds": "Abaikan pod milik DaemonSet",
+    "kube_drain_flag_emptydir": "Hapus data emptyDir",
+    "kube_drain_flag_force": "Paksa (evict pod tanpa controller)",
+    "kube_drain_started": "Drain dimulai; ini bisa memakan waktu beberapa menit...",
+    "kube_drain_done": "Drain selesai",
+    "kube_drain_timeout": "Drain kehabisan waktu: node tetap cordoned dan pod mungkin sebagian tereviksi. Jalankan Uncordon untuk membatalkan.",
+    "kube_warning_only": "Hanya Warning",
+    "kube_pods_only_problems": "Hanya bermasalah",
+    "kube_pod_problem": "Pod bermasalah",
+    "kube_autorefresh": "Auto-refresh",
+    "kube_autorefresh_off": "Mati",
     "col_keys": "Kunci",
     "col_claim": "Klaim",
     "col_storageclass": "StorageClass",
@@ -7850,6 +8334,35 @@ const I18N = {
     "col_class": "Kelas",
     "col_namespace": "Namespace",
     "col_type": "Tipe",
+    "bulk_exec_title": "Eksekusi Perintah Massal",
+    "timeout_sec": "Batas waktu (dtk):",
+    "clear": "Bersihkan",
+    "copy": "Salin",
+    "loading": "Memuat...",
+    "actions": "Aksi",
+    "bulk_exec_btn": "Perintah Massal",
+    "bulk_select_hosts": "Pilih Host Sasaran (Maks 20)",
+    "bulk_search_ph": "Cari host...",
+    "bulk_all_groups": "Semua Grup",
+    "bulk_select_all": "Pilih Semua (Maks 20)",
+    "bulk_run_btn": "Jalankan Perintah",
+    "bulk_results": "Hasil Eksekusi",
+    "bulk_copy_all": "Salin Semua",
+    "bulk_no_hosts_selected": "Silakan pilih setidaknya 1 host.",
+    "bulk_max_hosts_reached": "Maksimal 20 host dapat dipilih.",
+    "bulk_confirm_msg": "Jalankan perintah pada {count} host? Perintah: {cmd}",
+    "pkg_upgrade_title": "Pembaruan Paket",
+    "pkg_upgrade_btn": "Perbarui paket",
+    "pkg_pending_total": "Total Tertunda",
+    "pkg_pending_sec": "Keamanan Tertunda",
+    "pkg_upgrade_mode": "Cakupan / Mode Pembaruan",
+    "pkg_mode_all": "Semua paket (pembaruan penuh)",
+    "pkg_mode_sec": "Hanya pembaruan keamanan (--security)",
+    "pkg_confirm_upgrade_btn": "Mulai Pembaruan",
+    "pkg_upgrade_confirm_msg": "Terapkan pembaruan paket pada host ini? Layanan remote dapat restart secara otomatis. TIDAK ADA mekanisme rollback otomatis. Pertimbangkan untuk mengambil System Snapshot terlebih dahulu.",
+    "alert_debounce_label": "Debounce Alert (1..10 Siklus)",
+    "alert_debounce_desc": "Drift baru memicu Insiden, Alert, dan notifikasi hanya setelah terlihat pada N inspeksi berturut-turut.",
+    "secret_saved": "Tersimpan",
   }
 };
 
@@ -7931,6 +8444,7 @@ function toggleLanguage() {
 
 
 let currentHost = null;
+let currentDetailHostId = null;
 let currentTab = 'overview';
 let terminalSocket = null;
 let activeTerm = null;
@@ -9322,6 +9836,8 @@ function openAddHostModal() {
   document.getElementById('hostCommissionDate').value = '';
   document.getElementById('hostNote').value = '';
   document.getElementById('hostGroup').value = '';
+  const kmAdd = document.getElementById('hostKubeMode');
+  if (kmAdd) kmAdd.value = 'full';
   const testBtn = document.getElementById('btnTestHostInModal');
   if (testBtn) testBtn.style.display = 'none';
   updateGroupSuggestions();
@@ -9344,6 +9860,8 @@ function openEditHostModal(hostId) {
   document.getElementById('hostCustomKey').value = h.custom_key || '';
   document.getElementById('hostCommissionDate').value = h.commission_date || '';
   document.getElementById('hostNote').value = h.notes || '';
+  const kmEdit = document.getElementById('hostKubeMode');
+  if (kmEdit) kmEdit.value = h.kube_mode || 'full';
   document.getElementById('passGroup').style.display = 'none';
   const testBtn = document.getElementById('btnTestHostInModal');
   if (testBtn) testBtn.style.display = 'inline-flex';
@@ -9400,6 +9918,7 @@ async function saveHost() {
     commission_date: (document.getElementById('hostCommissionDate')?.value || '').trim(),
     notes: document.getElementById('hostNote').value,
     group_name: (document.getElementById('hostGroup')?.value || '').trim(),
+    kube_mode: document.getElementById('hostKubeMode')?.value || 'full',
   };
   const method = id ? 'PUT' : 'POST';
   const url = id ? '/api/hosts/' + id : '/api/hosts';
@@ -9926,6 +10445,7 @@ async function openHostDetail(id) {
   if (!res.ok) return;
   const data = await res.json();
   currentHost = data.host;
+  currentDetailHostId = id;
   window.detailData = data;
   document.getElementById('detailHostName').innerText = currentHost.name;
   const sub = document.getElementById('detailHostSubtitle');
@@ -10893,7 +11413,10 @@ async function renderPackagesTab() {
       </div>
       <div style="display: flex; align-items: center; gap: 8px;">
         <input type="text" id="pkgSearchInput" class="input" placeholder="${t('search_packages', 'Search package...')}" oninput="searchPackages(this.value)" style="height: 30px; font-size: var(--fs-xs); width: 180px;">
-        <button id="btnRescanPkgs" class="btn btn-sm btn-primary" onclick="rescanHostPackages(${d.host.id})" style="display: inline-flex; align-items: center; gap: 4px;">
+        <button id="btnUpgradePkgs" class="btn btn-sm btn-primary" onclick="openHostPackageUpgradePreview(${d.host.id})" style="display: inline-flex; align-items: center; gap: 4px;" ${d.host.os_info && d.host.os_info.toLowerCase().includes('darwin') ? 'disabled title="Package upgrade unsupported on macOS"' : ''}>
+          ${svgIcon('package', 'icon-sm')} <span>${t('pkg_upgrade_btn', 'Upgrade packages')}</span>
+        </button>
+        <button id="btnRescanPkgs" class="btn btn-sm" onclick="rescanHostPackages(${d.host.id})" style="display: inline-flex; align-items: center; gap: 4px;">
           ${svgIcon('refresh-cw', 'icon-sm')} <span>${t('rescan_packages', 'Rescan Packages')}</span>
         </button>
       </div>
@@ -11375,9 +11898,14 @@ function renderSecurityData(scan, hostID) {
         <h4 style="margin: 0; display: flex; align-items: center; gap: 6px;">${svgIcon('shield', 'icon-sm')} <span>${t('tab_security', 'Security')}</span></h4>
         ${statusBadge}
       </div>
-      <button id="btnScanSecurity" class="btn btn-sm btn-primary" onclick="runHostSecurityScan(${hostID})" style="display: inline-flex; align-items: center; gap: 4px;">
-        ${svgIcon('refresh-cw', 'icon-sm')} <span>${t('sec_scan_now', 'Scan Now')}</span>
-      </button>
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <button id="btnUpgradePkgsSec" class="btn btn-sm btn-primary" onclick="openHostPackageUpgradePreview(${hostID})" style="display: inline-flex; align-items: center; gap: 4px;" ${(window.detailData && window.detailData.host && window.detailData.host.os_info && window.detailData.host.os_info.toLowerCase().includes('darwin')) ? 'disabled title="Package upgrade unsupported on macOS"' : ''}>
+          ${svgIcon('package', 'icon-sm')} <span>${t('pkg_upgrade_btn', 'Upgrade packages')}</span>
+        </button>
+        <button id="btnScanSecurity" class="btn btn-sm" onclick="runHostSecurityScan(${hostID})" style="display: inline-flex; align-items: center; gap: 4px;">
+          ${svgIcon('refresh-cw', 'icon-sm')} <span>${t('sec_scan_now', 'Scan Now')}</span>
+        </button>
+      </div>
     </div>
     <div style="overflow-y: auto; flex: 1;">
       ${bannerHtml}
@@ -11635,7 +12163,9 @@ const ruleKindHints = {
   port: { targetPh: 'e.g. 80, 443, 3306', expected: 'listening', expectedPh: 'e.g. listening' },
   disk: { targetPh: 'e.g. /, /var, /data', expected: '<85%', expectedPh: 'e.g. <80%, <90%' },
   cron: { targetPh: 'e.g. backup.sh, certbot renew', expected: 'configured', expectedPh: 'e.g. configured' },
-  backup: { targetPh: 'e.g. /var/backups/daily.sql.gz', expected: 'fresh_24h', expectedPh: 'e.g. fresh_24h, fresh_12h' },
+  backup: { targetPh: 'e.g. /var/backups/*.sql.gz', expected: 'fresh_24h,verify=gzip', expectedPh: 'fresh_24h[,verify=<gzip|tar|zstd|xz|sha256>]' },
+  http: { targetPh: 'https://example.com/health', expected: '2xx,<1500ms', expectedPh: '200, 2xx, 3xx[, <1500ms]' },
+  tls: { targetPh: 'example.com:443 or https://example.com', expected: '>=14d', expectedPh: '>=14d (min days until cert expiration)' },
   process: { targetPh: 'e.g. celery, supervisord', expected: 'running', expectedPh: 'e.g. running' },
   security_updates: { targetPh: 'security', targetVal: 'security', readOnlyTarget: true, expected: 'none', expectedPh: 'none or <=N (max pending security updates)' }
 };
@@ -11732,8 +12262,10 @@ async function submitRuleForm() {
       showToast(editId ? t('rule_updated', 'Rule updated successfully') : t('rule_added', 'Rule added successfully'), 'success');
       inspectHost(hostID);
     } else {
-      const err = await res.json().catch(() => ({}));
-      showToast(t('failed_prefix', 'Failed: ') + (err.error || 'Server error'), 'error');
+      const raw = (await res.text()).trim();
+      let msg = raw;
+      try { msg = JSON.parse(raw).error || raw; } catch (e) {}
+      showToast(t('failed_prefix', 'Failed: ') + (msg || 'Server error'), 'error');
     }
   } catch(e) {
     showToast(t('error_prefix', 'Error: ') + e.message, 'error');
@@ -16022,6 +16554,24 @@ async function openSettingsModal(tab) {
   document.getElementById('settingTgToken').value = data.telegram_token || '';
   document.getElementById('settingTgChat').value = data.telegram_chat_id || '';
   document.getElementById('settingWebhook').value = data.webhook_url || '';
+  document.getElementById('settingNtfyUrl').value = data.ntfy_url || '';
+  document.getElementById('settingNtfyToken').value = '';
+  const ntfySaved = document.getElementById('settingNtfyTokenSaved');
+  if (ntfySaved) ntfySaved.style.display = data.ntfy_token_set ? 'inline-flex' : 'none';
+  document.getElementById('settingSlackUrl').value = data.slack_webhook_url || '';
+  document.getElementById('settingDiscordUrl').value = data.discord_webhook_url || '';
+  document.getElementById('settingSmtpHost').value = data.smtp_host || '';
+  document.getElementById('settingSmtpPort').value = data.smtp_port || '';
+  document.getElementById('settingSmtpUser').value = data.smtp_user || '';
+  document.getElementById('settingSmtpPass').value = '';
+  const smtpSaved = document.getElementById('settingSmtpPassSaved');
+  if (smtpSaved) smtpSaved.style.display = data.smtp_pass_set ? 'inline-flex' : 'none';
+  document.getElementById('settingSmtpFrom').value = data.smtp_from || '';
+  document.getElementById('settingSmtpSecurity').value = data.smtp_security || 'starttls';
+  document.getElementById('settingSmtpTo').value = data.smtp_to || '';
+  document.getElementById('settingAlertDebounce').value = data.alert_debounce_runs || '1';
+  const testRes = document.getElementById('testNotifResults');
+  if (testRes) { testRes.style.display = 'none'; testRes.innerHTML = ''; }
   const pollEl = document.getElementById('settingPollInterval');
   if (pollEl) pollEl.value = (data.poll_interval_sec !== undefined && data.poll_interval_sec !== '') ? data.poll_interval_sec : '300';
   const secScanEl = document.getElementById('settingSecurityScanInterval');
@@ -16222,22 +16772,74 @@ async function saveSettings() {
     telegram_token: document.getElementById('settingTgToken').value,
     telegram_chat_id: document.getElementById('settingTgChat').value,
     webhook_url: document.getElementById('settingWebhook').value,
+    ntfy_url: document.getElementById('settingNtfyUrl').value.trim(),
+    slack_webhook_url: document.getElementById('settingSlackUrl').value.trim(),
+    discord_webhook_url: document.getElementById('settingDiscordUrl').value.trim(),
+    smtp_host: document.getElementById('settingSmtpHost').value.trim(),
+    smtp_port: document.getElementById('settingSmtpPort').value.trim(),
+    smtp_user: document.getElementById('settingSmtpUser').value.trim(),
+    smtp_from: document.getElementById('settingSmtpFrom').value.trim(),
+    smtp_security: document.getElementById('settingSmtpSecurity').value,
+    smtp_to: document.getElementById('settingSmtpTo').value.trim(),
+    alert_debounce_runs: document.getElementById('settingAlertDebounce').value.trim() || '1',
   };
-  await fetch('/api/settings', {
+  const ntfyTokenVal = document.getElementById('settingNtfyToken').value;
+  if (ntfyTokenVal !== '') payload.ntfy_token = ntfyTokenVal;
+  const smtpPassVal = document.getElementById('settingSmtpPass').value;
+  if (smtpPassVal !== '') payload.smtp_pass = smtpPassVal;
+
+  const res = await fetch('/api/settings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
-  showToast(t('settings_saved'), 'success');
+  if (res.ok) {
+    showToast(t('settings_saved'), 'success');
+    openSettingsModal('notif');
+  } else {
+    const err = await res.json().catch(() => ({}));
+    showToast(err.error || 'Failed to save settings', 'error');
+  }
 }
 
 async function testNotification() {
-  const res = await fetch('/api/settings/test-notify', { method: 'POST' });
-  const data = await res.json();
-  if (data.ok) {
-    showToast(t('test_notif_success'), 'success');
-  } else {
-    showToast(t('test_notif_failed') + (data.error || 'Unknown error'), 'error');
+  const btn = document.getElementById('btnTestNotif');
+  const resContainer = document.getElementById('testNotifResults');
+  if (btn) btn.disabled = true;
+  if (resContainer) {
+    resContainer.style.display = 'block';
+    resContainer.innerHTML = `<span class="spinner" style="display:inline-block; margin-right:6px;">${svgIcon('loader-circle', 'icon-sm')}</span> <span>Testing channels...</span>`;
+  }
+  try {
+    const res = await fetch('/api/settings/test-notify', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (data.ok) {
+      showToast(t('test_notif_success'), 'success');
+    } else {
+      showToast(t('test_notif_failed') + (data.error || 'Some or all channels failed'), 'error');
+    }
+    if (resContainer) {
+      const results = Array.isArray(data.results) ? data.results : [];
+      if (results.length === 0) {
+        resContainer.innerHTML = `<div style="color: var(--danger);">${escapeHtml(data.error || 'No notification channels configured.')}</div>`;
+      } else {
+        resContainer.innerHTML = `
+          <div style="display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; background: var(--surface-2); border: 1px solid var(--card-border); border-radius: var(--radius);">
+            ${results.map(r => `
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                <span style="font-weight: 600; text-transform: uppercase;">${escapeHtml(r.channel)}</span>
+                <span class="badge ${r.ok ? 'badge-healthy' : 'badge-danger'}">
+                  ${r.ok ? 'OK' : escapeHtml(r.error || 'Failed')}
+                </span>
+              </div>
+            `).join('')}
+          </div>`;
+      }
+    }
+  } catch (e) {
+    if (resContainer) resContainer.innerHTML = `<div style="color: var(--danger);">${escapeHtml(e.message)}</div>`;
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -16649,6 +17251,9 @@ function closeModal(id) {
   }
   if (id === 'kubeLogsModal') {
     stopKubeLogs();
+  }
+  if (id === 'pkgUpgradeLogsModal') {
+    stopPkgUpgradeLogs();
   }
   if (id === 'terminalDockModal') {
     minimizeTerminalDock();
@@ -19830,8 +20435,14 @@ function dockerFloatingMenu(e, id, items) {
     const b = document.createElement('button');
     b.className = 'dropdown-item' + (it.danger ? ' danger' : '');
     b.textContent = it.label;
-    if (it.disabled) b.disabled = true;
-    else b.addEventListener('click', () => { closeDockerMenu(); it.run(); });
+    if (it.title) b.title = it.title;
+    if (it.disabled) {
+      b.disabled = true;
+      b.style.opacity = '0.5';
+      b.style.cursor = 'not-allowed';
+    } else {
+      b.addEventListener('click', () => { closeDockerMenu(); it.run(); });
+    }
     menu.appendChild(b);
   });
   document.body.appendChild(menu);
@@ -20021,6 +20632,7 @@ function switchSideNav(section) {
   if (secDocker) secDocker.style.display = section === 'docker' ? 'block' : 'none';
   if (secKube) secKube.style.display = section === 'kube' ? 'block' : 'none';
   toggleSidePanelMobile(false);
+  if (section !== 'kube') stopKubeAutorefresh();
   if (section === 'docker') renderDockerSection();
   else if (section === 'kube') populateKubeHostSelect();
 }
@@ -20078,6 +20690,103 @@ function clearDockerSectionSearch() {
 let selectedKubeHostId = null, currentKubeCluster = null, currentKubeTab = 'nodes', currentKubeNamespace = '';
 let kubeNodesCache = [], kubeWorkloadsCache = [], kubePodsCache = [], kubeServicesCache = [], kubeNamespacesList = [], currentScaleTarget = null;
 let kubeGenericCache = {}, kubePickerActiveIndex = -1;
+let lastDiffedYaml = null;
+
+function handleKubeEnvelope(data) {
+  if (!data) return;
+  const gwChip = document.getElementById('kubeGatewayChip');
+  if (gwChip && data.served_by_host_name) {
+    gwChip.style.display = 'inline-flex';
+    if (data.failover) {
+      const prim = (allRawHosts || []).find(x => String(x.id) === String(data.primary_host_id))?.name || ('host #' + data.primary_host_id);
+      gwChip.className = 'badge badge-warning';
+      gwChip.textContent = 'Gateway: ' + data.served_by_host_name + ' (' + t('kube_failover_from', 'failover from') + ' ' + prim + ')';
+    } else {
+      gwChip.className = 'badge';
+      gwChip.style.background = 'var(--surface-2)';
+      gwChip.style.border = '1px solid var(--card-border)';
+      gwChip.textContent = 'Gateway: ' + data.served_by_host_name;
+    }
+  }
+  if (data.failover) {
+    const prim = (allRawHosts || []).find(x => String(x.id) === String(data.primary_host_id))?.name || ('host #' + data.primary_host_id);
+    const err = data.primary_error ? (': ' + data.primary_error) : '';
+    showToast(t('kube_failover_notice', 'Failover active: request served by') + ' ' + data.served_by_host_name + ' (' + prim + err + ')', 'warning', 6000);
+  }
+}
+
+function getSelectedKubeMode() {
+  const h = (allRawHosts || []).find(x => String(x.id) === String(selectedKubeHostId));
+  return h?.kube_mode || 'full';
+}
+
+function updateKubeModeChip() {
+  const chip = document.getElementById('kubeModeChip');
+  if (!chip) return;
+  const mode = getSelectedKubeMode();
+  if (mode === 'read-only') {
+    chip.style.display = 'inline-flex';
+    chip.textContent = t('kube_mode_read_only_badge', 'Read-Only');
+    chip.title = t('kube_mode_hint');
+  } else if (mode === 'no-exec') {
+    chip.style.display = 'inline-flex';
+    chip.textContent = t('kube_mode_no_exec_badge', 'No-Exec');
+    chip.title = t('kube_mode_hint');
+  } else {
+    chip.style.display = 'none';
+  }
+}
+
+function findHostForKubeNode(n) {
+  if (!n) return null;
+  const ip = (n.internalIP || '').trim();
+  const name = (n.name || '').trim().toLowerCase();
+  const shortName = name.split('.')[0];
+  return (allRawHosts || []).find(h => {
+    if (ip && h.host && h.host.trim() === ip) return true;
+    const hn = (h.name || '').trim().toLowerCase();
+    const hh = (h.host || '').trim().toLowerCase();
+    if (name && (hn === name || hh === name)) return true;
+    if (shortName && (hn === shortName || hh === shortName)) return true;
+    if (hn && (shortName.startsWith(hn) || hn.startsWith(shortName))) return true;
+    return false;
+  });
+}
+
+async function detectKubeClusters() {
+  const btn = document.getElementById('btnKubeDetectClusters');
+  if (btn) btn.disabled = true;
+  showToast(t('kube_detecting_clusters', 'Detecting Kubernetes clusters...'), 'info', 3000);
+  const hosts = (allRawHosts || []).slice();
+  let active = 0, idx = 0;
+  await new Promise(resolve => {
+    if (hosts.length === 0) return resolve();
+    function next() {
+      while (active < 5 && idx < hosts.length) {
+        const h = hosts[idx++];
+        active++;
+        fetch('/api/hosts/' + h.id + '/kube/detect')
+          .then(r => r.json())
+          .then(data => {
+            if (data && data.ok && data.cluster && data.cluster.cluster_id) {
+              h.kube_cluster_id = data.cluster.cluster_id;
+            }
+          })
+          .catch(() => {})
+          .finally(() => {
+            active--;
+            if (idx >= hosts.length && active === 0) resolve();
+            else next();
+          });
+      }
+    }
+    next();
+  });
+  await loadHosts();
+  populateKubeHostSelect();
+  if (btn) btn.disabled = false;
+  showToast(t('kube_detect_complete', 'Cluster detection complete'), 'success');
+}
 
 function formatKubeMemory(val) {
   if (!val) return '-';
@@ -20095,7 +20804,8 @@ function formatKubeMemory(val) {
   else if (unit === 'ei' || unit === 'eib' || unit === 'e') bytes = num * 1024 * 1024 * 1024 * 1024 * 1024 * 1024;
   else if (!unit) bytes = num;
   else return s;
-  return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+  const gb = bytes / (1024 * 1024 * 1024);
+  return gb.toFixed(gb < 1 ? 2 : 1) + ' GB';
 }
 
 function kubeAge(created) {
@@ -20133,6 +20843,16 @@ function updateKubeHostPickerBtn() {
   const h = (allRawHosts || []).find(x => String(x.id) === String(selectedKubeHostId));
   if (h) {
     const status = h.status || 'unknown';
+    const cid = (h.kube_cluster_id || '').trim();
+    if (cid) {
+      const members = (allRawHosts || []).filter(x => (x.kube_cluster_id || '').trim() === cid);
+      const commonGroup = (members.length > 0 && members.every(m => m.group_name && m.group_name.trim() === members[0].group_name.trim())) ? members[0].group_name.trim() : '';
+      const clusterName = commonGroup || members[0]?.name || h.name;
+      const combinedStatus = members.every(m => m.status === 'healthy') ? 'healthy' : (members.some(m => m.status === 'healthy' || m.status === 'degraded') ? 'degraded' : 'down');
+      const countText = members.length + ' ' + (members.length === 1 ? t('kube_node_single', 'node') : t('kube_node_multi', 'nodes'));
+      label.innerHTML = `<span class="status-dot ${combinedStatus}"></span> <span style="font-weight:600;">${escapeHtml(clusterName)}</span> <span class="badge" style="font-size:10px;padding:1px 6px;">${countText}</span>`;
+      return;
+    }
     label.innerHTML = `<span class="status-dot ${status}"></span> <span style="font-weight:600;">${escapeHtml(h.name)}</span> <span class="mono text-muted" style="font-size:var(--fs-xs);">(${escapeHtml(h.host)})</span>`;
   } else {
     label.innerHTML = `<span class="text-muted" data-i18n="kube_select_host">${t('kube_select_host', 'Select a host...')}</span>`;
@@ -20219,22 +20939,70 @@ function renderKubeHostPickerList() {
   if (!list) return;
   const q = (input ? input.value : '').toLowerCase().trim();
   const hosts = allRawHosts || [];
-  const filtered = q ? hosts.filter(h => (h.name || '').toLowerCase().includes(q) || (h.host || '').toLowerCase().includes(q)) : hosts;
   kubePickerActiveIndex = -1;
-  if (filtered.length === 0) {
+
+  const clusterMap = {};
+  const standalone = [];
+  hosts.forEach(h => {
+    const cid = (h.kube_cluster_id || '').trim();
+    if (cid) {
+      if (!clusterMap[cid]) clusterMap[cid] = [];
+      clusterMap[cid].push(h);
+    } else {
+      standalone.push(h);
+    }
+  });
+
+  const clusterItems = Object.keys(clusterMap).map(cid => {
+    const members = clusterMap[cid];
+    const commonGroup = (members.length > 0 && members.every(m => m.group_name && m.group_name.trim() === members[0].group_name.trim())) ? members[0].group_name.trim() : '';
+    const clusterName = commonGroup || members[0].name;
+    const combinedStatus = members.every(m => m.status === 'healthy') ? 'healthy' : (members.some(m => m.status === 'healthy' || m.status === 'degraded') ? 'degraded' : 'down');
+    const matches = !q || clusterName.toLowerCase().includes(q) || members.some(m => (m.name || '').toLowerCase().includes(q) || (m.host || '').toLowerCase().includes(q));
+    const isSelected = selectedKubeHostId && members.some(m => String(m.id) === String(selectedKubeHostId));
+    const targetHost = members.find(m => m.status === 'healthy') || members[0];
+    const countText = members.length + ' ' + (members.length === 1 ? t('kube_node_single', 'node') : t('kube_node_multi', 'nodes'));
+    return { cid, clusterName, combinedStatus, matches, isSelected, targetHostId: targetHost.id, countText };
+  }).filter(c => c.matches);
+
+  const standaloneItems = standalone.filter(h => {
+    return !q || (h.name || '').toLowerCase().includes(q) || (h.host || '').toLowerCase().includes(q);
+  });
+
+  if (clusterItems.length === 0 && standaloneItems.length === 0) {
     list.innerHTML = `<div style="padding:10px;text-align:center;color:var(--text-muted);font-size:var(--fs-xs);">${t('kube_no_data', 'No items found')}</div>`;
     return;
   }
-  list.innerHTML = filtered.map(h => {
-    const isSelected = selectedKubeHostId && String(h.id) === String(selectedKubeHostId);
-    const status = h.status || 'unknown';
-    return `<div class="kube-host-picker-item" role="option" aria-selected="${isSelected}" onclick="pickKubeHost(${h.id})" style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:var(--radius-sm);cursor:pointer;font-size:var(--fs-xs);transition:background var(--dur);background:${isSelected ? 'var(--accent-soft)' : 'transparent'};">
-      <span class="status-dot ${status}"></span>
-      <span style="font-weight:600;color:var(--text);">${escapeHtml(h.name)}</span>
-      <span class="mono text-muted">(${escapeHtml(h.host)})</span>
-      <span class="badge badge-${status}" style="margin-left:auto;font-size:10px;padding:1px 6px;">${escapeHtml(status)}</span>
-    </div>`;
-  }).join('');
+
+  let html = '';
+  if (clusterItems.length > 0) {
+    html += clusterItems.map(c => `
+      <div class="kube-host-picker-item" role="option" aria-selected="${c.isSelected}" onclick="pickKubeHost(${c.targetHostId})" style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:var(--radius-sm);cursor:pointer;font-size:var(--fs-xs);transition:background var(--dur);background:${c.isSelected ? 'var(--accent-soft)' : 'transparent'};">
+        <span class="status-dot ${c.combinedStatus}"></span>
+        <svg class="icon icon-xs text-muted" style="flex-shrink:0;"><use href="#i-boxes"/></svg>
+        <span style="font-weight:600;color:var(--text);">${escapeHtml(c.clusterName)}</span>
+        <span class="badge" style="margin-left:auto;font-size:10px;padding:1px 6px;">${c.countText}</span>
+      </div>
+    `).join('');
+  }
+
+  if (standaloneItems.length > 0) {
+    if (Object.keys(clusterMap).length > 0) {
+      html += `<div style="font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;padding:6px 10px 2px;letter-spacing:0.5px;">${t('kube_standalone', 'Standalone')}</div>`;
+    }
+    html += standaloneItems.map(h => {
+      const isSelected = selectedKubeHostId && String(h.id) === String(selectedKubeHostId);
+      const status = h.status || 'unknown';
+      return `<div class="kube-host-picker-item" role="option" aria-selected="${isSelected}" onclick="pickKubeHost(${h.id})" style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:var(--radius-sm);cursor:pointer;font-size:var(--fs-xs);transition:background var(--dur);background:${isSelected ? 'var(--accent-soft)' : 'transparent'};">
+        <span class="status-dot ${status}"></span>
+        <span style="font-weight:600;color:var(--text);">${escapeHtml(h.name)}</span>
+        <span class="mono text-muted">(${escapeHtml(h.host)})</span>
+        <span class="badge badge-${status}" style="margin-left:auto;font-size:10px;padding:1px 6px;">${escapeHtml(status)}</span>
+      </div>`;
+    }).join('');
+  }
+
+  list.innerHTML = html;
 }
 
 function pickKubeHost(hostId) {
@@ -20271,6 +21039,13 @@ async function onSelectKubeHost(hostId) {
   try {
     const res = await fetch(`/api/hosts/${selectedKubeHostId}/kube/detect`);
     const data = await res.json();
+    handleKubeEnvelope(data);
+    updateKubeModeChip();
+    if (data.cluster && data.cluster.cluster_id) {
+      const curH = (allRawHosts || []).find(x => x.id === selectedKubeHostId);
+      if (curH) curH.kube_cluster_id = data.cluster.cluster_id;
+      updateKubeHostPickerBtn();
+    }
     if (!data.ok || !data.cluster) {
       if (noClusterEl) {
         noClusterEl.style.display = 'block';
@@ -20313,6 +21088,13 @@ function switchKubeTab(tab) {
   document.querySelectorAll('#kubeViewsContainer .tabs .tab').forEach(el => {
     el.classList.toggle('active', el.id.toLowerCase() === ('tabkube' + tab.toLowerCase()));
   });
+  const evWrap = document.getElementById('kubeEventsFilterWrap');
+  const podWrap = document.getElementById('kubePodsFilterWrap');
+  const roWrap = document.getElementById('kubeAutorefreshWrap');
+  if (evWrap) evWrap.style.display = tab === 'events' ? 'inline-flex' : 'none';
+  if (podWrap) podWrap.style.display = tab === 'pods' ? 'inline-flex' : 'none';
+  if (roWrap) roWrap.style.display = tab === 'apply' ? 'none' : 'inline-flex';
+  restartKubeAutorefresh();
   const nsWrapper = document.getElementById('kubeNamespaceSelectorWrapper');
   const nsSelect = document.getElementById('kubeNamespaceSelect');
   if (nsWrapper) {
@@ -20344,19 +21126,22 @@ function loadKubeTabData(tab) {
     loadKubeGenericResource(tab);
   }
 }
-async function kubeFetchTab(url, key, heads, rowFn) {
+async function kubeFetchTab(url, key, heads, rowFn, cacheFn) {
   const content = document.getElementById('kubeTabContent');
   if (!content || !selectedKubeHostId) return;
   content.innerHTML = `<div style="text-align:center;padding:30px;color:var(--text-muted);">${t('kube_loading')}</div>`;
   try {
     const res = await fetch(url);
     const data = await res.json();
+    handleKubeEnvelope(data);
     if (!data.ok) { content.innerHTML = kubeEmptyHtml(t('error_prefix', 'Error: '), data.error || 'Failed to load', true); return; }
     const items = data[key] || [];
+    if (cacheFn) cacheFn(items);
     if (key === 'nodes') kubeNodesCache = items;
     else if (key === 'workloads') kubeWorkloadsCache = items;
     else if (key === 'pods') kubePodsCache = items;
     else if (key === 'services') kubeServicesCache = items;
+    if (!rowFn) return;
     if (items.length === 0) { content.innerHTML = kubeEmptyHtml(t('kube_no_data', 'No items found'), ''); return; }
     content.innerHTML = dockerTableHtml(heads, items.map(rowFn).join(''));
   } catch(e) {
@@ -20365,17 +21150,32 @@ async function kubeFetchTab(url, key, heads, rowFn) {
 }
 function loadKubeNodes() {
   kubeFetchTab(`/api/hosts/${selectedKubeHostId}/kube/nodes`, 'nodes',
-    [t('col_name', 'Name'), t('col_status', 'Status'), 'Roles', 'Version', t('col_ip', 'Internal IP'), 'CPU / Memory', t('col_age', 'Age'), ''],
-    (n, idx) => `<tr>
-      <td><b>${escapeHtml(n.name)}</b></td>
-      <td><span class="badge ${n.status === 'Ready' ? 'badge-healthy' : 'badge-degraded'}">${escapeHtml(n.status)}</span>${n.unschedulable ? '<span class="badge badge-warning" style="margin-left:4px;">SchedulingDisabled</span>' : ''}</td>
-      <td>${escapeHtml(Array.isArray(n.roles) ? n.roles.join(', ') : (n.roles || '<none>'))}</td>
-      <td class="mono">${escapeHtml(n.version || '-')}</td>
-      <td class="mono">${escapeHtml(n.internalIP || '-')}</td>
-      <td>${escapeHtml(n.cpu || '-')} / ${escapeHtml(formatKubeMemory(n.memory))}</td>
-      <td style="color:var(--text-muted);font-size:var(--fs-xs);">${kubeAge(n.created)}</td>
-      <td style="text-align:right;"><button class="btn btn-icon btn-sm btn-ghost" onclick="openKubeNodeMenu(event,${idx})" title="Actions">${svgIcon('ellipsis-vertical','icon-sm')}</button></td>
-    </tr>`
+    [t('col_name', 'Name'), t('col_status', 'Status'), 'Roles', 'Version', t('col_ip', 'Internal IP'), t('docker_col_cpu', 'CPU'), t('docker_col_mem', 'Memory'), t('col_age', 'Age'), ''],
+    (n, idx) => {
+      const h = findHostForKubeNode(n);
+      const hostChip = h ? `<a href="javascript:void(0)" onclick="openHostDetail(${h.id})" class="badge" style="font-size:10px;text-decoration:none;margin-left:6px;background:var(--surface-2);border:1px solid var(--card-border);display:inline-flex;align-items:center;gap:3px;" title="${escapeHtml(h.name)} (${escapeHtml(h.host)})">${svgIcon('server', 'icon-xs')} ${escapeHtml(h.name)}</a>` : '';
+      let cpuHtml = escapeHtml(n.cpu || '-');
+      if (n.usageCPU != null && n.usageCPU !== '') {
+        const pct = n.cpuPercent != null ? Math.round(n.cpuPercent) : null;
+        cpuHtml = `<div style="display:flex;align-items:center;gap:6px;"><span>${escapeHtml(n.usageCPU)}</span>${pct != null ? `<span style="font-size:var(--fs-xs);color:var(--text-muted);">(${pct}%)</span>${dockerBar(pct, 70, 90)}` : ''}</div>`;
+      }
+      let memHtml = escapeHtml(formatKubeMemory(n.memory));
+      if (n.usageMemory != null && n.usageMemory !== '') {
+        const pct = n.memoryPercent != null ? Math.round(n.memoryPercent) : null;
+        memHtml = `<div style="display:flex;align-items:center;gap:6px;"><span>${escapeHtml(formatKubeMemory(n.usageMemory))}</span>${pct != null ? `<span style="font-size:var(--fs-xs);color:var(--text-muted);">(${pct}%)</span>${dockerBar(pct, 70, 90)}` : ''}</div>`;
+      }
+      return `<tr>
+        <td><b>${escapeHtml(n.name)}</b>${hostChip}</td>
+        <td><span class="badge ${n.status === 'Ready' ? 'badge-healthy' : 'badge-degraded'}">${escapeHtml(n.status)}</span>${n.unschedulable ? '<span class="badge badge-warning" style="margin-left:4px;">SchedulingDisabled</span>' : ''}</td>
+        <td>${escapeHtml(Array.isArray(n.roles) ? n.roles.join(', ') : (n.roles || '<none>'))}</td>
+        <td class="mono">${escapeHtml(n.version || '-')}</td>
+        <td class="mono">${escapeHtml(n.internalIP || '-')}</td>
+        <td>${cpuHtml}</td>
+        <td>${memHtml}</td>
+        <td style="color:var(--text-muted);font-size:var(--fs-xs);">${kubeAge(n.created)}</td>
+        <td style="text-align:right;"><button class="btn btn-icon btn-sm btn-ghost" onclick="openKubeNodeMenu(event,${idx})" title="Actions">${svgIcon('ellipsis-vertical','icon-sm')}</button></td>
+      </tr>`;
+    }
   );
 }
 function loadKubeWorkloads() {
@@ -20395,20 +21195,48 @@ function loadKubeWorkloads() {
     }
   );
 }
-function loadKubePods() {
-  kubeFetchTab(`/api/hosts/${selectedKubeHostId}/kube/pods?ns=${encodeURIComponent(currentKubeNamespace)}`, 'pods',
-    [t('kube_namespace', 'Namespace'), t('col_name', 'Name'), 'Ready', t('col_status', 'Status'), 'Restarts', 'Node', 'IP', t('col_age', 'Age'), ''],
-    (p, idx) => `<tr>
+let kubePodsOnlyProblems = false;
+function kubePodIsProblem(p) {
+  return p.status !== 'Running' && p.status !== 'Completed' && p.status !== 'Succeeded';
+}
+function onKubePodsFilterChange() {
+  kubePodsOnlyProblems = document.getElementById('kubePodsOnlyProblemsFilter').checked;
+  renderKubePodsTable();
+}
+function renderKubePodsTable() {
+  const content = document.getElementById('kubeTabContent');
+  if (!content) return;
+  let items = kubePodsCache.slice();
+  items.sort((a, b) => {
+    const ap = kubePodIsProblem(a) ? 1 : 0;
+    const bp = kubePodIsProblem(b) ? 1 : 0;
+    return bp - ap;
+  });
+  if (kubePodsOnlyProblems) items = items.filter(kubePodIsProblem);
+  if (items.length === 0) { content.innerHTML = kubeEmptyHtml(t('kube_no_data', 'No items found'), ''); return; }
+  const heads = [t('kube_namespace', 'Namespace'), t('col_name', 'Name'), 'Ready', t('col_status', 'Status'), 'Restarts', 'Node', 'IP', t('docker_col_cpu', 'CPU'), t('docker_col_mem', 'Memory'), t('col_age', 'Age'), ''];
+  content.innerHTML = dockerTableHtml(heads, items.map((p) => {
+    const idx = kubePodsCache.indexOf(p);
+    const problem = kubePodIsProblem(p);
+    const marker = problem ? `<span title="${escapeHtml(t('kube_pod_problem', 'Problem pod'))}" style="color:var(--warning,#eab308);margin-right:4px;">${svgIcon('triangle-alert', 'icon-xs')}</span>` : '';
+    return `<tr${problem ? ' style="background:var(--warning-soft, rgba(234,179,8,0.06));"' : ''}>
       <td style="font-size:var(--fs-xs);color:var(--text-muted);">${escapeHtml(p.namespace)}</td>
-      <td><b>${escapeHtml(p.name)}</b></td>
+      <td>${marker}<b>${escapeHtml(p.name)}</b></td>
       <td style="font-size:var(--fs-xs);">${escapeHtml(p.ready || '-')}</td>
-      <td><span class="badge ${p.status === 'Running' || p.status === 'Completed' ? 'badge-healthy' : 'badge-degraded'}">${escapeHtml(p.status)}</span></td>
+      <td><span class="badge ${!problem ? 'badge-healthy' : 'badge-degraded'}">${escapeHtml(p.status)}</span></td>
       <td style="font-size:var(--fs-xs);">${p.restarts !== undefined ? p.restarts : 0}</td>
       <td style="font-size:var(--fs-xs);color:var(--text-muted);">${escapeHtml(p.node || '-')}</td>
       <td class="mono">${escapeHtml(p.ip || '-')}</td>
+      <td>${escapeHtml(p.usageCPU || '-')}</td>
+      <td>${p.usageMemory ? escapeHtml(formatKubeMemory(p.usageMemory)) : '-'}</td>
       <td style="color:var(--text-muted);font-size:var(--fs-xs);">${kubeAge(p.created)}</td>
       <td style="text-align:right;"><button class="btn btn-icon btn-sm btn-ghost" onclick="openKubePodMenu(event,${idx})" title="Actions">${svgIcon('ellipsis-vertical','icon-sm')}</button></td>
-    </tr>`
+    </tr>`;
+  }).join(''));
+}
+function loadKubePods() {
+  kubeFetchTab(`/api/hosts/${selectedKubeHostId}/kube/pods?ns=${encodeURIComponent(currentKubeNamespace)}`, 'pods', null, null,
+    pods => { kubePodsCache = pods || []; renderKubePodsTable(); }
   );
 }
 function loadKubeServices() {
@@ -20429,10 +21257,22 @@ function loadKubeServices() {
     }
   );
 }
-function loadKubeEvents() {
-  kubeFetchTab(`/api/hosts/${selectedKubeHostId}/kube/events?ns=${encodeURIComponent(currentKubeNamespace)}`, 'events',
+let kubeEventsCache = [];
+let kubeEventsWarningOnly = false;
+function onKubeEventsFilterChange() {
+  kubeEventsWarningOnly = document.getElementById('kubeEventsWarningFilter').checked;
+  renderKubeEventsTable();
+}
+function renderKubeEventsTable() {
+  const content = document.getElementById('kubeTabContent');
+  if (!content) return;
+  const all = kubeEventsCache;
+  const rows = kubeEventsWarningOnly ? all.filter(ev => ev.type === 'Warning') : all;
+  const counter = t('kube_logs_matches', '{n} match(es)').replace('{n}', rows.length + '/' + all.length);
+  if (rows.length === 0) { content.innerHTML = kubeEmptyHtml(t('kube_no_data', 'No items found'), counter); return; }
+  content.innerHTML = dockerTableHtml(
     [t('kube_namespace', 'Namespace'), t('col_status', 'Type'), 'Reason', 'Object', 'Message', 'Count', 'Last Seen'],
-    ev => `<tr>
+    rows.map(ev => `<tr>
       <td style="font-size:var(--fs-xs);color:var(--text-muted);">${escapeHtml(ev.namespace || '-')}</td>
       <td><span class="badge ${ev.type === 'Warning' ? 'badge-warning' : 'badge-info'}">${escapeHtml(ev.type || 'Normal')}</span></td>
       <td><b>${escapeHtml(ev.reason || '-')}</b></td>
@@ -20440,8 +21280,11 @@ function loadKubeEvents() {
       <td style="font-size:var(--fs-xs);word-break:break-word;">${escapeHtml(ev.message || '-')}</td>
       <td style="font-size:var(--fs-xs);">${ev.count || 1}</td>
       <td style="color:var(--text-muted);font-size:var(--fs-xs);">${kubeAge(ev.last)}</td>
-    </tr>`
-  );
+    </tr>`).join(''));
+}
+function loadKubeEvents() {
+  kubeFetchTab(`/api/hosts/${selectedKubeHostId}/kube/events?ns=${encodeURIComponent(currentKubeNamespace)}`, 'events', null, null,
+    evs => { kubeEventsCache = evs || []; renderKubeEventsTable(); });
 }
 async function loadKubeGenericResource(kind) {
   const content = document.getElementById('kubeTabContent');
@@ -20453,6 +21296,7 @@ async function loadKubeGenericResource(kind) {
   try {
     const res = await fetch(url);
     const data = await res.json();
+    handleKubeEnvelope(data);
     if (!data.ok) {
       content.innerHTML = kubeEmptyHtml(t('error_prefix', 'Error: '), data.error || 'Failed to load', true);
       return;
@@ -20508,24 +21352,116 @@ function openKubeGenericMenu(e, kind, rowIdx) {
   const ns = nsIdx >= 0 ? row[nsIdx] : '';
   const name = nameIdx >= 0 ? row[nameIdx] : '';
   const singular = { ingresses: 'ingress', configmaps: 'configmap', pvcs: 'pvc', pvs: 'pv', jobs: 'job', cronjobs: 'cronjob' }[kind] || kind;
-  dockerFloatingMenu(e, 'kg_' + kind + '_' + rowIdx, [
-    { label: t('kube_describe', 'Describe'), run: () => kubeDescribe(singular, ns, name) }
-  ]);
+  const items = [];
+  if (kubeYamlEditable && kubeYamlEditable[singular]) {
+    items.push({ label: t('kube_edit_yaml', 'Edit YAML'), run: () => openKubeYamlEditor(singular, ns, name) });
+  }
+  items.push({ label: t('kube_describe', 'Describe'), run: () => kubeDescribe(singular, ns, name) });
+  dockerFloatingMenu(e, 'kg_' + kind + '_' + rowIdx, items);
 }
 function loadKubeApply() {
   const content = document.getElementById('kubeTabContent');
   if (!content) return;
+  const isRo = getSelectedKubeMode() === 'read-only';
+  lastDiffedYaml = null;
+  const roBadgeHtml = isRo ? `<div style="display:flex;align-items:center;gap:6px;padding:8px 12px;background:var(--warning-soft, rgba(234,179,8,0.1));border:1px solid var(--warning-border, #eab308);border-radius:var(--radius-sm);color:var(--text);font-size:var(--fs-xs);margin-bottom:8px;">
+    ${svgIcon('shield-alert', 'icon-xs')}
+    <span style="font-weight:600;">${t('kube_mode_read_only_badge', 'Read-Only')}</span>: ${t('kube_apply_ro_warning', 'Applying manifests is blocked in Read-Only mode.')}
+  </div>` : '';
   content.innerHTML = `<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
-    <div style="font-size:var(--fs-sm);color:var(--text-muted);">Paste a Kubernetes manifest (YAML) to apply to the cluster. Server-side dry-run is executed first.</div>
-    <textarea id="kubeApplyYaml" class="form-input font-mono" rows="14" style="width:100%;box-sizing:border-box;font-family:var(--font-mono);font-size:var(--fs-xs);resize:vertical;min-height:250px;" placeholder="${escapeHtml(t('kube_apply_placeholder', '# Paste Kubernetes YAML here...'))}"></textarea>
-    <div style="display:flex;gap:8px;justify-content:flex-end;">
-      <button class="btn btn-ghost" onclick="document.getElementById('kubeApplyYaml').value='';document.getElementById('kubeApplyOutput').style.display='none';">${t('clear', 'Clear')}</button>
-      <button class="btn btn-primary" id="btnKubeApplySubmit" onclick="submitKubeApply()" style="display:inline-flex;align-items:center;gap:6px;">
+    ${roBadgeHtml}
+    <div style="font-size:var(--fs-sm);color:var(--text-muted);">${t('kube_apply_desc', 'Paste a Kubernetes manifest (YAML) to preview changes and apply to the cluster.')}</div>
+    <textarea id="kubeApplyYaml" class="form-input font-mono" rows="14" oninput="onKubeApplyYamlInput()" style="width:100%;box-sizing:border-box;font-family:var(--font-mono);font-size:var(--fs-xs);resize:vertical;min-height:250px;" placeholder="${escapeHtml(t('kube_apply_placeholder', '# Paste Kubernetes YAML here...'))}"></textarea>
+    <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap;">
+      <button class="btn btn-ghost" onclick="clearKubeApply()">${t('clear', 'Clear')}</button>
+      <button class="btn" id="btnKubePreviewDiff" onclick="submitKubeDiff()" style="display:inline-flex;align-items:center;gap:6px;">
+        ${svgIcon('git-compare', 'icon-sm')} <span>${t('kube_btn_preview_diff', 'Preview Diff')}</span>
+      </button>
+      <button class="btn btn-primary" id="btnKubeApplySubmit" disabled onclick="submitKubeApply()" title="${isRo ? t('kube_mode_blocked_ro', 'Disabled in Read-Only mode') : t('kube_apply_locked_hint', 'Run Preview Diff first')}" style="display:inline-flex;align-items:center;gap:6px;">
         ${svgIcon('play', 'icon-sm')} <span>${t('kube_btn_apply', 'Apply YAML')}</span>
       </button>
     </div>
     <pre id="kubeApplyOutput" class="kube-apply-output"></pre>
   </div>`;
+}
+
+function onKubeApplyYamlInput() {
+  const btn = document.getElementById('btnKubeApplySubmit');
+  const yamlEl = document.getElementById('kubeApplyYaml');
+  const currentYaml = yamlEl ? yamlEl.value : '';
+  const isRo = getSelectedKubeMode() === 'read-only';
+  if (isRo) {
+    if (btn) { btn.disabled = true; btn.title = t('kube_mode_blocked_ro', 'Disabled in Read-Only mode'); }
+    return;
+  }
+  const isCurrentDiffed = lastDiffedYaml !== null && lastDiffedYaml === currentYaml;
+  if (btn) {
+    btn.disabled = !isCurrentDiffed;
+    btn.title = isCurrentDiffed ? '' : t('kube_apply_locked_hint', 'Run Preview Diff first');
+  }
+}
+
+function clearKubeApply() {
+  const y = document.getElementById('kubeApplyYaml');
+  const o = document.getElementById('kubeApplyOutput');
+  if (y) y.value = '';
+  if (o) { o.style.display = 'none'; o.textContent = ''; }
+  lastDiffedYaml = null;
+  onKubeApplyYamlInput();
+}
+
+async function submitKubeDiff() {
+  if (!selectedKubeHostId) return;
+  const yamlEl = document.getElementById('kubeApplyYaml');
+  const yaml = (yamlEl ? yamlEl.value : '').trim();
+  if (!yaml) { showToast(t('kube_apply_empty', 'Please enter a YAML manifest'), 'warning'); return; }
+  const btnDiff = document.getElementById('btnKubePreviewDiff');
+  const btnApply = document.getElementById('btnKubeApplySubmit');
+  const outEl = document.getElementById('kubeApplyOutput');
+  if (btnDiff) btnDiff.disabled = true;
+  showToast(t('kube_diffing', 'Running dry-run diff...'), 'info', 2000);
+  try {
+    const res = await fetch(`/api/hosts/${selectedKubeHostId}/kube/diff`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yaml })
+    });
+    const data = await res.json();
+    handleKubeEnvelope(data);
+    if (outEl) {
+      outEl.style.display = 'block';
+      if (data.ok) {
+        if (data.changed) {
+          outEl.textContent = data.output || '(Differences detected)';
+          outEl.className = 'kube-apply-output';
+        } else {
+          outEl.textContent = t('kube_diff_no_changes', 'No changes detected. Cluster state matches manifest.');
+          outEl.className = 'kube-apply-output success';
+        }
+      } else {
+        outEl.textContent = 'Error: ' + (data.error || 'Diff failed');
+        outEl.className = 'kube-apply-output error';
+      }
+    }
+    if (data.ok) {
+      lastDiffedYaml = (yamlEl ? yamlEl.value : '');
+      const isRo = getSelectedKubeMode() === 'read-only';
+      if (btnApply && !isRo) {
+        btnApply.disabled = false;
+        btnApply.title = '';
+      }
+    } else {
+      lastDiffedYaml = null;
+      if (btnApply) {
+        btnApply.disabled = true;
+        btnApply.title = t('kube_apply_locked_hint', 'Run Preview Diff first');
+      }
+    }
+  } catch(e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error', 9000);
+  } finally {
+    if (btnDiff) btnDiff.disabled = false;
+  }
 }
 async function kubeAction(payload, okMsg, refreshTab) {
   if (!selectedKubeHostId) return;
@@ -20537,6 +21473,7 @@ async function kubeAction(payload, okMsg, refreshTab) {
       body: JSON.stringify(payload)
     });
     const data = await res.json();
+    handleKubeEnvelope(data);
     if (data.ok) {
       showToast(okMsg || t('dk_done', 'Done'), 'success');
       if (data.output) showDockerOutput((payload.op || '') + ' ' + (payload.name || ''), data.output);
@@ -20554,17 +21491,35 @@ async function kubeGetOutput(url, title) {
   try {
     const res = await fetch(url);
     const data = await res.json();
+    handleKubeEnvelope(data);
     if (data.ok) showDockerOutput(title, data.output || '(No output)');
-    else showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed'), 'error', 9000);
   } catch(e) {
     showToast(t('error_prefix', 'Error: ') + e.message, 'error', 9000);
   }
 }
 async function submitKubeApply() {
   if (!selectedKubeHostId) return;
+  const isRo = getSelectedKubeMode() === 'read-only';
+  if (isRo) {
+    showToast(t('kube_mode_blocked_ro', 'Disabled in Read-Only mode'), 'warning');
+    return;
+  }
   const yamlEl = document.getElementById('kubeApplyYaml');
-  const yaml = (yamlEl ? yamlEl.value : '').trim();
+  const currentYaml = yamlEl ? yamlEl.value : '';
+  const yaml = currentYaml.trim();
   if (!yaml) { showToast(t('kube_apply_empty', 'Please enter a YAML manifest'), 'warning'); return; }
+  if (lastDiffedYaml === null || lastDiffedYaml !== currentYaml) {
+    showToast(t('kube_apply_diff_needed', 'Manifest has changed. Please preview diff before applying.'), 'warning');
+    onKubeApplyYamlInput();
+    return;
+  }
+  const confirmed = await showConfirm({
+    title: t('kube_confirm_apply_title', 'Apply Manifest'),
+    message: t('kube_confirm_apply_msg', 'Are you sure you want to apply this manifest to the cluster?'),
+    danger: true,
+    confirmText: t('kube_btn_apply', 'Apply YAML')
+  });
+  if (!confirmed) return;
   const btn = document.getElementById('btnKubeApplySubmit');
   if (btn) btn.disabled = true;
   showToast(t('working', 'Working...'), 'info', 2000);
@@ -20575,6 +21530,7 @@ async function submitKubeApply() {
       body: JSON.stringify({ yaml })
     });
     const data = await res.json();
+    handleKubeEnvelope(data);
     const outEl = document.getElementById('kubeApplyOutput');
     if (outEl) {
       outEl.style.display = 'block';
@@ -20593,37 +21549,101 @@ function openKubeNodeMenu(e, idx) {
   const n = kubeNodesCache[idx];
   if (!n) return;
   const isCordoned = !!n.unschedulable;
+  const isRo = getSelectedKubeMode() === 'read-only';
   dockerFloatingMenu(e, 'kn_' + idx, [
-    { label: isCordoned ? t('kube_uncordon', 'Uncordon Node') : t('kube_cordon', 'Cordon Node'), run: () => kubeAction({ op: isCordoned ? 'uncordon' : 'cordon', kind: 'node', ns: '', name: n.name }, null, 'nodes') },
+    {
+      label: t('kube_drain', 'Drain'),
+      disabled: isRo,
+      title: isRo ? t('kube_mode_blocked_ro', 'Disabled in Read-Only mode') : '',
+      run: () => openKubeDrain(n.name)
+    },
+    {
+      label: isCordoned ? t('kube_uncordon', 'Uncordon Node') : t('kube_cordon', 'Cordon Node'),
+      disabled: isRo,
+      title: isRo ? t('kube_mode_blocked_ro', 'Disabled in Read-Only mode') : '',
+      run: async () => {
+        if (!isCordoned) {
+          const confirmed = await showConfirm({
+            title: t('kube_cordon', 'Cordon Node'),
+            message: t('kube_confirm_cordon_msg', 'Cordoning node {name} will mark it unschedulable. Existing workloads continue running, but no new pods will be scheduled on this node.').replace('{name}', n.name),
+            danger: true,
+            confirmText: t('kube_cordon', 'Cordon Node')
+          });
+          if (!confirmed) return;
+        }
+        kubeAction({ op: isCordoned ? 'uncordon' : 'cordon', kind: 'node', ns: '', name: n.name }, null, 'nodes');
+      }
+    },
     { label: t('kube_describe', 'Describe'), run: () => kubeDescribe('node', '', n.name) }
   ]);
 }
 function openKubeWorkloadMenu(e, idx) {
   const wl = kubeWorkloadsCache[idx];
   if (!wl) return;
+  const isRo = getSelectedKubeMode() === 'read-only';
   const items = [];
-  if (wl.kind === 'Deployment' || wl.kind === 'StatefulSet') {
-    items.push({ label: t('kube_btn_scale', 'Scale'), run: () => openKubeScaleModal(wl) });
+  const yamlKind = (wl.kind || '').toLowerCase();
+  if (kubeYamlEditable && kubeYamlEditable[yamlKind]) {
+    items.push({ label: t('kube_edit_yaml', 'Edit YAML'), run: () => openKubeYamlEditor(yamlKind, wl.namespace, wl.name) });
   }
-  items.push({ label: t('kube_restart_workload', 'Restart Rollout'), run: () => kubeAction({ op: 'restart', kind: wl.kind.toLowerCase(), ns: wl.namespace, name: wl.name }, null, 'workloads') });
+  items.push({ label: t('kube_logs_workload', 'Workload Logs'), run: () => openKubeWorkloadLogs(wl) });
+  if (wl.kind === 'Deployment' || wl.kind === 'StatefulSet') {
+    items.push({
+      label: t('kube_btn_scale', 'Scale'),
+      disabled: isRo,
+      title: isRo ? t('kube_mode_blocked_ro', 'Disabled in Read-Only mode') : '',
+      run: () => openKubeScaleModal(wl)
+    });
+  }
+  items.push({
+    label: t('kube_restart_workload', 'Restart Rollout'),
+    disabled: isRo,
+    title: isRo ? t('kube_mode_blocked_ro', 'Disabled in Read-Only mode') : '',
+    run: async () => {
+      const count = wl.desired || 1;
+      const confirmed = await showConfirm({
+        title: t('kube_restart_workload', 'Restart Rollout'),
+        message: t('kube_confirm_restart_msg', 'Restarting {name} will recreate {count} replica(s) in a rolling update.').replace('{name}', wl.name).replace('{count}', count),
+        danger: false,
+        confirmText: t('kube_restart_workload', 'Restart Rollout')
+      });
+      if (!confirmed) return;
+      kubeAction({ op: 'restart', kind: wl.kind.toLowerCase(), ns: wl.namespace, name: wl.name }, null, 'workloads');
+    }
+  });
   items.push({ label: t('kube_describe', 'Describe'), run: () => kubeDescribe(wl.kind.toLowerCase(), wl.namespace, wl.name) });
   dockerFloatingMenu(e, 'kw_' + idx, items);
 }
 function openKubePodMenu(e, idx) {
   const p = kubePodsCache[idx];
   if (!p) return;
+  const mode = getSelectedKubeMode();
+  const isRo = mode === 'read-only';
+  const noExec = isRo || mode === 'no-exec';
   dockerFloatingMenu(e, 'kp_' + idx, [
-    { label: t('kube_exec', 'Exec Console'), run: () => promptKubeContainer(p, t('kube_exec', 'Exec Console'), c => kubePodExec(p, c)) },
+    {
+      label: t('kube_exec', 'Exec Console'),
+      disabled: noExec,
+      title: noExec ? t('kube_mode_blocked_exec', 'Exec console is disabled in this mode') : '',
+      run: () => promptKubeContainer(p, t('kube_exec', 'Exec Console'), c => kubePodExec(p, c))
+    },
     { label: t('kube_logs', 'Pod Logs'), run: () => promptKubeContainer(p, t('kube_logs', 'Pod Logs'), c => openKubeLogs(p, c)) },
     { label: t('kube_describe', 'Describe'), run: () => kubeDescribe('pod', p.namespace, p.name) },
     null,
-    { label: t('delete', 'Delete'), danger: true, run: () => kubeDeletePod(p) }
+    {
+      label: t('delete', 'Delete'),
+      danger: true,
+      disabled: isRo,
+      title: isRo ? t('kube_mode_blocked_ro', 'Disabled in Read-Only mode') : '',
+      run: () => kubeDeletePod(p)
+    }
   ]);
 }
 function openKubeServiceMenu(e, idx) {
   const s = kubeServicesCache[idx];
   if (!s) return;
   dockerFloatingMenu(e, 'ks_' + idx, [
+    { label: t('kube_edit_yaml', 'Edit YAML'), run: () => openKubeYamlEditor('service', s.namespace, s.name) },
     { label: t('kube_describe', 'Describe'), run: () => kubeDescribe('service', s.namespace, s.name) }
   ]);
 }
@@ -20642,6 +21662,21 @@ async function submitKubeScale() {
     showToast('Replicas must be between 0 and 1000', 'warning');
     return;
   }
+  if (replicas === 0) {
+    const isStatefulSet = (currentScaleTarget.kind || '').toLowerCase() === 'statefulset';
+    const count = currentScaleTarget.desired || 1;
+    const notePvc = isStatefulSet ? (' ' + t('kube_confirm_scale_0_pvc', 'PersistentVolumeClaims (PVCs) will be preserved.')) : '';
+    const confirmed = await showConfirm({
+      title: t('kube_confirm_scale_0_title', 'Scale to 0 Replicas'),
+      message: t('kube_confirm_scale_0_msg', 'Scaling {name} to 0 will terminate {count} running pod(s).{pvc}')
+        .replace('{name}', currentScaleTarget.name)
+        .replace('{count}', count)
+        .replace('{pvc}', notePvc),
+      danger: true,
+      confirmText: t('kube_btn_scale', 'Scale')
+    });
+    if (!confirmed) return;
+  }
   const btn = document.getElementById('kubeScaleSubmitBtn');
   if (btn) btn.disabled = true;
   try {
@@ -20653,11 +21688,14 @@ async function submitKubeScale() {
 }
 async function kubeDeletePod(pod) {
   if (!selectedKubeHostId) return;
-  const msg = t('kube_delete_pod_confirm', `Are you sure you want to delete pod ${pod.name} in namespace ${pod.namespace}?`)
-    .replace('{name}', pod.name).replace('{ns}', pod.namespace);
+  const warn = t('kube_confirm_delete_pod_unmanaged', 'If not managed by a workload controller, this pod will be permanently deleted.');
   const confirmed = await showConfirm({
     title: t('kube_delete_pod_title', 'Delete Pod'),
-    message: msg,
+    message: t('kube_confirm_delete_pod_msg', 'Delete pod {name} on node {node} in namespace {ns}? {warn}')
+      .replace('{name}', pod.name)
+      .replace('{node}', pod.node || '-')
+      .replace('{ns}', pod.namespace)
+      .replace('{warn}', warn),
     danger: true,
     confirmText: t('delete', 'Delete')
   });
@@ -20703,17 +21741,19 @@ async function kubePodExec(pod, container) {
   try {
     const res = await fetch(`/api/hosts/${selectedKubeHostId}/kube/exec-cmd?ns=${encodeURIComponent(pod.namespace)}&pod=${encodeURIComponent(pod.name)}&container=${encodeURIComponent(container || '')}`);
     const data = await res.json();
+    handleKubeEnvelope(data);
     if (!data.ok || !data.cmd) {
       showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to get exec command'), 'error', 8000);
       return;
     }
-    const tab = openTerminalForHost(selectedKubeHostId, null, true, 'exec ' + pod.name);
+    const targetHostId = data.host_id || selectedKubeHostId;
+    const tab = openTerminalForHost(targetHostId, null, true, 'exec ' + pod.name);
     if (!tab) return;
     for (let i = 0; i < 60; i++) {
       if (tab.socketLeft && tab.socketLeft.readyState === WebSocket.OPEN) {
         setTimeout(() => sendTabCommand(tab.id, data.cmd), 400);
         return;
-      }
+       }
       await new Promise(r => setTimeout(r, 200));
     }
     showToast(t('dk_console_timeout', 'Terminal connection timed out'), 'warning');
@@ -20721,7 +21761,7 @@ async function kubePodExec(pod, container) {
     showToast(t('error_prefix', 'Error: ') + e.message, 'error', 8000);
   }
 }
-let kubeLogsSocket = null, currentKubeLogsPod = null, currentKubeLogsContainer = null;
+let kubeLogsSocket = null, currentKubeLogsPod = null, currentKubeLogsContainer = null, currentKubeLogsWorkload = null;
 function stopKubeLogs() {
   if (kubeLogsSocket) {
     try { kubeLogsSocket.close(); } catch(e) {}
@@ -20731,6 +21771,7 @@ function stopKubeLogs() {
 function openKubeLogs(pod, container) {
   stopKubeLogs();
   currentKubeLogsPod = pod;
+  currentKubeLogsWorkload = null;
   currentKubeLogsContainer = container || ((pod.containers && pod.containers[0]) || '');
   const out = document.getElementById('kubeLogsOutput');
   const status = document.getElementById('kubeLogsStatus');
@@ -20762,19 +21803,32 @@ function openKubeLogs(pod, container) {
   connectKubeLogsStream();
 }
 function onKubeLogsParamChange() {
-  if (!currentKubeLogsPod) return;
+  if (!currentKubeLogsPod && !currentKubeLogsWorkload) return;
   const cSel = document.getElementById('kubeLogsContainerSelect');
   if (cSel && cSel.value) currentKubeLogsContainer = cSel.value;
+  if (currentKubeLogsWorkload) {
+    const prevToggle = document.getElementById('kubeLogsPreviousToggle');
+    if (prevToggle && prevToggle.checked) {
+      prevToggle.checked = false;
+      showToast(t('kube_logs_previous_workload', 'Previous is not available for workload logs.'), 'warning');
+      return;
+    }
+  }
   connectKubeLogsStream();
 }
 function connectKubeLogsStream() {
   stopKubeLogs();
   const pod = currentKubeLogsPod;
-  if (!pod || !selectedKubeHostId) return;
+  const wl = currentKubeLogsWorkload;
+  if ((!pod && !wl) || !selectedKubeHostId) return;
+  // pod mode: ensure Previous toggle visible again
+  const prevToggleEl = document.getElementById('kubeLogsPreviousToggle');
+  if (pod && prevToggleEl && prevToggleEl.parentElement) prevToggleEl.parentElement.style.display = '';
 
   const out = document.getElementById('kubeLogsOutput');
   const status = document.getElementById('kubeLogsStatus');
   if (out) out.textContent = '';
+  kubeLogsPartial = ''; kubeLogsMatches = 0;
   if (status) {
     status.textContent = t('docker_logs_connecting', 'Connecting...');
     status.className = 'badge badge-info';
@@ -20783,18 +21837,25 @@ function connectKubeLogsStream() {
   const tailSel = document.getElementById('kubeLogsTailSelect');
   const tail = tailSel ? (tailSel.value || '200') : '200';
   const prevToggle = document.getElementById('kubeLogsPreviousToggle');
-  const isPrevious = prevToggle ? prevToggle.checked : false;
+  const isPrevious = pod && prevToggle ? prevToggle.checked : false;
+  const tsToggle = document.getElementById('kubeLogsTimestampsToggle');
+  const isTimestamps = tsToggle ? tsToggle.checked : false;
 
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const url = `${protocol}//${location.host}/ws/kube/logs?host_id=${selectedKubeHostId}&ns=${encodeURIComponent(pod.namespace)}&pod=${encodeURIComponent(pod.name)}&container=${encodeURIComponent(currentKubeLogsContainer || '')}&tail=${encodeURIComponent(tail)}${isPrevious ? '&previous=1' : ''}`;
+  let url = `${protocol}//${location.host}/ws/kube/logs?host_id=${selectedKubeHostId}&tail=${encodeURIComponent(tail)}`;
+  if (pod) {
+    url += `&ns=${encodeURIComponent(pod.namespace)}&pod=${encodeURIComponent(pod.name)}&container=${encodeURIComponent(currentKubeLogsContainer || '')}`;
+  } else {
+    url += `&ns=${encodeURIComponent(wl.namespace)}&workload=${encodeURIComponent(wl.kind + '/' + wl.name)}`;
+  }
+  if (isPrevious) url += '&previous=1';
+  if (isTimestamps) url += '&timestamps=1';
 
   const ws = new WebSocket(url);
   ws.binaryType = 'arraybuffer';
   kubeLogsSocket = ws;
   const decoder = new TextDecoder('utf-8');
   let scrollQueued = false;
-  const maxChars = 500000;
-  let chars = 0;
 
   ws.onopen = () => {
     if (kubeLogsSocket !== ws) return;
@@ -20811,12 +21872,7 @@ function connectKubeLogsStream() {
     let text = typeof ev.data === 'string' ? ev.data : decoder.decode(ev.data, { stream: true });
     text = text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
     if (!text) return;
-    out.appendChild(document.createTextNode(text));
-    chars += text.length;
-    while (chars > maxChars && out.firstChild && out.firstChild !== out.lastChild) {
-      chars -= out.firstChild.textContent.length;
-      out.removeChild(out.firstChild);
-    }
+    appendKubeLogText(out, text);
     const autoScrollEl = document.getElementById('kubeLogsAutoScroll');
     if (autoScrollEl && autoScrollEl.checked && !scrollQueued) {
       scrollQueued = true;
@@ -20827,6 +21883,7 @@ function connectKubeLogsStream() {
   ws.onclose = () => {
     if (kubeLogsSocket !== ws) return;
     kubeLogsSocket = null;
+    appendKubeLogText(out, '', true);
     status.textContent = t('docker_logs_ended', 'Ended');
     status.className = 'badge badge-unknown';
   };
@@ -20838,7 +21895,758 @@ function copyKubeLogs() {
   copyTextToClipboard(txt);
   showToast(t('copied', 'Copied!'), 'success');
 }
-// ===== SLICE-E:END =====
+// ===== KUBE OPS UI (tickets 05/06/08/09) =====
+// Auto-refresh (ticket 09)
+let kubeAutoRefreshTimer = null, kubeAutoRefreshInFlight = false;
+function kubeAutoRefreshIntervalSec() {
+  const sel = document.getElementById('kubeAutorefreshSelect');
+  const v = sel ? parseInt(sel.value, 10) : 0;
+  return (!v || isNaN(v)) ? 0 : v;
+}
+function stopKubeAutorefresh() {
+  if (kubeAutoRefreshTimer) { clearInterval(kubeAutoRefreshTimer); kubeAutoRefreshTimer = null; }
+}
+function restartKubeAutorefresh() {
+  stopKubeAutorefresh();
+  kubeAutoRefreshInFlight = false;
+  if (!selectedKubeHostId || currentSideNav !== 'kube') return;
+  const sec = kubeAutoRefreshIntervalSec();
+  if (!sec || currentKubeTab === 'apply') return;
+  kubeAutoRefreshTimer = setInterval(() => {
+    if (document.hidden || kubeAutoRefreshInFlight || document.querySelector('.modal.open')) return;
+    if (currentSideNav !== 'kube' || currentKubeTab === 'apply') { stopKubeAutorefresh(); return; }
+    kubeAutoRefreshInFlight = true;
+    Promise.resolve(loadKubeTabData(currentKubeTab)).catch(() => {}).finally(() => { kubeAutoRefreshInFlight = false; });
+  }, sec * 1000);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) restartKubeAutorefresh(); });
+
+// Edit YAML modal (ticket 05)
+let kubeYamlEditor = null, kubeYamlTarget = null, kubeYamlLastDiffed = null;
+const kubeYamlEditable = { deployment: 1, statefulset: 1, daemonset: 1, service: 1, ingress: 1, configmap: 1, pvc: 1, job: 1, cronjob: 1 };
+function openKubeYamlEditor(kind, ns, name) {
+  if (!kubeYamlEditable[kind]) return; // secret/pod/node/pv never offered
+  kubeYamlTarget = { kind, ns, name };
+  kubeYamlLastDiffed = null;
+  document.getElementById('kubeYamlTitle').textContent = kind + '/' + (ns ? ns + '/' : '') + name;
+  const isRo = getSelectedKubeMode() === 'read-only';
+  const note = document.getElementById('kubeYamlRoNote');
+  note.style.display = isRo ? 'flex' : 'none';
+  if (isRo) document.getElementById('kubeYamlRoNoteText').textContent = t('kube_yaml_ro_note', 'Read-only mode: viewing is allowed but Apply is disabled.');
+  const out = document.getElementById('kubeYamlOutput');
+  out.style.display = 'none'; out.textContent = ''; out.className = 'kube-apply-output';
+  document.getElementById('btnKubeYamlPreviewDiff').disabled = false;
+  const btnApply = document.getElementById('btnKubeYamlApply');
+  btnApply.disabled = true;
+  btnApply.title = isRo ? t('kube_mode_blocked_ro', 'Disabled in Read-Only mode') : t('kube_apply_locked_hint', 'Run Preview Diff first');
+  openModal('kubeYamlModal');
+  fetch(`/api/hosts/${selectedKubeHostId}/kube/yaml?kind=${encodeURIComponent(kind)}&ns=${encodeURIComponent(ns || '')}&name=${encodeURIComponent(name)}`)
+    .then(r => r.json()).then(data => {
+      handleKubeEnvelope(data);
+      if (!data.ok) { showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to load YAML'), 'error', 9000); closeModal('kubeYamlModal'); return; }
+      initKubeYamlEditor(data.yaml || '');
+    })
+    .catch(e => { showToast(t('error_prefix', 'Error: ') + e.message, 'error', 9000); closeModal('kubeYamlModal'); });
+}
+function initKubeYamlEditor(content) {
+  const ta = document.getElementById('kubeYamlEditorArea');
+  if (!kubeYamlEditor) {
+    kubeYamlEditor = CodeMirror.fromTextArea(ta, { lineNumbers: true, theme: 'vscode-dark', mode: 'yaml' });
+    kubeYamlEditor.on('change', onKubeYamlEditorInput);
+  }
+  kubeYamlEditor.setValue(content || '');
+  setTimeout(() => kubeYamlEditor.refresh(), 50);
+  onKubeYamlEditorInput();
+}
+function onKubeYamlEditorInput() {
+  const btn = document.getElementById('btnKubeYamlApply');
+  if (!btn || !kubeYamlEditor) return;
+  const isRo = getSelectedKubeMode() === 'read-only';
+  const diffed = kubeYamlLastDiffed !== null && kubeYamlLastDiffed === kubeYamlEditor.getValue();
+  btn.disabled = isRo || !diffed;
+  btn.title = isRo ? t('kube_mode_blocked_ro', 'Disabled in Read-Only mode') : (diffed ? '' : t('kube_apply_locked_hint', 'Run Preview Diff first'));
+}
+async function submitKubeYamlDiff() {
+  if (!kubeYamlEditor || !kubeYamlTarget || !selectedKubeHostId) return;
+  const yaml = kubeYamlEditor.getValue().trim();
+  if (!yaml) { showToast(t('kube_apply_empty', 'Please enter a YAML manifest'), 'warning'); return; }
+  const btnDiff = document.getElementById('btnKubeYamlPreviewDiff');
+  const out = document.getElementById('kubeYamlOutput');
+  btnDiff.disabled = true;
+  out.style.display = 'block';
+  out.className = 'kube-apply-output';
+  out.textContent = t('kube_diffing', 'Running dry-run diff...');
+  showToast(t('working', 'Working...'), 'info', 2000);
+  try {
+    const res = await fetch(`/api/hosts/${selectedKubeHostId}/kube/diff`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yaml }) });
+    const data = await res.json();
+    handleKubeEnvelope(data);
+    if (data.ok) {
+      if (data.changed) { out.textContent = data.output || '(Differences detected)'; }
+      else { out.textContent = t('kube_diff_no_changes', 'No changes detected. Cluster state matches manifest.'); out.className = 'kube-apply-output success'; }
+      kubeYamlLastDiffed = kubeYamlEditor.getValue();
+    } else {
+      out.textContent = 'Error: ' + (data.error || 'Diff failed');
+      out.className = 'kube-apply-output error';
+      kubeYamlLastDiffed = null;
+    }
+  } catch(e) {
+    out.textContent = 'Error: ' + e.message;
+    out.className = 'kube-apply-output error';
+    kubeYamlLastDiffed = null;
+  } finally {
+    btnDiff.disabled = false;
+    onKubeYamlEditorInput();
+  }
+}
+async function submitKubeYamlApply() {
+  if (!kubeYamlEditor || !kubeYamlTarget || !selectedKubeHostId) return;
+  const isRo = getSelectedKubeMode() === 'read-only';
+  if (isRo) { showToast(t('kube_mode_blocked_ro', 'Disabled in Read-Only mode'), 'warning'); return; }
+  const currentYaml = kubeYamlEditor.getValue();
+  const yaml = currentYaml.trim();
+  if (!yaml) return;
+  if (kubeYamlLastDiffed === null || kubeYamlLastDiffed !== currentYaml) {
+    showToast(t('kube_apply_diff_needed', 'Manifest has changed. Please preview diff before applying.'), 'warning');
+    return;
+  }
+  const confirmed = await showConfirm({
+    title: t('kube_confirm_apply_title', 'Apply Manifest'),
+    message: t('kube_confirm_apply_msg', 'Are you sure you want to apply this manifest to the cluster?'),
+    danger: true,
+    confirmText: t('kube_btn_apply', 'Apply YAML')
+  });
+  if (!confirmed) return;
+  const btn = document.getElementById('btnKubeYamlApply');
+  btn.disabled = true;
+  showToast(t('working', 'Working...'), 'info', 2000);
+  try {
+    const res = await fetch(`/api/hosts/${selectedKubeHostId}/kube/apply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yaml }) });
+    const data = await res.json();
+    handleKubeEnvelope(data);
+    const out = document.getElementById('kubeYamlOutput');
+    out.style.display = 'block';
+    out.className = 'kube-apply-output ' + (data.ok ? 'success' : 'error');
+    out.textContent = data.output || (data.ok ? t('kube_apply_success', 'Manifest applied successfully') : ('Error: ' + (data.error || 'Apply failed')));
+    if (data.ok) {
+      showToast(t('kube_apply_success', 'Manifest applied successfully'), 'success');
+      kubeYamlLastDiffed = null;
+      loadKubeTabData(currentKubeTab);
+    } else {
+      showToast(t('error_prefix', 'Error: ') + (data.error || 'Apply failed'), 'error', 9000);
+      if ((data.error || '').toLowerCase().includes('object has been modified')) {
+        out.textContent += '\n\n' + t('kube_yaml_conflict_hint', 'The object changed since it was opened (resourceVersion conflict). Re-open the YAML to get the latest version.');
+      }
+    }
+  } catch(e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error', 9000);
+  } finally {
+    onKubeYamlEditorInput();
+  }
+}
+
+// Logs: client filter + timestamps + workload streams (ticket 06). One <span> per line so the filter works per line.
+const kubeLogsMaxLines = 5000;
+let kubeLogsPartial = '', kubeLogsMatches = 0;
+function setKubeLogsCount(q) {
+  const cnt = document.getElementById('kubeLogsMatchCount');
+  if (cnt) cnt.textContent = q ? t('kube_logs_matches', '{n} match(es)').replace('{n}', String(kubeLogsMatches)) : '';
+}
+function appendKubeLogText(out, text, flush) {
+  const q = (document.getElementById('kubeLogsFilterInput').value || '').toLowerCase();
+  const parts = (kubeLogsPartial + text).split('\n');
+  kubeLogsPartial = parts.pop();
+  if (flush && kubeLogsPartial) { parts.push(kubeLogsPartial); kubeLogsPartial = ''; }
+  const frag = document.createDocumentFragment();
+  for (const line of parts) {
+    const s = document.createElement('span');
+    s.textContent = line + '\n';
+    if (q && !line.toLowerCase().includes(q)) s.hidden = true; else kubeLogsMatches++;
+    frag.appendChild(s);
+  }
+  out.appendChild(frag);
+  while (out.childElementCount > kubeLogsMaxLines) {
+    const f = out.firstChild;
+    if (!f.hidden) kubeLogsMatches--;
+    out.removeChild(f);
+  }
+  setKubeLogsCount(q);
+}
+function onKubeLogsFilterInput() {
+  const out = document.getElementById('kubeLogsOutput');
+  if (!out) return;
+  const q = (document.getElementById('kubeLogsFilterInput').value || '').toLowerCase();
+  kubeLogsMatches = 0;
+  for (const s of out.children) {
+    s.hidden = !!q && !s.textContent.toLowerCase().includes(q);
+    if (!s.hidden) kubeLogsMatches++;
+  }
+  setKubeLogsCount(q);
+}
+function openKubeWorkloadLogs(wl) {
+  stopKubeLogs();
+  currentKubeLogsPod = null;
+  currentKubeLogsContainer = null;
+  currentKubeLogsWorkload = { kind: (wl.kind || '').toLowerCase(), name: wl.name, namespace: wl.namespace };
+  const host = (allRawHosts || []).find(h => String(h.id) === String(selectedKubeHostId));
+  const hostName = host ? host.name : selectedKubeHostId;
+  const titleEl = document.getElementById('kubeLogsTitle');
+  if (titleEl) titleEl.textContent = `${t('kube_logs_workload', 'Workload Logs')}: ${wl.kind}/${wl.name} @ ${hostName}`;
+  const out = document.getElementById('kubeLogsOutput');
+  if (out) out.textContent = '';
+  const status = document.getElementById('kubeLogsStatus');
+  if (status) { status.textContent = t('docker_logs_connecting', 'Connecting...'); status.className = 'badge badge-info'; }
+  const cWrap = document.getElementById('kubeLogsContainerWrap');
+  if (cWrap) { cWrap.style.display = 'none'; }
+  const prevWrap = document.getElementById('kubeLogsPreviousToggle');
+  if (prevWrap && prevWrap.parentElement) { prevWrap.checked = false; prevWrap.parentElement.style.display = 'none'; }
+  openModal('kubeLogsModal');
+  connectKubeLogsStream();
+}
+
+// Drain node (ticket 08)
+let kubeDrainTarget = null, kubeDrainPreviewData = null;
+function openKubeDrain(nodeName) {
+  if (!selectedKubeHostId) return;
+  const isRo = getSelectedKubeMode() === 'read-only';
+  if (isRo) { showToast(t('kube_mode_blocked_ro', 'Disabled in Read-Only mode'), 'warning'); return; }
+  kubeDrainTarget = nodeName;
+  kubeDrainPreviewData = null;
+  document.getElementById('kubeDrainSummary').textContent = t('kube_drain_previewing', 'Running drain preview (dry-run)...');
+  const podsEl = document.getElementById('kubeDrainPods');
+  podsEl.style.display = 'none'; podsEl.textContent = '';
+  const note = document.getElementById('kubeDrainBlockedNote');
+  note.style.display = 'none'; note.textContent = '';
+  document.getElementById('btnKubeDrainConfirm').disabled = true;
+  document.getElementById('kubeDrainFlagIgnoreDS').checked = true;
+  document.getElementById('kubeDrainFlagEmptyDir').checked = false;
+  document.getElementById('kubeDrainFlagForce').checked = false;
+  openModal('kubeDrainModal');
+  showToast(t('working', 'Working...'), 'info', 2000);
+  fetch(`/api/hosts/${selectedKubeHostId}/kube/drain-preview`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: nodeName }) })
+    .then(r => r.json()).then(data => {
+      handleKubeEnvelope(data);
+      if (!data.ok) { document.getElementById('kubeDrainSummary').textContent = t('error_prefix', 'Error: ') + (data.error || 'Failed to load preview'); return; }
+      kubeDrainPreviewData = data;
+      renderKubeDrainPreview();
+    })
+    .catch(e => { document.getElementById('kubeDrainSummary').textContent = t('error_prefix', 'Error: ') + e.message; });
+}
+function renderKubeDrainPreview() {
+  const d = kubeDrainPreviewData;
+  if (!d) return;
+  const pods = d.pods || [];
+  const blocked = d.blocked || [];
+  const ds = d.daemonset_skipped || [];
+  const lines = pods.map(p => (p.ns ? p.ns + '/' : '') + p.name);
+  if (ds.length) lines.push(t('kube_drain_daemonset_skipped', 'DaemonSet-managed pods (skipped): {list}').replace('{list}', ds.join(', ')));
+  const podsEl = document.getElementById('kubeDrainPods');
+  if (lines.length) { podsEl.style.display = 'block'; podsEl.textContent = lines.join('\n'); }
+  else podsEl.style.display = 'none';
+  document.getElementById('kubeDrainSummary').textContent = t('kube_drain_pods_header', '{n} pod(s) will be evicted and rescheduled:').replace('{n}', String(d.pod_count != null ? d.pod_count : pods.length));
+  const note = document.getElementById('kubeDrainBlockedNote');
+  if (blocked.length) {
+    note.style.display = 'block';
+    note.textContent = t('kube_drain_blocked_note', '{n} pod(s) blocked by PodDisruptionBudget; the drain may run until the timeout.').replace('{n}', String(blocked.length)) + '\n' + blocked.join('\n');
+  }
+  document.getElementById('btnKubeDrainConfirm').disabled = false;
+}
+async function confirmKubeDrain() {
+  const nodeName = kubeDrainTarget;
+  const preview = kubeDrainPreviewData;
+  if (!nodeName || !selectedKubeHostId) return;
+  const podCount = preview ? (preview.pod_count != null ? preview.pod_count : (preview.pods || []).length) : 0;
+  const blockedCount = preview ? (preview.blocked || []).length : 0;
+  const ignoreDS = document.getElementById('kubeDrainFlagIgnoreDS').checked;
+  const emptyDir = document.getElementById('kubeDrainFlagEmptyDir').checked;
+  const force = document.getElementById('kubeDrainFlagForce').checked;
+  let msg = t('kube_drain_confirm_base', 'Drain node {name}? {count} pod(s) will be evicted and rescheduled; single-replica workloads will experience downtime.').replace('{name}', nodeName).replace('{count}', String(podCount));
+  if (emptyDir) msg += '\n' + t('kube_drain_confirm_emptydir', 'EmptyDir data will be lost permanently.');
+  if (force) msg += '\n' + t('kube_drain_confirm_force', 'Pods without a controller may not come back.');
+  const node = (kubeNodesCache || []).find(n => n.name === nodeName);
+  const roles = node && Array.isArray(node.roles) ? node.roles.join(',').toLowerCase() : String(node && node.roles || '').toLowerCase();
+  if (roles.includes('control-plane') || roles.includes('master') || roles.includes('etcd')) {
+    msg += '\n' + t('kube_drain_confirm_etcd', '{name} is a control-plane and etcd member of the HA cluster: draining removes one etcd vote; if one other node fails during the drain, quorum is lost and all workloads stop.').replace('{name}', nodeName);
+  }
+  if (blockedCount > 0) msg += '\n' + t('kube_drain_confirm_blocked', '{n} pod(s) are blocked by PDB; the drain may run until the timeout.').replace('{n}', String(blockedCount));
+  const confirmed = await showConfirm({
+    title: t('kube_drain_confirm_title', 'Drain Node'),
+    message: msg,
+    danger: true,
+    confirmText: t('kube_drain', 'Drain')
+  });
+  if (!confirmed) return;
+  closeModal('kubeDrainModal');
+  showToast(t('kube_drain_started', 'Drain started; this can take minutes...'), 'info', 5000);
+  try {
+    const res = await fetch(`/api/hosts/${selectedKubeHostId}/kube/action`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ op: 'drain', kind: 'node', ns: '', name: nodeName, ignoreDaemonsets: ignoreDS, deleteEmptyDirData: emptyDir, force })
+    });
+    const data = await res.json();
+    handleKubeEnvelope(data);
+    if (data.ok) {
+      showToastDrainUncordon(nodeName, t('kube_drain_done', 'Drain completed'), 'success');
+      if (data.output) showDockerOutput('drain ' + nodeName, data.output);
+    } else {
+      const err = data.error || 'Drain failed';
+      showToast(t('error_prefix', 'Error: ') + err, 'error', 9000);
+      if (/timeout/i.test(err)) showToastDrainUncordon(nodeName, t('kube_drain_timeout', 'Drain timeout: the node stays cordoned and pods may be partially evicted. Run Uncordon to undo.'), 'warning');
+      return;
+    }
+    loadKubeTabData('nodes');
+  } catch(e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error', 9000);
+  }
+}
+function showToastDrainUncordon(nodeName, msg, type) {
+  if (msg) showToast(msg, type || 'success', 8000);
+  const container = document.getElementById('toastContainer');
+  if (!container) return;
+  const last = container.lastElementChild;
+  if (!last || !last.classList.contains('toast')) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn btn-sm';
+  btn.style.margin = '0 6px 0 10px';
+  btn.textContent = t('kube_uncordon', 'Uncordon Node');
+  btn.onclick = () => { last.remove(); kubeAction({ op: 'uncordon', kind: 'node', ns: '', name: nodeName }, null, 'nodes'); };
+  const msgEl = last.querySelector('.toast-msg');
+  if (msgEl) msgEl.appendChild(btn);
+}
+
+// ============================================================================
+// Bulk Command Execution (Feature C)
+// ============================================================================
+let bulkSelectedHostIds = new Set();
+let bulkExecutionResults = [];
+let bulkExecAbortController = null;
+
+function openBulkExecModal() {
+  bulkClearSelection();
+  const cmdEl = document.getElementById('bulkCommandInput');
+  if (cmdEl) cmdEl.value = '';
+  const toEl = document.getElementById('bulkTimeoutInput');
+  if (toEl) toEl.value = '30';
+  const sudoEl = document.getElementById('bulkSudoInput');
+  if (sudoEl) sudoEl.checked = false;
+
+  // Populate Group Filter options
+  const grpSelect = document.getElementById('bulkGroupFilter');
+  if (grpSelect) {
+    const groups = Array.from(new Set((allRawHosts || []).map(h => (h.group_name || '').trim()).filter(Boolean))).sort();
+    grpSelect.innerHTML = `<option value="all">${t('bulk_all_groups', 'All Groups')}</option>` +
+      groups.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('') +
+      `<option value="__ungrouped__">${t('ungrouped', 'Ungrouped')}</option>`;
+    grpSelect.value = 'all';
+  }
+  const resCont = document.getElementById('bulkResultsContainer');
+  if (resCont) resCont.style.display = 'none';
+  const resBody = document.getElementById('bulkResultsBody');
+  if (resBody) resBody.innerHTML = '';
+
+  renderBulkHostPicker();
+  openModal('bulkExecModal');
+  setTimeout(() => document.getElementById('bulkHostSearch')?.focus(), 50);
+}
+
+function getFilteredBulkHosts() {
+  const q = (document.getElementById('bulkHostSearch')?.value || '').toLowerCase().trim();
+  const grp = document.getElementById('bulkGroupFilter')?.value || 'all';
+  return (allRawHosts || []).filter(h => {
+    if (grp !== 'all') {
+      const hGrp = (h.group_name || '').trim();
+      if (grp === '__ungrouped__' && hGrp !== '') return false;
+      if (grp !== '__ungrouped__' && hGrp !== grp) return false;
+    }
+    if (!q) return true;
+    return (h.name || '').toLowerCase().includes(q) || (h.host || '').toLowerCase().includes(q);
+  });
+}
+
+function renderBulkHostPicker() {
+  const container = document.getElementById('bulkHostPicker');
+  if (!container) return;
+  const hosts = getFilteredBulkHosts();
+  const countEl = document.getElementById('bulkSelectedCount');
+  if (countEl) countEl.innerText = `${bulkSelectedHostIds.size} / 20`;
+
+  if (hosts.length === 0) {
+    container.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); font-size: var(--fs-xs); padding: 12px;">No matching hosts</div>`;
+    return;
+  }
+
+  container.innerHTML = hosts.map(h => {
+    const checked = bulkSelectedHostIds.has(h.id);
+    return `
+      <label style="display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); cursor: pointer; padding: 4px 6px; border-radius: var(--radius-sm); background: ${checked ? 'var(--hover)' : 'transparent'};">
+        <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleBulkHost(${h.id}, this.checked)" />
+        <span style="font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(h.name)}">${escapeHtml(h.name)}</span>
+        <span class="badge badge-${h.status || 'unknown'}" style="margin-left: auto; font-size: 0.68rem; padding: 0 4px;">${h.status || 'unknown'}</span>
+      </label>
+    `;
+  }).join('');
+}
+
+function toggleBulkHost(id, checked) {
+  if (checked) {
+    if (bulkSelectedHostIds.size >= 20) {
+      showToast(t('bulk_max_hosts_reached', 'Maximum 20 hosts can be selected.'), 'warning');
+      renderBulkHostPicker();
+      return;
+    }
+    bulkSelectedHostIds.add(id);
+  } else {
+    bulkSelectedHostIds.delete(id);
+  }
+  renderBulkHostPicker();
+}
+
+function bulkSelectAllFiltered() {
+  const filtered = getFilteredBulkHosts();
+  for (const h of filtered) {
+    if (bulkSelectedHostIds.size >= 20) break;
+    bulkSelectedHostIds.add(h.id);
+  }
+  renderBulkHostPicker();
+}
+
+function bulkClearSelection() {
+  bulkSelectedHostIds.clear();
+  renderBulkHostPicker();
+}
+
+async function runBulkExec() {
+  const hostIds = Array.from(bulkSelectedHostIds);
+  if (hostIds.length === 0) {
+    showToast(t('bulk_no_hosts_selected', 'Please select at least 1 host.'), 'warning');
+    return;
+  }
+  const cmd = document.getElementById('bulkCommandInput')?.value.trim() || '';
+  if (!cmd) {
+    showToast(t('command_required', 'Please enter a command to execute.'), 'error');
+    return;
+  }
+  const timeoutSec = parseInt(document.getElementById('bulkTimeoutInput')?.value || '30', 10) || 30;
+  const sudo = document.getElementById('bulkSudoInput')?.checked || false;
+
+  const confirmed = await showConfirm({
+    title: t('bulk_exec_title', 'Bulk Command Execution'),
+    message: t('bulk_confirm_msg', 'Execute command across {count} host(s)? Command: {cmd}').replace('{count}', hostIds.length).replace('{cmd}', cmd.length > 80 ? cmd.slice(0, 80) + '…' : cmd),
+    confirmText: t('bulk_run_btn', 'Run Command'),
+    danger: true
+  });
+  if (!confirmed) return;
+
+  const btn = document.getElementById('btnRunBulkExec');
+  if (btn) btn.disabled = true;
+
+  const resCont = document.getElementById('bulkResultsContainer');
+  if (resCont) resCont.style.display = 'flex';
+  const resBody = document.getElementById('bulkResultsBody');
+  if (resBody) resBody.innerHTML = '';
+  const statusSummary = document.getElementById('bulkStatusSummary');
+  if (statusSummary) {
+    statusSummary.innerText = `0 / ${hostIds.length}`;
+    statusSummary.className = 'badge badge-info';
+  }
+
+  bulkExecutionResults = [];
+  bulkExecAbortController = new AbortController();
+
+  try {
+    const res = await fetch('/api/exec/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ host_ids: hostIds, command: cmd, timeout_sec: timeoutSec, sudo: sudo }),
+      signal: bulkExecAbortController.signal
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      showToast(`Bulk execution failed: ${errText || res.statusText}`, 'error');
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    let finishedCount = 0;
+    let failedCount = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep partial chunk
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const item = JSON.parse(trimmed);
+          if (item.done) {
+            if (statusSummary) {
+              statusSummary.innerText = `Done: ${item.total} total, ${item.failed} failed`;
+              statusSummary.className = item.failed > 0 ? 'badge badge-warning' : 'badge badge-healthy';
+            }
+          } else if (item.host_id) {
+            bulkExecutionResults.push(item);
+            finishedCount++;
+            if (!item.ok) failedCount++;
+            if (statusSummary) {
+              statusSummary.innerText = `${finishedCount} / ${hostIds.length}`;
+            }
+            appendBulkResultRow(item);
+          }
+        } catch (e) {}
+      }
+    }
+
+    // Process any remaining buffer byte
+    if (buffer.trim()) {
+      try {
+        const item = JSON.parse(buffer.trim());
+        if (item.host_id) {
+          bulkExecutionResults.push(item);
+          appendBulkResultRow(item);
+        }
+      } catch (e) {}
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') {
+      showToast(`Bulk execution error: ${e.message}`, 'error');
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+    bulkExecAbortController = null;
+  }
+}
+
+function appendBulkResultRow(item) {
+  const resBody = document.getElementById('bulkResultsBody');
+  if (!resBody) return;
+  const tr = document.createElement('tr');
+  tr.style.borderBottom = '1px solid var(--card-border)';
+  const statusCls = item.ok ? 'badge-healthy' : 'badge-danger';
+  const statusText = item.ok ? 'OK' : (item.error || 'Failed');
+  const durationText = item.duration_ms !== undefined ? `${item.duration_ms}ms` : '-';
+  const exitText = item.exit_code !== undefined ? item.exit_code : '-';
+  const outText = item.output || (item.error ? `Error: ${item.error}` : '');
+
+  tr.innerHTML = `
+    <td style="padding: 6px 10px; font-weight: 600; white-space: nowrap;">${escapeHtml(item.host_name || ('Host #' + item.host_id))}</td>
+    <td style="padding: 6px 10px; white-space: nowrap;"><span class="badge ${statusCls}">${escapeHtml(statusText)}</span></td>
+    <td style="padding: 6px 10px; font-family: var(--font-mono);">${exitText}</td>
+    <td style="padding: 6px 10px; color: var(--text-muted);">${durationText}</td>
+    <td style="padding: 6px 10px;">
+      <details>
+        <summary style="cursor: pointer; color: var(--primary);">${outText.length > 50 ? escapeHtml(outText.slice(0, 50)) + '…' : (outText ? escapeHtml(outText) : '<no output>')}${item.truncated ? ' <span class="badge badge-warning" style="font-size: 0.65rem;">truncated</span>' : ''}</summary>
+        <pre style="margin: 4px 0 0; padding: 6px; background: var(--code-bg); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: var(--fs-xs); white-space: pre-wrap; word-break: break-all; max-height: 120px; overflow-y: auto;">${escapeHtml(outText)}</pre>
+      </details>
+    </td>
+  `;
+  resBody.appendChild(tr);
+}
+
+function copyAllBulkResults() {
+  if (bulkExecutionResults.length === 0) {
+    showToast('No results to copy', 'info');
+    return;
+  }
+  const text = bulkExecutionResults.map(r => {
+    const name = r.host_name || ('Host #' + r.host_id);
+    return `=== [${name}] ok=${r.ok} exit=${r.exit_code} duration=${r.duration_ms}ms ===\n${r.output || r.error || ''}\n`;
+  }).join('\n');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => showToast(t('copied', 'Copied to clipboard'), 'success'));
+  }
+}
+
+// ============================================================================
+// Package Upgrade Flow (Feature D)
+// ============================================================================
+let currentPkgUpgradeHostId = null;
+let currentPkgUpgradePreviewData = null;
+let pkgUpgradeSocket = null;
+
+async function openHostPackageUpgradePreview(hostId) {
+  currentPkgUpgradeHostId = hostId;
+  currentPkgUpgradePreviewData = null;
+  const host = (allRawHosts || []).find(h => h.id === hostId) || currentHost;
+  const hostName = host ? host.name : ('Host #' + hostId);
+
+  const titleEl = document.getElementById('pkgUpgradePreviewTitle');
+  if (titleEl) titleEl.innerText = `${t('pkg_upgrade_title', 'Upgrade Packages')}: ${hostName}`;
+
+  const loadingEl = document.getElementById('pkgUpgradePreviewLoading');
+  const contentEl = document.getElementById('pkgUpgradePreviewContent');
+  if (loadingEl) loadingEl.style.display = 'block';
+  if (contentEl) contentEl.style.display = 'none';
+
+  openModal('pkgUpgradePreviewModal');
+
+  try {
+    const res = await fetch(`/api/hosts/${hostId}/packages/upgrade-preview`);
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok || !data.ok) {
+      if (loadingEl) loadingEl.innerHTML = `<div style="color: var(--danger);">Failed to load preview: ${escapeHtml(data.error || res.statusText)}</div>`;
+      return;
+    }
+    if (!data.supported) {
+      if (loadingEl) loadingEl.innerHTML = `<div style="color: var(--warning); padding: 16px; text-align: center;">${svgIcon('info', 'icon-sm')} <span>Package upgrade is unsupported on this host operating system (${escapeHtml(data.manager || 'unknown')}).</span></div>`;
+      return;
+    }
+
+    currentPkgUpgradePreviewData = data;
+    if (loadingEl) loadingEl.style.display = 'none';
+    if (contentEl) contentEl.style.display = 'flex';
+
+    document.getElementById('pkgPreviewPendingTotal').innerText = data.pending_total || 0;
+    document.getElementById('pkgPreviewPendingSec').innerText = data.pending_security || 0;
+    document.getElementById('pkgPreviewManager').innerText = (data.manager || '').toUpperCase();
+
+    const rebootBanner = document.getElementById('pkgPreviewRebootBanner');
+    if (rebootBanner) rebootBanner.style.display = data.reboot_required ? 'flex' : 'none';
+
+    // Mode selection options: apt only supports "all", dnf/yum support "all" or "security"
+    const secRadio = document.getElementById('pkgModeSecurityOption');
+    const modeNote = document.getElementById('pkgModeNote');
+    const allRadio = document.querySelector('input[name="pkgUpgradeMode"][value="all"]');
+    if (allRadio) allRadio.checked = true;
+
+    if (data.manager === 'apt') {
+      if (secRadio) secRadio.style.display = 'none';
+      if (modeNote) modeNote.innerText = 'Debian/Ubuntu (apt) applies all pending packages. Security-only mode is not reliably isolated by apt.';
+    } else {
+      if (secRadio) secRadio.style.display = 'inline-flex';
+      if (modeNote) modeNote.innerText = 'RHEL/Fedora (dnf/yum) allows isolating upgrades to security advisories (--security).';
+    }
+
+    const tbody = document.getElementById('pkgPreviewTableBody');
+    const pkgs = Array.isArray(data.packages) ? data.packages : [];
+    if (tbody) {
+      if (pkgs.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 12px;">No pending upgradable packages found. System is up to date.</td></tr>`;
+      } else {
+        tbody.innerHTML = pkgs.map(p => `
+          <tr style="border-bottom: 1px solid var(--card-border);">
+            <td style="padding: 6px 10px; font-weight: 600;">${escapeHtml(p.name)}</td>
+            <td style="padding: 6px 10px; font-family: var(--font-mono); color: var(--text-muted);">${escapeHtml(p.from || '-')}</td>
+            <td style="padding: 6px 10px; font-family: var(--font-mono); color: var(--primary);">${escapeHtml(p.to || '-')}</td>
+            <td style="padding: 6px 10px;">
+              <span class="badge ${p.security ? 'badge-danger' : 'badge-info'}" style="font-size: 0.68rem;">
+                ${p.security ? 'Security' : 'Standard'}
+              </span>
+            </td>
+          </tr>
+        `).join('');
+      }
+    }
+  } catch (e) {
+    if (loadingEl) loadingEl.innerHTML = `<div style="color: var(--danger);">${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function onPkgUpgradeModeChange() {}
+
+async function startHostPackageUpgrade() {
+  if (!currentPkgUpgradeHostId) return;
+  const hostId = currentPkgUpgradeHostId;
+  const modeRadio = document.querySelector('input[name="pkgUpgradeMode"]:checked');
+  const mode = modeRadio ? modeRadio.value : 'all';
+
+  const confirmed = await showConfirm({
+    title: t('pkg_upgrade_title', 'Upgrade Packages'),
+    message: t('pkg_upgrade_confirm_msg', 'Apply package upgrades to this host? Remote services may restart automatically. There is NO automatic rollback mechanism. Consider taking a System Snapshot or disk snapshot beforehand.'),
+    confirmText: t('pkg_confirm_upgrade_btn', 'Start Upgrade'),
+    danger: true
+  });
+  if (!confirmed) return;
+
+  closeModal('pkgUpgradePreviewModal');
+  openPkgUpgradeLogs(hostId, mode);
+}
+
+function stopPkgUpgradeLogs() {
+  const ws = pkgUpgradeSocket;
+  pkgUpgradeSocket = null;
+  if (ws) {
+    try { ws.close(); } catch (e) {}
+  }
+}
+
+function openPkgUpgradeLogs(hostId, mode) {
+  stopPkgUpgradeLogs();
+  const host = (allRawHosts || []).find(h => h.id === hostId) || currentHost;
+  const hostName = host ? host.name : ('Host #' + hostId);
+
+  const titleEl = document.getElementById('pkgUpgradeLogsTitle');
+  if (titleEl) titleEl.innerText = `${t('pkg_upgrade_title', 'Upgrade Packages')} [${mode}]: ${hostName}`;
+
+  const out = document.getElementById('pkgUpgradeLogsOutput');
+  const status = document.getElementById('pkgUpgradeLogsStatus');
+  if (out) out.textContent = '';
+  if (status) {
+    status.textContent = 'Connecting...';
+    status.className = 'badge badge-info';
+  }
+
+  openModal('pkgUpgradeLogsModal');
+
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(`${protocol}//${location.host}/ws/pkg/upgrade?host_id=${hostId}&mode=${encodeURIComponent(mode)}`);
+  ws.binaryType = 'arraybuffer';
+  pkgUpgradeSocket = ws;
+
+  const decoder = new TextDecoder('utf-8');
+  let scrollQueued = false;
+
+  ws.onopen = () => {
+    if (pkgUpgradeSocket !== ws) return;
+    if (status) {
+      status.textContent = 'Running';
+      status.className = 'badge badge-healthy';
+    }
+  };
+
+  ws.onmessage = (ev) => {
+    if (pkgUpgradeSocket !== ws) return;
+    let text = typeof ev.data === 'string' ? ev.data : decoder.decode(ev.data, { stream: true });
+    text = text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+    if (!text) return;
+    if (out) {
+      out.appendChild(document.createTextNode(text));
+      if (document.getElementById('pkgUpgradeLogsAutoScroll')?.checked && !scrollQueued) {
+        scrollQueued = true;
+        requestAnimationFrame(() => {
+          scrollQueued = false;
+          out.scrollTop = out.scrollHeight;
+        });
+      }
+    }
+    if (text.includes('[pantau] exit=')) {
+      const exitMatch = text.match(/\[pantau\] exit=([0-9]+)/);
+      const code = exitMatch ? exitMatch[1] : '0';
+      if (status) {
+        status.textContent = code === '0' ? 'Completed (exit 0)' : `Failed (exit ${code})`;
+        status.className = code === '0' ? 'badge badge-healthy' : 'badge badge-danger';
+      }
+    }
+  };
+
+  ws.onclose = () => {
+    if (pkgUpgradeSocket !== ws) return;
+    pkgUpgradeSocket = null;
+    if (status && !status.textContent.includes('exit')) {
+      status.textContent = 'Disconnected';
+      status.className = 'badge badge-unknown';
+    }
+  };
+}
+
 </script>
 </body>
 </html>

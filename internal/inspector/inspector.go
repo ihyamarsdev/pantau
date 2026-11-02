@@ -36,6 +36,8 @@ type Inspector struct {
 	inFlight         sync.Map
 	packageInFlight  sync.Map
 	securityInFlight sync.Map
+	drainInFlight    sync.Map
+	debouncer        *AlertDebouncer
 
 	// sudoRetryAt remembers, per host, when passwordless sudo may be probed again after it failed, so a
 	// host that requires a sudo password logs at most one failed attempt per sudoRetryAfter.
@@ -48,9 +50,10 @@ func New(db *store.DB, factory sshrunner.RunnerFactory, notifier *notify.Dispatc
 		factory = sshrunner.DefaultFactory()
 	}
 	return &Inspector{
-		db:       db,
-		factory:  factory,
-		notifier: notifier,
+		db:        db,
+		factory:   factory,
+		notifier:  notifier,
+		debouncer: NewAlertDebouncer(),
 	}
 }
 
@@ -1139,6 +1142,10 @@ func (ins *Inspector) evaluateDesiredRules(h *store.Host, runner sshrunner.Runne
 	if err != nil {
 		return false, nil, 0, err
 	}
+	debounceRuns := 1
+	if debStr, err := ins.db.GetSetting("alert_debounce_runs"); err == nil {
+		debounceRuns = ParseDebounceRuns(debStr)
+	}
 
 	driftFound := false
 	var driftSummaries []string
@@ -1182,7 +1189,15 @@ func (ins *Inspector) evaluateDesiredRules(h *store.Host, runner sshrunner.Runne
 		_ = ins.db.UpsertActualItem(actualItem)
 
 		// Transition into drift -> record incident + alert + root cause excerpt
-		if status == "drift" && prevStatus != "drift" {
+		triggerAlert := false
+		if ins.debouncer != nil {
+			triggerAlert = ins.debouncer.Observe(h.ID, rule.Kind, rule.Target, status, debounceRuns)
+		} else if status == "drift" && prevStatus != "drift" {
+			triggerAlert = true
+		}
+
+		// Transition into drift after debounce -> record incident + alert + root cause excerpt
+		if triggerAlert {
 			inc := &store.Incident{
 				HostID:           h.ID,
 				Kind:             rule.Kind,
@@ -1319,66 +1334,13 @@ func (ins *Inspector) evaluateRule(h *store.Host, runner sshrunner.Runner, rule 
 		return
 
 	case "backup":
-		// Target is file path or glob (e.g. /var/backups/db-*.sql.gz)
-		// On macOS, BSD stat uses `stat -f '%m %z'` (mtime size). On Linux, GNU stat uses `stat -c "%s %Y"` (size mtime).
-		statCmd := fmt.Sprintf(`sh -c 'if [ "$(uname -s)" = "Darwin" ]; then stat -f "%%m %%z" %[1]s 2>/dev/null; else stat -c "%%s %%Y" %[1]s 2>/dev/null || ls -l %[1]s 2>/dev/null; fi'`, shellQuote(rule.Target))
-		out, _, exitCode, _ := runner.Exec(statCmd)
-		out = strings.TrimSpace(out)
-		if exitCode != 0 || out == "" {
-			current = "missing"
-			status = "drift"
-			rootCause = fmt.Sprintf("Backup file does not exist at path: %s", rule.Target)
-			return
-		}
+		return evaluateBackupRule(runner, rule)
 
-		fields := strings.Fields(out)
-		if len(fields) >= 2 {
-			f0, _ := strconv.ParseInt(fields[0], 10, 64)
-			f1, _ := strconv.ParseInt(fields[1], 10, 64)
-			var sizeBytes, mtimeUnix int64
-			if f0 > 1000000000 && (f1 < 1000000000 || f0 > f1) {
-				mtimeUnix = f0
-				sizeBytes = f1
-			} else {
-				sizeBytes = f0
-				mtimeUnix = f1
-			}
-			modTime := time.Unix(mtimeUnix, 0)
-			ageHours := time.Since(modTime).Hours()
+	case "http":
+		return evaluateHTTPRule(runner, rule)
 
-			details = fmt.Sprintf("Size: %d bytes, Modified: %s (%.1fh ago)", sizeBytes, modTime.Format(time.RFC3339), ageHours)
-
-			if sizeBytes == 0 {
-				current = "empty_file (0 bytes)"
-				status = "drift"
-				rootCause = fmt.Sprintf("Backup file exists but is 0 bytes empty at %s", rule.Target)
-				return
-			}
-
-			// Expected freshness window (default 24h)
-			maxHours := 24.0
-			if strings.HasPrefix(rule.Expected, "fresh_") {
-				raw := strings.TrimSuffix(strings.TrimPrefix(rule.Expected, "fresh_"), "h")
-				if h, err := strconv.ParseFloat(raw, 64); err == nil {
-					maxHours = h
-				}
-			}
-
-			if ageHours <= maxHours {
-				current = fmt.Sprintf("fresh (%.1fh ago, %d B)", ageHours, sizeBytes)
-				status = "ok"
-			} else {
-				current = fmt.Sprintf("stale (%.1fh ago)", ageHours)
-				status = "drift"
-				rootCause = fmt.Sprintf("Backup file at %s is stale (age: %.1f hours, max allowed: %.1f hours)", rule.Target, ageHours, maxHours)
-			}
-		} else {
-			current = "stat_error"
-			status = "drift"
-			rootCause = "Could not parse backup file metadata"
-		}
-		return
-
+	case "tls":
+		return evaluateTLSRule(runner, rule, nil)
 	case "cron":
 		// Target is keyword or command in crontab
 		cronCmd := `crontab -l 2>/dev/null`
@@ -2124,5 +2086,3 @@ func (ins *Inspector) ScanPackagesWithTimeout(hostID int64, timeout time.Duratio
 
 	return ins.db.ReplaceHostPackages(hostID, pkgs)
 }
-
-

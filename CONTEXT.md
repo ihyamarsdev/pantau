@@ -482,3 +482,27 @@ _Avoid_: K8s node, cluster entry, kubeconfig target
 **Kubernetes Privilege Fallback**:
 Aturan bahwa `kubectl` dijalankan sebagai akun SSH biasa dan baru memakai `sudo -n` (dengan `KUBECONFIG` k3s/RKE2) bila kubeconfig ditolak (*permission denied*) dan sudo tanpa kata sandi tersedia; kata sandi tidak pernah dipakai atau disimpan.
 _Avoid_: Sudo kubectl mode, root kubectl, privileged kubectl
+
+**Kubernetes Cluster**:
+Satu klaster k3s/RKE2 yang dikenali dari UID namespace `kube-system` dan dapat dilayani oleh beberapa Host berperan server; Pantau mengelompokkan Host-nya menjadi satu entri dan beralih ke peer sehat bila Host yang diminta tidak dapat dijangkau.
+_Avoid_: Cluster entry, k8s group, node group
+
+**Gateway Host**:
+Host yang sebenarnya melayani sebuah permintaan Kubernetes (Host diminta atau peer hasil failover); dilaporkan di setiap respons dan ditampilkan sebagai chip *Gateway*.
+_Avoid_: Proxy host, master node, entry node
+
+**Kube Mode**:
+Kebijakan per Host atas aksi Kubernetes yang difasilitasi Pantau: `full`, `no-exec` (tanpa exec pod), atau `read-only` (tanpa mutasi dan exec). Pagar tingkat aplikasi, bukan batas keamanan Host.
+_Avoid_: Permission level, RBAC role, access flag
+
+**Alert Debounce**:
+Pengaturan (`alert_debounce_runs`, 1–10) yang menahan Incident, Alert, dan notifikasi sebuah Drift sampai terlihat pada N Inspection berturut-turut untuk rule yang sama; kembali sehat selalu menutup langsung.
+_Avoid_: Alert delay, grace period, flap filter
+
+**Bulk Command**:
+Satu perintah shell non-interaktif yang dijalankan serentak ke beberapa Host terpilih (maks 20) dengan hasil per Host dialirkan ke antarmuka; tanpa riwayat dan tanpa TTY.
+_Avoid_: Mass exec, fleet command, multi-host terminal
+
+**Package Upgrade**:
+Aksi menerapkan pembaruan paket (`all`, atau `security` pada dnf/yum) di sebuah Host setelah pratinjau, mengikuti Docker Privilege Fallback; tanpa reboot otomatis dan tanpa rollback.
+_Avoid_: Patch run, system update, auto-update

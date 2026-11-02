@@ -123,7 +123,7 @@ func (b *Broadcaster) History() []Event {
 // Redaction Filter implementation
 var sensitiveKeyPrefixes = []string{
 	"password", "passphrase", "secret", "token", "private_key",
-	"privkey", "auth", "session", "recovery", "totp",
+	"privkey", "auth", "session", "recovery", "totp", "smtp_pass",
 }
 
 // IsSensitiveKey reports whether a key should be redacted.

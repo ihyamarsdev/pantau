@@ -391,12 +391,12 @@ func TestSecuritySettings(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("GET /api/settings failed: %d", w.Code)
 	}
-	var settings map[string]string
+	var settings map[string]interface{}
 	if err := json.NewDecoder(w.Body).Decode(&settings); err != nil {
 		t.Fatal(err)
 	}
 	if settings["security_scan_interval_hours"] != "24" {
-		t.Errorf("expected default interval '24', got %q", settings["security_scan_interval_hours"])
+		t.Errorf("expected default interval '24', got %v", settings["security_scan_interval_hours"])
 	}
 
 	postSetting := func(val string) string {
@@ -415,9 +415,10 @@ func TestSecuritySettings(t *testing.T) {
 		authReq(getReq)
 		getW := httptest.NewRecorder()
 		srv.ServeHTTP(getW, getReq)
-		var s map[string]string
+		var s map[string]interface{}
 		_ = json.NewDecoder(getW.Body).Decode(&s)
-		return s["security_scan_interval_hours"]
+		str, _ := s["security_scan_interval_hours"].(string)
+		return str
 	}
 
 	// 2. Setting to "48" (valid 1..720)

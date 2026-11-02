@@ -215,6 +215,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/presets", s.authMiddleware(s.handlePresets))
 	s.mux.HandleFunc("/api/presets/", s.authMiddleware(s.handlePresetDetail))
 
+	// Bulk Exec
+	s.mux.HandleFunc("/api/exec/bulk", s.authMiddleware(s.handleExecBulk))
+
 	// WebSockets (Terminal & Docker Logs)
 	s.mux.HandleFunc("/ws/terminal", s.authMiddleware(s.handleWSTerminal))
 	s.mux.HandleFunc("/ws/docker/logs", s.authMiddleware(s.handleWSDockerLogs))
@@ -222,6 +225,7 @@ func (s *Server) routes() {
 
 	// SSH Direct-TCPIP Reverse Proxy Tunnel
 	s.mux.HandleFunc("/api/tunnel/", s.authMiddleware(s.handleTunnel))
+	s.mux.HandleFunc("/ws/pkg/upgrade", s.authMiddleware(s.handleWSPkgUpgrade))
 
 	// Snapshots & GitHub Backup
 	s.mux.HandleFunc("/api/snapshot/status", s.handleSnapshotStatus)
@@ -689,6 +693,14 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		h.KubeClusterID = ""
+		if h.KubeMode == "" {
+			h.KubeMode = "full"
+		}
+		if h.KubeMode != "full" && h.KubeMode != "no-exec" && h.KubeMode != "read-only" {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "invalid kube_mode: must be full, no-exec, or read-only"})
+			return
+		}
 		if h.Port <= 0 {
 			h.Port = 22
 		}
@@ -931,6 +943,16 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
+			h.KubeClusterID = existing.KubeClusterID
+			if h.KubeMode == "" {
+				h.KubeMode = existing.KubeMode
+				if h.KubeMode == "" {
+					h.KubeMode = "full"
+				}
+			} else if h.KubeMode != "full" && h.KubeMode != "no-exec" && h.KubeMode != "read-only" {
+				writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "invalid kube_mode: must be full, no-exec, or read-only"})
+				return
+			}
 			if h.KeyID < 0 {
 				writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "invalid key_id"})
 				return
@@ -1010,6 +1032,11 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Last-Scanned", time.Now().UTC().Format(time.RFC3339))
 			w.Header().Set("X-Cooldown-Remaining", "60")
 			writeJSON(w, http.StatusOK, pkgs)
+			return
+		}
+
+		if len(parts) >= 3 && parts[2] == "upgrade-preview" {
+			s.handlePackagesUpgradePreview(w, r, hostID)
 			return
 		}
 
@@ -1277,6 +1304,35 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 			if rData.Target == "" || strings.ContainsAny(rData.Target, ";;&|`$\n\r") {
 				http.Error(w, "invalid target: shell metacharacters not allowed", http.StatusBadRequest)
 				return
+			}
+			switch rData.Kind {
+			case "http":
+				if err := inspector.ValidateHTTPTarget(rData.Target); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				if _, err := inspector.ParseHTTPExpected(rData.Expected); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+			case "tls":
+				if _, err := inspector.ParseTLSTarget(rData.Target); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				if _, err := inspector.ParseTLSExpected(rData.Expected); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+			case "backup":
+				if err := inspector.ValidateBackupPattern(rData.Target); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				if _, err := inspector.ParseBackupExpected(rData.Expected); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
 			}
 			rData.HostID = hostID
 			if err := s.db.SaveDesiredRule(&rData); err != nil {
@@ -1945,55 +2001,133 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		lastBackupTime, _ := s.db.GetSetting("last_backup_time")
 		lastBackupStatus, _ := s.db.GetSetting("last_backup_status")
 
-		writeJSON(w, http.StatusOK, map[string]string{
-			"ssh_public_key":        pubKey,
-			"telegram_token":        tgToken,
-			"telegram_chat_id":      tgChat,
-			"webhook_url":           webhook,
-			"poll_interval_sec":     poll,
-			"github_backup_enabled": ghEnabled,
-			"github_repo":           ghRepo,
-			"github_token":          ghToken,
-			"github_branch":         ghBranch,
-			"github_file_path":      ghPath,
-			"snapshot_passphrase":   snapPass,
-			"backup_interval_hours": backupInterval,
-			"last_backup_time":      lastBackupTime,
+		ntfyURL, _ := s.db.GetSetting("ntfy_url")
+		ntfyToken, _ := s.db.GetSetting("ntfy_token")
+		slackURL, _ := s.db.GetSetting("slack_webhook_url")
+		discordURL, _ := s.db.GetSetting("discord_webhook_url")
+
+		smtpHost, _ := s.db.GetSetting("smtp_host")
+		smtpPort, _ := s.db.GetSetting("smtp_port")
+		if smtpPort == "" {
+			smtpPort = "587"
+		}
+		smtpUser, _ := s.db.GetSetting("smtp_user")
+		smtpPass, _ := s.db.GetSetting("smtp_pass")
+		smtpFrom, _ := s.db.GetSetting("smtp_from")
+		smtpTo, _ := s.db.GetSetting("smtp_to")
+		smtpSecurity, _ := s.db.GetSetting("smtp_security")
+		if smtpSecurity == "" {
+			smtpSecurity = "starttls"
+		}
+
+		debounceRuns, _ := s.db.GetSetting("alert_debounce_runs")
+		if debounceRuns == "" {
+			debounceRuns = "1"
+		}
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"ssh_public_key":              pubKey,
+			"telegram_token":              tgToken,
+			"telegram_chat_id":            tgChat,
+			"webhook_url":                 webhook,
+			"poll_interval_sec":           poll,
+			"github_backup_enabled":       ghEnabled,
+			"github_repo":                 ghRepo,
+			"github_token":                ghToken,
+			"github_branch":               ghBranch,
+			"github_file_path":            ghPath,
+			"snapshot_passphrase":         snapPass,
+			"backup_interval_hours":       backupInterval,
+			"last_backup_time":            lastBackupTime,
 			"security_scan_interval_hours": securityScanInterval,
-			"last_backup_status":    lastBackupStatus,
+			"last_backup_status":          lastBackupStatus,
+			"ntfy_url":                    ntfyURL,
+			"ntfy_token_set":              ntfyToken != "",
+			"slack_webhook_url":           slackURL,
+			"discord_webhook_url":         discordURL,
+			"smtp_host":                   smtpHost,
+			"smtp_port":                   smtpPort,
+			"smtp_user":                   smtpUser,
+			"smtp_pass_set":               smtpPass != "",
+			"smtp_from":                   smtpFrom,
+			"smtp_to":                     smtpTo,
+			"smtp_security":               smtpSecurity,
+			"alert_debounce_runs":         debounceRuns,
 		})
 	case http.MethodPost:
-		var req map[string]string
+		var req map[string]interface{}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
-		for k, v := range req {
-			if k != "ssh_public_key" && k != "ssh_private_key" && k != "admin_password_hash" {
-				if k == "poll_interval_sec" {
-					if sec, err := strconv.Atoi(v); err == nil {
-						// ponytail: 0 disables background inspection, clamped to min 30s if between 1 and 29.
-						if sec <= 0 {
-							v = "0"
-						} else if sec < 30 {
-							v = "30"
-						}
+
+		// Validate URLs: ntfy_url, slack_webhook_url, discord_webhook_url
+		for _, urlKey := range []string{"ntfy_url", "slack_webhook_url", "discord_webhook_url"} {
+			if raw, ok := req[urlKey]; ok {
+				val := strings.TrimSpace(fmt.Sprint(raw))
+				if val != "" {
+					u, err := url.Parse(val)
+					if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+						writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid URL for %s: must be http:// or https://", urlKey)})
+						return
 					}
 				}
-				if k == "security_scan_interval_hours" {
-					val, err := strconv.Atoi(strings.TrimSpace(v))
-					if err != nil || val < 0 {
-						v = "24"
-					} else if val == 0 {
-						v = "0"
-					} else if val > 720 {
-						v = "720"
-					} else {
-						v = strconv.Itoa(val)
-					}
-				}
-				_ = s.db.SetSetting(k, v)
 			}
+		}
+
+		for k, rawVal := range req {
+			if k == "ssh_public_key" || k == "ssh_private_key" || k == "admin_password_hash" {
+				continue
+			}
+			v := fmt.Sprint(rawVal)
+			if k == "poll_interval_sec" {
+				if sec, err := strconv.Atoi(v); err == nil {
+					if sec <= 0 {
+						v = "0"
+					} else if sec < 30 {
+						v = "30"
+					}
+				}
+			}
+			if k == "security_scan_interval_hours" {
+				val, err := strconv.Atoi(strings.TrimSpace(v))
+				if err != nil || val < 0 {
+					v = "24"
+				} else if val == 0 {
+					v = "0"
+				} else if val > 720 {
+					v = "720"
+				} else {
+					v = strconv.Itoa(val)
+				}
+			}
+			if k == "alert_debounce_runs" {
+				val, err := strconv.Atoi(strings.TrimSpace(v))
+				if err != nil || val < 1 {
+					v = "1"
+				} else if val > 10 {
+					v = "10"
+				} else {
+					v = strconv.Itoa(val)
+				}
+			}
+			if k == "smtp_security" {
+				sec := strings.ToLower(strings.TrimSpace(v))
+				if sec != "tls" && sec != "none" {
+					sec = "starttls"
+				}
+				v = sec
+			}
+			if k == "smtp_port" {
+				p, err := strconv.Atoi(strings.TrimSpace(v))
+				if err != nil || p <= 0 || p > 65535 {
+					v = "587"
+				} else {
+					v = strconv.Itoa(p)
+				}
+			}
+
+			_ = s.db.SetSetting(k, v)
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "settings_saved"})
 	}
@@ -2016,12 +2150,12 @@ func (s *Server) handleRegenerateSSHKey(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleTestNotify(w http.ResponseWriter, r *http.Request) {
-	err := s.dispatcher.TestNotification()
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": err.Error()})
+	resp := s.dispatcher.TestNotification()
+	if !resp.OK {
+		writeJSON(w, http.StatusBadRequest, resp)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true})
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
@@ -2086,6 +2220,13 @@ func (s *Server) handleWSTerminal(w http.ResponseWriter, r *http.Request) {
 		}
 	} else if cmdParam != "" {
 		initialCmd = cmdParam
+	}
+
+	if host.KubeMode == "no-exec" || host.KubeMode == "read-only" {
+		if isKubeExecCommand(initialCmd) {
+			_ = ws.WriteMessage(websocket.TextMessage, []byte("\r\n[Pantau Policy] Exec is disabled on this host (kube_mode="+host.KubeMode+")\r\n"))
+			return
+		}
 	}
 
 	runner, err := s.inspector.GetRunnerForHost(host)

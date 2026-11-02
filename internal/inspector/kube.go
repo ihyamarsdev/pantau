@@ -18,6 +18,7 @@ const (
 	kubeOpTimeout    = 60 * time.Second
 	kubeQueryTimeout = 30 * time.Second
 	kubeYAMLMax      = 64 * 1024
+	kubeDrainTimeout = 310 * time.Second // max drain 300s + SSH/awk margin
 )
 
 // kubePrelude defines kc() preferring k3s, then rke2, else exiting with the required error message.
@@ -66,6 +67,15 @@ func (ins *Inspector) kubeRunner(hostID int64) (sshrunner.Runner, error) {
 		return nil, fmt.Errorf("host not found")
 	}
 	return ins.GetRunnerForHost(host)
+}
+
+// CheckKubeConnection verifies SSH connectivity to hostID without running commands.
+func (ins *Inspector) CheckKubeConnection(hostID int64) error {
+	runner, err := ins.kubeRunner(hostID)
+	if err != nil {
+		return err
+	}
+	return runner.Close()
 }
 
 func (ins *Inspector) kubeExec(hostID int64, body string, timeout time.Duration) (stdout, stderr string, exitCode int, err error) {
@@ -160,21 +170,28 @@ var kubeDescribeKinds = map[string]bool{
 // ---------------------------------------------------------------- structs
 
 type KubeClusterInfo struct {
-	Distro  string `json:"distro"` // "k3s" | "rke2"
-	Version string `json:"version"`
-	Role    string `json:"role"` // "server"
+	Distro    string `json:"distro"` // "k3s" | "rke2"
+	Version   string `json:"version"`
+	Role      string `json:"role"` // "server"
+	ClusterID string `json:"cluster_id"`
 }
 
 type KubeNode struct {
-	Name          string `json:"name"`
-	Status        string `json:"status"`
-	Roles         string `json:"roles"`
-	Version       string `json:"version"`
-	InternalIP    string `json:"internalIP"`
-	CPU           string `json:"cpu"`
-	Memory        string `json:"memory"`
-	Created       string `json:"created"`
-	Unschedulable bool   `json:"unschedulable"`
+	Name           string   `json:"name"`
+	Status         string   `json:"status"`
+	Roles          string   `json:"roles"`
+	Version        string   `json:"version"`
+	InternalIP     string   `json:"internalIP"`
+	CPU            string   `json:"cpu"`
+	Memory         string   `json:"memory"`
+	Created        string   `json:"created"`
+	Unschedulable  bool     `json:"unschedulable"`
+	UsageCPU       string   `json:"usageCPU,omitempty"`
+	UsageMemory    string   `json:"usageMemory,omitempty"`
+	CPUPercent     *float64 `json:"cpuPercent,omitempty"`
+	MemoryPercent  *float64 `json:"memoryPercent,omitempty"`
+	AllocatableCPU string   `json:"allocatableCPU,omitempty"`
+	AllocatableMem string   `json:"allocatableMem,omitempty"`
 }
 
 type KubeNamespace struct {
@@ -195,15 +212,17 @@ type KubeWorkload struct {
 }
 
 type KubePod struct {
-	Namespace  string   `json:"namespace"`
-	Name       string   `json:"name"`
-	Ready      string   `json:"ready"`
-	Status     string   `json:"status"`
-	Restarts   int      `json:"restarts"`
-	Node       string   `json:"node"`
-	IP         string   `json:"ip"`
-	Created    string   `json:"created"`
-	Containers []string `json:"containers"`
+	Namespace   string   `json:"namespace"`
+	Name        string   `json:"name"`
+	Ready       string   `json:"ready"`
+	Status      string   `json:"status"`
+	Restarts    int      `json:"restarts"`
+	Node        string   `json:"node"`
+	IP          string   `json:"ip"`
+	Created     string   `json:"created"`
+	Containers  []string `json:"containers"`
+	UsageCPU    string   `json:"usageCPU,omitempty"`
+	UsageMemory string   `json:"usageMemory,omitempty"`
 }
 
 type KubeService struct {
@@ -232,6 +251,28 @@ type KubeActionReq struct {
 	Namespace string `json:"ns"`
 	Name      string `json:"name"`
 	Replicas  *int   `json:"replicas,omitempty"`
+	// Drain flags (op == "drain").
+	IgnoreDaemonsets   *bool `json:"ignoreDaemonsets,omitempty"`
+	DeleteEmptyDirData *bool `json:"deleteEmptyDirData,omitempty"`
+	Force              *bool `json:"force,omitempty"`
+	TimeoutSeconds     *int  `json:"timeoutSeconds,omitempty"`
+}
+
+func (req KubeActionReq) drainIgnoreDaemonsets() bool {
+	return req.IgnoreDaemonsets == nil || *req.IgnoreDaemonsets
+}
+func (req KubeActionReq) drainDeleteEmptyDirData() bool {
+	return req.DeleteEmptyDirData != nil && *req.DeleteEmptyDirData
+}
+func (req KubeActionReq) drainForce() bool { return req.Force != nil && *req.Force }
+func (req KubeActionReq) drainTimeoutSeconds() int {
+	if req.TimeoutSeconds == nil || *req.TimeoutSeconds < 1 {
+		return 120
+	}
+	if *req.TimeoutSeconds > 300 {
+		return 300
+	}
+	return *req.TimeoutSeconds
 }
 
 // ---------------------------------------------------------------- inspector methods
@@ -241,6 +282,8 @@ func (ins *Inspector) KubeDetect(hostID int64) (*KubeClusterInfo, error) {
 echo "$KUBE_DISTRO"
 echo "===VERSION==="
 kc version -o json 2>/dev/null || kc version 2>/dev/null || true
+echo "===CLUSTER_ID==="
+kc get ns kube-system -o jsonpath='{.metadata.uid}' 2>/dev/null || true
 `
 	out, err := ins.kubeQuery(hostID, script, "kube detect", kubeQueryTimeout)
 	if err != nil {
@@ -250,7 +293,12 @@ kc version -o json 2>/dev/null || kc version 2>/dev/null || true
 }
 
 func (ins *Inspector) KubeNodes(hostID int64) ([]KubeNode, error) {
-	out, err := ins.kubeQuery(hostID, "kc get nodes -o json", "kube nodes", kubeQueryTimeout)
+	script := `echo "===NODES==="
+kc get nodes -o json
+echo "===METRICS==="
+kc get --raw /apis/metrics.k8s.io/v1beta1/nodes 2>/dev/null || true
+`
+	out, err := ins.kubeQuery(hostID, script, "kube nodes", kubeQueryTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -283,16 +331,24 @@ func (ins *Inspector) KubeWorkloads(hostID int64, ns string) ([]KubeWorkload, er
 }
 
 func (ins *Inspector) KubePods(hostID int64, ns string) ([]KubePod, error) {
-	var cmd string
+	var getCmd string
+	var metricsEndpoint string
 	if ns != "" {
 		if !ValidKubeNamespace(ns) {
 			return nil, kubeInvalid("invalid namespace: %s", ns)
 		}
-		cmd = fmt.Sprintf("kc get pods -o json -n %s", shellQuote(ns))
+		getCmd = fmt.Sprintf("kc get pods -o json -n %s", shellQuote(ns))
+		metricsEndpoint = fmt.Sprintf("/apis/metrics.k8s.io/v1beta1/namespaces/%s/pods", ns)
 	} else {
-		cmd = "kc get pods -o json -A"
+		getCmd = "kc get pods -o json -A"
+		metricsEndpoint = "/apis/metrics.k8s.io/v1beta1/pods"
 	}
-	out, err := ins.kubeQuery(hostID, cmd, "kube pods", kubeQueryTimeout)
+	script := fmt.Sprintf(`echo "===PODS==="
+%s
+echo "===METRICS==="
+kc get --raw %s 2>/dev/null || true
+`, getCmd, shellQuote(metricsEndpoint))
+	out, err := ins.kubeQuery(hostID, script, "kube pods", kubeQueryTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -525,19 +581,24 @@ func (ins *Inspector) KubeExecCmd(ns, pod, container string) (string, error) {
 	return kubeShell(body), nil
 }
 
-func (ins *Inspector) KubeLogStreamCmd(ns, pod, container string, tail int, previous bool) string {
+func (ins *Inspector) KubeLogStreamCmd(ns, pod, container string, tail int, previous, timestamps bool) string {
 	ns = strings.TrimSpace(ns)
 	pod = strings.TrimSpace(pod)
 	container = strings.TrimSpace(container)
 	if tail < 1 || tail > 2000 {
 		tail = 200
 	}
-	var flag string
+	flags := make([]string, 0, 3)
 	if previous {
-		flag = fmt.Sprintf("--tail=%d --previous", tail)
+		flags = append(flags, "--previous")
 	} else {
-		flag = fmt.Sprintf("-f --tail=%d", tail)
+		flags = append(flags, "-f")
 	}
+	flags = append(flags, fmt.Sprintf("--tail=%d", tail))
+	if timestamps {
+		flags = append(flags, "--timestamps")
+	}
+	flag := strings.Join(flags, " ")
 	var body string
 	if container != "" {
 		body = fmt.Sprintf("kc logs -n %s %s -c %s %s", shellQuote(ns), shellQuote(pod), shellQuote(container), flag)
@@ -547,12 +608,48 @@ func (ins *Inspector) KubeLogStreamCmd(ns, pod, container string, tail int, prev
 	return kubeShell(body)
 }
 
+// KubeWorkloadLogStreamCmd builds the follow command for a workload's pods.
+// Uses --all-pods (kubectl >= 1.36) so every pod of the workload streams with
+// a [pod/name/container] prefix. previous is rejected for workloads: kubectl
+// cannot follow previous logs of multiple pods.
+func (ins *Inspector) KubeWorkloadLogStreamCmd(kind, name, ns string, tail int, timestamps bool) (string, error) {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	switch kind {
+	case "deployment", "statefulset", "daemonset":
+	default:
+		return "", kubeInvalid("unsupported workload kind: %s", kind)
+	}
+	if !ValidKubeName(name) {
+		return "", kubeInvalid("invalid workload name: %s", name)
+	}
+	if !ValidKubeNamespace(ns) {
+		return "", kubeInvalid("invalid namespace: %s", ns)
+	}
+	if tail < 1 || tail > 2000 {
+		tail = 200
+	}
+	body := fmt.Sprintf("kc logs %s/%s -n %s --all-pods --prefix --all-containers -f --tail=%d --max-log-requests=20",
+		kind, shellQuote(name), shellQuote(ns), tail)
+	if timestamps {
+		body += " --timestamps"
+	}
+	return kubeShell(body), nil
+}
+
 func (ins *Inspector) KubeAction(hostID int64, req KubeActionReq) (string, error) {
 	cmd, target, err := kubeActionCommand(req)
 	if err != nil {
 		return "", err
 	}
-	return ins.kubeRun(hostID, cmd, "kube "+strings.ToLower(strings.TrimSpace(req.Op)), target, kubeOpTimeout)
+	timeout := kubeOpTimeout
+	if strings.EqualFold(strings.TrimSpace(req.Op), "drain") {
+		if _, loaded := ins.drainInFlight.LoadOrStore(hostID, struct{}{}); loaded {
+			return "", kubeInvalid("a drain is already running on this host")
+		}
+		defer ins.drainInFlight.Delete(hostID)
+		timeout = kubeDrainTimeout
+	}
+	return ins.kubeRun(hostID, cmd, "kube "+strings.ToLower(strings.TrimSpace(req.Op)), target, timeout)
 }
 
 func (ins *Inspector) KubeApply(hostID int64, yaml string) (string, error) {
@@ -628,6 +725,26 @@ func kubeActionCommand(req KubeActionReq) (cmd, target string, err error) {
 		cmd = fmt.Sprintf("kc cordon %s", shellQuote(name))
 		return cmd, name, nil
 
+	case "drain":
+		if kind != "node" {
+			return "", "", kubeInvalid("unsupported kind for drain: %s", kind)
+		}
+		if !ValidKubeName(name) {
+			return "", "", kubeInvalid("invalid node name: %s", name)
+		}
+		cmd = fmt.Sprintf("kc drain %s", shellQuote(name))
+		if req.drainIgnoreDaemonsets() {
+			cmd += " --ignore-daemonsets"
+		}
+		if req.drainDeleteEmptyDirData() {
+			cmd += " --delete-emptydir-data"
+		}
+		if req.drainForce() {
+			cmd += " --force"
+		}
+		cmd += fmt.Sprintf(" --timeout=%ds 2>&1", req.drainTimeoutSeconds())
+		return cmd, name, nil
+
 	case "uncordon":
 		if kind != "node" {
 			return "", "", kubeInvalid("unsupported kind for uncordon: %s", kind)
@@ -643,6 +760,12 @@ func kubeActionCommand(req KubeActionReq) (cmd, target string, err error) {
 	}
 }
 
+// ValidateKubeAction checks action parameters before attempting any connection.
+func ValidateKubeAction(req KubeActionReq) error {
+	_, _, err := kubeActionCommand(req)
+	return err
+}
+
 func validateKubeApply(yaml string) error {
 	if strings.TrimSpace(yaml) == "" {
 		return kubeInvalid("yaml manifest is empty")
@@ -654,6 +777,11 @@ func validateKubeApply(yaml string) error {
 		return kubeInvalid("yaml manifest contains a NUL byte")
 	}
 	return nil
+}
+
+// ValidateKubeApply checks manifest constraints before attempting any connection.
+func ValidateKubeApply(yaml string) error {
+	return validateKubeApply(yaml)
 }
 
 func kubeApplyScript(b64 string) string {
@@ -691,10 +819,15 @@ func parseKubeDetect(out string) (*KubeClusterInfo, error) {
 	if version == "" {
 		version = "unknown"
 	}
+	clusterID := strings.TrimSpace(sections["===CLUSTER_ID==="])
+	if clusterID == "" {
+		clusterID = strings.TrimSpace(sections["CLUSTER_ID"])
+	}
 	return &KubeClusterInfo{
-		Distro:  distro,
-		Version: version,
-		Role:    "server",
+		Distro:    distro,
+		Version:   version,
+		Role:      "server",
+		ClusterID: clusterID,
 	}, nil
 }
 
@@ -740,6 +873,10 @@ type rawNodeList struct {
 				CPU    string `json:"cpu"`
 				Memory string `json:"memory"`
 			} `json:"capacity"`
+			Allocatable struct {
+				CPU    string `json:"cpu"`
+				Memory string `json:"memory"`
+			} `json:"allocatable"`
 			Conditions []struct {
 				Type   string `json:"type"`
 				Status string `json:"status"`
@@ -752,11 +889,13 @@ type rawNodeList struct {
 }
 
 func parseKubeNodes(jsonStr string) ([]KubeNode, error) {
+	payloadJSON, metricsJSON := splitPayloadAndMetrics(jsonStr, "===NODES===")
 	var list rawNodeList
-	if err := json.Unmarshal([]byte(jsonStr), &list); err != nil {
+	if err := json.Unmarshal([]byte(payloadJSON), &list); err != nil {
 		return nil, fmt.Errorf("parse nodes: %w", err)
 	}
 	nodes := make([]KubeNode, 0, len(list.Items))
+	allocatables := make(map[string]nodeAllocatableData, len(list.Items))
 	for _, item := range list.Items {
 		var internalIP string
 		for _, addr := range item.Status.Addresses {
@@ -808,7 +947,12 @@ func parseKubeNodes(jsonStr string) ([]KubeNode, error) {
 			Created:       item.Metadata.CreationTimestamp,
 			Unschedulable: item.Spec.Unschedulable,
 		})
+		allocatables[item.Metadata.Name] = nodeAllocatableData{
+			cpu: item.Status.Allocatable.CPU,
+			mem: item.Status.Allocatable.Memory,
+		}
 	}
+	applyNodeMetrics(nodes, metricsJSON, allocatables)
 	return nodes, nil
 }
 
@@ -963,8 +1107,9 @@ type rawPodList struct {
 }
 
 func parseKubePods(jsonStr string) ([]KubePod, error) {
+	payloadJSON, metricsJSON := splitPayloadAndMetrics(jsonStr, "===PODS===")
 	var list rawPodList
-	if err := json.Unmarshal([]byte(jsonStr), &list); err != nil {
+	if err := json.Unmarshal([]byte(payloadJSON), &list); err != nil {
 		return nil, fmt.Errorf("parse pods: %w", err)
 	}
 	pods := make([]KubePod, 0, len(list.Items))
@@ -1036,6 +1181,7 @@ func parseKubePods(jsonStr string) ([]KubePod, error) {
 			Containers: containers,
 		})
 	}
+	applyPodMetrics(pods, metricsJSON)
 	return pods, nil
 }
 

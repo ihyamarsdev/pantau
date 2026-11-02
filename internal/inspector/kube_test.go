@@ -19,17 +19,17 @@ func TestKubeValidation(t *testing.T) {
 	}
 
 	invalidNS := []string{
-		"Kube-System",   // uppercase
-		"default;reboot", // injection semicolon
-		"a;rm -rf /",     // injection
-		"$(x)",           // injection command substitution
-		"`ls`",           // backticks
-		"ns\nline",       // newline
-		"",               // empty
-		"-starts-hyphen", // leading hyphen
-		"ends-hyphen-",   // trailing hyphen
-		"has.dot",        // namespace cannot contain dots
-		"has_underscore", // no underscores
+		"Kube-System",           // uppercase
+		"default;reboot",        // injection semicolon
+		"a;rm -rf /",            // injection
+		"$(x)",                  // injection command substitution
+		"`ls`",                  // backticks
+		"ns\nline",              // newline
+		"",                      // empty
+		"-starts-hyphen",        // leading hyphen
+		"ends-hyphen-",          // trailing hyphen
+		"has.dot",               // namespace cannot contain dots
+		"has_underscore",        // no underscores
 		strings.Repeat("a", 64), // over 63 chars
 	}
 	for _, ns := range invalidNS {
@@ -46,13 +46,13 @@ func TestKubeValidation(t *testing.T) {
 	}
 
 	invalidNames := []string{
-		"Web",           // uppercase
-		"a;rm -rf /",    // injection
-		"$(x)",          // injection
-		"name\nfoo",     // newline
-		"",              // empty
-		"-starts-dash",  // leading hyphen
-		"ends-dash-",    // trailing hyphen
+		"Web",                    // uppercase
+		"a;rm -rf /",             // injection
+		"$(x)",                   // injection
+		"name\nfoo",              // newline
+		"",                       // empty
+		"-starts-dash",           // leading hyphen
+		"ends-dash-",             // trailing hyphen
 		strings.Repeat("a", 254), // over 253 chars
 	}
 	for _, name := range invalidNames {
@@ -247,9 +247,9 @@ func TestKubeActionCommands(t *testing.T) {
 		{
 			name: "unsupported op",
 			req: KubeActionReq{
-				Op:        "drain",
-				Kind:      "node",
-				Name:      "worker-1",
+				Op:   "reboot",
+				Kind: "node",
+				Name: "worker-1",
 			},
 			wantErr: true,
 		},
@@ -921,5 +921,56 @@ func TestKubeResourcesValidation(t *testing.T) {
 		if len(cols) == 0 {
 			t.Errorf("kind %s returned empty columns", kind)
 		}
+	}
+}
+
+func TestKubeLogStreamCmds(t *testing.T) {
+	ins := &Inspector{}
+
+	// Workload log stream command
+	cmd, err := ins.KubeWorkloadLogStreamCmd("deployment", "coredns", "kube-system", 100, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(cmd, "deployment") || !strings.Contains(cmd, "coredns") {
+		t.Errorf("workload log stream cmd missing workload target: %s", cmd)
+	}
+	for _, want := range []string{"--all-pods", "--prefix", "--all-containers", "--tail=100", "--max-log-requests=20"} {
+		if !strings.Contains(cmd, want) {
+			t.Errorf("workload log stream cmd missing flag %s: %s", want, cmd)
+		}
+	}
+	if strings.Contains(cmd, "--timestamps") {
+		t.Errorf("workload cmd must not add --timestamps unless asked: %s", cmd)
+	}
+	if tsCmd, _ := ins.KubeWorkloadLogStreamCmd("deployment", "coredns", "kube-system", 100, true); !strings.Contains(tsCmd, "--timestamps") {
+		t.Errorf("workload cmd missing --timestamps: %s", tsCmd)
+	}
+
+	// Workload rejection on invalid inputs
+	if _, err := ins.KubeWorkloadLogStreamCmd("pod", "coredns", "kube-system", 100, false); err == nil {
+		t.Error("pod kind should be rejected for workload logs")
+	}
+	if _, err := ins.KubeWorkloadLogStreamCmd("deployment", "a;rm", "kube-system", 100, false); err == nil {
+		t.Error("injected name should be rejected")
+	}
+	if _, err := ins.KubeWorkloadLogStreamCmd("deployment", "coredns", "a;rm", 100, false); err == nil {
+		t.Error("injected ns should be rejected")
+	}
+
+	// Pod log stream command with timestamps
+	podCmd := ins.KubeLogStreamCmd("kube-system", "coredns-1", "", 50, false, true)
+	if !strings.Contains(podCmd, "--timestamps") || !strings.Contains(podCmd, "-f") || !strings.Contains(podCmd, "--tail=50") {
+		t.Errorf("pod log stream cmd missing expected flags: %s", podCmd)
+	}
+
+	// Pod log stream command with previous
+	prevCmd := ins.KubeLogStreamCmd("kube-system", "coredns-1", "coredns", 50, true, false)
+	cmdPart := prevCmd[strings.LastIndex(prevCmd, "kc logs"):]
+	if !strings.Contains(cmdPart, "--previous") || strings.Contains(cmdPart, " -f") || !strings.Contains(cmdPart, "--tail=50") {
+		t.Errorf("pod log stream cmd with previous wrong: %s", prevCmd)
+	}
+	if !strings.Contains(prevCmd, "coredns") {
+		t.Errorf("pod log stream cmd missing container: %s", prevCmd)
 	}
 }

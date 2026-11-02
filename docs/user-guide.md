@@ -189,7 +189,7 @@ Pantau does not merely display metrics; it enforces continuous adherence to your
 
 ### Desired State Rules Reference Table
 
-Pantau supports 8 Desired State rule types evaluated on every inspection cycle:
+Pantau supports 10 Desired State rule types evaluated on every inspection cycle:
 | Kind | Target Identifier | Expected State | Examples | Drift Criteria & Root Cause Excerpt |
 | :--- | :--- | :--- | :--- | :--- |
 | **`container`** | Docker container name | `running` | `nginx` &rarr; `running` | Container exited, dead, or crash loop. Captures exit code, OOMKilled flag, and last 50 container log lines. |
@@ -197,10 +197,11 @@ Pantau supports 8 Desired State rule types evaluated on every inspection cycle:
 | **`port`** | TCP port or `ip:port` | `listening` (or `closed`) | `80` &rarr; `listening` | Port closed or listening daemon halted. Verified via `ss`/`netstat`. |
 | **`disk`** | Partition mount point | `<N%` (usage ceiling) | `/` &rarr; `<85%` | Partition usage >= threshold or storage IO timed out after 5s (hung NFS protection). |
 | **`cron`** | Keyword or command substring | `configured` | `backup.sh` &rarr; `configured` | Specified cron command not found in user's `crontab -l`. |
-| **`backup`** | Absolute backup file path | `fresh_<N>h` (default: 24h) | `/backup/db.sql.gz` &rarr; `fresh_24h` | File is missing, 0 bytes empty, or modification time older than N hours. |
+| **`backup`** | Absolute backup file path or glob pattern | `fresh_<N>h[,verify=<gzip\|tar\|zstd\|xz\|sha256>]` (default: 24h) | `/backup/*.sql.gz` &rarr; `fresh_24h,verify=gzip` | File is missing, 0 bytes empty, outdated, or content verification check fails (`gzip -t`, `tar -tf`, etc.). Evaluates the newest matching file. |
+| **`http`** | Full HTTP/HTTPS URL | Status token and optional latency ceiling | `https://api.internal/health` &rarr; `2xx,<1500ms` | Endpoint unreachable from Host via `curl`, HTTP status code mismatch, or latency exceeds threshold. Evaluated from host's perspective via SSH. |
+| **`tls`** | Hostname/port or HTTPS URL | `>=Nd` (minimum days until cert expiration) | `api.example.com:443` &rarr; `>=14d` | Certificate expires within N days or TLS handshake fails. Evaluated from host's perspective via `openssl`. |
 | **`process`** | Process name or pattern | `running` (or `stopped`) | `celery` &rarr; `running` | Process not currently active on system (verified via `pgrep`/`ps`). |
 | **`security_updates`** | `security` (fixed) | `none` or `<=N` (ceiling) | `security` &rarr; `none` | Pending security updates exceed threshold N, no scan recorded, scan older than 72h, or status is `unsupported`/`error`. Evaluated from latest cached scan. |
-
 ### Configuring Backup Freshness & Protected Paths
 
 - **Backup Freshness**: Define expected backup target paths (e.g., `/backup/postgres/daily.sql.gz`) and max age thresholds (e.g., must be updated within 24 hours and non-zero in byte size). Pantau marks a **Drift** if the backup file is missing, empty, or outdated.
@@ -401,18 +402,28 @@ Pantau provides a persistent left-hand **Side Panel** navigation bar positioned 
 
 - **Navigation & Collapsible Icon Rail**: Switch between **Hosts** (default fleet dashboard), **Docker** (dedicated multi-host container overview), and **Kubernetes** (lightweight k3s/rke2 management). Collapse the panel into a compact icon rail via the collapse toggle at the bottom; the collapsed state is persisted in `localStorage`. On mobile screens (<768px), the panel becomes an off-canvas drawer toggled via the menu icon button in the header.
 - **Docker Section**: A fleet-wide host picker with live status and search filter. Selecting a host seamlessly launches the Portainer-style Docker management interface with container lifecycles, image pulling, volumes, networks, compose stacks, and terminal console access.
-- **Kubernetes Section (k3s / rke2)**: Provides agentless cluster control plane inspection for lightweight Kubernetes installations.
-  - **Searchable Host Picker**: Fast search by host name and IP address with live status dots, replacing static selectors.
-  - **Auto-Detection**: Queries `/api/hosts/{id}/kube/detect` to discover control plane distribution (`k3s` or `rke2`), version, and server role without installing agents or storing cluster credentials.
+- **Kubernetes Section (k3s / rke2)**: Provides agentless cluster control plane inspection and operations for lightweight Kubernetes installations.
+  - **Cluster-Grouped Host Picker**: Displays high-availability clusters as single entries grouped by cluster ID with member counts and aggregate health status; standalone nodes appear separately. A **Detect clusters** button scans fleet hosts with bounded concurrency (5).
+  - **Gateway Host & Seamless Failover**: Cluster requests execute via a designated Gateway Host. If the primary host is unreachable, Pantau automatically fails over to a healthy server peer, displaying a non-blocking notification and Gateway badge (`Gateway: thor (failover from odin)`).
+  - **Kubernetes Modes**: Configurable per-host operational policy (`full`, `no-exec`, or `read-only`):
+    - `full`: Complete read, write, scale, rollout, delete, and container exec access.
+    - `no-exec`: Disables interactive container exec terminals while permitting workload lifecycle and log inspection. *Note: this is an application-level guardrail; primary security boundaries remain kubeconfig, sudoers, and cluster RBAC on the target host.*
+    - `read-only`: Prohibits exec, scaling, restarts, node cordoning, deletions, and manifest application.
+  - **Action Safety & Concrete Impact Confirmation**: Destructive and disruptive actions require confirmation detailing operational consequences:
+    - **Scale to 0**: Warns of the exact count of terminated pods while clarifying that StatefulSet PersistentVolumeClaims (PVCs) remain preserved.
+    - **Restart Rollout**: Confirms rolling reconstruction across replica sets.
+    - **Delete Pod**: Displays target node and warns that unmanaged pods (not backed by a Deployment/StatefulSet/DaemonSet) will be permanently lost.
+    - **Cordon & Drain Node**: Explains that cordon keeps workloads running while blocking new pods. Node **Drain** features a two-step flow: a server dry-run preview listing evictable pods and PodDisruptionBudget blockers, configurable flags (Ignore DaemonSets, Delete EmptyDir data, Force unmanaged pods), concrete high-availability/etcd quorum warnings for control-plane nodes, and an immediate **Uncordon** action button in the completion/timeout toast notification.
   - **Cluster Telemetry Tabs**:
-    - **Nodes**: Real-time node inventory, readiness state, roles, memory capacity in normalized GB, and one-click cordon / uncordon / describe actions.
-    - **Workloads**: Deployments, StatefulSets, and DaemonSets with replicas tracking, on-demand replica scaling (0–1000), rollout restarts, and resource describe dialogs.
-    - **Pods**: Pod statuses across namespaces with restart counters, interactive shell **Exec** console in the Terminal Dock, live WebSocket **Logs** streaming (multi-container picker, configurable tail, previous container instance toggle, auto-scroll, and copy), describe diagnostics, and pod deletion.
-    - **Services & Ingresses**: Service definitions, cluster/external IPs, ports, ingress hosts, backend targets, and describe views.
-    - **Configuration & Storage**: ConfigMaps, Secrets (with zero data value retrieval guarantee), PersistentVolumeClaims (PVCs), and cluster-scoped PersistentVolumes (PVs).
-    - **Batch Jobs**: Jobs and CronJobs with completion tracking, schedules, suspension status, and describe diagnostics.
-    - **Events**: Cluster-wide informational and warning events with occurrence counts and relative age.
-    - **Apply Manifest**: In-app YAML editor supporting arbitrary Kubernetes manifests with automated server-side dry-run validation (`--dry-run=server`) prior to applying changes.
+    - **Nodes**: Real-time node inventory with node-to-registered-Host mapping, readiness status, roles, installed version, CPU/memory usage with visual progress bars (`dockerBar`), allocatable capacity, drain, and cordon/describe actions.
+    - **Workloads**: Deployments, StatefulSets, and DaemonSets with replica tracking, on-demand replica scaling (0–1000), rollout restarts, aggregated **Workload Logs** streaming with container prefixing, row-level **Edit YAML** (clean manifests with preserved resourceVersion and diff gate), and resource describe dialogs.
+    - **Pods**: Pod statuses across namespaces with problem pods prioritized at the top and highlighted, an optional **Only problems** filter, restart counters, CPU and memory usage, interactive shell **Exec** console in the Terminal Dock, live WebSocket **Logs** streaming with client-side text search and match counting, a **Timestamps** toggle, previous container instance toggle, auto-scroll, and pod deletion.
+    - **Services & Ingresses**: Service definitions, cluster/external IPs, ports, ingress hosts, backend targets, row-level **Edit YAML**, and describe views.
+    - **Configuration & Storage**: ConfigMaps, Secrets (strictly zero data value retrieval and no edit option), PersistentVolumeClaims (PVCs) with **Edit YAML**, and cluster-scoped PersistentVolumes (PVs).
+    - **Batch Jobs**: Jobs and CronJobs with completion tracking, schedules, suspension status, row-level **Edit YAML**, and describe diagnostics.
+    - **Events**: Cluster-wide informational and warning events with relative age and a dedicated **Warning only** filter.
+    - **Opt-in Auto-refresh**: Configurable per-tab polling interval (Off / 10s / 30s / 60s) that automatically suspends when the browser tab is hidden, when changing sections/tabs, or when any modal is open, and never overlaps in-flight requests.
+    - **Apply Manifest & Diff Preview**: In-app YAML editor with mandatory **Preview Diff** execution (`kc diff` dry-run against live cluster state). The **Apply** button remains locked until the current manifest text has been diffed, and mutations undergo confirmation before applying.
 ### Evaluating Server Longevity with Lifecycle Assessment
 
 Pantau continuously calculates an auditable **Lifecycle Score** (0–100) based on six weighted factors:
@@ -440,7 +451,22 @@ When evaluating infrastructure performance discrepancies, selecting optimal host
 - **Executive Decision Narrative**: Automatically synthesizes human-readable operational takeaways, highlighting category champions, recommended migration destinations, and warning about saturated hosts.
 - **Markdown Export**: Copy formatted Markdown scoreboard with full standings and executive takeaways to clipboard with one click (supported even in plain HTTP LAN environments via standard fallback).
 
----
+### Bulk Command Execution (Action Dialog)
+
+When administering multiple servers simultaneously:
+- **Action Dialog**: Open via the **Bulk Exec** button in the dashboard header.
+- **Host Selection**: Filter hosts by search query, select by Host Group, or use **Select All (Max 20)** to choose up to 20 target hosts.
+- **Safe Execution**: Prompts for confirmation via `showConfirm` displaying the exact host count and command preview.
+- **Streaming Results**: Executes concurrently (up to 5 workers) streaming real-time NDJSON output per host, displaying status pills, exit codes, execution duration, expandable terminal outputs, and 1-click **Copy All** summary.
+- **Sudo Support**: Optional non-interactive `sudo -n` elevation (fails safely without password prompt if elevation requires authentication).
+
+### Package Upgrades & Streaming Upgrade Logs
+
+Pantau enables agentless, controlled package updates directly from the **Packages** or **Security** tabs in Host Detail:
+- **Upgrade Preview**: Inspect pending updates, breakdown of total vs security advisories, package manager (`apt`, `dnf`, `yum`), and reboot requirement banners.
+- **Mode Selection**: Choose between full system upgrade (`all`) or security-only updates (`--security` on dnf/yum).
+- **Safety Warning**: Confirms operations with explicit warnings: remote services may restart and no automatic rollback is available.
+- **Real-Time Streaming Modal**: Streams terminal output live via WebSocket (`/ws/pkg/upgrade`), tracking standard output, errors, and terminal exit codes (`[pantau] exit=N`). Background package and security scans automatically refresh upon completion.
 
 ## 5. Phase 4: File Operations & Cross-Host Data Transfer
 
@@ -595,6 +621,19 @@ All endpoints require valid session authentication (`authMiddleware`):
 - `DELETE /api/ssh-keys/{id}`: Deletes a key if unreferenced. Returns `200` on success, `404` if not found, or `409` if still used by hosts.
 - `POST /api/hosts` and update routes: Accept `key_id`. Specifying an invalid `key_id` returns `400 Bad Request`.
 
+### Multi-Channel Notifications & Alert Debounce (Settings → Notifications)
+
+Pantau dispatches instant alerts when drift is detected or an incident resolves across multiple channels:
+- **Supported Channels**:
+  - **Telegram**: Bot Token and Chat ID.
+  - **Generic Webhook**: HTTP POST with JSON payload.
+  - **ntfy**: Base URL (e.g. `https://ntfy.sh/my-topic`), optional secret Bearer Token, high priority alerts.
+  - **Slack**: Incoming Webhook URL.
+  - **Discord**: Webhook URL (truncated to 1,800 characters to prevent API rate/length drops).
+  - **SMTP**: Email dispatcher supporting STARTTLS (default port 587), direct TLS (465), or plaintext, multiple comma-separated recipients, and standard authentication.
+- **Secret Field Protection**: Sensitive tokens and passwords (`ntfy_token`, `smtp_pass`) are never exposed in GET responses (only a `*_set` boolean flag is returned). Submitting empty retains the existing secret, while blanking it explicitly clears the credential.
+- **Alert Debounce**: Configure `alert_debounce_runs` (1..10, default 1). Requires N consecutive drift inspections before generating an Incident and dispatching notifications, preventing alerts from transient network blips.
+- **Per-Channel Test**: Click **Test Notification** to trigger test messages across all configured channels simultaneously and inspect per-channel status badges.
 ### Encrypted System Snapshots & GitHub Disaster Recovery
 
 A **System Snapshot** is a self-contained, encrypted archive containing the complete Pantau database (host inventories, encrypted SSH keys, Desired State rules, and application settings).
