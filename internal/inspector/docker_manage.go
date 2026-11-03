@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"pantau/internal/logger"
@@ -147,6 +149,46 @@ func (ins *Inspector) dockerRun(hostID int64, body, what, target string, timeout
 	}
 	logger.Info("docker", host.Name, fmt.Sprintf("%s %s", what, target))
 	return strings.TrimSpace(stdout), nil
+}
+
+// dockerRunOrStream is dockerRun, or dockerStream when live is set.
+func (ins *Inspector) dockerRunOrStream(hostID int64, body, what, target string, timeout time.Duration, live io.Writer) (string, error) {
+	if live == nil {
+		return ins.dockerRun(hostID, body, what, target, timeout)
+	}
+	return "", ins.dockerStream(hostID, body, what, target, timeout, live)
+}
+
+// dockerStream runs a docker script and copies its combined output to live while it runs. A non-zero exit or a
+// timeout is returned as an error after the output has been written.
+func (ins *Inspector) dockerStream(hostID int64, body, what, target string, timeout time.Duration, live io.Writer) error {
+	host, err := ins.db.GetHost(hostID)
+	if err != nil || host == nil {
+		return fmt.Errorf("host not found")
+	}
+	runner, err := ins.dockerRunner(hostID)
+	if err != nil {
+		return err
+	}
+	defer runner.Close()
+	var timedOut atomic.Bool
+	timer := time.AfterFunc(timeout, func() { timedOut.Store(true); _ = runner.Close() })
+	defer timer.Stop()
+
+	err = runner.Stream(dockerShell(body), live)
+	var exit interface{ ExitStatus() int }
+	switch {
+	case timedOut.Load():
+		err = fmt.Errorf("command timed out after %v", timeout)
+	case errors.As(err, &exit):
+		err = fmt.Errorf("%s failed (exit %d)", what, exit.ExitStatus())
+	}
+	if err != nil {
+		logger.Warn("docker", host.Name, fmt.Sprintf("%s %s failed: %v", what, target, err))
+		return err
+	}
+	logger.Info("docker", host.Name, fmt.Sprintf("%s %s", what, target))
+	return nil
 }
 
 // ---------------------------------------------------------------- create / run container
@@ -634,8 +676,9 @@ func (ins *Inspector) DockerListImages(hostID int64) ([]DockerImage, error) {
 	return parseDockerImages(stdout), nil
 }
 
-// DockerImageOp pulls or removes an image, or prunes dangling (`prune`) / every unused (`prune_all`) images.
-func (ins *Inspector) DockerImageOp(hostID int64, action, image string, force bool) (string, error) {
+// DockerImageOp pulls or removes an image, or prunes dangling (`prune`) / every unused (`prune_all`) images. A
+// non-nil live receives the output as it is produced (and the returned output is empty).
+func (ins *Inspector) DockerImageOp(hostID int64, action, image string, force bool, live io.Writer) (string, error) {
 	switch action {
 	case "pull", "remove":
 		if !ValidDockerImage(image) {
@@ -661,7 +704,7 @@ func (ins *Inspector) DockerImageOp(hostID int64, action, image string, force bo
 	case "prune_all":
 		cmd, timeout = "docker image prune -a -f", dockerLongTimeout
 	}
-	return ins.dockerRun(hostID, cmd+" 2>&1", "docker image "+action, image, timeout)
+	return ins.dockerRunOrStream(hostID, cmd+" 2>&1", "docker image "+action, image, timeout, live)
 }
 
 // ---------------------------------------------------------------- volumes and networks
@@ -1065,8 +1108,9 @@ func composeStackScript(st *DockerStack, action string) (string, error) {
 	return composePrelude + cd + "\n" + strings.Join(cmds, " && ") + "\n", nil
 }
 
-// DockerStackOp runs a Compose action (up, down, start, stop, restart, pull, recreate, update) on a project.
-func (ins *Inspector) DockerStackOp(hostID int64, name, action string) (string, error) {
+// DockerStackOp runs a Compose action (up, down, start, stop, restart, pull, recreate, update) on a project. A
+// non-nil live receives the output as it is produced (and the returned output is empty).
+func (ins *Inspector) DockerStackOp(hostID int64, name, action string, live io.Writer) (string, error) {
 	st, err := ins.dockerFindStack(hostID, name)
 	if err != nil {
 		return "", err
@@ -1075,7 +1119,7 @@ func (ins *Inspector) DockerStackOp(hostID int64, name, action string) (string, 
 	if err != nil {
 		return "", err
 	}
-	return ins.dockerRun(hostID, script, "docker compose "+action, name, dockerLongTimeout)
+	return ins.dockerRunOrStream(hostID, script, "docker compose "+action, name, dockerLongTimeout, live)
 }
 
 // DockerStackFile returns the compose file of a stack (the only file when a project has exactly one).
@@ -1121,8 +1165,9 @@ $C -p "$P" -f "$FILE" up -d 2>&1
 }
 
 // DockerStackDeploy creates a Pantau-managed stack (stored under ~/.pantau/stacks/<name>) or rewrites the single
-// compose file of an existing one, validates it with `compose config`, and runs `up -d`.
-func (ins *Inspector) DockerStackDeploy(hostID int64, name, yaml string) (string, error) {
+// compose file of an existing one, validates it with `compose config`, and runs `up -d`. A non-nil live receives
+// the output as it is produced (and the returned output is empty).
+func (ins *Inspector) DockerStackDeploy(hostID int64, name, yaml string, live io.Writer) (string, error) {
 	if !composeNameRe.MatchString(name) {
 		return "", dockerInvalid("invalid stack name (lowercase letters, digits, - and _): %q", name)
 	}
@@ -1149,7 +1194,7 @@ func (ins *Inspector) DockerStackDeploy(hostID int64, name, yaml string) (string
 	}
 	b64 := base64.StdEncoding.EncodeToString([]byte(yaml))
 	script := composeDeployScript(name, dir, file, b64, existing)
-	return ins.dockerRun(hostID, script, "docker stack deploy", name, dockerLongTimeout)
+	return ins.dockerRunOrStream(hostID, script, "docker stack deploy", name, dockerLongTimeout, live)
 }
 
 func pathDir(p string) string {

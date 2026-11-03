@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- Docker: Stack actions (up, pull, update, recreate, …), Stack deploy and Image pull now **stream their output live** into the log viewer (final `[pantau] exit=N` marker decides success/failure) instead of showing it only after the command finishes.
+
 ### Added
 - **Delete several Desired State rules at once**: a checkbox per rule (plus select-all) and a *Delete selected (N)* button with a single confirmation.
 - **Side Panel** (left navigation) with *Hosts*, *Docker* and *Kubernetes* sections; collapsible to an icon rail (remembered), off-canvas under 768px, EN/ID. The Docker section is a searchable Host picker that opens Host Detail on the Docker tab.

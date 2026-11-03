@@ -3,6 +3,8 @@ package web
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -115,8 +117,15 @@ func (s *Server) handleDockerManage(w http.ResponseWriter, r *http.Request, host
 		if !decodeDockerBody(w, r, &req) {
 			return true
 		}
-		out, err := s.inspector.DockerImageOp(hostID, req.Action, req.Image, req.Force)
-		dockerResult(w, out, err)
+		if req.Action != "pull" {
+			out, err := s.inspector.DockerImageOp(hostID, req.Action, req.Image, req.Force, nil)
+			dockerResult(w, out, err)
+			break
+		}
+		dockerStreamResult(w, func(live io.Writer) error {
+			_, err := s.inspector.DockerImageOp(hostID, req.Action, req.Image, false, live)
+			return err
+		})
 
 	case post && sub == "volume":
 		var req struct {
@@ -149,8 +158,10 @@ func (s *Server) handleDockerManage(w http.ResponseWriter, r *http.Request, host
 		if !decodeDockerBody(w, r, &req) {
 			return true
 		}
-		out, err := s.inspector.DockerStackOp(hostID, req.Project, req.Action)
-		dockerResult(w, out, err)
+		dockerStreamResult(w, func(live io.Writer) error {
+			_, err := s.inspector.DockerStackOp(hostID, req.Project, req.Action, live)
+			return err
+		})
 
 	case post && sub == "stack/deploy":
 		var req struct {
@@ -160,8 +171,10 @@ func (s *Server) handleDockerManage(w http.ResponseWriter, r *http.Request, host
 		if !decodeDockerBody(w, r, &req) {
 			return true
 		}
-		out, err := s.inspector.DockerStackDeploy(hostID, req.Name, req.YAML)
-		dockerResult(w, out, err)
+		dockerStreamResult(w, func(live io.Writer) error {
+			_, err := s.inspector.DockerStackDeploy(hostID, req.Name, req.YAML, live)
+			return err
+		})
 
 	case post && sub == "prune":
 		var req struct {
@@ -185,6 +198,45 @@ func dockerResult(w http.ResponseWriter, out string, err error) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "output": out})
+}
+
+// dockerLive streams a long operation to the browser as plain text. Headers go out with the first byte, so input
+// rejected before anything ran is still answered with the usual JSON error.
+type dockerLive struct {
+	w       http.ResponseWriter
+	started bool
+}
+
+func (l *dockerLive) Write(p []byte) (int, error) {
+	if !l.started {
+		l.started = true
+		h := l.w.Header()
+		h.Set("Content-Type", "text/plain; charset=utf-8")
+		h.Set("Cache-Control", "no-cache")
+		h.Set("X-Accel-Buffering", "no")
+		h.Set("X-Content-Type-Options", "nosniff")
+		l.w.WriteHeader(http.StatusOK)
+	}
+	n, err := l.w.Write(p)
+	_ = http.NewResponseController(l.w).Flush()
+	return n, err
+}
+
+// dockerStreamResult runs op with a live writer. Once output has started the outcome is the last line,
+// `[pantau] exit=N` (the same marker the package upgrade stream uses), preceded by the error text on failure.
+func dockerStreamResult(w http.ResponseWriter, op func(live io.Writer) error) {
+	live := &dockerLive{w: w}
+	err := op(live)
+	if !live.started {
+		dockerResult(w, "", err)
+		return
+	}
+	code := 0
+	if err != nil {
+		code = 1
+		fmt.Fprintf(live, "\n%s\n", err)
+	}
+	fmt.Fprintf(live, "\n[pantau] exit=%d\n", code)
 }
 
 // writeDockerErrorOK reports read failures as 200/ok:false (like the other Docker tab loaders) except for

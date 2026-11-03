@@ -336,8 +336,8 @@ func TestDockerPruneHasNoEverythingTarget(t *testing.T) {
 func TestDockerOpsRejectBadInputBeforeTouchingTheHost(t *testing.T) {
 	ins := &Inspector{} // no db: validation must fail first
 	checks := []func() error{
-		func() error { _, e := ins.DockerImageOp(1, "pull", "-x", false); return e },
-		func() error { _, e := ins.DockerImageOp(1, "explode", "alpine", false); return e },
+		func() error { _, e := ins.DockerImageOp(1, "pull", "-x", false, nil); return e },
+		func() error { _, e := ins.DockerImageOp(1, "explode", "alpine", false, nil); return e },
 		func() error { _, e := ins.DockerVolumeOp(1, "create", "bad name"); return e },
 		func() error { _, e := ins.DockerVolumeOp(1, "nuke", ""); return e },
 		func() error {
@@ -345,10 +345,10 @@ func TestDockerOpsRejectBadInputBeforeTouchingTheHost(t *testing.T) {
 			return e
 		},
 		func() error { _, e := ins.DockerRunContainer(1, DockerRunSpec{Image: "x; id"}); return e },
-		func() error { _, e := ins.DockerStackDeploy(1, "Bad Name", "services: {}"); return e },
-		func() error { _, e := ins.DockerStackDeploy(1, "ok", "   "); return e },
+		func() error { _, e := ins.DockerStackDeploy(1, "Bad Name", "services: {}", nil); return e },
+		func() error { _, e := ins.DockerStackDeploy(1, "ok", "   ", nil); return e },
 		func() error {
-			_, e := ins.DockerStackDeploy(1, "ok", strings.Repeat("a", dockerStackFileMax+1))
+			_, e := ins.DockerStackDeploy(1, "ok", strings.Repeat("a", dockerStackFileMax+1), nil)
 			return e
 		},
 	}

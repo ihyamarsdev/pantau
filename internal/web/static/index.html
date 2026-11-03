@@ -6713,6 +6713,7 @@ const I18N = {
     "dk_confirm_stack_update_msg": "Pulls newer images and recreates the containers whose image changed.",
     "dk_working": "Working…",
     "dk_done": "Done",
+    "dk_failed": "Failed",
     "dk_required": "{field} is required",
     "dk_deploy": "Deploy",
     "dk_create": "Create",
@@ -8015,6 +8016,7 @@ const I18N = {
     "dk_confirm_stack_update_msg": "Menarik image yang lebih baru dan membuat ulang container yang image-nya berubah.",
     "dk_working": "Memproses…",
     "dk_done": "Selesai",
+    "dk_failed": "Gagal",
     "dk_required": "{field} wajib diisi",
     "dk_deploy": "Deploy",
     "dk_create": "Buat",
@@ -20034,7 +20036,9 @@ async function systemdAction(unit, action) {
 }
 
 // ---- Docker management (Portainer-style) ----
-async function dockerPost(sub, payload) {
+// Streamed calls (stack up/pull, deploy, image pull) answer with plain text ending in `[pantau] exit=N`;
+// onChunk receives each decoded piece as it arrives. Everything else answers with JSON.
+async function dockerPost(sub, payload, onChunk) {
   const host = currentHost;
   if (!host) return { ok: false, error: 'no host' };
   try {
@@ -20043,7 +20047,22 @@ async function dockerPost(sub, payload) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    return await res.json();
+    if (!res.ok || !(res.headers.get('Content-Type') || '').startsWith('text/plain')) return await res.json();
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const delta = decoder.decode(value, { stream: true });
+      text += delta;
+      if (onChunk) onChunk(delta);
+    }
+    const m = text.match(/\n*\[pantau\] exit=(\d+)\s*$/);
+    if (!m) return { ok: false, output: text, error: 'connection lost before the command finished' };
+    const output = text.slice(0, m.index).trim();
+    if (m[1] === '0') return { ok: true, output };
+    return { ok: false, output, error: output.split('\n').pop() || 'failed' };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -20060,16 +20079,50 @@ function showDockerOutput(title, text) {
   openModal('dockerLogsModal');
 }
 
-// Runs one management call: toast, optional output viewer, reload of the current sub-tab.
+// Opens the shared log viewer on the first streamed chunk, so a call rejected before anything ran shows only a toast.
+function dockerLiveViewer(title) {
+  let node = null;
+  let scrollQueued = false;
+  const out = document.getElementById('dockerLogsOutput');
+  const status = document.getElementById('dockerLogsStatus');
+  return {
+    get opened() { return !!node; },
+    append(delta) {
+      if (!node) {
+        stopDockerLogs();
+        document.getElementById('dockerLogsTitle').textContent = title;
+        out.textContent = '';
+        node = out.appendChild(document.createTextNode(''));
+        status.textContent = t('dk_working');
+        status.className = 'badge badge-info';
+        openModal('dockerLogsModal');
+      }
+      node.appendData(delta);
+      if (document.getElementById('dockerLogsAutoScroll').checked && !scrollQueued) {
+        scrollQueued = true;
+        requestAnimationFrame(() => { scrollQueued = false; out.scrollTop = out.scrollHeight; });
+      }
+    },
+    finish(res) {
+      if (res.output !== undefined) node.data = res.output;
+      status.textContent = res.ok ? t('dk_done') : t('dk_failed');
+      status.className = 'badge ' + (res.ok ? 'badge-healthy' : 'badge-down');
+    }
+  };
+}
+
+// Runs one management call: toast, live output viewer for streamed calls, reload of the current sub-tab.
 async function dockerExecute(o) {
   if (o.long) showToast(t('dk_working'), 'info', 2500);
-  const data = await dockerPost(o.sub, o.payload);
+  const live = o.outputTitle ? dockerLiveViewer(o.outputTitle) : null;
+  const data = await dockerPost(o.sub, o.payload, live && live.append);
+  if (live && live.opened) live.finish(data);
   if (!data.ok) {
     showToast(t('error_prefix', 'Error: ') + (data.error || 'failed'), 'error', 9000);
     return data;
   }
   showToast(o.okMsg || t('dk_done'), 'success');
-  if (o.outputTitle && data.output) showDockerOutput(o.outputTitle, data.output);
+  if (o.outputTitle && data.output && !(live && live.opened)) showDockerOutput(o.outputTitle, data.output);
   if (currentTab === 'docker') loadDockerTab();
   return data;
 }
