@@ -422,6 +422,17 @@ func (d *DB) migrate() error {
 		notes_json TEXT,
 		error TEXT
 	);
+	CREATE TABLE IF NOT EXISTS kube_clusters (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+		context TEXT NOT NULL DEFAULT '',
+		server TEXT NOT NULL DEFAULT '',
+		provider TEXT NOT NULL DEFAULT 'generic',
+		kube_mode TEXT NOT NULL DEFAULT 'full',
+		kube_cluster_id TEXT DEFAULT '',
+		kubeconfig TEXT NOT NULL DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
 	`
 	_, err := d.Exec(schema)
 	if err != nil {
@@ -1210,6 +1221,18 @@ type SnapshotSSHKey struct {
 	Fingerprint string    `json:"fingerprint"`
 	CreatedAt   time.Time `json:"created_at"`
 }
+type SnapshotKubeCluster struct {
+	ID            int64     `json:"id"`
+	Name          string    `json:"name"`
+	Context       string    `json:"context"`
+	Server        string    `json:"server"`
+	Provider      string    `json:"provider"`
+	KubeMode      string    `json:"kube_mode"`
+	KubeClusterID string    `json:"kube_cluster_id,omitempty"`
+	Kubeconfig    string    `json:"kubeconfig"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
 
 // SnapshotPayload holds the sanitized system configuration for backup and restore.
 type SnapshotPayload struct {
@@ -1220,6 +1243,7 @@ type SnapshotPayload struct {
 	DesiredRules    []DesiredRule     `json:"desired_rules"`
 	TerminalPresets []TerminalPreset  `json:"terminal_presets,omitempty"`
 	SSHKeys         []SnapshotSSHKey  `json:"ssh_keys,omitempty"`
+	KubeClusters    []SnapshotKubeCluster `json:"kube_clusters,omitempty"`
 }
 
 func (d *DB) IsFresh() (bool, error) {
@@ -1313,6 +1337,22 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 			}
 		}
 	}
+	var allClusters []SnapshotKubeCluster
+	cRows, err := d.Query("SELECT id, name, context, server, provider, kube_mode, kube_cluster_id, kubeconfig, created_at FROM kube_clusters ORDER BY id ASC")
+	if err == nil {
+		defer cRows.Close()
+		for cRows.Next() {
+			var c SnapshotKubeCluster
+			var clusterUID sql.NullString
+			if err := cRows.Scan(&c.ID, &c.Name, &c.Context, &c.Server, &c.Provider, &c.KubeMode, &clusterUID, &c.Kubeconfig, &c.CreatedAt); err == nil {
+				if clusterUID.Valid {
+					c.KubeClusterID = clusterUID.String
+				}
+				allClusters = append(allClusters, c)
+			}
+		}
+	}
+
 
 	return &SnapshotPayload{
 		Version:         1,
@@ -1322,6 +1362,7 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 		DesiredRules:    allRules,
 		TerminalPresets: allPresets,
 		SSHKeys:         allSSHKeys,
+		KubeClusters:    allClusters,
 	}, nil
 }
 
@@ -1335,7 +1376,7 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 	}
 	defer tx.Rollback()
 
-	tables := []string{"alerts", "incidents", "actual_items", "desired_rules", "hosts", "terminal_presets", "ssh_keys"}
+	tables := []string{"alerts", "incidents", "actual_items", "desired_rules", "hosts", "terminal_presets", "ssh_keys", "kube_clusters"}
 	for _, t := range tables {
 		if _, err := tx.Exec("DELETE FROM " + t); err != nil {
 			return fmt.Errorf("clear %s: %w", t, err)
@@ -1349,6 +1390,19 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 			return fmt.Errorf("insert ssh key %d: %w", k.ID, err)
 		}
 	}
+	for _, c := range payload.KubeClusters {
+		mode := normalizeKubeMode(c.KubeMode)
+		provider := c.Provider
+		if provider == "" {
+			provider = "generic"
+		}
+		_, err := tx.Exec(`INSERT INTO kube_clusters (id, name, context, server, provider, kube_mode, kube_cluster_id, kubeconfig, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			c.ID, c.Name, c.Context, c.Server, provider, mode, c.KubeClusterID, c.Kubeconfig, c.CreatedAt)
+		if err != nil {
+			return fmt.Errorf("insert kube cluster %d: %w", c.ID, err)
+		}
+	}
+
 
 	for _, h := range payload.Hosts {
 		onlineInt := 0

@@ -495,6 +495,14 @@ _Avoid_: Proxy host, master node, entry node
 Kebijakan per Host atas aksi Kubernetes yang difasilitasi Pantau: `full`, `no-exec` (tanpa exec pod), atau `read-only` (tanpa mutasi dan exec). Pagar tingkat aplikasi, bukan batas keamanan Host.
 _Avoid_: Permission level, RBAC role, access flag
 
+
+**External Cluster**:
+Klaster Kubernetes pihak ketiga atau terkelola (EKS, GKE, AKS, atau klaster mandiri) yang didaftarkan ke Pantau melalui berkas atau teks kubeconfig; dieksekusi secara lokal menggunakan `kubectl` pada server Pantau tanpa koneksi SSH ke Host control-plane.
+_Avoid_: Remote cluster, cloud cluster, non-host cluster
+
+**Kubeconfig Profile**:
+Konfigurasi konteks tunggal hasil normalisasi dan minifikasi dari berkas kubeconfig yang disimpan terenkripsi di database Pantau untuk menghubungkan klaster eksternal secara aman; hanya mengizinkan kredensial inline dan plugin `exec` yang masuk daftar putih.
+_Avoid_: Cluster config, kube profile, raw kubeconfig
 **Alert Debounce**:
 Pengaturan (`alert_debounce_runs`, 1–10) yang menahan Incident, Alert, dan notifikasi sebuah Drift sampai terlihat pada N Inspection berturut-turut untuk rule yang sama; kembali sehat selalu menutup langsung.
 _Avoid_: Alert delay, grace period, flap filter

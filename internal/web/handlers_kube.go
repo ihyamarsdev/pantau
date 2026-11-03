@@ -80,6 +80,12 @@ func makeEnvelope(primary, served *store.Host, primaryErr string) map[string]int
 		"failover":            failover,
 		"primary_host_id":     primary.ID,
 	}
+	if inspector.IsKubeClusterTarget(primary.ID) {
+		m["external"] = true
+		if primary.KubeClusterID != "" {
+			m["provider"] = primary.KubeClusterID
+		}
+	}
 	if failover && primaryErr != "" {
 		m["primary_error"] = primaryErr
 	}
@@ -145,17 +151,34 @@ func (s *Server) handleKubeManage(w http.ResponseWriter, r *http.Request, hostID
 	get := r.Method == http.MethodGet
 	post := r.Method == http.MethodPost
 
-	primary, _ := s.db.GetHost(hostID)
-	if primary == nil {
-		primary = &store.Host{
-			ID:       hostID,
-			Name:     fmt.Sprintf("host-%d", hostID),
-			KubeMode: "full",
+	var primary *store.Host
+	var candidates []*store.Host
+	if inspector.IsKubeClusterTarget(hostID) {
+		clusterID := -hostID
+		cluster, err := s.db.GetKubeCluster(clusterID)
+		if err != nil || cluster == nil {
+			http.Error(w, "cluster not found", http.StatusNotFound)
+			return true
 		}
+		primary = &store.Host{
+			ID:            hostID,
+			Name:          cluster.Name,
+			KubeMode:      cluster.KubeMode,
+			KubeClusterID: cluster.Provider, // stash provider in pseudo host for envelope
+		}
+		candidates = []*store.Host{primary}
+	} else {
+		primary, _ = s.db.GetHost(hostID)
+		if primary == nil {
+			primary = &store.Host{
+				ID:       hostID,
+				Name:     fmt.Sprintf("host-%d", hostID),
+				KubeMode: "full",
+			}
+		}
+		allHosts, _ := s.db.ListHosts()
+		candidates = selectKubeCandidateHosts(primary, allHosts)
 	}
-
-	allHosts, _ := s.db.ListHosts()
-	candidates := selectKubeCandidateHosts(primary, allHosts)
 
 	// Mode enforcement
 	if (sub == "action" || sub == "apply") && post {
@@ -208,7 +231,11 @@ func (s *Server) handleKubeManage(w http.ResponseWriter, r *http.Request, hostID
 				return nil, err
 			}
 			if cluster != nil && cluster.ClusterID != "" {
-				_ = s.db.SetHostKubeClusterID(targetID, cluster.ClusterID)
+				if inspector.IsKubeClusterTarget(targetID) {
+					_ = s.db.SetKubeClusterUID(-targetID, cluster.ClusterID)
+				} else {
+					_ = s.db.SetHostKubeClusterID(targetID, cluster.ClusterID)
+				}
 			}
 			return map[string]interface{}{"ok": true, "cluster": cluster}, nil
 		})
@@ -297,6 +324,13 @@ func (s *Server) handleKubeManage(w http.ResponseWriter, r *http.Request, hostID
 		})
 
 	case get && sub == "exec-cmd":
+		if inspector.IsKubeClusterTarget(primary.ID) {
+			writeJSON(w, http.StatusBadRequest, withEnvelope(map[string]interface{}{
+				"ok":    false,
+				"error": "pod exec is not available for external clusters",
+			}, primary, primary, ""))
+			return true
+		}
 		q := r.URL.Query()
 		cmd, err := s.inspector.KubeExecCmd(q.Get("ns"), q.Get("pod"), q.Get("container"))
 		if err != nil {
@@ -481,7 +515,23 @@ func (s *Server) handleWSKubeLogs(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query()
 	hostIDStr := q.Get("host_id")
-	hostID, _ := strconv.ParseInt(hostIDStr, 10, 64)
+	clusterIDStr := q.Get("cluster_id")
+	var targetID int64
+	if clusterIDStr != "" {
+		cid, _ := strconv.ParseInt(clusterIDStr, 10, 64)
+		if cid <= 0 {
+			_ = ws.WriteMessage(websocket.TextMessage, []byte("invalid cluster_id\n"))
+			return
+		}
+		targetID = inspector.KubeClusterTarget(cid)
+	} else {
+		hid, _ := strconv.ParseInt(hostIDStr, 10, 64)
+		if hid <= 0 {
+			_ = ws.WriteMessage(websocket.TextMessage, []byte("invalid host_id\n"))
+			return
+		}
+		targetID = hid
+	}
 	ns := strings.TrimSpace(q.Get("ns"))
 	pod := strings.TrimSpace(q.Get("pod"))
 	container := strings.TrimSpace(q.Get("container"))
@@ -499,10 +549,6 @@ func (s *Server) handleWSKubeLogs(w http.ResponseWriter, r *http.Request) {
 		tail = tVal
 	}
 
-	if hostID <= 0 {
-		_ = ws.WriteMessage(websocket.TextMessage, []byte("invalid host_id\n"))
-		return
-	}
 	if !inspector.ValidKubeNamespace(ns) {
 		_ = ws.WriteMessage(websocket.TextMessage, []byte("invalid namespace\n"))
 		return
@@ -540,15 +586,9 @@ func (s *Server) handleWSKubeLogs(w http.ResponseWriter, r *http.Request) {
 		cmd = s.inspector.KubeLogStreamCmd(ns, pod, container, tail, previous, timestamps)
 	}
 
-	host, err := s.db.GetHost(hostID)
-	if err != nil || host == nil {
-		_ = ws.WriteMessage(websocket.TextMessage, []byte("Host not found\n"))
-		return
-	}
-
-	runner, err := s.inspector.GetRunnerForHost(host)
+	runner, wrap, err := s.inspector.KubeStreamRunner(targetID)
 	if err != nil {
-		_ = ws.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("SSH failed: %v\n", err)))
+		_ = ws.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("Runner failed: %v\n", err)))
 		return
 	}
 	defer runner.Close()
@@ -578,5 +618,5 @@ func (s *Server) handleWSKubeLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	_ = runner.Stream(cmd, outWriter)
+	_ = runner.Stream(wrap(cmd), outWriter)
 }

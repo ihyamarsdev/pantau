@@ -237,9 +237,9 @@ Pengambilan telemetri mengekstrak metrik kapasitas komputasi riil secara berkela
 - **Beban CPU Ternormalisasi**: Beban antrian sistem (*load average*) dievaluasi terhadap jumlah core CPU fisik dan logis (`nproc`), menampilkan aksen warna peringatan ketika antrian melampaui kapasitas core.
 - **Kartu Sys Info**: Modal Detail Host menyajikan tipe model hardware, lapisan virtualisasi, kuantitas core CPU, dan topologi partisi penyimpanan.
 - **Top Resource Consumers (Process Telemetry)**: Di setiap siklus inspeksi rutin, Pantau mengekstrak 5 proses teratas pemakan sumber daya dalam tiga dimensi:
-  - **Top CPU**: Melacak PID, user, `%cpu`, dan lama eksekusi CPU via `ps -eo pid,user,%cpu,cputime,comm --sort=-%cpu`.
-  - **Top RAM (Physical RSS)**: Melacak PID, user, `%mem`, jejak memori RSS, dan nama proses via `ps -eo pid,user,%mem,rss,comm --sort=-rss`.
-  - **Top Swap (Virtual Memory)**: Diekstrak secara kondisional hanya saat `SwapUsedBytes > 0` dengan mem-parsing baris `VmSwap:` di `/proc/[0-9]*/status`, mendeteksi pemborosan swap tanpa overhead daemon jarak jauh.
+  - **Top CPU**: Melacak PID, user, `%cpu`, jejak memori, dan nama proses. Pada Linux, utilisasi CPU diukur secara aktual dalam jendela sampel ~1 detik per inspeksi (bukan rata-rata seumur hidup proses dari `ps %cpu`; proses multi-threaded dapat melebihi 100% karena nilai dihitung per satu core). Pada macOS, penggunaan terkini dipantau via `ps -Aro`. Pada host yang perintah `ps`-nya tidak mendukung `--sort` (seperti BusyBox/Alpine), Pantau melakukan pengurutan sendiri agar 5 proses teratas tetap akurat.
+  - **Top RAM (Physical RSS)**: Melacak PID, user, `%mem`, jejak memori RSS, dan nama proses (diurutkan langsung atau diproses oleh Pantau pada lingkungan minimal seperti BusyBox/Alpine).
+  - **Top Swap (Virtual Memory)**: Diekstrak secara kondisional hanya saat `SwapUsedBytes > 0` dengan mem-parsing baris `VmSwap:` di `/proc/[0-9]*/status`, memetakan nama user dari `/etc/passwd` (fallback ke UID numerik hanya jika nama tidak dapat diuraikan) guna mendeteksi pemborosan swap tanpa overhead daemon jarak jauh.
   - **Pintasan Terminal Satu-Klik**: Kartu Top Resource Consumers di tab Overview menyediakan tombol **Open Terminal** untuk langsung membuka sesi shell interaktif ke host terkait guna investigasi cepat.
 
 ### Inventarisasi Paket & Audit Higienitas Software
@@ -424,6 +424,51 @@ Pantau menyediakan bilah navigasi kiri (**Side Panel**) permanen di antara heade
     - **Event**: Catatan event informasional dan peringatan dengan filter khusus **Hanya Warning**.
     - **Auto-refresh Opsional**: Pembaruan data otomatis per-tab (Mati / 10 dtk / 30 dtk / 60 dtk) yang berhenti saat tab browser tidak aktif, saat berpindah bagian/tab, atau saat modal terbuka, dan tidak menumpuk permintaan in-flight.
     - **Terapkan Manifest & Pratinjau Diff**: Editor YAML terintegrasi dengan kewajiban menjalankan **Pratinjau Diff** (`kc diff` dry-run terhadap status klaster aktif). Tombol **Terapkan** terkunci hingga isi manifest saat ini telah selesai ditinjau perubahannya, dan mutasi meminta konfirmasi sebelum diterapkan.
+
+#### Pengelolaan Klaster Kubernetes Eksternal (EKS, GKE, AKS & Kubeconfig Mandiri)
+
+Pantau memungkinkan pemantauan dan pengelolaan klaster Kubernetes eksternal atau terkelola di cloud (AWS EKS, Google Cloud GKE, Azure AKS, maupun klaster mandiri) tanpa memerlukan akses SSH ke node control-plane. Untuk klaster eksternal, perintah dieksekusi secara lokal menggunakan `kubectl` langsung pada server Pantau.
+
+##### Menambahkan Klaster Eksternal
+1. Pada **Side Panel**, buka bagian **Kubernetes** dan klik tombol **Tambah Klaster**.
+2. **Tempel atau Unggah Kubeconfig**: Masukkan berkas kubeconfig Anda (ukuran maksimum 128 KB).
+3. **Pilih Konteks**: Pantau membaca daftar konteks yang tersedia di berkas; pilih konteks klaster target.
+4. **Beri Nama & Pilih Mode**: Masukkan nama klaster yang mudah dikenali dan tentukan **Mode Kubernetes** (`full`, `no-exec`, atau `read-only`).
+5. **Uji & Simpan**: Pantau menormalisasi konfigurasi, menguji konektivitas via `kubectl get ns kube-system`, menyimpan data klaster, dan mengambil telemetri awal. Jika verifikasi koneksi gagal, klaster ditolak dan tidak akan disimpan.
+
+##### Autentikasi Penyedia Cloud & Plugin CLI
+Saat terhubung ke klaster cloud terkelola, Pantau memanfaatkan plugin kredensial bawaan `kubectl` yang dijalankan di server Pantau:
+- **AWS EKS**: Membutuhkan CLI `aws` atau `aws-iam-authenticator` pada `PATH` server Pantau. Kredensial AWS dibaca dari variabel lingkungan proses Pantau (seperti `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, atau berkas `~/.aws`).
+- **Google Cloud GKE**: Membutuhkan `gke-gcloud-auth-plugin` atau `gcloud` pada `PATH`. Kredensial dibaca dari `GOOGLE_APPLICATION_CREDENTIALS` atau `~/.config/gcloud`.
+- **Azure AKS**: Membutuhkan `kubelogin` atau `az` pada `PATH`.
+
+> [!TIP]
+> **Praktik Terbaik Keamanan & RBAC**:
+> - Gunakan token berumur pendek (*short-lived*) atau plugin kredensial `exec` dibanding kredensial statis.
+> - Untuk kebutuhan pemantauan read-only, buat `ServiceAccount` khusus di klaster dengan hak akses minimal via `ClusterRole` RBAC (`get`, `list`, `watch` pada resource standar) lalu ekspor kubeconfig berbasis token.
+> - Pada penyebaran Docker, pasang (*mount*) direktori kredensial cloud secara read-only ke kontainer Pantau. Contoh:
+>   ```yaml
+>   volumes:
+>     - ./data:/app/data
+>     - ${HOME}/.aws:/root/.aws:ro
+>   ```
+
+##### Model Keamanan & Batasan Validasi
+- **Aturan Kredensial**: Untuk melindungi server Pantau dari serangan pembacaan berkas sembarang (*arbitrary file read*), Pantau menolak kubeconfig yang memuat kredensial berbasis jalur berkas lokal (`certificate-authority`, `client-certificate`, `client-key`, `tokenFile`). Kredensial harus berupa data inline (`*-data` dalam base64) atau token langsung.
+- **Daftar Putih Plugin `exec`**: Hanya perkakas CLI terdaftar yang diizinkan pada blok `exec`: `aws`, `aws-iam-authenticator`, `gke-gcloud-auth-plugin`, `gcloud`, `kubelogin`, `az`, `doctl`, dan `oci`. Penggunaan pemisah jalur (`/` atau `\`) serta konfigurasi `auth-provider` berbasis perintah ditolak.
+- **Tanpa Paparan API**: Kubeconfig disimpan di database lokal seperti kunci privat SSH, dicadangkan dalam System Snapshot terenkripsi, dan tidak pernah diekspos melalui respons REST API.
+
+##### Batasan Operasional
+- **Pod Exec Interaktif Tidak Didukung**: Konsol interaktif Terminal Dock mengandalkan koneksi SSH PTY ke host. Karena klaster eksternal berjalan via `kubectl` lokal tanpa SSH, fitur exec kontainer dinonaktifkan dan disembunyikan pada UI.
+- **Streaming Log WebSocket Didukung**: Aliran log pod dan workload secara real-time (`/ws/kube/logs`) tetap berfungsi penuh.
+- **Endpoint Tunggal**: Klaster eksternal tidak memiliki fitur failover antar-host.
+
+##### Pemecahan Masalah (*Troubleshooting*)
+- **`kubectl not found`**: Pastikan biner `kubectl` terpasang dan berada pada `PATH` proses server Pantau (image Docker resmi Pantau telah memuat `kubectl`).
+- **`plugin not allowed`**: Perintah `exec` pada kubeconfig tidak termasuk dalam daftar putih yang diizinkan atau menggunakan direktori path. Gunakan plugin yang didukung (`aws`, `kubelogin`, dll.).
+- **`file-path credential rejected`**: Kubeconfig merujuk ke path berkas di mesin lokal Anda (misal `certificate-authority: /path/to/ca.crt`). Gabungkan menjadi inline data sebelum menempel menggunakan perintah `kubectl config view --raw --flatten`.
+- **`cluster verification failed`**: Server Pantau tidak dapat melakukan autentikasi atau gagal menghubungi API server klaster. Periksa akses jaringan keluar, firewall, dan ketersediaan kredensial cloud di lingkungan proses Pantau.
+
 ### Evaluasi Kelayakan Server dengan Lifecycle Assessment
 
 Pantau menghitung nilai kelayakan sistem secara transparan melalui **Lifecycle Score** (0–100) berdasarkan 6 faktor evaluasi:

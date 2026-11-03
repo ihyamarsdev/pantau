@@ -182,8 +182,8 @@ Pantau menginspeksi Host remote melalui perintah SSH non-interaktif, memvalidasi
 - **Throttling Performa Anti-Lag**: Melewatkan 100% manipulasi DOM saat laci tertutup dan menggabungkan pembaruan dengan `requestAnimationFrame` saat laci terbuka untuk mengeliminasi pemborosan CPU dan layout thrashing.
 
 ### 18. ⚡ Top Resource Consumers & Process Telemetry
-- **Observabilitas Proses Agentless**: Mengekstrak 5 proses teratas pemakan sumber daya sistem dalam 3 dimensi utama—Top CPU (`%cpu`), Top RAM Fisik (`rss`), dan Top Swap (memori virtual)—secara berkala di setiap siklus inspeksi tanpa instalasi daemon tambahan di server target.
-- **Pemindai Swap Ringan Kondisional**: Ekstraksi VmSwap cepat via `/proc/[0-9]*/status` yang dipicu secara kondisional hanya saat terdeteksi penggunaan swap aktif (`SwapUsedBytes > 0`), mengeliminasi beban pemindaian pada server yang mematikan swap.
+- **Observabilitas Proses Agentless**: Mengekstrak 5 proses teratas pemakan sumber daya sistem dalam 3 dimensi utama—Top CPU (`%cpu`), Top RAM Fisik (`rss`), dan Top Swap (memori virtual)—secara berkala di setiap siklus inspeksi tanpa instalasi daemon tambahan di server target. Pada Linux, Top CPU mengukur penggunaan aktual dalam jendela sampel ~1 detik per inspeksi (% dari satu core, hingga >100% untuk proses multi-threaded) menggantikan rata-rata seumur hidup `ps %cpu`, sedangkan macOS memantau aktivitas terkini via `ps -Aro`. Pada sistem yang perintah `ps`-nya belum mendukung `--sort` (seperti BusyBox/Alpine), Pantau melakukan pengurutan internal secara mandiri sehingga 5 proses teratas tetap akurat.
+- **Pemindai Swap Ringan Kondisional**: Ekstraksi VmSwap cepat via `/proc/[0-9]*/status` yang dipicu secara kondisional hanya saat terdeteksi penggunaan swap aktif (`SwapUsedBytes > 0`), memetakan nama user dari `/etc/passwd` (fallback ke UID numerik hanya jika nama tidak dapat diuraikan) dan mengeliminasi beban pemindaian pada server yang mematikan swap.
 - **Widget Telemetri Tab Overview**: Kartu visual 3-kolom responsif di tab Overview Host Detail yang menampilkan rincian PID, user, konsumsi memori, dan command, dilengkapi tombol pintas satu-klik untuk langsung membuka sesi Terminal Dock interaktif.
 
 ### 19. 📦 Polyglot Package Inventory & Higienitas Software
@@ -245,6 +245,12 @@ Pantau menginspeksi Host remote melalui perintah SSH non-interaktif, memvalidasi
 - **Audit Keamanan & Hardening macOS**: Memeriksa pembaruan sistem tertunda via `/usr/sbin/softwareupdate` dengan status transparan `partial` saat kendala jaringan, dipadukan dengan 4 pemeriksaan pengerasan sistem: login root SSH, autentikasi sandi SSH, preferensi auto-update (`com.apple.SoftwareUpdate`), dan status application firewall.
 - **Penegakan Desired State & Diagnostik Portabel**: Memvalidasi ambang batas disk APFS, layanan `launchd`, port terbuka via `lsof`, dan kesegaran cadangan via BSD `stat -f`. Menjalankan pengujian latensi jaringan dan traceroute menggunakan perkakas native Darwin tanpa instalasi paket remote.
 - **Nol Regresi Linux**: Dibangun dengan isolasi percabangan runtime (`uname -s`); seluruh alur pengumpulan telemetri Linux tetap berjalan 100% identik tanpa perubahan.
+
+### 28. ☸️ Manajemen Klaster Kubernetes (k3s, RKE2 & Kubeconfig Eksternal)
+- **Inspeksi Control-Plane k3s / RKE2 Agentless**: Pantau status node, beban kerja (Deployment, StatefulSet, DaemonSet), pod, service, ingress, configmap, persistent volume, batch job, dan event melalui SSH standar menggunakan `kubectl` host target dengan fallback `sudo -n` otomatis jika berkas kubeconfig memerlukan elevasi hak akses.
+- **Klaster Eksternal via Kubeconfig (EKS, GKE, AKS & Remote)**: Daftarkan klaster cloud terkelola atau klaster eksternal dengan menempelkan atau mengunggah kubeconfig. Perintah dijalankan melalui subproses `kubectl` lokal di server Pantau dengan tetap memanfaatkan seluruh tab telemetri, editor YAML dengan gerbang diff server, streaming log WebSocket langsung, dan aksi siklus hidup.
+- **Keamanan Masukan Kubeconfig**: Memvalidasi ukuran hingga 128 KB, menormalisasi menjadi JSON konteks tunggal, menolak kredensial berbasis jalur berkas lokal (`tokenFile`, `client-key`, dll.), serta membatasi plugin `exec` pada daftar putih ketat (`aws`, `gke-gcloud-auth-plugin`, `kubelogin`, `az`, `doctl`, `oci`).
+- **Keamanan Aksi & Pembatas Operasional**: Menerapkan kebijakan mode per-klaster (`full`, `no-exec`, atau `read-only`), serta konfirmasi dampak konkret untuk pengubahan skala ke 0, restart rollout, penghapusan pod, dan cordon/drain node.
 
 ---
 

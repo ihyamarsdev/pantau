@@ -222,7 +222,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/ws/terminal", s.authMiddleware(s.handleWSTerminal))
 	s.mux.HandleFunc("/ws/docker/logs", s.authMiddleware(s.handleWSDockerLogs))
 	s.mux.HandleFunc("/ws/kube/logs", s.authMiddleware(s.handleWSKubeLogs))
-
+	s.mux.HandleFunc("/api/kube/clusters/contexts", s.authMiddleware(s.handleKubeClustersContexts))
+	s.mux.HandleFunc("/api/kube/clusters", s.authMiddleware(s.handleKubeClusters))
+	s.mux.HandleFunc("/api/kube/clusters/", s.authMiddleware(s.handleKubeClusterRoute))
 	// SSH Direct-TCPIP Reverse Proxy Tunnel
 	s.mux.HandleFunc("/api/tunnel/", s.authMiddleware(s.handleTunnel))
 	s.mux.HandleFunc("/ws/pkg/upgrade", s.authMiddleware(s.handleWSPkgUpgrade))

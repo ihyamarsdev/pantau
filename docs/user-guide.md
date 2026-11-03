@@ -237,9 +237,9 @@ Telemetry collection continuously extracts granular system capacity:
 - **Normalized CPU Load**: Load averages are evaluated against the target's physical and logical CPU cores (`nproc`), rendering color-coded threshold alerts when process run-queues exceed core capacity.
 - **Sys Info Card**: The Host Detail modal presents hardware model, CPU core count, virtualization layer, and storage device topology.
 - **Top Resource Consumers (Process Telemetry)**: Every routine inspection cycle extracts the top 5 resource-consuming processes across three dimensions:
-  - **Top CPU**: Tracks PID, user, `%cpu`, and CPU execution time via `ps -eo pid,user,%cpu,cputime,comm --sort=-%cpu`.
-  - **Top RAM (Physical RSS)**: Tracks PID, user, `%mem`, RSS memory footprint, and process name via `ps -eo pid,user,%mem,rss,comm --sort=-rss`.
-  - **Top Swap (Virtual Memory)**: Conditionally extracted only when `SwapUsedBytes > 0` by parsing `VmSwap:` in `/proc/[0-9]*/status`, identifying virtual memory hogs without remote daemon overhead.
+  - **Top CPU**: Tracks PID, user, `%cpu`, memory footprint, and process command. On Linux, CPU is current usage sampled across a ~1 s two-sample window per inspection (not the lifetime average of `ps %cpu`; multi-threaded processes can exceed 100% since values represent percentage of one core). On macOS, recent usage is tracked via `ps -Aro`. On hosts where `ps` lacks `--sort` (e.g. BusyBox/Alpine), Pantau sorts the processes itself to ensure the real top 5 are captured.
+  - **Top RAM (Physical RSS)**: Tracks PID, user, `%mem`, RSS memory footprint, and process name (sorted natively or via Pantau on minimal environments like BusyBox/Alpine).
+  - **Top Swap (Virtual Memory)**: Conditionally extracted only when `SwapUsedBytes > 0` by parsing `VmSwap:` in `/proc/[0-9]*/status`, resolving usernames from `/etc/passwd` (with fallback to numeric UID only if unresolvable) to identify virtual memory hogs without remote daemon overhead.
   - **One-Click Terminal Launcher**: The Top Resource Consumers card in the Overview tab provides an **Open Terminal** action button to immediately jump into an interactive troubleshooting session on the host.
 
 ### Package Inventory & Software Hygiene Audit
@@ -424,6 +424,50 @@ Pantau provides a persistent left-hand **Side Panel** navigation bar positioned 
     - **Events**: Cluster-wide informational and warning events with relative age and a dedicated **Warning only** filter.
     - **Opt-in Auto-refresh**: Configurable per-tab polling interval (Off / 10s / 30s / 60s) that automatically suspends when the browser tab is hidden, when changing sections/tabs, or when any modal is open, and never overlaps in-flight requests.
     - **Apply Manifest & Diff Preview**: In-app YAML editor with mandatory **Preview Diff** execution (`kc diff` dry-run against live cluster state). The **Apply** button remains locked until the current manifest text has been diffed, and mutations undergo confirmation before applying.
+
+#### Managing External Kubernetes Clusters (EKS, GKE, AKS & Custom Kubeconfig)
+
+Pantau allows monitoring and managing external or managed Kubernetes clusters (AWS EKS, Google Cloud GKE, Azure AKS, or self-hosted clusters) without SSH access to control-plane nodes. For external clusters, commands are executed locally using `kubectl` directly on the Pantau server.
+
+##### Adding an External Cluster
+1. In the **Side Panel**, navigate to the **Kubernetes** section and click **Add Cluster**.
+2. **Paste or Upload Kubeconfig**: Provide your kubeconfig file (maximum 128 KB).
+3. **Select Context**: Pantau reads available contexts; pick the desired target context.
+4. **Set Cluster Name & Mode**: Assign an identifiable name and choose a **Kubernetes Mode** (`full`, `no-exec`, or `read-only`).
+5. **Test & Save**: Pantau normalizes the configuration, tests connectivity via `kubectl get ns kube-system`, saves the cluster record, and retrieves cluster telemetry. If connectivity verification fails, the cluster is rejected and not saved.
+
+##### Cloud Provider Authentication & CLI Plugins
+When connecting to managed cloud clusters, Pantau relies on native `kubectl` credential plugins executed on the Pantau server:
+- **AWS EKS**: Requires `aws` CLI or `aws-iam-authenticator` installed on the Pantau server `PATH`. AWS credentials are read from the Pantau process environment (e.g. `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, or host `~/.aws`).
+- **Google Cloud GKE**: Requires `gke-gcloud-auth-plugin` or `gcloud` on `PATH`. Google credentials are read from `GOOGLE_APPLICATION_CREDENTIALS` or `~/.config/gcloud`.
+- **Azure AKS**: Requires `kubelogin` or `az` on `PATH`.
+
+> [!TIP]
+> **Security & RBAC Best Practice**:
+> - Prefer short-lived tokens or `exec` credential plugins over static credentials.
+> - For read-only observability, create a dedicated Kubernetes `ServiceAccount` bounded by minimal RBAC `ClusterRole` permissions (`get`, `list`, `watch` on standard resources) and export a token-based kubeconfig.
+> - In Docker deployments, mount cloud credentials read-only into the Pantau container. For example:
+>   ```yaml
+>   volumes:
+>     - ./data:/app/data
+>     - ${HOME}/.aws:/root/.aws:ro
+>   ```
+
+##### Security Model & Boundaries
+- **Credential Rules**: To protect the Pantau host from arbitrary file read attacks, Pantau rejects kubeconfigs with file-path credentials (`certificate-authority`, `client-certificate`, `client-key`, `tokenFile`). Credentials must be inlined (`*-data` base64) or provided as direct tokens.
+- **Plugin Command Allowlist**: Only approved CLI tools are permitted in `exec` configuration blocks: `aws`, `aws-iam-authenticator`, `gke-gcloud-auth-plugin`, `gcloud`, `kubelogin`, `az`, `doctl`, and `oci`. Path separators (`/` or `\`) and command-based `auth-provider` configurations are rejected.
+- **Zero API Exposure**: Kubeconfig data is stored in the database like private SSH keys, backed up in encrypted System Snapshots, and never exposed in REST API responses.
+
+##### Operational Limits
+- **Interactive Pod Exec Unsupported**: The interactive Terminal Dock shell relies on an SSH PTY connection to a host. Because external clusters operate via local `kubectl`, interactive container exec is disabled and hidden in the UI.
+- **Live WebSocket Logs Supported**: Real-time log streaming (`/ws/kube/logs`) is fully supported for pods and workloads.
+- **Single Endpoint**: External clusters do not feature host failover.
+
+##### Troubleshooting
+- **`kubectl not found`**: Ensure `kubectl` is installed and reachable in `PATH` of the Pantau process (official Pantau Docker images include `kubectl` out of the box).
+- **`plugin not allowed`**: The `exec` command in your kubeconfig is not on the allowed list or contains directory paths. Use one of the supported plugins (`aws`, `kubelogin`, etc.).
+- **`file-path credential rejected`**: The kubeconfig points to local files on your machine (e.g. `certificate-authority: /path/to/ca.crt`). Flatten the file using `kubectl config view --raw --flatten` before pasting.
+- **`cluster verification failed`**: The Pantau server could not authenticate or reach the cluster API endpoint. Verify network egress, firewall rules, and cloud credentials in the Pantau process environment.
 ### Evaluating Server Longevity with Lifecycle Assessment
 
 Pantau continuously calculates an auditable **Lifecycle Score** (0–100) based on six weighted factors:

@@ -60,9 +60,15 @@ func KubeShell(body string) string {
 func kubeShell(body string) string {
 	return KubeShell(body)
 }
-
-func (ins *Inspector) kubeRunner(hostID int64) (sshrunner.Runner, error) {
-	host, err := ins.db.GetHost(hostID)
+func (ins *Inspector) kubeRunner(targetID int64) (sshrunner.Runner, error) {
+	if IsKubeClusterTarget(targetID) {
+		cluster, err := ins.getClusterTarget(targetID)
+		if err != nil {
+			return nil, err
+		}
+		return newLocalKubeRunner(cluster.Kubeconfig)
+	}
+	host, err := ins.db.GetHost(targetID)
 	if err != nil || host == nil {
 		return nil, fmt.Errorf("host not found")
 	}
@@ -79,12 +85,12 @@ func (ins *Inspector) CheckKubeConnection(hostID int64) error {
 }
 
 func (ins *Inspector) kubeExec(hostID int64, body string, timeout time.Duration) (stdout, stderr string, exitCode int, err error) {
-	runner, err := ins.kubeRunner(hostID)
+	runner, wrap, err := ins.KubeStreamRunner(hostID)
 	if err != nil {
 		return "", "", 0, err
 	}
 	defer runner.Close()
-	return runner.ExecTimeout(kubeShell(body), timeout)
+	return runner.ExecTimeout(wrap(body), timeout)
 }
 
 func (ins *Inspector) kubeQuery(hostID int64, body, what string, timeout time.Duration) (string, error) {
@@ -99,21 +105,31 @@ func (ins *Inspector) kubeQuery(hostID int64, body, what string, timeout time.Du
 }
 
 func (ins *Inspector) kubeRun(hostID int64, body, what, target string, timeout time.Duration) (string, error) {
-	host, err := ins.db.GetHost(hostID)
-	if err != nil || host == nil {
-		return "", fmt.Errorf("host not found")
+	targetName := "cluster"
+	if IsKubeClusterTarget(hostID) {
+		cluster, err := ins.getClusterTarget(hostID)
+		if err != nil {
+			return "", err
+		}
+		targetName = cluster.Name
+	} else {
+		host, err := ins.db.GetHost(hostID)
+		if err != nil || host == nil {
+			return "", fmt.Errorf("host not found")
+		}
+		targetName = host.Name
 	}
 	stdout, stderr, exitCode, err := ins.kubeExec(hostID, body, timeout)
 	if err != nil {
-		logger.Warn("kube", host.Name, fmt.Sprintf("%s %s failed: %v", what, target, err))
+		logger.Warn("kube", targetName, fmt.Sprintf("%s %s failed: %v", what, target, err))
 		return "", err
 	}
 	if exitCode != 0 {
 		e := kubeCommandError(what, stdout, stderr, exitCode)
-		logger.Warn("kube", host.Name, fmt.Sprintf("%s %s failed: %s", what, target, shortEvidence(e.Error())))
+		logger.Warn("kube", targetName, fmt.Sprintf("%s %s failed: %s", what, target, shortEvidence(e.Error())))
 		return "", e
 	}
-	logger.Info("kube", host.Name, fmt.Sprintf("%s %s", what, target))
+	logger.Info("kube", targetName, fmt.Sprintf("%s %s", what, target))
 	return strings.TrimSpace(stdout), nil
 }
 
@@ -808,7 +824,7 @@ func parseKubeDetect(out string) (*KubeClusterInfo, error) {
 	if distro == "" {
 		distro = strings.TrimSpace(sections["DISTRO"])
 	}
-	if distro != "k3s" && distro != "rke2" {
+	if distro == "" {
 		return nil, errors.New("no k3s/rke2 control plane found")
 	}
 	verRaw := strings.TrimSpace(sections["===VERSION==="])

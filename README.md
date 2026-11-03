@@ -182,9 +182,9 @@ Pantau inspects remote hosts via non-interactive SSH commands, continuously vali
 - **Zero-Waste Performance Throttling**: Skips 100% of DOM manipulation when the drawer is closed and coalesces incoming events with `requestAnimationFrame` when open to eliminate CPU waste and layout thrashing.
 
 ### 18. ⚡ Top Resource Consumers & Process Telemetry
-- **Agentless Process Observability**: Continuously extracts top 5 resource-consuming processes across three dimensions—Top CPU (`%cpu`), Top Physical Memory (`rss`), and Top Virtual Memory (Swap)—during every standard inspection cycle without running background remote daemons.
-- **Conditional Swap Scanner**: Low-overhead `/proc/[0-9]*/status` VmSwap extraction executed conditionally only when swap memory usage is detected (`SwapUsedBytes > 0`), avoiding CPU churn on systems with swap unconfigured.
-- **Overview Telemetry Widget**: Responsive 3-column process card inside the Host Detail Overview tab showing PID, user, memory footprint, and command details, paired with a direct one-click launcher to open the interactive Terminal Dock.
+- **Agentless Process Observability**: Continuously extracts top 5 resource-consuming processes across three dimensions—Top CPU (`%cpu`), Top Physical Memory (`rss`), and Top Virtual Memory (Swap)—during every standard inspection cycle without running background remote daemons. On Linux, Top CPU reflects current usage sampled across a ~1 s window per inspection (% of one core, up to >100% for multi-threaded processes) rather than lifetime average `ps %cpu`, while macOS tracks recent usage via `ps -Aro`. On environments whose `ps` lacks `--sort` (e.g. BusyBox/Alpine), Pantau sorts processes internally so the true top 5 are always displayed.
+- **Conditional Swap Scanner**: Low-overhead `/proc/[0-9]*/status` VmSwap extraction executed conditionally only when swap memory usage is detected (`SwapUsedBytes > 0`), resolving system usernames from `/etc/passwd` (falling back to numeric UID only if unresolvable) and avoiding CPU churn on systems with swap unconfigured.
+- **Overview Telemetry Widget**: Responsive 3-column process card inside the Host Detail Overview tab showing PID, user name, memory footprint, and command details, paired with a direct one-click launcher to open the interactive Terminal Dock.
 
 ### 19. 📦 Polyglot Package Inventory & Software Hygiene
 - **Agentless Multi-Distro Inventory**: Discovers installed system software across Debian/Ubuntu (`dpkg-query`), RHEL/CentOS/AlmaLinux/Rocky (`rpm`), Alpine (`apk`), and Arch (`pacman`) via native zero-dependency CLI inspection.
@@ -245,6 +245,12 @@ Pantau inspects remote hosts via non-interactive SSH commands, continuously vali
 - **macOS Security & Hardening Assessment**: Audits pending system updates via `/usr/sbin/softwareupdate` with honest `partial` reporting on network timeouts, coupled with 4 native hardening checks: OpenSSH root login, password authentication, automatic software update preferences (`com.apple.SoftwareUpdate`), and application firewall state.
 - **Continuous Desired State & Portable Diagnostics**: Validates APFS disk thresholds, `launchd` services, listening ports via `lsof`, and backup freshness via BSD `stat -f`. Runs network latency probes and traceroute using native Darwin tooling without external package installation.
 - **Zero Linux Regressions**: Built with strict isolation (`uname -s` runtime branch); Linux inspection workflows remain 100% byte-for-byte unchanged.
+
+### 28. ☸️ Kubernetes Cluster Management (k3s, RKE2 & External Kubeconfig)
+- **Agentless k3s / RKE2 Control-Plane Inspection**: Inspect nodes, workloads (Deployments, StatefulSets, DaemonSets), pods, services, ingresses, configmaps, persistent volumes, jobs, and events over standard SSH using the host's existing `kubectl` with passwordless sudo fallback when kubeconfig requires elevation.
+- **External Clusters via Kubeconfig (EKS, GKE, AKS & Remote)**: Register external or managed cloud Kubernetes clusters by pasting or uploading a kubeconfig. Runs commands via local `kubectl` subprocess on the Pantau server while preserving all telemetry views, YAML editing with server diff gates, live WebSocket logs, and lifecycle actions.
+- **Secure Kubeconfig Intake**: Validates inputs up to 128 KB, minifies to single-context JSON, strictly rejects arbitrary local file-path credentials (`tokenFile`, `client-key`, etc.), and restricts `exec` credential plugins to a strict allowlist (`aws`, `gke-gcloud-auth-plugin`, `kubelogin`, `az`, `doctl`, `oci`).
+- **Action Safety & Guardrails**: Enforce per-cluster policies (`full`, `no-exec`, or `read-only`), concrete impact confirmations for scale-to-0, rollout restart, pod deletion, and node cordon/drain.
 
 ---
 

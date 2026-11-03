@@ -3780,7 +3780,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
           <div>
             <h2 style="margin:0 0 4px 0;font-size:var(--fs-xl);font-weight:600;" data-i18n="kube_section_title">Kubernetes Management</h2>
-            <p style="margin:0;color:var(--text-muted);font-size:var(--fs-sm);" data-i18n="kube_section_desc">Manage k3s and rke2 clusters on target hosts.</p>
+            <p style="margin:0;color:var(--text-muted);font-size:var(--fs-sm);" data-i18n="kube_section_desc">Manage k3s and rke2 clusters on target hosts, or external clusters (EKS, GKE, AKS) from a kubeconfig.</p>
           </div>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <div style="display:flex;align-items:center;gap:6px;">
@@ -3804,6 +3804,15 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
                 <option value="" data-i18n="kube_select_host">Select a host...</option>
               </select>
             </div>
+            <button id="btnKubeAddCluster" class="btn btn-sm header-btn" onclick="openKubeClusterModal()" title="Add cluster" data-i18n-title="kube_ext_add_cluster" style="height:34px;display:inline-flex;align-items:center;gap:6px;">
+              <svg class="icon icon-sm"><use href="#i-plus"/></svg> <span data-i18n="kube_ext_add_cluster">Add cluster</span>
+            </button>
+            <button id="btnKubeEditCluster" class="btn btn-sm header-btn" onclick="openKubeClusterModal(selectedKubeHostId)" title="Edit cluster" data-i18n-title="kube_ext_edit" style="height:34px;display:none;align-items:center;gap:6px;">
+              <svg class="icon icon-sm"><use href="#i-pencil"/></svg> <span data-i18n="kube_ext_edit">Edit</span>
+            </button>
+            <button id="btnKubeDeleteCluster" class="btn btn-sm header-btn btn-danger" onclick="deleteKubeCluster(selectedKubeHostId)" title="Delete cluster" data-i18n-title="kube_ext_delete" style="height:34px;display:none;align-items:center;gap:6px;">
+              <svg class="icon icon-sm"><use href="#i-trash-2"/></svg> <span data-i18n="kube_ext_delete">Delete</span>
+            </button>
             <button id="btnKubeDetectClusters" class="btn btn-sm header-btn" onclick="detectKubeClusters()" title="Detect clusters" data-i18n-title="kube_btn_detect_clusters" style="height:34px;display:inline-flex;align-items:center;gap:6px;">
               <svg class="icon icon-sm"><use href="#i-search"/></svg> <span data-i18n="kube_btn_detect_clusters">Detect clusters</span>
             </button>
@@ -4146,6 +4155,69 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
     <div class="modal-footer">
       <button class="btn btn-sm" onclick="closeModal('kubeDrainModal')" data-i18n="cancel">Cancel</button>
       <button class="btn btn-sm btn-danger" id="btnKubeDrainConfirm" onclick="confirmKubeDrain()" data-i18n="kube_drain">Drain</button>
+    </div>
+  </div>
+</div>
+
+<!-- Kubernetes External Cluster Modal (Action Dialog) -->
+<div id="kubeClusterModal" class="modal">
+  <div class="modal-content modal-dialog-lg" style="max-width: 640px;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <svg class="icon icon-sm text-accent"><use href="#i-cloud"/></svg>
+        <h3 id="kubeClusterModalTitle" style="font-size: var(--fs-md); margin: 0;" data-i18n="kube_ext_modal_title_add">Add External Cluster</h3>
+      </div>
+      <button class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('kubeClusterModal')" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px; padding: 16px 20px;">
+      <div style="font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.5;" data-i18n="kube_ext_modal_intro">Connect an external Kubernetes cluster (EKS, GKE, AKS, or any cluster). kubectl runs locally on the Pantau server using this kubeconfig.</div>
+      
+      <div class="dk-field">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+          <label for="kubeClusterConfig" style="margin: 0; font-size: var(--fs-xs); font-weight: 600; color: var(--text-muted);"><span data-i18n="kube_ext_kubeconfig_label">Kubeconfig (YAML / JSON)</span> <span id="kubeClusterConfigReqStar" style="color: var(--danger);">*</span></label>
+          <div style="display: flex; gap: 6px;">
+            <input type="file" id="kubeClusterFileInput" accept=".yaml,.yml,.json,application/json,text/yaml" style="display: none;" onchange="loadKubeClusterFile(event)" />
+            <button type="button" class="btn btn-sm btn-ghost" onclick="document.getElementById('kubeClusterFileInput').click()" style="height: 24px; padding: 0 8px; font-size: var(--fs-xs); display: inline-flex; align-items: center; gap: 4px;">
+              <svg class="icon icon-xs"><use href="#i-folder"/></svg> <span data-i18n="kube_ext_load_file">Load file</span>
+            </button>
+            <button type="button" id="btnKubeClusterLoadContexts" class="btn btn-sm btn-ghost" onclick="loadKubeClusterContexts()" style="height: 24px; padding: 0 8px; font-size: var(--fs-xs); display: inline-flex; align-items: center; gap: 4px;">
+              <svg class="icon icon-xs"><use href="#i-refresh-cw"/></svg> <span data-i18n="kube_ext_load_contexts">Load contexts</span>
+            </button>
+          </div>
+        </div>
+        <textarea id="kubeClusterConfig" class="form-input font-mono" rows="7" spellcheck="false" autocomplete="off" autocapitalize="off" style="width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: var(--fs-xs); resize: vertical;" placeholder="apiVersion: v1&#10;clusters: ...&#10;users: ...&#10;contexts: ...&#10;current-context: ..."></textarea>
+        <div id="kubeClusterConfigHint" class="dk-hint" style="font-size: var(--fs-xs); color: var(--text-faint); margin-top: 3px;" data-i18n="kube_ext_kubeconfig_hint">Paste kubeconfig content or click 'Load file'. In edit mode, leave empty to keep saved credentials.</div>
+      </div>
+
+      <div class="dk-form-grid">
+        <div class="dk-field">
+          <label for="kubeClusterContext" data-i18n="kube_ext_context_label">Context *</label>
+          <select id="kubeClusterContext" class="form-input" style="width: 100%; box-sizing: border-box;" onchange="onKubeClusterContextChange()" disabled></select>
+        </div>
+        <div class="dk-field">
+          <label for="kubeClusterName" data-i18n="kube_ext_name_label">Display Name *</label>
+          <input type="text" id="kubeClusterName" class="form-input" style="width: 100%; box-sizing: border-box;" placeholder="e.g. prod-eks-us-east-1" />
+        </div>
+        <div class="dk-field dk-full">
+          <label for="kubeClusterMode" data-i18n="host_kube_mode">Kubernetes Mode</label>
+          <select id="kubeClusterMode" class="form-input" style="width: 100%; box-sizing: border-box;">
+            <option value="full" data-i18n="kube_mode_full">Full (Read, Write &amp; Exec)</option>
+            <option value="no-exec" data-i18n="kube_mode_no_exec">No Exec (Block pod exec console)</option>
+            <option value="read-only" data-i18n="kube_mode_read_only">Read-Only (Block mutations &amp; exec)</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="background: var(--surface-2); border: 1px solid var(--card-border); border-radius: var(--radius-sm); padding: 10px 12px; font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.45;">
+        <div style="font-weight: 600; color: var(--text); margin-bottom: 2px;" data-i18n="kube_ext_hint_title">Credentials note</div>
+        <div data-i18n="kube_ext_hint_body">Exec credential plugins (aws, gke-gcloud-auth-plugin, kubelogin) run on the Pantau server and need cloud credentials in its environment. File-path credentials and auth-provider are rejected; use inline data or an exec plugin.</div>
+      </div>
+
+      <div id="kubeClusterError" role="alert" style="display: none; background: var(--danger-soft); border: 1px solid var(--danger-border); border-radius: var(--radius-sm); padding: 8px 12px; font-size: var(--fs-xs); color: var(--danger); white-space: pre-wrap; word-break: break-all;"></div>
+    </div>
+    <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end; align-items: center;">
+      <button type="button" class="btn btn-sm" onclick="closeModal('kubeClusterModal')" data-i18n="cancel">Cancel</button>
+      <button type="button" class="btn btn-sm btn-primary" id="btnKubeClusterSubmit" onclick="submitKubeClusterModal()"><span id="btnKubeClusterSubmitText" data-i18n="kube_ext_btn_test_save">Test &amp; Save</span></button>
     </div>
   </div>
 </div>
@@ -6922,7 +6994,7 @@ const I18N = {
     "docker_section_desc": "Select a host to manage containers, images, volumes, networks, and stacks.",
     "docker_open_btn": "Manage Docker",
     "kube_section_title": "Kubernetes Management",
-    "kube_section_desc": "Manage k3s and rke2 clusters on target hosts.",
+    "kube_section_desc": "Manage k3s and rke2 clusters on target hosts, or external clusters (EKS, GKE, AKS) from a kubeconfig.",
     "kube_select_host": "Select a host...",
     "kube_no_cluster": "No k3s or rke2 control plane found on this host.",
     "kube_tab_nodes": "Nodes",
@@ -6968,6 +7040,40 @@ const I18N = {
     "kube_standalone": "Standalone",
     "kube_node_single": "node",
     "kube_node_multi": "nodes",
+    "kube_ext_add_cluster": "Add cluster",
+    "kube_ext_group_external": "External clusters",
+    "kube_ext_edit": "Edit cluster",
+    "kube_ext_delete": "Delete cluster",
+    "kube_ext_external_chip": "External",
+    "kube_ext_provider_eks": "EKS",
+    "kube_ext_provider_gke": "GKE",
+    "kube_ext_provider_aks": "AKS",
+    "kube_ext_provider_generic": "Generic",
+    "kube_ext_modal_title_add": "Add External Cluster",
+    "kube_ext_modal_title_edit": "Edit External Cluster",
+    "kube_ext_modal_intro": "Connect an external Kubernetes cluster (EKS, GKE, AKS, or any cluster). kubectl runs locally on the Pantau server using this kubeconfig.",
+    "kube_ext_kubeconfig_label": "Kubeconfig (YAML / JSON)",
+    "kube_ext_load_file": "Load file",
+    "kube_ext_load_contexts": "Load contexts",
+    "kube_ext_kubeconfig_hint": "Paste kubeconfig content or click 'Load file'. In edit mode, leave empty to keep saved credentials.",
+    "kube_ext_context_label": "Context",
+    "kube_ext_name_label": "Display Name",
+    "kube_ext_hint_title": "Credentials note",
+    "kube_ext_hint_body": "Exec credential plugins (aws, gke-gcloud-auth-plugin, kubelogin) run on the Pantau server and need cloud credentials in its environment. File-path credentials and auth-provider are rejected; use inline data or an exec plugin.",
+    "kube_ext_btn_test_save": "Test & Save",
+    "kube_ext_btn_save": "Save",
+    "kube_ext_verifying": "Verifying...",
+    "kube_ext_saving": "Saving...",
+    "kube_ext_saved": "Cluster saved successfully",
+    "kube_ext_deleted": "Cluster deleted",
+    "kube_ext_confirm_delete_title": "Delete External Cluster",
+    "kube_ext_confirm_delete_msg": "Are you sure you want to delete cluster \"{name}\"? This removes stored credentials and access configuration.",
+    "kube_ext_context_saved_note": "(saved context)",
+    "kube_ext_select_context_placeholder": "Select a context...",
+    "kube_ext_err_no_kubeconfig": "Please paste or load a kubeconfig first",
+    "kube_ext_err_no_contexts": "No contexts found in kubeconfig",
+    "kube_ext_err_no_name": "Please enter a display name",
+    "kube_ext_err_no_context_selected": "Please select a context",
     "kube_failover_from": "failover from",
     "kube_failover_notice": "Failover active: request served by",
     "host_kube_mode": "Kubernetes Mode",
@@ -8225,7 +8331,7 @@ const I18N = {
     "docker_section_desc": "Pilih host untuk mengelola container, image, volume, network, dan stack.",
     "docker_open_btn": "Kelola Docker",
     "kube_section_title": "Manajemen Kubernetes",
-    "kube_section_desc": "Kelola klaster k3s dan rke2 pada host target.",
+    "kube_section_desc": "Kelola klaster k3s dan rke2 pada host target, atau klaster eksternal (EKS, GKE, AKS) dari kubeconfig.",
     "kube_select_host": "Pilih host...",
     "kube_no_cluster": "Tidak ada control plane k3s atau rke2 ditemukan pada host ini.",
     "kube_tab_nodes": "Node",
@@ -8271,6 +8377,40 @@ const I18N = {
     "kube_standalone": "Mandiri",
     "kube_node_single": "node",
     "kube_node_multi": "node",
+    "kube_ext_add_cluster": "Tambah klaster",
+    "kube_ext_group_external": "Klaster eksternal",
+    "kube_ext_edit": "Edit klaster",
+    "kube_ext_delete": "Hapus klaster",
+    "kube_ext_external_chip": "Eksternal",
+    "kube_ext_provider_eks": "EKS",
+    "kube_ext_provider_gke": "GKE",
+    "kube_ext_provider_aks": "AKS",
+    "kube_ext_provider_generic": "Generik",
+    "kube_ext_modal_title_add": "Tambah Klaster Eksternal",
+    "kube_ext_modal_title_edit": "Edit Klaster Eksternal",
+    "kube_ext_modal_intro": "Hubungkan klaster Kubernetes eksternal (EKS, GKE, AKS, atau klaster lainnya). kubectl berjalan secara lokal pada server Pantau menggunakan kubeconfig ini.",
+    "kube_ext_kubeconfig_label": "Kubeconfig (YAML / JSON)",
+    "kube_ext_load_file": "Muat berkas",
+    "kube_ext_load_contexts": "Muat konteks",
+    "kube_ext_kubeconfig_hint": "Tempel isi kubeconfig atau klik 'Muat berkas'. Dalam mode edit, biarkan kosong untuk mempertahankan kredensial tersimpan.",
+    "kube_ext_context_label": "Konteks",
+    "kube_ext_name_label": "Nama Tampilan",
+    "kube_ext_hint_title": "Catatan kredensial",
+    "kube_ext_hint_body": "Plugin kredensial exec (aws, gke-gcloud-auth-plugin, kubelogin) berjalan di server Pantau dan membutuhkan kredensial cloud di lingkungannya. Kredensial berupa path berkas dan auth-provider tidak didukung; gunakan data inline atau plugin exec.",
+    "kube_ext_btn_test_save": "Uji & Simpan",
+    "kube_ext_btn_save": "Simpan",
+    "kube_ext_verifying": "Memverifikasi...",
+    "kube_ext_saving": "Menyimpan...",
+    "kube_ext_saved": "Klaster berhasil disimpan",
+    "kube_ext_deleted": "Klaster berhasil dihapus",
+    "kube_ext_confirm_delete_title": "Hapus Klaster Eksternal",
+    "kube_ext_confirm_delete_msg": "Yakin ingin menghapus klaster \"{name}\"? Tindakan ini akan menghapus kredensial tersimpan dan konfigurasi akses.",
+    "kube_ext_context_saved_note": "(konteks tersimpan)",
+    "kube_ext_select_context_placeholder": "Pilih konteks...",
+    "kube_ext_err_no_kubeconfig": "Silakan tempel atau muat kubeconfig terlebih dahulu",
+    "kube_ext_err_no_contexts": "Tidak ada konteks yang ditemukan dalam kubeconfig",
+    "kube_ext_err_no_name": "Harap masukkan nama tampilan",
+    "kube_ext_err_no_context_selected": "Harap pilih konteks",
     "kube_failover_from": "failover dari",
     "kube_failover_notice": "Failover aktif: permintaan dilayani oleh",
     "host_kube_mode": "Mode Kubernetes",
@@ -20743,11 +20883,11 @@ function switchSideNav(section) {
   toggleSidePanelMobile(false);
   if (section !== 'kube') stopKubeAutorefresh();
   if (section === 'docker') renderDockerSection();
-  else if (section === 'kube') populateKubeHostSelect();
+  else if (section === 'kube') { loadKubeClusters(); populateKubeHostSelect(); }
 }
 function updateSideNavData() {
   if (currentSideNav === 'docker') renderDockerSection();
-  if (currentSideNav === 'kube') populateKubeHostSelect();
+  if (currentSideNav === 'kube') { loadKubeClusters(); populateKubeHostSelect(); }
 }
 async function openHostDocker(hostId) {
   setHostActiveTab(hostId, 'docker');
@@ -20801,23 +20941,57 @@ let kubeNodesCache = [], kubeWorkloadsCache = [], kubePodsCache = [], kubeServic
 let kubeGenericCache = {}, kubePickerActiveIndex = -1;
 let lastDiffedYaml = null;
 
+const kubeIsCluster = id => Number(id) < 0;
+function kubeApiBase(id = selectedKubeHostId) { return kubeIsCluster(id) ? `/api/kube/clusters/${-id}` : `/api/hosts/${id}/kube`; }
+function kubeWsParam(id = selectedKubeHostId) { return kubeIsCluster(id) ? `cluster_id=${-id}` : `host_id=${id}`; }
+let kubeClusters = [];
+function kubeProviderLabel(p) {
+  const map = { eks: t('kube_ext_provider_eks', 'EKS'), gke: t('kube_ext_provider_gke', 'GKE'), aks: t('kube_ext_provider_aks', 'AKS'), generic: t('kube_ext_provider_generic', 'Generic') };
+  return map[(p || '').toLowerCase()] || (p ? String(p).toUpperCase() : t('kube_ext_provider_generic', 'Generic'));
+}
+async function loadKubeClusters() {
+  try {
+    const res = await fetch('/api/kube/clusters');
+    const data = await res.json();
+    if (data && data.ok && Array.isArray(data.clusters)) {
+      kubeClusters = data.clusters;
+    } else {
+      kubeClusters = [];
+    }
+  } catch(e) {
+    kubeClusters = [];
+  }
+  populateKubeHostSelect();
+}
+
 function handleKubeEnvelope(data) {
   if (!data) return;
   const gwChip = document.getElementById('kubeGatewayChip');
-  if (gwChip && data.served_by_host_name) {
-    gwChip.style.display = 'inline-flex';
-    if (data.failover) {
-      const prim = (allRawHosts || []).find(x => String(x.id) === String(data.primary_host_id))?.name || ('host #' + data.primary_host_id);
-      gwChip.className = 'badge badge-warning';
-      gwChip.textContent = 'Gateway: ' + data.served_by_host_name + ' (' + t('kube_failover_from', 'failover from') + ' ' + prim + ')';
-    } else {
+  if (gwChip) {
+    if (data.external) {
+      gwChip.style.display = 'inline-flex';
       gwChip.className = 'badge';
       gwChip.style.background = 'var(--surface-2)';
       gwChip.style.border = '1px solid var(--card-border)';
-      gwChip.textContent = 'Gateway: ' + data.served_by_host_name;
+      const pLabel = kubeProviderLabel(data.provider);
+      gwChip.textContent = t('kube_ext_external_chip', 'External') + ' · ' + pLabel;
+      return;
+    }
+    if (data.served_by_host_name) {
+      gwChip.style.display = 'inline-flex';
+      if (data.failover) {
+        const prim = (allRawHosts || []).find(x => String(x.id) === String(data.primary_host_id))?.name || ('host #' + data.primary_host_id);
+        gwChip.className = 'badge badge-warning';
+        gwChip.textContent = 'Gateway: ' + data.served_by_host_name + ' (' + t('kube_failover_from', 'failover from') + ' ' + prim + ')';
+      } else {
+        gwChip.className = 'badge';
+        gwChip.style.background = 'var(--surface-2)';
+        gwChip.style.border = '1px solid var(--card-border)';
+        gwChip.textContent = 'Gateway: ' + data.served_by_host_name;
+      }
     }
   }
-  if (data.failover) {
+  if (!data.external && data.failover) {
     const prim = (allRawHosts || []).find(x => String(x.id) === String(data.primary_host_id))?.name || ('host #' + data.primary_host_id);
     const err = data.primary_error ? (': ' + data.primary_error) : '';
     showToast(t('kube_failover_notice', 'Failover active: request served by') + ' ' + data.served_by_host_name + ' (' + prim + err + ')', 'warning', 6000);
@@ -20825,11 +20999,21 @@ function handleKubeEnvelope(data) {
 }
 
 function getSelectedKubeMode() {
+  if (kubeIsCluster(selectedKubeHostId)) {
+    const c = (kubeClusters || []).find(x => x.id === -Number(selectedKubeHostId));
+    return c?.kube_mode || 'full';
+  }
   const h = (allRawHosts || []).find(x => String(x.id) === String(selectedKubeHostId));
   return h?.kube_mode || 'full';
 }
 
 function updateKubeModeChip() {
+  const btnEdit = document.getElementById('btnKubeEditCluster');
+  const btnDelete = document.getElementById('btnKubeDeleteCluster');
+  const isExt = kubeIsCluster(selectedKubeHostId);
+  if (btnEdit) btnEdit.style.display = isExt ? 'inline-flex' : 'none';
+  if (btnDelete) btnDelete.style.display = isExt ? 'inline-flex' : 'none';
+
   const chip = document.getElementById('kubeModeChip');
   if (!chip) return;
   const mode = getSelectedKubeMode();
@@ -20847,6 +21031,7 @@ function updateKubeModeChip() {
 }
 
 function findHostForKubeNode(n) {
+  if (kubeIsCluster(selectedKubeHostId)) return null;
   if (!n) return null;
   const ip = (n.internalIP || '').trim();
   const name = (n.name || '').trim().toLowerCase();
@@ -20934,11 +21119,18 @@ function populateKubeHostSelect() {
   const sel = document.getElementById('kubeHostSelect');
   if (sel) {
     const currentVal = sel.value;
-    sel.innerHTML = `<option value="">${t('kube_select_host', 'Select a host...')}</option>` +
-      (allRawHosts || []).map(h => `<option value="${h.id}">${escapeHtml(h.name)} (${escapeHtml(h.host)})</option>`).join('');
-    if (selectedKubeHostId && (allRawHosts || []).some(h => String(h.id) === String(selectedKubeHostId))) {
+    let optHtml = `<option value="">${t('kube_select_host', 'Select a host...')}</option>`;
+    if (kubeClusters && kubeClusters.length > 0) {
+      optHtml += `<optgroup label="${t('kube_ext_group_external', 'External clusters')}">` +
+        kubeClusters.map(c => `<option value="${-c.id}">${escapeHtml(c.name)} (${escapeHtml(kubeProviderLabel(c.provider))})</option>`).join('') +
+        `</optgroup>`;
+    }
+    optHtml += (allRawHosts || []).map(h => `<option value="${h.id}">${escapeHtml(h.name)} (${escapeHtml(h.host)})</option>`).join('');
+    sel.innerHTML = optHtml;
+    const hasHost = hId => (allRawHosts || []).some(h => String(h.id) === String(hId)) || (kubeClusters || []).some(c => String(-c.id) === String(hId));
+    if (selectedKubeHostId && hasHost(selectedKubeHostId)) {
       sel.value = String(selectedKubeHostId);
-    } else if (currentVal && (allRawHosts || []).some(h => String(h.id) === String(currentVal))) {
+    } else if (currentVal && hasHost(currentVal)) {
       sel.value = currentVal;
     }
   }
@@ -20949,6 +21141,14 @@ function populateKubeHostSelect() {
 function updateKubeHostPickerBtn() {
   const label = document.getElementById('kubeHostPickerSelected');
   if (!label) return;
+  if (kubeIsCluster(selectedKubeHostId)) {
+    const cluster = (kubeClusters || []).find(c => c.id === -Number(selectedKubeHostId));
+    if (cluster) {
+      const pLabel = kubeProviderLabel(cluster.provider);
+      label.innerHTML = `<svg class="icon icon-xs text-muted" style="flex-shrink:0;"><use href="#i-cloud"/></svg> <span style="font-weight:600;">${escapeHtml(cluster.name)}</span> <span class="badge" style="font-size:10px;padding:1px 6px;">${escapeHtml(pLabel)}</span>`;
+      return;
+    }
+  }
   const h = (allRawHosts || []).find(x => String(x.id) === String(selectedKubeHostId));
   if (h) {
     const status = h.status || 'unknown';
@@ -21050,6 +21250,11 @@ function renderKubeHostPickerList() {
   const hosts = allRawHosts || [];
   kubePickerActiveIndex = -1;
 
+  const extItems = (kubeClusters || []).filter(c => {
+    const pLabel = kubeProviderLabel(c.provider);
+    return !q || (c.name || '').toLowerCase().includes(q) || (c.provider || '').toLowerCase().includes(q) || (c.context || '').toLowerCase().includes(q) || pLabel.toLowerCase().includes(q);
+  });
+
   const clusterMap = {};
   const standalone = [];
   hosts.forEach(h => {
@@ -21078,12 +21283,25 @@ function renderKubeHostPickerList() {
     return !q || (h.name || '').toLowerCase().includes(q) || (h.host || '').toLowerCase().includes(q);
   });
 
-  if (clusterItems.length === 0 && standaloneItems.length === 0) {
+  if (extItems.length === 0 && clusterItems.length === 0 && standaloneItems.length === 0) {
     list.innerHTML = `<div style="padding:10px;text-align:center;color:var(--text-muted);font-size:var(--fs-xs);">${t('kube_no_data', 'No items found')}</div>`;
     return;
   }
 
   let html = '';
+  if (extItems.length > 0) {
+    html += `<div style="font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;padding:6px 10px 2px;letter-spacing:0.5px;">${t('kube_ext_group_external', 'External clusters')}</div>`;
+    html += extItems.map(c => {
+      const isSelected = selectedKubeHostId && String(selectedKubeHostId) === String(-c.id);
+      const pLabel = kubeProviderLabel(c.provider);
+      return `<div class="kube-host-picker-item" role="option" aria-selected="${isSelected}" onclick="pickKubeHost(${-c.id})" style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:var(--radius-sm);cursor:pointer;font-size:var(--fs-xs);transition:background var(--dur);background:${isSelected ? 'var(--accent-soft)' : 'transparent'};">
+        <svg class="icon icon-xs text-muted" style="flex-shrink:0;"><use href="#i-cloud"/></svg>
+        <span style="font-weight:600;color:var(--text);">${escapeHtml(c.name)}</span>
+        <span class="badge" style="margin-left:auto;font-size:10px;padding:1px 6px;">${escapeHtml(pLabel)}</span>
+      </div>`;
+    }).join('');
+  }
+
   if (clusterItems.length > 0) {
     html += clusterItems.map(c => `
       <div class="kube-host-picker-item" role="option" aria-selected="${c.isSelected}" onclick="pickKubeHost(${c.targetHostId})" style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:var(--radius-sm);cursor:pointer;font-size:var(--fs-xs);transition:background var(--dur);background:${c.isSelected ? 'var(--accent-soft)' : 'transparent'};">
@@ -21096,7 +21314,7 @@ function renderKubeHostPickerList() {
   }
 
   if (standaloneItems.length > 0) {
-    if (Object.keys(clusterMap).length > 0) {
+    if (extItems.length > 0 || Object.keys(clusterMap).length > 0) {
       html += `<div style="font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;padding:6px 10px 2px;letter-spacing:0.5px;">${t('kube_standalone', 'Standalone')}</div>`;
     }
     html += standaloneItems.map(h => {
@@ -21146,11 +21364,11 @@ async function onSelectKubeHost(hostId) {
   if (viewsContainer) viewsContainer.style.display = 'none';
   showToast(t('kube_loading', 'Loading cluster data...'), 'info', 1500);
   try {
-    const res = await fetch(`/api/hosts/${selectedKubeHostId}/kube/detect`);
+    const res = await fetch(`${kubeApiBase()}/detect`);
     const data = await res.json();
     handleKubeEnvelope(data);
     updateKubeModeChip();
-    if (data.cluster && data.cluster.cluster_id) {
+    if (!kubeIsCluster(selectedKubeHostId) && data.cluster && data.cluster.cluster_id) {
       const curH = (allRawHosts || []).find(x => x.id === selectedKubeHostId);
       if (curH) curH.kube_cluster_id = data.cluster.cluster_id;
       updateKubeHostPickerBtn();
@@ -21182,7 +21400,7 @@ async function onSelectKubeHost(hostId) {
 async function loadKubeNamespaces() {
   if (!selectedKubeHostId) return;
   try {
-    const res = await fetch(`/api/hosts/${selectedKubeHostId}/kube/namespaces`);
+    const res = await fetch(`${kubeApiBase()}/namespaces`);
     const data = await res.json();
     kubeNamespacesList = (data.ok && Array.isArray(data.namespaces)) ? data.namespaces : [];
   } catch(e) { kubeNamespacesList = []; }
@@ -21258,7 +21476,7 @@ async function kubeFetchTab(url, key, heads, rowFn, cacheFn) {
   }
 }
 function loadKubeNodes() {
-  kubeFetchTab(`/api/hosts/${selectedKubeHostId}/kube/nodes`, 'nodes',
+  kubeFetchTab(`${kubeApiBase()}/nodes`, 'nodes',
     [t('col_name', 'Name'), t('col_status', 'Status'), 'Roles', 'Version', t('col_ip', 'Internal IP'), t('docker_col_cpu', 'CPU'), t('docker_col_mem', 'Memory'), t('col_age', 'Age'), ''],
     (n, idx) => {
       const h = findHostForKubeNode(n);
@@ -21288,7 +21506,7 @@ function loadKubeNodes() {
   );
 }
 function loadKubeWorkloads() {
-  kubeFetchTab(`/api/hosts/${selectedKubeHostId}/kube/workloads?ns=${encodeURIComponent(currentKubeNamespace)}`, 'workloads',
+  kubeFetchTab(`${kubeApiBase()}/workloads?ns=${encodeURIComponent(currentKubeNamespace)}`, 'workloads',
     ['Kind', t('kube_namespace', 'Namespace'), t('col_name', 'Name'), 'Ready', 'Images', t('col_age', 'Age'), ''],
     (w, idx) => {
       const imgs = Array.isArray(w.images) ? w.images.join(', ') : (w.images || '-');
@@ -21344,12 +21562,12 @@ function renderKubePodsTable() {
   }).join(''));
 }
 function loadKubePods() {
-  kubeFetchTab(`/api/hosts/${selectedKubeHostId}/kube/pods?ns=${encodeURIComponent(currentKubeNamespace)}`, 'pods', null, null,
+  kubeFetchTab(`${kubeApiBase()}/pods?ns=${encodeURIComponent(currentKubeNamespace)}`, 'pods', null, null,
     pods => { kubePodsCache = pods || []; renderKubePodsTable(); }
   );
 }
 function loadKubeServices() {
-  kubeFetchTab(`/api/hosts/${selectedKubeHostId}/kube/services?ns=${encodeURIComponent(currentKubeNamespace)}`, 'services',
+  kubeFetchTab(`${kubeApiBase()}/services?ns=${encodeURIComponent(currentKubeNamespace)}`, 'services',
     [t('kube_namespace', 'Namespace'), t('col_name', 'Name'), 'Type', 'Cluster IP', 'External IP', 'Ports', t('col_age', 'Age'), ''],
     (s, idx) => {
       const ports = Array.isArray(s.ports) ? s.ports.join(', ') : (s.ports || '-');
@@ -21392,7 +21610,7 @@ function renderKubeEventsTable() {
     </tr>`).join(''));
 }
 function loadKubeEvents() {
-  kubeFetchTab(`/api/hosts/${selectedKubeHostId}/kube/events?ns=${encodeURIComponent(currentKubeNamespace)}`, 'events', null, null,
+  kubeFetchTab(`${kubeApiBase()}/events?ns=${encodeURIComponent(currentKubeNamespace)}`, 'events', null, null,
     evs => { kubeEventsCache = evs || []; renderKubeEventsTable(); });
 }
 async function loadKubeGenericResource(kind) {
@@ -21401,7 +21619,7 @@ async function loadKubeGenericResource(kind) {
   content.innerHTML = `<div style="text-align:center;padding:30px;color:var(--text-muted);">${t('kube_loading')}</div>`;
   const isClusterScoped = (kind === 'pvs');
   const nsParam = isClusterScoped ? '' : encodeURIComponent(currentKubeNamespace);
-  const url = `/api/hosts/${selectedKubeHostId}/kube/resources?kind=${encodeURIComponent(kind)}&ns=${nsParam}`;
+  const url = `${kubeApiBase()}/resources?kind=${encodeURIComponent(kind)}&ns=${nsParam}`;
   try {
     const res = await fetch(url);
     const data = await res.json();
@@ -21530,7 +21748,7 @@ async function submitKubeDiff() {
   if (btnDiff) btnDiff.disabled = true;
   showToast(t('kube_diffing', 'Running dry-run diff...'), 'info', 2000);
   try {
-    const res = await fetch(`/api/hosts/${selectedKubeHostId}/kube/diff`, {
+    const res = await fetch(`${kubeApiBase()}/diff`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ yaml })
@@ -21576,7 +21794,7 @@ async function kubeAction(payload, okMsg, refreshTab) {
   if (!selectedKubeHostId) return;
   showToast(t('working', 'Working...'), 'info', 2000);
   try {
-    const res = await fetch(`/api/hosts/${selectedKubeHostId}/kube/action`, {
+    const res = await fetch(`${kubeApiBase()}/action`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -21633,7 +21851,7 @@ async function submitKubeApply() {
   if (btn) btn.disabled = true;
   showToast(t('working', 'Working...'), 'info', 2000);
   try {
-    const res = await fetch(`/api/hosts/${selectedKubeHostId}/kube/apply`, {
+    const res = await fetch(`${kubeApiBase()}/apply`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ yaml })
@@ -21729,24 +21947,26 @@ function openKubePodMenu(e, idx) {
   const mode = getSelectedKubeMode();
   const isRo = mode === 'read-only';
   const noExec = isRo || mode === 'no-exec';
-  dockerFloatingMenu(e, 'kp_' + idx, [
-    {
+  const menuItems = [];
+  if (!kubeIsCluster(selectedKubeHostId)) {
+    menuItems.push({
       label: t('kube_exec', 'Exec Console'),
       disabled: noExec,
       title: noExec ? t('kube_mode_blocked_exec', 'Exec console is disabled in this mode') : '',
       run: () => promptKubeContainer(p, t('kube_exec', 'Exec Console'), c => kubePodExec(p, c))
-    },
-    { label: t('kube_logs', 'Pod Logs'), run: () => promptKubeContainer(p, t('kube_logs', 'Pod Logs'), c => openKubeLogs(p, c)) },
-    { label: t('kube_describe', 'Describe'), run: () => kubeDescribe('pod', p.namespace, p.name) },
-    null,
-    {
-      label: t('delete', 'Delete'),
-      danger: true,
-      disabled: isRo,
-      title: isRo ? t('kube_mode_blocked_ro', 'Disabled in Read-Only mode') : '',
-      run: () => kubeDeletePod(p)
-    }
-  ]);
+    });
+  }
+  menuItems.push({ label: t('kube_logs', 'Pod Logs'), run: () => promptKubeContainer(p, t('kube_logs', 'Pod Logs'), c => openKubeLogs(p, c)) });
+  menuItems.push({ label: t('kube_describe', 'Describe'), run: () => kubeDescribe('pod', p.namespace, p.name) });
+  menuItems.push(null);
+  menuItems.push({
+    label: t('delete', 'Delete'),
+    danger: true,
+    disabled: isRo,
+    title: isRo ? t('kube_mode_blocked_ro', 'Disabled in Read-Only mode') : '',
+    run: () => kubeDeletePod(p)
+  });
+  dockerFloatingMenu(e, 'kp_' + idx, menuItems);
 }
 function openKubeServiceMenu(e, idx) {
   const s = kubeServicesCache[idx];
@@ -21812,11 +22032,11 @@ async function kubeDeletePod(pod) {
   kubeAction({ op: 'delete', kind: 'pod', ns: pod.namespace, name: pod.name }, null, 'pods');
 }
 function kubeDescribe(kind, ns, name) {
-  kubeGetOutput(`/api/hosts/${selectedKubeHostId}/kube/describe?kind=${encodeURIComponent(kind)}&ns=${encodeURIComponent(ns || '')}&name=${encodeURIComponent(name)}`, t('kube_describe', 'Describe') + ': ' + kind + '/' + name);
+  kubeGetOutput(`${kubeApiBase()}/describe?kind=${encodeURIComponent(kind)}&ns=${encodeURIComponent(ns || '')}&name=${encodeURIComponent(name)}`, t('kube_describe', 'Describe') + ': ' + kind + '/' + name);
 }
 function kubePodLogs(pod) {
   const container = (pod.containers && pod.containers.length > 0) ? pod.containers[0] : '';
-  kubeGetOutput(`/api/hosts/${selectedKubeHostId}/kube/logs?ns=${encodeURIComponent(pod.namespace)}&pod=${encodeURIComponent(pod.name)}&container=${encodeURIComponent(container)}&tail=200`, t('kube_logs', 'Pod Logs') + ': ' + pod.name + (container ? ` (${container})` : ''));
+  kubeGetOutput(`${kubeApiBase()}/logs?ns=${encodeURIComponent(pod.namespace)}&pod=${encodeURIComponent(pod.name)}&container=${encodeURIComponent(container)}&tail=200`, t('kube_logs', 'Pod Logs') + ': ' + pod.name + (container ? ` (${container})` : ''));
 }
 let kubeContainerChoiceCallback = null;
 function promptKubeContainer(pod, title, onSelected) {
@@ -21848,7 +22068,7 @@ async function kubePodExec(pod, container) {
   if (!selectedKubeHostId) return;
   showToast(t('working', 'Working...'), 'info', 1500);
   try {
-    const res = await fetch(`/api/hosts/${selectedKubeHostId}/kube/exec-cmd?ns=${encodeURIComponent(pod.namespace)}&pod=${encodeURIComponent(pod.name)}&container=${encodeURIComponent(container || '')}`);
+    const res = await fetch(`${kubeApiBase()}/exec-cmd?ns=${encodeURIComponent(pod.namespace)}&pod=${encodeURIComponent(pod.name)}&container=${encodeURIComponent(container || '')}`);
     const data = await res.json();
     handleKubeEnvelope(data);
     if (!data.ok || !data.cmd) {
@@ -21885,9 +22105,14 @@ function openKubeLogs(pod, container) {
   const out = document.getElementById('kubeLogsOutput');
   const status = document.getElementById('kubeLogsStatus');
   const titleEl = document.getElementById('kubeLogsTitle');
-  const host = (allRawHosts || []).find(h => String(h.id) === String(selectedKubeHostId));
-  const hostName = host ? host.name : selectedKubeHostId;
-
+  let hostName = selectedKubeHostId;
+  if (kubeIsCluster(selectedKubeHostId)) {
+    const c = (kubeClusters || []).find(x => x.id === -Number(selectedKubeHostId));
+    hostName = c ? c.name : selectedKubeHostId;
+  } else {
+    const host = (allRawHosts || []).find(h => String(h.id) === String(selectedKubeHostId));
+    hostName = host ? host.name : selectedKubeHostId;
+  }
   if (titleEl) titleEl.textContent = `${t('kube_logs', 'Pod Logs')}: ${pod.name} @ ${hostName}`;
   if (out) out.textContent = '';
   if (status) {
@@ -21951,7 +22176,7 @@ function connectKubeLogsStream() {
   const isTimestamps = tsToggle ? tsToggle.checked : false;
 
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  let url = `${protocol}//${location.host}/ws/kube/logs?host_id=${selectedKubeHostId}&tail=${encodeURIComponent(tail)}`;
+  let url = `${protocol}//${location.host}/ws/kube/logs?${kubeWsParam()}&tail=${encodeURIComponent(tail)}`;
   if (pod) {
     url += `&ns=${encodeURIComponent(pod.namespace)}&pod=${encodeURIComponent(pod.name)}&container=${encodeURIComponent(currentKubeLogsContainer || '')}`;
   } else {
@@ -22049,7 +22274,7 @@ function openKubeYamlEditor(kind, ns, name) {
   btnApply.disabled = true;
   btnApply.title = isRo ? t('kube_mode_blocked_ro', 'Disabled in Read-Only mode') : t('kube_apply_locked_hint', 'Run Preview Diff first');
   openModal('kubeYamlModal');
-  fetch(`/api/hosts/${selectedKubeHostId}/kube/yaml?kind=${encodeURIComponent(kind)}&ns=${encodeURIComponent(ns || '')}&name=${encodeURIComponent(name)}`)
+  fetch(`${kubeApiBase()}/yaml?kind=${encodeURIComponent(kind)}&ns=${encodeURIComponent(ns || '')}&name=${encodeURIComponent(name)}`)
     .then(r => r.json()).then(data => {
       handleKubeEnvelope(data);
       if (!data.ok) { showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to load YAML'), 'error', 9000); closeModal('kubeYamlModal'); return; }
@@ -22087,7 +22312,7 @@ async function submitKubeYamlDiff() {
   out.textContent = t('kube_diffing', 'Running dry-run diff...');
   showToast(t('working', 'Working...'), 'info', 2000);
   try {
-    const res = await fetch(`/api/hosts/${selectedKubeHostId}/kube/diff`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yaml }) });
+    const res = await fetch(`${kubeApiBase()}/diff`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yaml }) });
     const data = await res.json();
     handleKubeEnvelope(data);
     if (data.ok) {
@@ -22130,10 +22355,9 @@ async function submitKubeYamlApply() {
   btn.disabled = true;
   showToast(t('working', 'Working...'), 'info', 2000);
   try {
-    const res = await fetch(`/api/hosts/${selectedKubeHostId}/kube/apply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yaml }) });
+    const res = await fetch(`${kubeApiBase()}/apply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yaml }) });
     const data = await res.json();
     handleKubeEnvelope(data);
-    const out = document.getElementById('kubeYamlOutput');
     out.style.display = 'block';
     out.className = 'kube-apply-output ' + (data.ok ? 'success' : 'error');
     out.textContent = data.output || (data.ok ? t('kube_apply_success', 'Manifest applied successfully') : ('Error: ' + (data.error || 'Apply failed')));
@@ -22197,8 +22421,14 @@ function openKubeWorkloadLogs(wl) {
   currentKubeLogsPod = null;
   currentKubeLogsContainer = null;
   currentKubeLogsWorkload = { kind: (wl.kind || '').toLowerCase(), name: wl.name, namespace: wl.namespace };
-  const host = (allRawHosts || []).find(h => String(h.id) === String(selectedKubeHostId));
-  const hostName = host ? host.name : selectedKubeHostId;
+  let hostName = selectedKubeHostId;
+  if (kubeIsCluster(selectedKubeHostId)) {
+    const c = (kubeClusters || []).find(x => x.id === -Number(selectedKubeHostId));
+    hostName = c ? c.name : selectedKubeHostId;
+  } else {
+    const host = (allRawHosts || []).find(h => String(h.id) === String(selectedKubeHostId));
+    hostName = host ? host.name : selectedKubeHostId;
+  }
   const titleEl = document.getElementById('kubeLogsTitle');
   if (titleEl) titleEl.textContent = `${t('kube_logs_workload', 'Workload Logs')}: ${wl.kind}/${wl.name} @ ${hostName}`;
   const out = document.getElementById('kubeLogsOutput');
@@ -22232,7 +22462,7 @@ function openKubeDrain(nodeName) {
   document.getElementById('kubeDrainFlagForce').checked = false;
   openModal('kubeDrainModal');
   showToast(t('working', 'Working...'), 'info', 2000);
-  fetch(`/api/hosts/${selectedKubeHostId}/kube/drain-preview`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: nodeName }) })
+  fetch(`${kubeApiBase()}/drain-preview`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: nodeName }) })
     .then(r => r.json()).then(data => {
       handleKubeEnvelope(data);
       if (!data.ok) { document.getElementById('kubeDrainSummary').textContent = t('error_prefix', 'Error: ') + (data.error || 'Failed to load preview'); return; }
@@ -22288,8 +22518,7 @@ async function confirmKubeDrain() {
   closeModal('kubeDrainModal');
   showToast(t('kube_drain_started', 'Drain started; this can take minutes...'), 'info', 5000);
   try {
-    const res = await fetch(`/api/hosts/${selectedKubeHostId}/kube/action`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+    const res = await fetch(`${kubeApiBase()}/action`, {
       body: JSON.stringify({ op: 'drain', kind: 'node', ns: '', name: nodeName, ignoreDaemonsets: ignoreDS, deleteEmptyDirData: emptyDir, force })
     });
     const data = await res.json();
@@ -22322,6 +22551,254 @@ function showToastDrainUncordon(nodeName, msg, type) {
   btn.onclick = () => { last.remove(); kubeAction({ op: 'uncordon', kind: 'node', ns: '', name: nodeName }, null, 'nodes'); };
   const msgEl = last.querySelector('.toast-msg');
   if (msgEl) msgEl.appendChild(btn);
+}
+
+// ============================================================================
+// External Kubernetes Clusters (EKS / GKE / AKS / Generic)
+// ============================================================================
+let kubeClusterModalMode = 'add'; // 'add' | 'edit'
+let kubeClusterEditId = null;     // numeric cluster id (positive)
+let kubeClusterUserEditedName = false;
+
+function setKubeClusterError(msg) {
+  const errEl = document.getElementById('kubeClusterError');
+  if (!errEl) return;
+  if (msg) {
+    errEl.textContent = msg;
+    errEl.style.display = 'block';
+  } else {
+    errEl.textContent = '';
+    errEl.style.display = 'none';
+  }
+}
+
+function openKubeClusterModal(clusterHostId) {
+  setKubeClusterError('');
+  const titleEl = document.getElementById('kubeClusterModalTitle');
+  const configArea = document.getElementById('kubeClusterConfig');
+  const fileInput = document.getElementById('kubeClusterFileInput');
+  const contextSel = document.getElementById('kubeClusterContext');
+  const nameInput = document.getElementById('kubeClusterName');
+  const modeSel = document.getElementById('kubeClusterMode');
+  const reqStar = document.getElementById('kubeClusterConfigReqStar');
+  const submitBtn = document.getElementById('btnKubeClusterSubmit');
+  const submitText = document.getElementById('btnKubeClusterSubmitText');
+  if (fileInput) fileInput.value = '';
+  if (configArea) configArea.value = '';
+  if (nameInput) { nameInput.value = ''; nameInput.oninput = () => { kubeClusterUserEditedName = true; }; }
+  if (modeSel) modeSel.value = 'full';
+  if (contextSel) { contextSel.innerHTML = ''; contextSel.disabled = true; }
+  if (submitBtn) submitBtn.disabled = false;
+  kubeClusterUserEditedName = false;
+
+  const isEdit = clusterHostId != null && (Number(clusterHostId) < 0 || typeof clusterHostId === 'number');
+  const rawId = isEdit ? Math.abs(Number(clusterHostId)) : null;
+  const existing = rawId ? (kubeClusters || []).find(c => c.id === rawId) : null;
+
+  if (isEdit && existing) {
+    kubeClusterModalMode = 'edit';
+    kubeClusterEditId = rawId;
+    if (titleEl) titleEl.textContent = t('kube_ext_modal_title_edit', 'Edit External Cluster');
+    if (reqStar) reqStar.style.display = 'none';
+    if (submitText) submitText.textContent = t('kube_ext_btn_save', 'Save');
+    if (nameInput) nameInput.value = existing.name || '';
+    if (modeSel) modeSel.value = existing.kube_mode || 'full';
+    if (contextSel) {
+      const ctx = existing.context || '';
+      contextSel.innerHTML = `<option value="${escapeHtml(ctx)}">${escapeHtml(ctx)} ${t('kube_ext_context_saved_note', '(saved context)')}</option>`;
+      contextSel.disabled = false;
+    }
+  } else {
+    kubeClusterModalMode = 'add';
+    kubeClusterEditId = null;
+    if (titleEl) titleEl.textContent = t('kube_ext_modal_title_add', 'Add External Cluster');
+    if (reqStar) reqStar.style.display = 'inline';
+    if (submitText) submitText.textContent = t('kube_ext_btn_test_save', 'Test & Save');
+  }
+
+  openModal('kubeClusterModal');
+  setTimeout(() => { if (configArea) configArea.focus(); }, 50);
+}
+
+function loadKubeClusterFile(ev) {
+  const file = ev && ev.target && ev.target.files && ev.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const text = e.target.result;
+    const configArea = document.getElementById('kubeClusterConfig');
+    if (configArea) configArea.value = text;
+    loadKubeClusterContexts();
+  };
+  reader.readAsText(file);
+}
+
+async function loadKubeClusterContexts() {
+  const configArea = document.getElementById('kubeClusterConfig');
+  const yaml = (configArea ? configArea.value : '').trim();
+  if (!yaml) {
+    setKubeClusterError(t('kube_ext_err_no_kubeconfig', 'Please paste or load a kubeconfig first'));
+    return;
+  }
+  setKubeClusterError('');
+  const btn = document.getElementById('btnKubeClusterLoadContexts');
+  const origBtnHtml = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  try {
+    const res = await fetch('/api/kube/clusters/contexts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kubeconfig: yaml })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      setKubeClusterError(data.error || 'Failed to parse kubeconfig contexts');
+      return;
+    }
+    const contexts = Array.isArray(data.contexts) ? data.contexts : [];
+    const contextSel = document.getElementById('kubeClusterContext');
+    if (!contextSel) return;
+    if (contexts.length === 0) {
+      contextSel.innerHTML = `<option value="">${t('kube_ext_err_no_contexts', 'No contexts found in kubeconfig')}</option>`;
+      contextSel.disabled = true;
+      return;
+    }
+    contextSel.innerHTML = contexts.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+    contextSel.disabled = false;
+    if (data.current_context && contexts.includes(data.current_context)) {
+      contextSel.value = data.current_context;
+    } else {
+      contextSel.value = contexts[0];
+    }
+    onKubeClusterContextChange();
+  } catch (e) {
+    setKubeClusterError(e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = origBtnHtml; }
+  }
+}
+
+function onKubeClusterContextChange() {
+  const contextSel = document.getElementById('kubeClusterContext');
+  const nameInput = document.getElementById('kubeClusterName');
+  if (!contextSel || !nameInput) return;
+  const chosen = contextSel.value;
+  if (chosen && (!nameInput.value.trim() || !kubeClusterUserEditedName)) {
+    nameInput.value = chosen;
+  }
+}
+
+async function submitKubeClusterModal() {
+  setKubeClusterError('');
+  const configArea = document.getElementById('kubeClusterConfig');
+  const contextSel = document.getElementById('kubeClusterContext');
+  const nameInput = document.getElementById('kubeClusterName');
+  const modeSel = document.getElementById('kubeClusterMode');
+  const submitBtn = document.getElementById('btnKubeClusterSubmit');
+  const submitText = document.getElementById('btnKubeClusterSubmitText');
+
+  const kubeconfig = (configArea ? configArea.value : '').trim();
+  const name = (nameInput ? nameInput.value : '').trim();
+  const context = (contextSel ? contextSel.value : '').trim();
+  const kube_mode = (modeSel ? modeSel.value : 'full') || 'full';
+
+  if (!name) {
+    setKubeClusterError(t('kube_ext_err_no_name', 'Please enter a display name'));
+    if (nameInput) nameInput.focus();
+    return;
+  }
+
+  if (kubeClusterModalMode === 'add') {
+    if (!kubeconfig) {
+      setKubeClusterError(t('kube_ext_err_no_kubeconfig', 'Please paste or load a kubeconfig first'));
+      if (configArea) configArea.focus();
+      return;
+    }
+    if (!context) {
+      setKubeClusterError(t('kube_ext_err_no_context_selected', 'Please select a context'));
+      return;
+    }
+  }
+
+  const origBtnText = submitText ? submitText.textContent : '';
+  if (submitBtn) submitBtn.disabled = true;
+  if (submitText) submitText.textContent = kubeClusterModalMode === 'add' ? t('kube_ext_verifying', 'Verifying...') : t('kube_ext_saving', 'Saving...');
+
+  try {
+    let url = '/api/kube/clusters';
+    let method = 'POST';
+    let body = { name, kube_mode };
+
+    if (kubeClusterModalMode === 'add') {
+      body.kubeconfig = kubeconfig;
+      body.context = context;
+    } else {
+      url = `/api/kube/clusters/${kubeClusterEditId}`;
+      method = 'PUT';
+      if (kubeconfig) {
+        body.kubeconfig = kubeconfig;
+        if (context) body.context = context;
+      }
+    }
+
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+
+    if (!res.ok || !data.ok) {
+      setKubeClusterError(data.error || 'Server rejected cluster configuration');
+      return;
+    }
+
+    closeModal('kubeClusterModal');
+    showToast(t('kube_ext_saved', 'Cluster saved successfully'), 'success');
+
+    await loadKubeClusters();
+    const savedId = (data.cluster && data.cluster.id) || kubeClusterEditId;
+    if (savedId) {
+      pickKubeHost(-savedId);
+    }
+  } catch (e) {
+    setKubeClusterError(e.message);
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+    if (submitText) submitText.textContent = origBtnText;
+  }
+}
+
+async function deleteKubeCluster(clusterHostId) {
+  const rawId = clusterHostId != null ? Math.abs(Number(clusterHostId)) : null;
+  if (!rawId) return;
+  const cluster = (kubeClusters || []).find(c => c.id === rawId);
+  const clusterName = cluster ? cluster.name : ('Cluster #' + rawId);
+
+  const confirmed = await showConfirm({
+    title: t('kube_ext_confirm_delete_title', 'Delete External Cluster'),
+    message: t('kube_ext_confirm_delete_msg', 'Are you sure you want to delete cluster "{name}"? This removes stored credentials and access configuration.').replace('{name}', clusterName),
+    confirmText: t('delete', 'Delete'),
+    danger: true
+  });
+  if (!confirmed) return;
+
+  try {
+    const res = await fetch(`/api/kube/clusters/${rawId}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to delete cluster'), 'error', 6000);
+      return;
+    }
+    showToast(t('kube_ext_deleted', 'Cluster deleted'), 'info');
+    await loadKubeClusters();
+    if (selectedKubeHostId && String(selectedKubeHostId) === String(-rawId)) {
+      pickKubeHost('');
+      updateKubeModeChip();
+    }
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error', 6000);
+  }
 }
 
 // ============================================================================
