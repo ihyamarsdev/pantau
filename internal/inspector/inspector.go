@@ -348,19 +348,19 @@ func (ins *Inspector) scrapeSystemMetrics(h *store.Host, runner sshrunner.Runner
 
 	// Process Telemetry: Top CPU, Top RAM, Top Swap
 	if len(sections) >= 18 {
-		topCPU := parseTopProcesses(sections[17])
+		topCPU := sortAndTrimTopProcesses(parseTopProcesses(sections[17]), "cpu")
 		if b, err := json.Marshal(topCPU); err == nil {
 			h.TopCPUProcesses = string(b)
 		}
 	}
 	if len(sections) >= 19 {
-		topRAM := parseTopProcesses(sections[18])
+		topRAM := sortAndTrimTopProcesses(parseTopProcesses(sections[18]), "ram")
 		if b, err := json.Marshal(topRAM); err == nil {
 			h.TopRAMProcesses = string(b)
 		}
 	}
 	if len(sections) >= 20 {
-		topSwap := parseTopSwap(sections[19])
+		topSwap := sortAndTrimTopProcesses(parseTopSwap(sections[19]), "swap")
 		if b, err := json.Marshal(topSwap); err == nil {
 			h.TopSwapProcesses = string(b)
 		}
@@ -424,6 +424,26 @@ func parseTopSwap(out string) []store.ProcessInfo {
 			SwapBytes: swapKB * 1024,
 			Command:   cmd,
 		})
+	}
+	return list
+}
+
+// sortAndTrimTopProcesses stable-sorts processes descending by metric ("cpu", "ram", or "swap") and caps at 5.
+func sortAndTrimTopProcesses(list []store.ProcessInfo, metric string) []store.ProcessInfo {
+	sort.SliceStable(list, func(i, j int) bool {
+		switch metric {
+		case "cpu":
+			return list[i].CPU > list[j].CPU
+		case "ram":
+			return list[i].RSSBytes > list[j].RSSBytes
+		case "swap":
+			return list[i].SwapBytes > list[j].SwapBytes
+		default:
+			return false
+		}
+	})
+	if len(list) > 5 {
+		list = list[:5]
 	}
 	return list
 }

@@ -641,6 +641,91 @@ func TestParseTopSwap(t *testing.T) {
 	}
 }
 
+func TestParseTopSwapWithUsername(t *testing.T) {
+	sampleSwap := `1002 mysql 153600 mysqld
+1005 1001 20480 redis-server
+`
+	swaps := parseTopSwap(sampleSwap)
+	if len(swaps) != 2 {
+		t.Fatalf("expected 2 swaps, got %d", len(swaps))
+	}
+	if swaps[0].User != "mysql" || swaps[0].PID != 1002 || swaps[0].SwapBytes != 153600*1024 {
+		t.Errorf("unexpected swap 0: %+v", swaps[0])
+	}
+	if swaps[1].User != "1001" || swaps[1].PID != 1005 || swaps[1].SwapBytes != 20480*1024 {
+		t.Errorf("unexpected swap 1: %+v", swaps[1])
+	}
+}
+
+func TestSortAndTrimTopProcesses(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []store.ProcessInfo
+		metric   string
+		expected []int // expected PIDs in order
+	}{
+		{
+			name: "CPU unsorted input -> top 5 desc",
+			input: []store.ProcessInfo{
+				{PID: 1, CPU: 10.0},
+				{PID: 2, CPU: 50.0},
+				{PID: 3, CPU: 5.0},
+				{PID: 4, CPU: 90.0},
+				{PID: 5, CPU: 20.0},
+				{PID: 6, CPU: 80.0},
+				{PID: 7, CPU: 1.0},
+			},
+			metric:   "cpu",
+			expected: []int{4, 6, 2, 5, 1},
+		},
+		{
+			name: "RAM fewer than 5 rows",
+			input: []store.ProcessInfo{
+				{PID: 10, RSSBytes: 1000},
+				{PID: 20, RSSBytes: 5000},
+				{PID: 30, RSSBytes: 3000},
+			},
+			metric:   "ram",
+			expected: []int{20, 30, 10},
+		},
+		{
+			name: "Swap ties remain stable",
+			input: []store.ProcessInfo{
+				{PID: 100, SwapBytes: 4000},
+				{PID: 101, SwapBytes: 8000},
+				{PID: 102, SwapBytes: 4000},
+				{PID: 103, SwapBytes: 2000},
+			},
+			metric:   "swap",
+			expected: []int{101, 100, 102, 103},
+		},
+		{
+			name: "Already sorted is no-op",
+			input: []store.ProcessInfo{
+				{PID: 1, CPU: 50.0},
+				{PID: 2, CPU: 40.0},
+				{PID: 3, CPU: 30.0},
+			},
+			metric:   "cpu",
+			expected: []int{1, 2, 3},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			res := sortAndTrimTopProcesses(tc.input, tc.metric)
+			if len(res) != len(tc.expected) {
+				t.Fatalf("expected %d items, got %d", len(tc.expected), len(res))
+			}
+			for i, expPID := range tc.expected {
+				if res[i].PID != expPID {
+					t.Errorf("at index %d: expected PID %d, got %d", i, expPID, res[i].PID)
+				}
+			}
+		})
+	}
+}
+
 func TestParseDpkgPackages(t *testing.T) {
 	dpkgOutput := "nginx\t1.18.0-0ubuntu1\t1024\tinstalled\ncurl\t7.68.0-1ubuntu2\t512\tinstalled\n"
 	manualMap := map[string]bool{"nginx": true}
