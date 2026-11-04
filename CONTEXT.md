@@ -503,6 +503,18 @@ _Avoid_: Remote cluster, cloud cluster, non-host cluster
 **Kubeconfig Profile**:
 Konfigurasi konteks tunggal hasil normalisasi dan minifikasi dari berkas kubeconfig yang disimpan terenkripsi di database Pantau untuk menghubungkan klaster eksternal secara aman; hanya mengizinkan kredensial inline dan plugin `exec` yang masuk daftar putih.
 _Avoid_: Cluster config, kube profile, raw kubeconfig
+
+**Cloudflare Account**:
+Entri kredensial (nama, `account_id` opsional, API Token) yang terdaftar di Pantau untuk mengelola Zone Cloudflare via API.
+_Avoid_: CF profile, API key entry
+
+**Cloudflare Zone**:
+Domain yang dikelola di akun Cloudflare (nama, status, plan, name server).
+_Avoid_: Site, domain entry
+
+**Zone Setting**:
+Pengaturan zone yang boleh diubah Pantau (allowlist: ssl, always_use_https, security_level, development_mode, min_tls_version, automatic_https_rewrites).
+_Avoid_: CF option, domain configuration
 **Alert Debounce**:
 Pengaturan (`alert_debounce_runs`, 1–10) yang menahan Incident, Alert, dan notifikasi sebuah Drift sampai terlihat pada N Inspection berturut-turut untuk rule yang sama; kembali sehat selalu menutup langsung.
 _Avoid_: Alert delay, grace period, flap filter

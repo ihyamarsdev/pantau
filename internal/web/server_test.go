@@ -13,16 +13,16 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"pantau/internal/inspector"
+	"pantau/internal/sshrunner"
+	"pantau/internal/store"
+	"pantau/internal/updater"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
-	"pantau/internal/inspector"
-	"pantau/internal/sshrunner"
-	"pantau/internal/store"
-	"pantau/internal/updater"
 )
 
 func TestIsProtectedPathString(t *testing.T) {
@@ -666,9 +666,9 @@ func TestIndexGzipAndETagRevalidation(t *testing.T) {
 	if wGz.Header().Get("ETag") != etag {
 		t.Errorf("expected matching ETag %s, got %s", etag, wGz.Header().Get("ETag"))
 	}
-	// Verify compression is effective: ~150-230KB gzipped vs ~700-1100KB raw (<240KB budget; includes inline icon sprite)
-	if wGz.Body.Len() > 240000 {
-		t.Errorf("expected gzipped body < 240KB, got %d bytes", wGz.Body.Len())
+	// Verify compression is effective: ~150-250KB gzipped vs ~700-1100KB raw (<260KB budget; includes inline icon sprite)
+	if wGz.Body.Len() > 260000 {
+		t.Errorf("expected gzipped body < 260KB, got %d bytes", wGz.Body.Len())
 	}
 
 	// Decompress and compare with raw
@@ -1961,11 +1961,11 @@ func TestSSHKeysAPI(t *testing.T) {
 
 	// 8. POST /api/hosts with dangling key_id -> 400
 	hostBody, _ := json.Marshal(map[string]interface{}{
-		"name":    "Bad Host",
-		"host":    "10.0.0.1",
-		"port":    22,
-		"user":    "root",
-		"key_id":  99999,
+		"name":   "Bad Host",
+		"host":   "10.0.0.1",
+		"port":   22,
+		"user":   "root",
+		"key_id": 99999,
 	})
 	req = httptest.NewRequest(http.MethodPost, "/api/hosts", bytes.NewReader(hostBody))
 	authReq(req)
@@ -2013,11 +2013,11 @@ func TestSSHKeysAPI(t *testing.T) {
 
 	// 11. PUT /api/hosts/{id} to update key_id to 0
 	updateBody, _ := json.Marshal(map[string]interface{}{
-		"name":    "Alpha Server",
-		"host":    "10.0.0.2",
-		"port":    22,
-		"user":    "root",
-		"key_id":  0,
+		"name":   "Alpha Server",
+		"host":   "10.0.0.2",
+		"port":   22,
+		"user":   "root",
+		"key_id": 0,
 	})
 	req = httptest.NewRequest(http.MethodPut, "/api/hosts/"+strconv.FormatInt(createdHost.ID, 10), bytes.NewReader(updateBody))
 	authReq(req)
@@ -2170,11 +2170,3 @@ func TestSSHKeyProvisioningWithLibraryKey(t *testing.T) {
 		t.Errorf("expected verification connection to use library private key")
 	}
 }
-
-
-
-
-
-
-
-

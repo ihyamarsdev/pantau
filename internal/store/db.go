@@ -24,11 +24,11 @@ type DB struct {
 type SSHKey struct {
 	ID          int64     `json:"id"`
 	Name        string    `json:"name"`
-	PublicKey   string    `json:"public_key"`   // authorized_keys line derived from private key
-	Fingerprint string    `json:"fingerprint"`  // "SHA256:..."
+	PublicKey   string    `json:"public_key"`  // authorized_keys line derived from private key
+	Fingerprint string    `json:"fingerprint"` // "SHA256:..."
 	CreatedAt   time.Time `json:"created_at"`
-	UsedBy      int       `json:"used_by"`      // number of hosts with key_id = this id (computed on list)
-	PrivateKey  string    `json:"-"`            // NEVER serialized to any API
+	UsedBy      int       `json:"used_by"` // number of hosts with key_id = this id (computed on list)
+	PrivateKey  string    `json:"-"`       // NEVER serialized to any API
 }
 
 var (
@@ -38,43 +38,43 @@ var (
 )
 
 type Host struct {
-	ID             int64     `json:"id"`
-	Name           string    `json:"name"`
-	Host           string    `json:"host"`
-	Port           int       `json:"port"`
-	User           string    `json:"user"`
-	CustomKey      string    `json:"custom_key,omitempty"`
-	KeyID          int64     `json:"key_id"`
-	Status         string    `json:"status"` // healthy, degraded, down, unknown
-	OSInfo         string    `json:"os_info"`
-	Kernel         string    `json:"kernel"`
-	Uptime         string    `json:"uptime"`
-	CPULoad        string    `json:"cpu_load"`
-	RAMUsedBytes   int64     `json:"ram_used_bytes"`
-	RAMTotalBytes  int64     `json:"ram_total_bytes"`
-	DiskUsedBytes     int64      `json:"disk_used_bytes"`
-	DiskTotalBytes    int64      `json:"disk_total_bytes"`
-	CPUCores          int        `json:"cpu_cores"`
-	HardwareModel     string     `json:"hardware_model"`
-	SwapUsedBytes     int64      `json:"swap_used_bytes"`
-	SwapTotalBytes    int64      `json:"swap_total_bytes"`
-	LifecycleScore    int        `json:"lifecycle_score"`
-	LifecycleNotes    string     `json:"lifecycle_notes"`
-	LifecycleBreakdown string    `json:"lifecycle_breakdown"`
-	LastInspected     *time.Time `json:"last_inspected"`
-	CreatedAt         time.Time  `json:"created_at"`
+	ID                 int64      `json:"id"`
+	Name               string     `json:"name"`
+	Host               string     `json:"host"`
+	Port               int        `json:"port"`
+	User               string     `json:"user"`
+	CustomKey          string     `json:"custom_key,omitempty"`
+	KeyID              int64      `json:"key_id"`
+	Status             string     `json:"status"` // healthy, degraded, down, unknown
+	OSInfo             string     `json:"os_info"`
+	Kernel             string     `json:"kernel"`
+	Uptime             string     `json:"uptime"`
+	CPULoad            string     `json:"cpu_load"`
+	RAMUsedBytes       int64      `json:"ram_used_bytes"`
+	RAMTotalBytes      int64      `json:"ram_total_bytes"`
+	DiskUsedBytes      int64      `json:"disk_used_bytes"`
+	DiskTotalBytes     int64      `json:"disk_total_bytes"`
+	CPUCores           int        `json:"cpu_cores"`
+	HardwareModel      string     `json:"hardware_model"`
+	SwapUsedBytes      int64      `json:"swap_used_bytes"`
+	SwapTotalBytes     int64      `json:"swap_total_bytes"`
+	LifecycleScore     int        `json:"lifecycle_score"`
+	LifecycleNotes     string     `json:"lifecycle_notes"`
+	LifecycleBreakdown string     `json:"lifecycle_breakdown"`
+	LastInspected      *time.Time `json:"last_inspected"`
+	CreatedAt          time.Time  `json:"created_at"`
 
 	// Network & Security Observability
-	NetRxBytes        int64  `json:"net_rx_bytes"`
-	NetTxBytes        int64  `json:"net_tx_bytes"`
-	NetRxSpeedBps     int64  `json:"net_rx_speed_bps"`
-	NetTxSpeedBps     int64  `json:"net_tx_speed_bps"`
+	NetRxBytes    int64 `json:"net_rx_bytes"`
+	NetTxBytes    int64 `json:"net_tx_bytes"`
+	NetRxSpeedBps int64 `json:"net_rx_speed_bps"`
+	NetTxSpeedBps int64 `json:"net_tx_speed_bps"`
 
 	// Disk I/O Observability
-	DiskReadBytes     int64  `json:"disk_read_bytes"`
-	DiskWriteBytes    int64  `json:"disk_write_bytes"`
-	DiskReadSpeedBps  int64  `json:"disk_read_speed_bps"`
-	DiskWriteSpeedBps int64  `json:"disk_write_speed_bps"`
+	DiskReadBytes     int64 `json:"disk_read_bytes"`
+	DiskWriteBytes    int64 `json:"disk_write_bytes"`
+	DiskReadSpeedBps  int64 `json:"disk_read_speed_bps"`
+	DiskWriteSpeedBps int64 `json:"disk_write_speed_bps"`
 
 	InternetOnline    bool   `json:"internet_online"`
 	InternetLatencyMs int64  `json:"internet_latency_ms"`
@@ -87,9 +87,9 @@ type Host struct {
 	SortOrder         int    `json:"sort_order"`
 	GroupName         string `json:"group_name"`
 	LastDurationMs    int64  `json:"last_duration_ms"`
-	CommissionDate    string `json:"commission_date"` // YYYY-MM-DD manual override for New Old Stock
-	BIOSDate          string `json:"bios_date"`       // Raw motherboard BIOS release date telemetry
-	OSInstallEpoch    int64  `json:"os_install_epoch"` // Unix epoch of OS deployment for VM age tracking
+	CommissionDate    string `json:"commission_date"`    // YYYY-MM-DD manual override for New Old Stock
+	BIOSDate          string `json:"bios_date"`          // Raw motherboard BIOS release date telemetry
+	OSInstallEpoch    int64  `json:"os_install_epoch"`   // Unix epoch of OS deployment for VM age tracking
 	TopCPUProcesses   string `json:"top_cpu_processes"`  // JSON serialized []ProcessInfo
 	TopRAMProcesses   string `json:"top_ram_processes"`  // JSON serialized []ProcessInfo
 	TopSwapProcesses  string `json:"top_swap_processes"` // JSON serialized []ProcessInfo
@@ -433,6 +433,13 @@ func (d *DB) migrate() error {
 		kubeconfig TEXT NOT NULL DEFAULT '',
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+	CREATE TABLE IF NOT EXISTS cloudflare_accounts (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+		account_id TEXT NOT NULL DEFAULT '',
+		api_token TEXT NOT NULL DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
 	`
 	_, err := d.Exec(schema)
 	if err != nil {
@@ -627,7 +634,6 @@ func (d *DB) DeleteSetting(key string) error {
 	_, err := d.Exec("DELETE FROM settings WHERE key = ?", key)
 	return err
 }
-
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -1232,18 +1238,25 @@ type SnapshotKubeCluster struct {
 	Kubeconfig    string    `json:"kubeconfig"`
 	CreatedAt     time.Time `json:"created_at"`
 }
-
+type SnapshotCloudflareAccount struct {
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	AccountID string    `json:"account_id,omitempty"`
+	APIToken  string    `json:"api_token"`
+	CreatedAt time.Time `json:"created_at"`
+}
 
 // SnapshotPayload holds the sanitized system configuration for backup and restore.
 type SnapshotPayload struct {
-	Version         int               `json:"version"`
-	CreatedAt       time.Time         `json:"created_at"`
-	Settings        map[string]string `json:"settings"`
-	Hosts           []Host            `json:"hosts"`
-	DesiredRules    []DesiredRule     `json:"desired_rules"`
-	TerminalPresets []TerminalPreset  `json:"terminal_presets,omitempty"`
-	SSHKeys         []SnapshotSSHKey  `json:"ssh_keys,omitempty"`
-	KubeClusters    []SnapshotKubeCluster `json:"kube_clusters,omitempty"`
+	Version            int                         `json:"version"`
+	CreatedAt          time.Time                   `json:"created_at"`
+	Settings           map[string]string           `json:"settings"`
+	Hosts              []Host                      `json:"hosts"`
+	DesiredRules       []DesiredRule               `json:"desired_rules"`
+	TerminalPresets    []TerminalPreset            `json:"terminal_presets,omitempty"`
+	SSHKeys            []SnapshotSSHKey            `json:"ssh_keys,omitempty"`
+	KubeClusters       []SnapshotKubeCluster       `json:"kube_clusters,omitempty"`
+	CloudflareAccounts []SnapshotCloudflareAccount `json:"cloudflare_accounts,omitempty"`
 }
 
 func (d *DB) IsFresh() (bool, error) {
@@ -1352,17 +1365,28 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 			}
 		}
 	}
-
+	var allCFAccounts []SnapshotCloudflareAccount
+	cfRows, err := d.Query("SELECT id, name, account_id, api_token, created_at FROM cloudflare_accounts ORDER BY id ASC")
+	if err == nil {
+		defer cfRows.Close()
+		for cfRows.Next() {
+			var a SnapshotCloudflareAccount
+			if err := cfRows.Scan(&a.ID, &a.Name, &a.AccountID, &a.APIToken, &a.CreatedAt); err == nil {
+				allCFAccounts = append(allCFAccounts, a)
+			}
+		}
+	}
 
 	return &SnapshotPayload{
-		Version:         1,
-		CreatedAt:       time.Now().UTC(),
-		Settings:        settings,
-		Hosts:           hosts,
-		DesiredRules:    allRules,
-		TerminalPresets: allPresets,
-		SSHKeys:         allSSHKeys,
-		KubeClusters:    allClusters,
+		Version:            1,
+		CreatedAt:          time.Now().UTC(),
+		Settings:           settings,
+		Hosts:              hosts,
+		DesiredRules:       allRules,
+		TerminalPresets:    allPresets,
+		SSHKeys:            allSSHKeys,
+		KubeClusters:       allClusters,
+		CloudflareAccounts: allCFAccounts,
 	}, nil
 }
 
@@ -1376,7 +1400,7 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 	}
 	defer tx.Rollback()
 
-	tables := []string{"alerts", "incidents", "actual_items", "desired_rules", "hosts", "terminal_presets", "ssh_keys", "kube_clusters"}
+	tables := []string{"alerts", "incidents", "actual_items", "desired_rules", "hosts", "terminal_presets", "ssh_keys", "kube_clusters", "cloudflare_accounts"}
 	for _, t := range tables {
 		if _, err := tx.Exec("DELETE FROM " + t); err != nil {
 			return fmt.Errorf("clear %s: %w", t, err)
@@ -1402,7 +1426,13 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 			return fmt.Errorf("insert kube cluster %d: %w", c.ID, err)
 		}
 	}
-
+	for _, a := range payload.CloudflareAccounts {
+		_, err := tx.Exec(`INSERT INTO cloudflare_accounts (id, name, account_id, api_token, created_at) VALUES (?, ?, ?, ?, ?)`,
+			a.ID, a.Name, a.AccountID, a.APIToken, a.CreatedAt)
+		if err != nil {
+			return fmt.Errorf("insert cloudflare account %d: %w", a.ID, err)
+		}
+	}
 
 	for _, h := range payload.Hosts {
 		onlineInt := 0
@@ -1691,4 +1721,3 @@ func (d *DB) ResolveHostPrivateKey(h *Host) (string, error) {
 	}
 	return globalKey, nil
 }
-

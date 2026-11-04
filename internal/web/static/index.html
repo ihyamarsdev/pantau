@@ -3221,6 +3221,19 @@ header {
   color: var(--text);
 }
 
+/* --- Cloudflare Zone Settings --- */
+.cf-set-group { border: 1px solid var(--card-border); border-radius: var(--radius); overflow: hidden; }
+.cf-set-group-head { padding: 10px 16px; background: var(--surface-2); border-bottom: 1px solid var(--card-border); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
+.cf-set-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; }
+.cf-set-row + .cf-set-row { border-top: 1px solid var(--card-border); }
+.cf-set-info { min-width: 0; flex: 1; }
+.cf-set-title { font-weight: 600; font-size: var(--fs-sm); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cf-set-desc { margin-top: 2px; font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.45; }
+.cf-set-ctl { flex: none; display: flex; align-items: center; }
+.cf-set-ctl select { height: 32px; min-width: 150px; font-size: var(--fs-xs); }
+.cf-set-flag { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 999px; background: var(--warning-soft); border: 1px solid var(--warning-border); color: var(--warning); }
+@media (max-width: 560px) { .cf-set-row { flex-direction: column; align-items: flex-start; } }
+
 /* --- 2FA Setup Well & Recovery Grid --- */
 .qr-well {
   background: #ffffff;
@@ -3692,6 +3705,10 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <svg class="icon"><use href="#i-boxes"/></svg>
         <span class="side-panel-label" data-i18n="nav_kubernetes">Kubernetes</span>
       </button>
+      <button type="button" class="side-panel-item" id="navItemCloudflare" onclick="switchSideNav('cloudflare')" role="tab" aria-selected="false" title="Cloudflare" data-i18n-title="nav_cloudflare">
+        <svg class="icon"><use href="#i-cloud"/></svg>
+        <span class="side-panel-label" data-i18n="nav_cloudflare">Cloudflare</span>
+      </button>
     </div>
     <div class="side-panel-footer">
       <button type="button" class="side-panel-collapse-btn" id="btnSidePanelCollapse" onclick="toggleSidePanelCollapse()" title="Collapse navigation" data-i18n-title="nav_collapse_title" aria-label="Collapse navigation">
@@ -3875,6 +3892,57 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <div id="kubeTabContent" style="min-height:250px;"></div>
       </div>
     </div>
+    <div id="sectionCloudflare" class="app-section" style="display:none;">
+      <div class="section-header" style="margin-bottom:20px;position:relative;z-index:20;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <div>
+            <h2 style="margin:0 0 4px 0;font-size:var(--fs-xl);font-weight:600;" data-i18n="cf_section_title">Cloudflare Management</h2>
+            <p style="margin:0;color:var(--text-muted);font-size:var(--fs-sm);" data-i18n="cf_section_desc">Manage Cloudflare Zones, DNS records, cache purge, and zone settings via API.</p>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              <label for="cfAccountSelect" style="font-size:var(--fs-xs);color:var(--text-muted);font-weight:600;text-transform:uppercase;" data-i18n="cf_account_label">Account:</label>
+              <select id="cfAccountSelect" class="form-input" style="height:34px;font-size:var(--fs-sm);min-width:200px;" onchange="onSelectCfAccount(this.value)">
+                <option value="" data-i18n="cf_select_account">Select an account...</option>
+              </select>
+            </div>
+            <button id="btnCfAddAccount" class="btn btn-sm header-btn" onclick="openCfAccountModal()" title="Add account" data-i18n-title="cf_add_account" style="height:34px;display:inline-flex;align-items:center;gap:6px;">
+              <svg class="icon icon-sm"><use href="#i-plus"/></svg> <span data-i18n="cf_add_account">Add Account</span>
+            </button>
+            <button id="btnCfEditAccount" class="btn btn-sm header-btn" onclick="openCfAccountModal(selectedCfAccountId)" title="Edit account" data-i18n-title="cf_edit_account" style="height:34px;display:none;align-items:center;gap:6px;">
+              <svg class="icon icon-sm"><use href="#i-pencil"/></svg> <span data-i18n="cf_edit_account">Edit</span>
+            </button>
+            <button id="btnCfDeleteAccount" class="btn btn-sm header-btn btn-danger" onclick="deleteCfAccount(selectedCfAccountId)" title="Delete account" data-i18n-title="cf_delete_account" style="height:34px;display:none;align-items:center;gap:6px;">
+              <svg class="icon icon-sm"><use href="#i-trash-2"/></svg> <span data-i18n="cf_delete_account">Delete</span>
+            </button>
+            <button id="btnCfRefresh" class="btn btn-sm header-btn" onclick="refreshCfSection()" title="Refresh" data-i18n-title="refresh" style="height:34px;display:inline-flex;align-items:center;gap:6px;">
+              <svg class="icon icon-sm"><use href="#i-refresh-cw"/></svg> <span data-i18n="refresh">Refresh</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div id="cfSelectAccountPrompt" class="card" style="display:block;padding:30px 20px;text-align:center;">
+        <div style="color:var(--text-muted);margin-bottom:8px;"><svg class="icon icon-xl"><use href="#i-cloud"/></svg></div>
+        <div style="color:var(--text-muted);font-size:var(--fs-base);" data-i18n="cf_select_account_prompt">Select or add a Cloudflare Account to view and manage its Zones.</div>
+      </div>
+
+      <div id="cfZonesContainer" style="display:none;flex-direction:column;gap:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <div class="search-box" style="margin:0;max-width:320px;">
+            <svg class="icon icon-sm text-muted"><use href="#i-search"/></svg>
+            <input type="text" id="cfZoneSearchInput" placeholder="Search zones by name..." data-i18n-placeholder="cf_search_zones_ph" style="height:32px;font-size:var(--fs-xs);" oninput="filterCfZones()" />
+          </div>
+          <div id="cfZoneCountBadge" class="badge" style="background:var(--surface-2);border:1px solid var(--card-border);font-family:var(--font-mono);">0 zones</div>
+        </div>
+        <div id="cfZonesGrid" class="grid"></div>
+        <div id="cfZonesEmpty" class="empty-state" style="display:none;">
+          <div class="empty-state-icon"><svg class="icon icon-xl"><use href="#i-cloud"/></svg></div>
+          <div class="empty-state-desc" data-i18n="cf_no_zones_found">No zones found</div>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <!-- Activity Console Drawer -->
@@ -4221,6 +4289,207 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
     </div>
   </div>
 </div>
+<!-- Cloudflare Account Modal (Action Dialog) -->
+<div id="cfAccountModal" class="modal">
+  <div class="modal-content modal-dialog" style="max-width: 520px;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <svg class="icon icon-sm text-accent"><use href="#i-cloud"/></svg>
+        <h3 id="cfAccountModalTitle" style="font-size: var(--fs-md); margin: 0;" data-i18n="cf_account_modal_title_add">Add Cloudflare Account</h3>
+      </div>
+      <button class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('cfAccountModal')" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px; padding: 16px 20px;">
+      <div style="font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.5;" data-i18n="cf_account_modal_intro">Register a Cloudflare API Token to manage Zones, DNS, cache, and settings. Tokens are verified before saving and never returned by the API.</div>
+      <div class="dk-field">
+        <label for="cfAccountName"><span data-i18n="cf_account_name_label">Account Name</span> *</label>
+        <input type="text" id="cfAccountName" class="form-input" style="width: 100%; box-sizing: border-box;" placeholder="e.g. Production Cloudflare" />
+      </div>
+      <div class="dk-field">
+        <label for="cfAccountCFID" data-i18n="cf_account_cfid_label">Account ID (Optional)</label>
+        <input type="text" id="cfAccountCFID" class="form-input mono" style="width: 100%; box-sizing: border-box;" placeholder="32-hex character ID (optional filter)" />
+        <div class="dk-hint" data-i18n="cf_account_cfid_hint">Found on Cloudflare dashboard sidebar under Zone Overview or Account ID.</div>
+      </div>
+      <div class="dk-field">
+        <label for="cfAccountToken"><span data-i18n="cf_account_token_label">API Token</span> <span id="cfAccountTokenReqStar" style="color: var(--danger);">*</span></label>
+        <input type="password" id="cfAccountToken" class="form-input mono" autocomplete="new-password" style="width: 100%; box-sizing: border-box;" placeholder="Bearer token from dash.cloudflare.com/profile/api-tokens" />
+        <div id="cfAccountTokenHint" class="dk-hint" data-i18n="cf_account_token_hint">In edit mode, leave empty to keep the existing token.</div>
+      </div>
+      <div id="cfAccountError" role="alert" style="display: none; background: var(--danger-soft); border: 1px solid var(--danger-border); border-radius: var(--radius-sm); padding: 8px 12px; font-size: var(--fs-xs); color: var(--danger); white-space: pre-wrap; word-break: break-all;"></div>
+    </div>
+    <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end; align-items: center;">
+      <button type="button" class="btn btn-sm" onclick="closeModal('cfAccountModal')" data-i18n="cancel">Cancel</button>
+      <button type="button" class="btn btn-sm btn-primary" id="btnCfAccountSubmit" onclick="submitCfAccountModal()"><span id="btnCfAccountSubmitText" data-i18n="cf_btn_save">Verify &amp; Save</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- Cloudflare Zone Workspace Modal -->
+<div id="cfZoneModal" class="modal">
+  <div class="modal-content modal-workspace" style="display: flex; flex-direction: column;">
+    <div class="modal-header" id="cfZoneModalHeader" style="user-select: none;">
+      <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1;">
+        <svg class="icon icon-sm text-accent"><use href="#i-cloud"/></svg>
+        <h3 id="cfZoneModalName" style="font-size: var(--fs-md); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Zone Name</h3>
+        <span id="cfZoneStatusBadge" class="badge">active</span>
+        <span id="cfZonePlanBadge" class="badge" style="background: var(--surface-2); border: 1px solid var(--card-border);">Free Plan</span>
+        <span id="cfZonePausedBadge" class="badge badge-warning" style="display: none;" data-i18n="cf_zone_paused">Paused</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <button class="btn btn-icon btn-sm" onclick="refreshCurrentCfZoneTab()" title="Refresh" data-i18n-title="refresh"><svg class="icon icon-sm"><use href="#i-refresh-cw"/></svg></button>
+        <button class="btn btn-icon btn-sm" onclick="closeModal('cfZoneModal')" title="Close" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+      </div>
+    </div>
+    <div class="modal-tabs-bar">
+      <div class="tabs" id="cfZoneTabs">
+        <div class="tab active" id="tabCfZoneDns" onclick="switchCfZoneTab('dns')"><svg class="icon icon-sm"><use href="#i-globe"/></svg> <span data-i18n="cf_tab_dns">DNS Records</span></div>
+        <div class="tab" id="tabCfZoneCache" onclick="switchCfZoneTab('cache')"><svg class="icon icon-sm"><use href="#i-zap"/></svg> <span data-i18n="cf_tab_cache">Purge Cache</span></div>
+        <div class="tab" id="tabCfZoneSettings" onclick="switchCfZoneTab('settings')"><svg class="icon icon-sm"><use href="#i-sliders-horizontal"/></svg> <span data-i18n="cf_tab_settings">Zone Settings</span></div>
+      </div>
+    </div>
+    <div class="modal-body" style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px 20px;">
+      <!-- Tab 1: DNS -->
+      <div id="cfZonePanelDns" style="display: flex; flex-direction: column; gap: 14px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+          <div class="search-box" style="margin: 0; max-width: 320px;">
+            <svg class="icon icon-sm text-muted"><use href="#i-search"/></svg>
+            <input type="text" id="cfDnsSearchInput" placeholder="Filter by type, name, content..." data-i18n-placeholder="cf_dns_search_ph" style="height: 32px; font-size: var(--fs-xs);" oninput="renderCfDnsTable()" />
+          </div>
+          <button type="button" class="btn btn-sm btn-primary" onclick="openCfRecordModal()" style="display: inline-flex; align-items: center; gap: 6px;">
+            <svg class="icon icon-sm"><use href="#i-plus"/></svg> <span data-i18n="cf_add_dns_record">Add Record</span>
+          </button>
+        </div>
+        <div style="overflow-x: auto; border: 1px solid var(--card-border); border-radius: var(--radius-md);">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 80px;" data-i18n="cf_col_type">Type</th>
+                <th data-i18n="cf_col_name">Name</th>
+                <th data-i18n="cf_col_content">Content</th>
+                <th style="width: 100px;" data-i18n="cf_col_proxy">Proxy Status</th>
+                <th style="width: 80px;" data-i18n="cf_col_ttl">TTL</th>
+                <th data-i18n="cf_col_comment">Comment</th>
+                <th style="width: 90px; text-align: right;" data-i18n="cf_col_actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="cfDnsTableBody"></tbody>
+          </table>
+        </div>
+        <div id="cfDnsEmptyState" class="empty-state" style="display: none; padding: 24px;">
+          <div class="empty-state-desc" data-i18n="cf_no_dns_records">No DNS records found.</div>
+        </div>
+      </div>
+
+      <!-- Tab 2: Cache Purge -->
+      <div id="cfZonePanelCache" style="display: none; flex-direction: column; gap: 16px; max-width: 720px;">
+        <div class="card" style="padding: 16px; border: 1px solid var(--card-border);">
+          <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+            <div>
+              <h4 style="margin: 0 0 4px 0; font-size: var(--fs-md); font-weight: 600;" data-i18n="cf_purge_everything_title">Purge Everything</h4>
+              <p style="margin: 0; color: var(--text-muted); font-size: var(--fs-xs); line-height: 1.45;" data-i18n="cf_purge_everything_desc">Clears all cached resources across Cloudflare edge data centers. Origin servers may experience higher load immediately after purging.</p>
+            </div>
+            <button type="button" class="btn btn-sm btn-danger" id="btnCfPurgeEverything" onclick="submitCfPurgeEverything()" style="display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;">
+              <svg class="icon icon-sm"><use href="#i-trash-2"/></svg> <span data-i18n="cf_btn_purge_everything">Purge Everything</span>
+            </button>
+          </div>
+        </div>
+        <div class="card" style="padding: 16px; border: 1px solid var(--card-border);">
+          <h4 style="margin: 0 0 4px 0; font-size: var(--fs-md); font-weight: 600;" data-i18n="cf_purge_urls_title">Purge by URL / Host / Prefix</h4>
+          <p style="margin: 0 0 12px 0; color: var(--text-muted); font-size: var(--fs-xs); line-height: 1.45;" data-i18n="cf_purge_urls_desc">Enter URLs to purge (one URL per line, max 30 entries). Example: https://example.com/style.css</p>
+          <div class="dk-field">
+            <textarea id="cfPurgeUrlsTextarea" class="form-input font-mono" rows="6" placeholder="https://example.com/asset.js&#10;https://example.com/images/logo.png" style="width: 100%; box-sizing: border-box; resize: vertical;"></textarea>
+          </div>
+          <div style="display: flex; justify-content: flex-end; margin-top: 10px;">
+            <button type="button" class="btn btn-sm btn-primary" id="btnCfPurgeUrls" onclick="submitCfPurgeUrls()" style="display: inline-flex; align-items: center; gap: 6px;">
+              <svg class="icon icon-sm"><use href="#i-zap"/></svg> <span data-i18n="cf_btn_purge_urls">Purge Custom URLs</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 3: Zone Settings -->
+      <div id="cfZonePanelSettings" style="display: none; flex-direction: column; gap: 12px; max-width: 800px;">
+        <div style="font-size: var(--fs-xs); color: var(--text-muted); margin-bottom: 4px;" data-i18n="cf_settings_intro">Allowed Cloudflare Zone settings. Changes take effect on Cloudflare immediately.</div>
+        <div id="cfSettingsContainer" style="display: flex; flex-direction: column; gap: 16px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Cloudflare DNS Record Modal (Action Dialog) -->
+<div id="cfRecordModal" class="modal">
+  <div class="modal-content modal-dialog" style="max-width: 520px;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <svg class="icon icon-sm text-accent"><use href="#i-globe"/></svg>
+        <h3 id="cfRecordModalTitle" style="font-size: var(--fs-md); margin: 0;" data-i18n="cf_record_modal_add">Add DNS Record</h3>
+      </div>
+      <button class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('cfRecordModal')" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px; padding: 16px 20px;">
+      <div class="dk-form-grid">
+        <div class="dk-field">
+          <label for="cfRecordType"><span data-i18n="cf_record_type">Type</span> *</label>
+          <select id="cfRecordType" class="form-input" onchange="onCfRecordTypeChange()">
+            <option value="A">A</option>
+            <option value="AAAA">AAAA</option>
+            <option value="CNAME">CNAME</option>
+            <option value="TXT">TXT</option>
+            <option value="MX">MX</option>
+            <option value="NS">NS</option>
+            <option value="SRV">SRV</option>
+            <option value="CAA">CAA</option>
+          </select>
+        </div>
+        <div class="dk-field">
+          <label for="cfRecordTTL"><span data-i18n="cf_record_ttl">TTL</span></label>
+          <select id="cfRecordTTL" class="form-input">
+            <option value="1" data-i18n="cf_ttl_auto">Auto</option>
+            <option value="60">1 min</option>
+            <option value="120">2 min</option>
+            <option value="300">5 min</option>
+            <option value="600">10 min</option>
+            <option value="900">15 min</option>
+            <option value="1800">30 min</option>
+            <option value="3600">1 hour</option>
+            <option value="7200">2 hours</option>
+            <option value="18000">5 hours</option>
+            <option value="43200">12 hours</option>
+            <option value="86400">1 day</option>
+          </select>
+        </div>
+        <div class="dk-field dk-full">
+          <label for="cfRecordName"><span data-i18n="cf_record_name">Name</span> *</label>
+          <input type="text" id="cfRecordName" class="form-input mono" placeholder="e.g. sub or example.com (@ for root)" />
+        </div>
+        <div class="dk-field dk-full">
+          <label for="cfRecordContent"><span data-i18n="cf_record_content">Content / Target</span> *</label>
+          <input type="text" id="cfRecordContent" class="form-input mono" placeholder="IPv4, IPv6, domain, or target text" />
+        </div>
+        <div class="dk-field" id="cfRecordPriorityField" style="display: none;">
+          <label for="cfRecordPriority"><span data-i18n="cf_record_priority">Priority</span> *</label>
+          <input type="number" id="cfRecordPriority" class="form-input mono" min="0" max="65535" placeholder="10" />
+        </div>
+        <div class="dk-field dk-full" id="cfRecordProxiedWrap">
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+            <input type="checkbox" id="cfRecordProxied" style="width: auto;" />
+            <span data-i18n="cf_record_proxied">Proxy through Cloudflare (CDN, WAF, SSL)</span>
+          </label>
+        </div>
+        <div class="dk-field dk-full">
+          <label for="cfRecordComment" data-i18n="cf_record_comment">Comment (Optional)</label>
+          <input type="text" id="cfRecordComment" class="form-input" placeholder="Notes about this record" />
+        </div>
+      </div>
+      <div id="cfRecordError" role="alert" style="display: none; background: var(--danger-soft); border: 1px solid var(--danger-border); border-radius: var(--radius-sm); padding: 8px 12px; font-size: var(--fs-xs); color: var(--danger); white-space: pre-wrap; word-break: break-all;"></div>
+    </div>
+    <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end; align-items: center;">
+      <button type="button" class="btn btn-sm" onclick="closeModal('cfRecordModal')" data-i18n="cancel">Cancel</button>
+      <button type="button" class="btn btn-sm btn-primary" id="btnCfRecordSubmit" onclick="submitCfRecordModal()"><span id="btnCfRecordSubmitText" data-i18n="cf_btn_save_record">Save Record</span></button>
+    </div>
+  </div>
+</div>
+
 
 <!-- Generic Confirmation Modal (Action Dialog) -->
 <div id="confirmModal" class="modal">
@@ -7176,6 +7445,96 @@ const I18N = {
     "alert_debounce_label": "Alert Debounce Runs (1..10)",
     "alert_debounce_desc": "Require N consecutive drift inspections before triggering an Incident, Alert, or notifications.",
     "secret_saved": "Saved",
+    "nav_cloudflare": "Cloudflare",
+    "cf_section_title": "Cloudflare Management",
+    "cf_section_desc": "Manage Cloudflare Zones, DNS records, cache purge, and zone settings via API.",
+    "cf_account_label": "Account:",
+    "cf_select_account": "Select an account...",
+    "cf_add_account": "Add Account",
+    "cf_edit_account": "Edit",
+    "cf_delete_account": "Delete",
+    "cf_select_account_prompt": "Select or add a Cloudflare Account to view and manage its Zones.",
+    "cf_search_zones_ph": "Search zones by name...",
+    "cf_no_zones_found": "No zones found",
+    "cf_account_modal_title_add": "Add Cloudflare Account",
+    "cf_account_modal_title_edit": "Edit Cloudflare Account",
+    "cf_account_modal_intro": "Register a Cloudflare API Token to manage Zones, DNS, cache, and settings. Tokens are verified before saving and never returned by the API.",
+    "cf_account_name_label": "Account Name",
+    "cf_account_cfid_label": "Account ID (Optional)",
+    "cf_account_cfid_hint": "Found on Cloudflare dashboard sidebar under Zone Overview or Account ID.",
+    "cf_account_token_label": "API Token",
+    "cf_account_token_hint": "In edit mode, leave empty to keep the existing token.",
+    "cf_btn_save": "Verify & Save",
+    "cf_tab_dns": "DNS Records",
+    "cf_tab_cache": "Purge Cache",
+    "cf_tab_settings": "Zone Settings",
+    "cf_dns_search_ph": "Filter by type, name, content...",
+    "cf_add_dns_record": "Add Record",
+    "cf_col_type": "Type",
+    "cf_col_name": "Name",
+    "cf_col_content": "Content",
+    "cf_col_proxy": "Proxy Status",
+    "cf_col_ttl": "TTL",
+    "cf_col_comment": "Comment",
+    "cf_col_actions": "Actions",
+    "cf_no_dns_records": "No DNS records found.",
+    "cf_purge_everything_title": "Purge Everything",
+    "cf_purge_everything_desc": "Clears all cached resources across Cloudflare edge data centers. Origin servers may experience higher load immediately after purging.",
+    "cf_btn_purge_everything": "Purge Everything",
+    "cf_purge_urls_title": "Purge by URL / Host / Prefix",
+    "cf_purge_urls_desc": "Enter URLs to purge (one URL per line, max 30 entries). Example: https://example.com/style.css",
+    "cf_btn_purge_urls": "Purge Custom URLs",
+    "cf_settings_intro": "Allowed Cloudflare Zone settings. Changes take effect on Cloudflare immediately.",
+    "cf_set_empty": "No settings available.",
+    "cf_set_on": "On",
+    "cf_set_off": "Off",
+    "cf_set_flag_attention": "Attention",
+    "cf_set_group_security": "Security & Encryption",
+    "cf_set_group_development": "Development",
+    "cf_set_group_other": "Other",
+    "cf_set_ssl_title": "SSL/TLS Encryption Mode",
+    "cf_set_ssl_desc": "How Cloudflare connects to your origin. Strict validates the origin certificate; Flexible leaves origin traffic unencrypted.",
+    "cf_set_min_tls_version_title": "Minimum TLS Version",
+    "cf_set_min_tls_version_desc": "Reject visitor connections using a TLS version older than this.",
+    "cf_set_always_use_https_title": "Always Use HTTPS",
+    "cf_set_always_use_https_desc": "Redirect all HTTP requests to HTTPS.",
+    "cf_set_automatic_https_rewrites_title": "Automatic HTTPS Rewrites",
+    "cf_set_automatic_https_rewrites_desc": "Rewrite insecure http:// links in pages to https:// to avoid mixed content.",
+    "cf_set_security_level_title": "Security Level",
+    "cf_set_security_level_desc": "Challenge threshold for visitors by IP reputation. Under Attack shows an interstitial challenge to everyone.",
+    "cf_set_development_mode_title": "Development Mode",
+    "cf_set_development_mode_desc": "Bypass Cloudflare cache so origin changes appear immediately. Turns off automatically after 3 hours.",
+    "cf_record_modal_add": "Add DNS Record",
+    "cf_record_modal_edit": "Edit DNS Record",
+    "cf_record_type": "Type",
+    "cf_record_ttl": "TTL",
+    "cf_ttl_auto": "Auto",
+    "cf_record_name": "Name",
+    "cf_record_content": "Content / Target",
+    "cf_record_priority": "Priority",
+    "cf_record_proxied": "Proxy through Cloudflare (CDN, WAF, SSL)",
+    "cf_record_comment": "Comment (Optional)",
+    "cf_btn_save_record": "Save Record",
+    "cf_proxied_badge": "Proxied",
+    "cf_dns_only_badge": "DNS only",
+    "cf_confirm_delete_account_title": "Delete Cloudflare Account",
+    "cf_confirm_delete_account_msg": "Are you sure you want to delete Cloudflare Account \"{name}\"? This removes stored credentials and access configuration.",
+    "cf_confirm_delete_record_title": "Delete DNS Record",
+    "cf_confirm_delete_record_msg": "Are you sure you want to delete {type} record \"{name}\"? This will take effect on Cloudflare nameservers immediately.",
+    "cf_confirm_purge_everything_title": "Purge Everything",
+    "cf_confirm_purge_everything_msg": "Purge all cached resources for zone \"{name}\"? Origin servers may experience higher load.",
+    "cf_account_saved": "Cloudflare Account saved successfully",
+    "cf_account_deleted": "Cloudflare Account deleted",
+    "cf_record_saved": "DNS record saved successfully",
+    "cf_record_deleted": "DNS record deleted",
+    "cf_cache_purged": "Cache purged successfully",
+    "cf_setting_updated": "Zone Setting updated successfully",
+    "cf_err_name_token_required": "Account name and API token are required",
+    "cf_err_record_validation": "Record type, name, and content are required",
+    "cf_err_purge_urls_empty": "Please enter at least one URL to purge",
+    "cf_err_purge_urls_limit": "Maximum 30 URLs can be purged per request",
+    "cf_zone_paused": "Paused",
+    "cf_manage_zone": "Manage Zone",
   },
   id: {
     "brand_subtitle": "Manajemen Server Agentless",
@@ -8513,6 +8872,96 @@ const I18N = {
     "alert_debounce_label": "Debounce Alert (1..10 Siklus)",
     "alert_debounce_desc": "Drift baru memicu Insiden, Alert, dan notifikasi hanya setelah terlihat pada N inspeksi berturut-turut.",
     "secret_saved": "Tersimpan",
+    "nav_cloudflare": "Cloudflare",
+    "cf_section_title": "Manajemen Cloudflare",
+    "cf_section_desc": "Kelola Cloudflare Zone, record DNS, purge cache, dan pengaturan zone via API.",
+    "cf_account_label": "Akun:",
+    "cf_select_account": "Pilih akun...",
+    "cf_add_account": "Tambah Akun",
+    "cf_edit_account": "Ubah",
+    "cf_delete_account": "Hapus",
+    "cf_select_account_prompt": "Pilih atau tambahkan Cloudflare Account untuk melihat dan mengelola Zone miliknya.",
+    "cf_search_zones_ph": "Cari zone berdasarkan nama...",
+    "cf_no_zones_found": "Tidak ada zone yang ditemukan",
+    "cf_account_modal_title_add": "Tambah Cloudflare Account",
+    "cf_account_modal_title_edit": "Ubah Cloudflare Account",
+    "cf_account_modal_intro": "Daftarkan API Token Cloudflare untuk mengelola Zone, DNS, cache, dan pengaturan. Token diverifikasi sebelum disimpan dan tidak pernah dikembalikan oleh API.",
+    "cf_account_name_label": "Nama Akun",
+    "cf_account_cfid_label": "Account ID (Opsional)",
+    "cf_account_cfid_hint": "Ditemukan pada bilah sisi dashboard Cloudflare di bawah Zone Overview atau Account ID.",
+    "cf_account_token_label": "API Token",
+    "cf_account_token_hint": "Dalam mode edit, biarkan kosong untuk mempertahankan token yang sudah ada.",
+    "cf_btn_save": "Verifikasi & Simpan",
+    "cf_tab_dns": "Record DNS",
+    "cf_tab_cache": "Purge Cache",
+    "cf_tab_settings": "Pengaturan Zone",
+    "cf_dns_search_ph": "Saring berdasarkan tipe, nama, isi...",
+    "cf_add_dns_record": "Tambah Record",
+    "cf_col_type": "Tipe",
+    "cf_col_name": "Nama",
+    "cf_col_content": "Konten",
+    "cf_col_proxy": "Status Proxy",
+    "cf_col_ttl": "TTL",
+    "cf_col_comment": "Komentar",
+    "cf_col_actions": "Aksi",
+    "cf_no_dns_records": "Tidak ada record DNS yang ditemukan.",
+    "cf_purge_everything_title": "Purge Everything",
+    "cf_purge_everything_desc": "Menghapus seluruh sumber daya yang tersimpan di cache edge Cloudflare. Server asal mungkin mengalami lonjakan beban sesaat setelah purge.",
+    "cf_btn_purge_everything": "Purge Everything",
+    "cf_purge_urls_title": "Purge berdasarkan URL / Host / Prefix",
+    "cf_purge_urls_desc": "Masukkan URL yang ingin dihapus dari cache (satu URL per baris, maks 30 entri). Contoh: https://example.com/style.css",
+    "cf_btn_purge_urls": "Purge URL Kustom",
+    "cf_settings_intro": "Pengaturan Cloudflare Zone yang diperbolehkan. Perubahan langsung berlaku di Cloudflare.",
+    "cf_set_empty": "Tidak ada pengaturan tersedia.",
+    "cf_set_on": "Aktif",
+    "cf_set_off": "Nonaktif",
+    "cf_set_flag_attention": "Perhatian",
+    "cf_set_group_security": "Keamanan & Enkripsi",
+    "cf_set_group_development": "Pengembangan",
+    "cf_set_group_other": "Lainnya",
+    "cf_set_ssl_title": "Mode Enkripsi SSL/TLS",
+    "cf_set_ssl_desc": "Cara Cloudflare terhubung ke origin Anda. Strict memvalidasi sertifikat origin; Flexible membiarkan lalu lintas ke origin tidak terenkripsi.",
+    "cf_set_min_tls_version_title": "Versi TLS Minimum",
+    "cf_set_min_tls_version_desc": "Tolak koneksi pengunjung yang memakai versi TLS lebih lama dari ini.",
+    "cf_set_always_use_https_title": "Selalu Gunakan HTTPS",
+    "cf_set_always_use_https_desc": "Alihkan semua permintaan HTTP ke HTTPS.",
+    "cf_set_automatic_https_rewrites_title": "Penulisan Ulang HTTPS Otomatis",
+    "cf_set_automatic_https_rewrites_desc": "Ubah tautan http:// yang tidak aman di halaman menjadi https:// untuk menghindari mixed content.",
+    "cf_set_security_level_title": "Tingkat Keamanan",
+    "cf_set_security_level_desc": "Ambang tantangan bagi pengunjung berdasarkan reputasi IP. Under Attack menampilkan halaman tantangan ke semua pengunjung.",
+    "cf_set_development_mode_title": "Mode Pengembangan",
+    "cf_set_development_mode_desc": "Lewati cache Cloudflare agar perubahan di origin langsung terlihat. Mati otomatis setelah 3 jam.",
+    "cf_record_modal_add": "Tambah Record DNS",
+    "cf_record_modal_edit": "Ubah Record DNS",
+    "cf_record_type": "Tipe",
+    "cf_record_ttl": "TTL",
+    "cf_ttl_auto": "Auto",
+    "cf_record_name": "Nama",
+    "cf_record_content": "Konten / Target",
+    "cf_record_priority": "Prioritas",
+    "cf_record_proxied": "Proxy melalui Cloudflare (CDN, WAF, SSL)",
+    "cf_record_comment": "Komentar (Opsional)",
+    "cf_btn_save_record": "Simpan Record",
+    "cf_proxied_badge": "Proxied",
+    "cf_dns_only_badge": "Hanya DNS",
+    "cf_confirm_delete_account_title": "Hapus Cloudflare Account",
+    "cf_confirm_delete_account_msg": "Yakin ingin menghapus Cloudflare Account \"{name}\"? Tindakan ini akan menghapus kredensial tersimpan dan konfigurasi akses.",
+    "cf_confirm_delete_record_title": "Hapus Record DNS",
+    "cf_confirm_delete_record_msg": "Yakin ingin menghapus record {type} \"{name}\"? Tindakan ini langsung berlaku di nameserver Cloudflare.",
+    "cf_confirm_purge_everything_title": "Purge Everything",
+    "cf_confirm_purge_everything_msg": "Hapus semua cache untuk zone \"{name}\"? Server asal dapat mengalami lonjakan beban.",
+    "cf_account_saved": "Cloudflare Account berhasil disimpan",
+    "cf_account_deleted": "Cloudflare Account berhasil dihapus",
+    "cf_record_saved": "Record DNS berhasil disimpan",
+    "cf_record_deleted": "Record DNS berhasil dihapus",
+    "cf_cache_purged": "Cache berhasil di-purge",
+    "cf_setting_updated": "Pengaturan Zone berhasil diperbarui",
+    "cf_err_name_token_required": "Nama akun dan API token wajib diisi",
+    "cf_err_record_validation": "Tipe record, nama, dan konten wajib diisi",
+    "cf_err_purge_urls_empty": "Harap masukkan setidaknya satu URL untuk di-purge",
+    "cf_err_purge_urls_limit": "Maksimum 30 URL dapat di-purge per permintaan",
+    "cf_zone_paused": "Dijeda",
+    "cf_manage_zone": "Kelola Zone",
   }
 };
 
@@ -20877,17 +21326,21 @@ function switchSideNav(section) {
   const secHosts = document.getElementById('sectionHosts');
   const secDocker = document.getElementById('sectionDocker');
   const secKube = document.getElementById('sectionKube');
+  const secCf = document.getElementById('sectionCloudflare');
   if (secHosts) secHosts.style.display = section === 'hosts' ? 'block' : 'none';
   if (secDocker) secDocker.style.display = section === 'docker' ? 'block' : 'none';
   if (secKube) secKube.style.display = section === 'kube' ? 'block' : 'none';
+  if (secCf) secCf.style.display = section === 'cloudflare' ? 'block' : 'none';
   toggleSidePanelMobile(false);
   if (section !== 'kube') stopKubeAutorefresh();
   if (section === 'docker') renderDockerSection();
   else if (section === 'kube') { loadKubeClusters(); populateKubeHostSelect(); }
+  else if (section === 'cloudflare') { loadCfAccounts(); }
 }
 function updateSideNavData() {
   if (currentSideNav === 'docker') renderDockerSection();
   if (currentSideNav === 'kube') { loadKubeClusters(); populateKubeHostSelect(); }
+  if (currentSideNav === 'cloudflare') { loadCfAccounts(); }
 }
 async function openHostDocker(hostId) {
   setHostActiveTab(hostId, 'docker');
@@ -23231,6 +23684,721 @@ function openPkgUpgradeLogs(hostId, mode) {
       status.className = 'badge badge-unknown';
     }
   };
+}
+
+// ============================================================================
+// Cloudflare Management (Section 4)
+// ============================================================================
+let cfAccounts = [];
+let selectedCfAccountId = null;
+let cfZonesCache = [];
+let currentCfZone = null;
+let currentCfZoneTab = 'dns';
+let cfDnsRecords = [];
+let cfZoneSettings = [];
+let cfZoneSettingsOptions = {};
+let cfAccountModalMode = 'add';
+let cfAccountEditId = null;
+let cfRecordModalMode = 'add';
+let cfRecordEditId = null;
+
+async function loadCfAccounts() {
+  try {
+    const res = await fetch('/api/cloudflare/accounts');
+    const data = await res.json();
+    if (data && Array.isArray(data.accounts)) {
+      cfAccounts = data.accounts;
+    } else {
+      cfAccounts = [];
+    }
+  } catch (e) {
+    cfAccounts = [];
+  }
+  populateCfAccountSelect();
+}
+
+function populateCfAccountSelect() {
+  const sel = document.getElementById('cfAccountSelect');
+  const btnEdit = document.getElementById('btnCfEditAccount');
+  const btnDel = document.getElementById('btnCfDeleteAccount');
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = `<option value="">${t('cf_select_account', 'Select an account...')}</option>` +
+    cfAccounts.map(a => `<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('');
+  if (selectedCfAccountId && cfAccounts.some(a => String(a.id) === String(selectedCfAccountId))) {
+    sel.value = String(selectedCfAccountId);
+  } else if (prev && cfAccounts.some(a => String(a.id) === String(prev))) {
+    sel.value = prev;
+    selectedCfAccountId = Number(prev);
+  } else {
+    selectedCfAccountId = null;
+    sel.value = '';
+  }
+  const hasAcc = !!selectedCfAccountId;
+  if (btnEdit) btnEdit.style.display = hasAcc ? 'inline-flex' : 'none';
+  if (btnDel) btnDel.style.display = hasAcc ? 'inline-flex' : 'none';
+  onSelectCfAccount(sel.value, true);
+}
+
+async function onSelectCfAccount(accId, keep) {
+  selectedCfAccountId = accId ? Number(accId) : null;
+  const btnEdit = document.getElementById('btnCfEditAccount');
+  const btnDel = document.getElementById('btnCfDeleteAccount');
+  if (btnEdit) btnEdit.style.display = selectedCfAccountId ? 'inline-flex' : 'none';
+  if (btnDel) btnDel.style.display = selectedCfAccountId ? 'inline-flex' : 'none';
+  const prompt = document.getElementById('cfSelectAccountPrompt');
+  const container = document.getElementById('cfZonesContainer');
+  if (!selectedCfAccountId) {
+    if (prompt) prompt.style.display = 'block';
+    if (container) container.style.display = 'none';
+    cfZonesCache = [];
+    return;
+  }
+  if (prompt) prompt.style.display = 'none';
+  if (container) container.style.display = 'flex';
+  if (!keep) {
+    await loadCfZones(selectedCfAccountId);
+  }
+}
+
+async function refreshCfSection() {
+  await loadCfAccounts();
+  if (selectedCfAccountId) {
+    await loadCfZones(selectedCfAccountId);
+  }
+}
+
+async function loadCfZones(accId) {
+  const grid = document.getElementById('cfZonesGrid');
+  const empty = document.getElementById('cfZonesEmpty');
+  const countBadge = document.getElementById('cfZoneCountBadge');
+  if (grid) grid.innerHTML = `<div style="grid-column:1/-1;padding:24px;text-align:center;color:var(--text-muted);">${t('loading', 'Loading...')}</div>`;
+  try {
+    const res = await fetch(`/api/cloudflare/accounts/${accId}/zones`);
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to load zones'), 'error');
+      cfZonesCache = [];
+    } else {
+      cfZonesCache = Array.isArray(data.zones) ? data.zones : [];
+    }
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+    cfZonesCache = [];
+  }
+  if (countBadge) countBadge.textContent = `${cfZonesCache.length} zone${cfZonesCache.length === 1 ? '' : 's'}`;
+  renderCfZones();
+}
+
+function filterCfZones() {
+  renderCfZones();
+}
+
+function renderCfZones() {
+  const grid = document.getElementById('cfZonesGrid');
+  const empty = document.getElementById('cfZonesEmpty');
+  if (!grid || !empty) return;
+  const q = (document.getElementById('cfZoneSearchInput')?.value || '').toLowerCase().trim();
+  const filtered = q ? cfZonesCache.filter(z => (z.name || '').toLowerCase().includes(q) || (z.plan || '').toLowerCase().includes(q)) : cfZonesCache;
+  if (filtered.length === 0) {
+    grid.style.display = 'none';
+    empty.style.display = 'block';
+    return;
+  }
+  grid.style.display = 'grid';
+  empty.style.display = 'none';
+  grid.innerHTML = filtered.map(z => {
+    const status = z.status || 'unknown';
+    const plan = z.plan || 'Free';
+    const nameServers = Array.isArray(z.name_servers) ? z.name_servers.join(', ') : '';
+    const isPaused = !!z.paused;
+    return `<div class="card host-card" style="cursor:pointer;" onclick="openCfZoneModal('${escapeHtml(z.id)}')">
+      <div class="host-card-header">
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+          <span class="status-dot ${status === 'active' ? 'online' : (status === 'pending' ? 'warn' : 'offline')}"></span>
+          <span style="font-weight:600;font-size:var(--fs-md);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(z.name)}">${escapeHtml(z.name)}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          ${isPaused ? `<span class="badge badge-warning">${t('cf_zone_paused', 'Paused')}</span>` : ''}
+          <span class="badge ${status === 'active' ? 'badge-healthy' : 'badge-warning'}">${escapeHtml(status)}</span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:var(--fs-xs);color:var(--text-muted);">
+        <span class="badge" style="background:var(--surface-2);border:1px solid var(--card-border);">${escapeHtml(plan)}</span>
+        <span class="mono" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(z.id)}">${escapeHtml(z.id)}</span>
+      </div>
+      <div style="font-size:var(--fs-xs);color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(nameServers)}">
+        NS: ${escapeHtml(nameServers || '-')}
+      </div>
+      <div style="margin-top:auto;display:flex;justify-content:flex-end;">
+        <button type="button" class="btn btn-sm btn-primary" onclick="event.stopPropagation();openCfZoneModal('${escapeHtml(z.id)}')" style="display:inline-flex;align-items:center;gap:6px;">
+          ${svgIcon('cloud', 'icon-sm')} <span>${t('cf_manage_zone', 'Manage Zone')}</span>
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openCfAccountModal(accId) {
+  const titleEl = document.getElementById('cfAccountModalTitle');
+  const nameInput = document.getElementById('cfAccountName');
+  const cfidInput = document.getElementById('cfAccountCFID');
+  const tokenInput = document.getElementById('cfAccountToken');
+  const tokenStar = document.getElementById('cfAccountTokenReqStar');
+  const tokenHint = document.getElementById('cfAccountTokenHint');
+  const errEl = document.getElementById('cfAccountError');
+  const submitBtn = document.getElementById('btnCfAccountSubmit');
+  const submitText = document.getElementById('btnCfAccountSubmitText');
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+  if (submitBtn) submitBtn.disabled = false;
+  if (tokenInput) tokenInput.value = '';
+  if (accId) {
+    const existing = cfAccounts.find(a => String(a.id) === String(accId));
+    if (!existing) return;
+    cfAccountModalMode = 'edit';
+    cfAccountEditId = existing.id;
+    if (titleEl) titleEl.textContent = t('cf_account_modal_title_edit', 'Edit Cloudflare Account');
+    if (nameInput) nameInput.value = existing.name || '';
+    if (cfidInput) cfidInput.value = existing.account_id || '';
+    if (tokenStar) tokenStar.style.display = 'none';
+    if (tokenHint) tokenHint.style.display = 'block';
+    if (submitText) submitText.textContent = t('cf_btn_save', 'Save');
+  } else {
+    cfAccountModalMode = 'add';
+    cfAccountEditId = null;
+    if (titleEl) titleEl.textContent = t('cf_account_modal_title_add', 'Add Cloudflare Account');
+    if (nameInput) nameInput.value = '';
+    if (cfidInput) cfidInput.value = '';
+    if (tokenStar) tokenStar.style.display = 'inline';
+    if (tokenHint) tokenHint.style.display = 'none';
+    if (submitText) submitText.textContent = t('cf_btn_save', 'Verify & Save');
+  }
+  openModal('cfAccountModal');
+  setTimeout(() => { if (nameInput) nameInput.focus(); }, 50);
+}
+
+async function submitCfAccountModal() {
+  const name = (document.getElementById('cfAccountName')?.value || '').trim();
+  const accountId = (document.getElementById('cfAccountCFID')?.value || '').trim();
+  const apiToken = (document.getElementById('cfAccountToken')?.value || '').trim();
+  const errEl = document.getElementById('cfAccountError');
+  const submitBtn = document.getElementById('btnCfAccountSubmit');
+  const submitText = document.getElementById('btnCfAccountSubmitText');
+  const setError = (msg) => {
+    if (!errEl) return;
+    errEl.textContent = msg;
+    errEl.style.display = msg ? 'block' : 'none';
+  };
+  setError('');
+  if (!name) {
+    setError(t('cf_err_name_token_required', 'Account name and API token are required'));
+    return;
+  }
+  if (cfAccountModalMode === 'add' && !apiToken) {
+    setError(t('cf_err_name_token_required', 'Account name and API token are required'));
+    return;
+  }
+  const payload = { name };
+  if (accountId) payload.account_id = accountId;
+  if (apiToken) payload.api_token = apiToken;
+
+  if (submitBtn) submitBtn.disabled = true;
+  if (submitText) submitText.textContent = t('working', 'Working...');
+  try {
+    const url = cfAccountModalMode === 'edit' ? `/api/cloudflare/accounts/${cfAccountEditId}` : '/api/cloudflare/accounts';
+    const method = cfAccountModalMode === 'edit' ? 'PUT' : 'POST';
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data.error || 'Server error');
+      return;
+    }
+    closeModal('cfAccountModal');
+    showToast(t('cf_account_saved', 'Cloudflare Account saved successfully'), 'success');
+    await loadCfAccounts();
+    const savedId = (data.account && data.account.id) || cfAccountEditId;
+    if (savedId) {
+      selectedCfAccountId = Number(savedId);
+      const sel = document.getElementById('cfAccountSelect');
+      if (sel) sel.value = String(savedId);
+      onSelectCfAccount(savedId);
+    }
+  } catch (e) {
+    setError(e.message || 'Network error');
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+    if (submitText) submitText.textContent = t('cf_btn_save', 'Verify & Save');
+  }
+}
+
+async function deleteCfAccount(accId) {
+  if (!accId) return;
+  const acc = cfAccounts.find(a => Number(a.id) === Number(accId));
+  const accName = acc ? acc.name : `#${accId}`;
+  const confirmed = await showConfirm({
+    title: t('cf_confirm_delete_account_title', 'Delete Cloudflare Account'),
+    message: t('cf_confirm_delete_account_msg', 'Are you sure you want to delete Cloudflare Account "{name}"? This removes stored credentials and access configuration.').replace('{name}', accName),
+    confirmText: t('delete', 'Delete'),
+    danger: true
+  });
+  if (!confirmed) return;
+  try {
+    const res = await fetch(`/api/cloudflare/accounts/${accId}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to delete account'), 'error');
+      return;
+    }
+    showToast(t('cf_account_deleted', 'Cloudflare Account deleted'), 'info');
+    selectedCfAccountId = null;
+    await loadCfAccounts();
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+  }
+}
+
+async function openCfZoneModal(zoneId) {
+  const zone = cfZonesCache.find(z => z.id === zoneId);
+  if (!zone) return;
+  currentCfZone = zone;
+  const nameEl = document.getElementById('cfZoneModalName');
+  const statusBadge = document.getElementById('cfZoneStatusBadge');
+  const planBadge = document.getElementById('cfZonePlanBadge');
+  const pausedBadge = document.getElementById('cfZonePausedBadge');
+  if (nameEl) nameEl.textContent = zone.name || '';
+  if (statusBadge) {
+    statusBadge.textContent = zone.status || 'unknown';
+    statusBadge.className = `badge ${zone.status === 'active' ? 'badge-healthy' : 'badge-warning'}`;
+  }
+  if (planBadge) planBadge.textContent = zone.plan || 'Free';
+  if (pausedBadge) pausedBadge.style.display = zone.paused ? 'inline-flex' : 'none';
+  openModal('cfZoneModal');
+  switchCfZoneTab('dns');
+}
+
+function switchCfZoneTab(tab) {
+  currentCfZoneTab = tab;
+  document.querySelectorAll('#cfZoneTabs .tab').forEach(el => {
+    const isAct = el.id === ('tabCfZone' + tab.charAt(0).toUpperCase() + tab.slice(1));
+    el.classList.toggle('active', isAct);
+  });
+  const pDns = document.getElementById('cfZonePanelDns');
+  const pCache = document.getElementById('cfZonePanelCache');
+  const pSettings = document.getElementById('cfZonePanelSettings');
+  if (pDns) pDns.style.display = tab === 'dns' ? 'flex' : 'none';
+  if (pCache) pCache.style.display = tab === 'cache' ? 'flex' : 'none';
+  if (pSettings) pSettings.style.display = tab === 'settings' ? 'flex' : 'none';
+  if (tab === 'dns') loadCfDnsRecords();
+  else if (tab === 'settings') loadCfZoneSettings();
+}
+
+async function refreshCurrentCfZoneTab() {
+  if (currentCfZoneTab === 'dns') await loadCfDnsRecords();
+  else if (currentCfZoneTab === 'settings') await loadCfZoneSettings();
+}
+
+async function loadCfDnsRecords() {
+  if (!selectedCfAccountId || !currentCfZone) return;
+  const tbody = document.getElementById('cfDnsTableBody');
+  const empty = document.getElementById('cfDnsEmptyState');
+  if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-muted);">${t('loading', 'Loading...')}</td></tr>`;
+  try {
+    const res = await fetch(`/api/cloudflare/accounts/${selectedCfAccountId}/zones/${currentCfZone.id}/dns`);
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to load DNS records'), 'error');
+      cfDnsRecords = [];
+    } else {
+      cfDnsRecords = Array.isArray(data.records) ? data.records : [];
+    }
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+    cfDnsRecords = [];
+  }
+  renderCfDnsTable();
+}
+
+function renderCfDnsTable() {
+  const tbody = document.getElementById('cfDnsTableBody');
+  const empty = document.getElementById('cfDnsEmptyState');
+  if (!tbody || !empty) return;
+  const q = (document.getElementById('cfDnsSearchInput')?.value || '').toLowerCase().trim();
+  const filtered = q ? cfDnsRecords.filter(r => (r.type || '').toLowerCase().includes(q) || (r.name || '').toLowerCase().includes(q) || (r.content || '').toLowerCase().includes(q) || (r.comment || '').toLowerCase().includes(q)) : cfDnsRecords;
+  if (filtered.length === 0) {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  tbody.innerHTML = filtered.map(r => {
+    const ttlStr = r.ttl === 1 ? t('cf_ttl_auto', 'Auto') : (r.ttl >= 3600 ? `${r.ttl / 3600}h` : `${r.ttl}s`);
+    const isProxied = r.proxied === true;
+    const proxyBadge = r.proxiable
+      ? `<button type="button" class="badge ${isProxied ? 'badge-warning' : 'badge-info'}" style="cursor:pointer;border:none;outline:none;" onclick="toggleCfRecordProxied('${escapeHtml(r.id)}')" title="Click to toggle proxy">
+          ${svgIcon('cloud', 'icon-xs')} <span>${isProxied ? t('cf_proxied_badge', 'Proxied') : t('cf_dns_only_badge', 'DNS only')}</span>
+        </button>`
+      : `<span class="badge" style="background:var(--surface-2);color:var(--text-muted);border:1px solid var(--card-border);">${t('cf_dns_only_badge', 'DNS only')}</span>`;
+    return `<tr>
+      <td><span class="badge" style="font-family:var(--font-mono);background:var(--surface-2);border:1px solid var(--card-border);">${escapeHtml(r.type)}</span></td>
+      <td class="mono" style="font-weight:600;word-break:break-all;">${escapeHtml(r.name)}</td>
+      <td class="mono" style="word-break:break-all;color:var(--text-muted);">${escapeHtml(r.content)}${r.priority !== undefined && r.priority !== null ? ` <span class="badge" style="font-size:10px;">prio ${r.priority}</span>` : ''}</td>
+      <td>${proxyBadge}</td>
+      <td style="font-size:var(--fs-xs);">${escapeHtml(ttlStr)}</td>
+      <td style="font-size:var(--fs-xs);color:var(--text-muted);">${escapeHtml(r.comment || '-')}</td>
+      <td style="text-align:right;white-space:nowrap;">
+        <button type="button" class="btn btn-sm btn-ghost btn-icon" title="Edit" onclick="openCfRecordModal('${escapeHtml(r.id)}')">${svgIcon('pencil', 'icon-sm')}</button>
+        <button type="button" class="btn btn-sm btn-ghost btn-icon text-danger" title="Delete" onclick="deleteCfRecord('${escapeHtml(r.id)}')">${svgIcon('trash-2', 'icon-sm')}</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function toggleCfRecordProxied(recordId) {
+  if (!selectedCfAccountId || !currentCfZone) return;
+  const rec = cfDnsRecords.find(r => r.id === recordId);
+  if (!rec || !rec.proxiable) return;
+  const nextProxied = !rec.proxied;
+  const payload = {
+    type: rec.type,
+    name: rec.name,
+    content: rec.content,
+    ttl: rec.ttl,
+    proxied: nextProxied
+  };
+  if (rec.priority !== undefined && rec.priority !== null) payload.priority = rec.priority;
+  if (rec.comment) payload.comment = rec.comment;
+  try {
+    const res = await fetch(`/api/cloudflare/accounts/${selectedCfAccountId}/zones/${currentCfZone.id}/dns/${recordId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to update record'), 'error');
+      return;
+    }
+    showToast(t('cf_record_saved', 'DNS record saved successfully'), 'success');
+    await loadCfDnsRecords();
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+  }
+}
+
+function onCfRecordTypeChange() {
+  const type = document.getElementById('cfRecordType')?.value || 'A';
+  const prioField = document.getElementById('cfRecordPriorityField');
+  const proxyWrap = document.getElementById('cfRecordProxiedWrap');
+  if (prioField) prioField.style.display = type === 'MX' ? 'block' : 'none';
+  const canProxy = type === 'A' || type === 'AAAA' || type === 'CNAME';
+  if (proxyWrap) proxyWrap.style.display = canProxy ? 'block' : 'none';
+  if (!canProxy) {
+    const cb = document.getElementById('cfRecordProxied');
+    if (cb) cb.checked = false;
+  }
+}
+
+function openCfRecordModal(recordId) {
+  const titleEl = document.getElementById('cfRecordModalTitle');
+  const typeEl = document.getElementById('cfRecordType');
+  const nameEl = document.getElementById('cfRecordName');
+  const contentEl = document.getElementById('cfRecordContent');
+  const ttlEl = document.getElementById('cfRecordTTL');
+  const prioEl = document.getElementById('cfRecordPriority');
+  const proxiedEl = document.getElementById('cfRecordProxied');
+  const commentEl = document.getElementById('cfRecordComment');
+  const errEl = document.getElementById('cfRecordError');
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+  if (recordId) {
+    const rec = cfDnsRecords.find(r => r.id === recordId);
+    if (!rec) return;
+    cfRecordModalMode = 'edit';
+    cfRecordEditId = rec.id;
+    if (titleEl) titleEl.textContent = t('cf_record_modal_edit', 'Edit DNS Record');
+    if (typeEl) typeEl.value = rec.type || 'A';
+    if (nameEl) nameEl.value = rec.name || '';
+    if (contentEl) contentEl.value = rec.content || '';
+    if (ttlEl) ttlEl.value = String(rec.ttl || 1);
+    if (prioEl) prioEl.value = rec.priority !== undefined && rec.priority !== null ? rec.priority : '';
+    if (proxiedEl) proxiedEl.checked = !!rec.proxied;
+    if (commentEl) commentEl.value = rec.comment || '';
+  } else {
+    cfRecordModalMode = 'add';
+    cfRecordEditId = null;
+    if (titleEl) titleEl.textContent = t('cf_record_modal_add', 'Add DNS Record');
+    if (typeEl) typeEl.value = 'A';
+    if (nameEl) nameEl.value = '';
+    if (contentEl) contentEl.value = '';
+    if (ttlEl) ttlEl.value = '1';
+    if (prioEl) prioEl.value = '';
+    if (proxiedEl) proxiedEl.checked = true;
+    if (commentEl) commentEl.value = '';
+  }
+  onCfRecordTypeChange();
+  openModal('cfRecordModal');
+  setTimeout(() => { if (nameEl) nameEl.focus(); }, 50);
+}
+
+async function submitCfRecordModal() {
+  if (!selectedCfAccountId || !currentCfZone) return;
+  const type = document.getElementById('cfRecordType')?.value || 'A';
+  const name = (document.getElementById('cfRecordName')?.value || '').trim();
+  const content = (document.getElementById('cfRecordContent')?.value || '').trim();
+  const ttl = parseInt(document.getElementById('cfRecordTTL')?.value || '1', 10) || 1;
+  const prioVal = document.getElementById('cfRecordPriority')?.value;
+  const proxied = !!document.getElementById('cfRecordProxied')?.checked;
+  const comment = (document.getElementById('cfRecordComment')?.value || '').trim();
+  const errEl = document.getElementById('cfRecordError');
+  const submitBtn = document.getElementById('btnCfRecordSubmit');
+  const setError = (msg) => {
+    if (!errEl) return;
+    errEl.textContent = msg;
+    errEl.style.display = msg ? 'block' : 'none';
+  };
+  setError('');
+  if (!type || !name || !content) {
+    setError(t('cf_err_record_validation', 'Record type, name, and content are required'));
+    return;
+  }
+  const payload = { type, name, content, ttl };
+  if (type === 'A' || type === 'AAAA' || type === 'CNAME') {
+    payload.proxied = proxied;
+  }
+  if (type === 'MX') {
+    if (prioVal === '' || isNaN(parseInt(prioVal, 10))) {
+      setError('Priority is required for MX records');
+      return;
+    }
+    payload.priority = parseInt(prioVal, 10);
+  }
+  if (comment) payload.comment = comment;
+
+  if (submitBtn) submitBtn.disabled = true;
+  try {
+    const url = cfRecordModalMode === 'edit'
+      ? `/api/cloudflare/accounts/${selectedCfAccountId}/zones/${currentCfZone.id}/dns/${cfRecordEditId}`
+      : `/api/cloudflare/accounts/${selectedCfAccountId}/zones/${currentCfZone.id}/dns`;
+    const method = cfRecordModalMode === 'edit' ? 'PUT' : 'POST';
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data.error || 'Server error');
+      return;
+    }
+    closeModal('cfRecordModal');
+    showToast(t('cf_record_saved', 'DNS record saved successfully'), 'success');
+    await loadCfDnsRecords();
+  } catch (e) {
+    setError(e.message || 'Network error');
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
+}
+
+async function deleteCfRecord(recordId) {
+  if (!selectedCfAccountId || !currentCfZone) return;
+  const rec = cfDnsRecords.find(r => r.id === recordId);
+  const rName = rec ? `${rec.type} ${rec.name}` : `#${recordId}`;
+  const confirmed = await showConfirm({
+    title: t('cf_confirm_delete_record_title', 'Delete DNS Record'),
+    message: t('cf_confirm_delete_record_msg', 'Are you sure you want to delete {type} record "{name}"? This will take effect on Cloudflare nameservers immediately.').replace('{type}', rec ? rec.type : '').replace('{name}', rec ? rec.name : rName),
+    confirmText: t('delete', 'Delete'),
+    danger: true
+  });
+  if (!confirmed) return;
+  try {
+    const res = await fetch(`/api/cloudflare/accounts/${selectedCfAccountId}/zones/${currentCfZone.id}/dns/${recordId}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to delete record'), 'error');
+      return;
+    }
+    showToast(t('cf_record_deleted', 'DNS record deleted'), 'info');
+    await loadCfDnsRecords();
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+  }
+}
+
+async function submitCfPurgeEverything() {
+  if (!selectedCfAccountId || !currentCfZone) return;
+  const confirmed = await showConfirm({
+    title: t('cf_confirm_purge_everything_title', 'Purge Everything'),
+    message: t('cf_confirm_purge_everything_msg', 'Purge all cached resources for zone "{name}"? Origin servers may experience higher load.').replace('{name}', currentCfZone.name || ''),
+    confirmText: t('cf_btn_purge_everything', 'Purge Everything'),
+    danger: true
+  });
+  if (!confirmed) return;
+  const btn = document.getElementById('btnCfPurgeEverything');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(`/api/cloudflare/accounts/${selectedCfAccountId}/zones/${currentCfZone.id}/purge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ purge_everything: true })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      showToast(t('error_prefix', 'Error: ') + (data.error || 'Purge failed'), 'error');
+      return;
+    }
+    showToast(t('cf_cache_purged', 'Cache purged successfully'), 'success');
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function submitCfPurgeUrls() {
+  if (!selectedCfAccountId || !currentCfZone) return;
+  const raw = (document.getElementById('cfPurgeUrlsTextarea')?.value || '').trim();
+  if (!raw) {
+    showToast(t('cf_err_purge_urls_empty', 'Please enter at least one URL to purge'), 'warning');
+    return;
+  }
+  const files = raw.split(/\r?\n/).map(s => s.trim()).filter(s => s.length > 0);
+  if (files.length === 0) {
+    showToast(t('cf_err_purge_urls_empty', 'Please enter at least one URL to purge'), 'warning');
+    return;
+  }
+  if (files.length > 30) {
+    showToast(t('cf_err_purge_urls_limit', 'Maximum 30 URLs can be purged per request'), 'warning');
+    return;
+  }
+  const btn = document.getElementById('btnCfPurgeUrls');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(`/api/cloudflare/accounts/${selectedCfAccountId}/zones/${currentCfZone.id}/purge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ files })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      showToast(t('error_prefix', 'Error: ') + (data.error || 'Purge failed'), 'error');
+      return;
+    }
+    showToast(t('cf_cache_purged', 'Cache purged successfully'), 'success');
+    const ta = document.getElementById('cfPurgeUrlsTextarea');
+    if (ta) ta.value = '';
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function loadCfZoneSettings() {
+  if (!selectedCfAccountId || !currentCfZone) return;
+  const container = document.getElementById('cfSettingsContainer');
+  if (container) container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--text-muted);">${t('loading', 'Loading...')}</div>`;
+  try {
+    const res = await fetch(`/api/cloudflare/accounts/${selectedCfAccountId}/zones/${currentCfZone.id}/settings`);
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to load settings'), 'error');
+      cfZoneSettings = [];
+      cfZoneSettingsOptions = {};
+    } else {
+      cfZoneSettings = Array.isArray(data.settings) ? data.settings : [];
+      cfZoneSettingsOptions = data.options || {};
+    }
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+    cfZoneSettings = [];
+    cfZoneSettingsOptions = {};
+  }
+  renderCfZoneSettings();
+}
+
+const CF_SETTING_GROUPS = [
+  { key: 'security', ids: ['ssl', 'min_tls_version', 'always_use_https', 'automatic_https_rewrites', 'security_level'] },
+  { key: 'development', ids: ['development_mode'] }
+];
+
+function cfOptionLabel(v) {
+  return String(v).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function renderCfSettingRow(s) {
+  const allowed = cfZoneSettingsOptions[s.id] || [];
+  const cur = String(s.value !== undefined && s.value !== null ? s.value : '');
+  const editable = s.editable !== false && allowed.length > 0;
+  const isToggle = editable && allowed.length === 2 && allowed.includes('on') && allowed.includes('off');
+  const id = escapeHtml(s.id);
+  const attention = (s.id === 'development_mode' && cur === 'on') || (s.id === 'security_level' && cur === 'under_attack') || (s.id === 'ssl' && (cur === 'off' || cur === 'flexible'));
+  let ctl;
+  if (isToggle) {
+    ctl = `<label class="switch" style="margin:0;">
+      <input type="checkbox" ${cur === 'on' ? 'checked' : ''} onchange="updateCfZoneSetting('${id}', this.checked ? 'on' : 'off', this)" />
+      <span class="switch-track"><span class="switch-thumb"></span></span>
+      <span class="switch-label" style="min-width:64px;">${escapeHtml(cur === 'on' ? t('cf_set_on', 'On') : t('cf_set_off', 'Off'))}</span>
+    </label>`;
+  } else if (editable) {
+    ctl = `<select class="form-input" onchange="updateCfZoneSetting('${id}', this.value, this)">
+      ${allowed.map(opt => `<option value="${escapeHtml(opt)}" ${opt === cur ? 'selected' : ''}>${escapeHtml(cfOptionLabel(opt))}</option>`).join('')}
+    </select>`;
+  } else {
+    ctl = `<span class="badge" style="background:var(--surface-2);border:1px solid var(--card-border);">${escapeHtml(cfOptionLabel(cur))}</span>`;
+  }
+  const desc = t('cf_set_' + s.id + '_desc', '');
+  return `<div class="cf-set-row">
+    <div class="cf-set-info">
+      <div class="cf-set-title">${escapeHtml(t('cf_set_' + s.id + '_title', cfOptionLabel(s.id)))}${attention ? `<span class="cf-set-flag">${escapeHtml(t('cf_set_flag_attention', 'Attention'))}</span>` : ''}</div>
+      ${desc ? `<div class="cf-set-desc">${escapeHtml(desc)}</div>` : ''}
+    </div>
+    <div class="cf-set-ctl">${ctl}</div>
+  </div>`;
+}
+
+function renderCfZoneSettings() {
+  const container = document.getElementById('cfSettingsContainer');
+  if (!container) return;
+  if (cfZoneSettings.length === 0) {
+    container.innerHTML = `<div class="empty-state" style="padding:20px;"><div class="empty-state-desc">${escapeHtml(t('cf_set_empty', 'No settings available.'))}</div></div>`;
+    return;
+  }
+  const known = new Set(CF_SETTING_GROUPS.flatMap(g => g.ids));
+  const groups = CF_SETTING_GROUPS.map(g => ({ key: g.key, items: g.ids.map(id => cfZoneSettings.find(s => s.id === id)).filter(Boolean) }));
+  groups.push({ key: 'other', items: cfZoneSettings.filter(s => !known.has(s.id)) });
+  container.innerHTML = groups.filter(g => g.items.length).map(g => `<div class="cf-set-group">
+    <div class="cf-set-group-head">${escapeHtml(t('cf_set_group_' + g.key, g.key))}</div>
+    ${g.items.map(renderCfSettingRow).join('')}
+  </div>`).join('');
+}
+
+async function updateCfZoneSetting(settingId, nextValue, el) {
+  if (!selectedCfAccountId || !currentCfZone) return;
+  if (el) el.disabled = true;
+  try {
+    const res = await fetch(`/api/cloudflare/accounts/${selectedCfAccountId}/zones/${currentCfZone.id}/settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: settingId, value: nextValue })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to update setting'), 'error');
+      await loadCfZoneSettings();
+      return;
+    }
+    showToast(t('cf_setting_updated', 'Zone Setting updated successfully'), 'success');
+    const s = cfZoneSettings.find(item => item.id === settingId);
+    if (s && data.setting) s.value = data.setting.value;
+    renderCfZoneSettings();
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+    await loadCfZoneSettings();
+  }
 }
 
 </script>

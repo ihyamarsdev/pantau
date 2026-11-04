@@ -469,6 +469,54 @@ Saat terhubung ke klaster cloud terkelola, Pantau memanfaatkan plugin kredensial
 - **`file-path credential rejected`**: Kubeconfig merujuk ke path berkas di mesin lokal Anda (misal `certificate-authority: /path/to/ca.crt`). Gabungkan menjadi inline data sebelum menempel menggunakan perintah `kubectl config view --raw --flatten`.
 - **`cluster verification failed`**: Server Pantau tidak dapat melakukan autentikasi atau gagal menghubungi API server klaster. Periksa akses jaringan keluar, firewall, dan ketersediaan kredensial cloud di lingkungan proses Pantau.
 
+### Pengelolaan Cloudflare via REST API v4
+
+Pantau memungkinkan operator mengelola multi-akun Cloudflare, memeriksa status domain (zone), mengelola DNS record, membersihkan cache, dan mengubah pengaturan keamanan zone secara langsung dari antarmuka web tanpa berpindah-pindah tab dasbor eksternal atau menjalankan script manual.
+
+#### Menghubungkan Akun Cloudflare
+
+1. Pada **Side Panel** atau navigasi utama, klik menu **Cloudflare**.
+2. Klik tombol **Tambah Akun**.
+3. Masukkan nama akun yang deskriptif (misal `Cloudflare Produksi`, `Domain Pribadi`), **Account ID** (opsional, hanya jika menggunakan token tingkat akun), serta **API Token**.
+4. Pantau akan memverifikasi token terlebih dahulu ke endpoint Cloudflare (`/user/tokens/verify` atau `/accounts/{id}/tokens/verify`) sebelum menyimpannya ke database SQLite lokal.
+
+> [!IMPORTANT]
+> **Rekomendasi Hak Akses Minimal (*Least Privilege Token Scopes*)**:
+> Hindari penggunaan Global API Key. Pada dashboard Cloudflare di bawah **My Profile → API Tokens**, buat API Token kustom dengan izin minimal pada zone target:
+> - `Zone - Zone - Read`: membaca daftar zone dan informasi statusnya.
+> - `Zone - DNS - Edit`: melihat, menambah, mengubah, dan menghapus entri DNS.
+> - `Zone - Cache Purge - Purge`: melakukan purge cache seluruh zone atau URL tertentu.
+> - `Zone - Zone Settings - Edit`: mengatur konfigurasi SSL, pengalihan HTTPS, tingkat keamanan, dan versi TLS.
+
+#### Manajemen Zone & Record DNS
+
+- **Ringkasan Zone**: Pilih akun untuk menampilkan daftar domain yang dikelola, status (`active`, `pending`), paket langganan (*plan*), status *paused*, serta daftar authoritative name server. Gunakan bilah pencarian cepat untuk memfilter zone.
+- **Tabel DNS Records**: Menampilkan seluruh record DNS beserta nama host, jenis tipe (`A`, `AAAA`, `CNAME`, `TXT`, `MX`, `NS`, `SRV`, `CAA`), nilai konten, dan nilai TTL (Auto atau nilai detik).
+- **Tambah & Edit Record**: Dialog formulir memvalidasi batasan nama dan konten (maksimal 255/2048 karakter), mewajibkan prioritas untuk record MX, serta menyediakan sakelar proxy Cloudflare (*orange cloud*).
+- **Konfirmasi Hapus**: Penghapusan record DNS dilindungi dialog konfirmasi untuk mencegah hilangnya record secara tidak disengaja.
+
+#### Pembersihan Cache (Purge Cache)
+
+Tab **Cache** menyediakan dua opsi pembersihan:
+1. **Purge Everything**: Menghapus seluruh cache edge Cloudflare pada zone terkait. Aksi ini dilindungi dialog konfirmasi karena dapat meningkatkan lonjakan beban sesaat pada server origin.
+2. **Purge by URL**: Masukkan daftar URL spesifik baris demi baris (maksimal 30 berkas per permintaan sesuai ambang batas API Cloudflare) untuk membuang aset tertentu tanpa mengosongkan seluruh cache.
+
+#### Daftar Putih Pengaturan Zone (*Zone Settings*)
+
+Tab **Settings** menyajikan pengaturan terpilih dari daftar izin (*allowlist*):
+- **Enkripsi SSL / TLS**: `off`, `flexible`, `full`, `strict`.
+- **Always Use HTTPS**: mengalihkan seluruh lalu lintas HTTP ke HTTPS (`on` / `off`).
+- **Security Level**: mengatur tingkat tantangan proteksi bot/DDoS (`off`, `essentially_off`, `low`, `medium`, `high`, `under_attack`).
+- **Development Mode**: melewati cache Cloudflare selama 3 jam untuk keperluan uji coba origin secara live (`on` / `off`).
+- **Minimum TLS Version**: membatasi versi minimal protokol TLS (`1.0`, `1.1`, `1.2`, `1.3`).
+- **Automatic HTTPS Rewrites**: memperbaiki tautan konten campuran (*mixed-content*) secara otomatis (`on` / `off`).
+
+#### Model Keamanan & Non-Goals
+
+- **Perlindungan Token**: API Token disimpan di basis data SQLite lokal setara dengan kunci privat SSH, tidak pernah diekspos melalui respons REST API (`json:"-"`), disensor dari logging, serta terenkripsi di dalam **System Snapshot** (AES-256-GCM).
+- **Pencegahan SSRF & Path Injection**: Panggilan keluar dipatok tetap ke `https://api.cloudflare.com/client/v4`, dan identifier URL divalidasi dengan regex heksadesimal 32 karakter `^[0-9a-f]{32}$`.
+- **Batas Non-Goals**: Cloudflare Workers, R2 Storage, Cloudflare Tunnels (`cloudflared`), aturan WAF/Firewall kustom, dan Page Rules berada di luar cakupan Pantau dan tetap dikelola melalui dasbor resmi Cloudflare.
+
 ### Evaluasi Kelayakan Server dengan Lifecycle Assessment
 
 Pantau menghitung nilai kelayakan sistem secara transparan melalui **Lifecycle Score** (0–100) berdasarkan 6 faktor evaluasi:

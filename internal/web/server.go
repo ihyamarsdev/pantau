@@ -29,6 +29,7 @@ import (
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/bcrypt"
 
+	"pantau/internal/cloudflare"
 	"pantau/internal/inspector"
 	"pantau/internal/logger"
 	"pantau/internal/netdiag"
@@ -93,6 +94,7 @@ type Server struct {
 	inspectAllMu      sync.Mutex
 	inspectAllActive  bool
 	lastInspectAll    time.Time
+	cfClient          func(token string) *cloudflare.Client
 }
 
 func (s *Server) prepareHTML(raw []byte) {
@@ -118,6 +120,7 @@ func NewServer(db *store.DB, ins *inspector.Inspector, disp *notify.Dispatcher) 
 		snapshotMgr:    snapshot.NewManager(db, nil),
 		netdiagService: netdiag.NewService(db, ins),
 		mux:            http.NewServeMux(),
+		cfClient:       cloudflare.New,
 	}
 	s.prepareHTML(embeddedHTML)
 	s.routes()
@@ -225,6 +228,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/kube/clusters/contexts", s.authMiddleware(s.handleKubeClustersContexts))
 	s.mux.HandleFunc("/api/kube/clusters", s.authMiddleware(s.handleKubeClusters))
 	s.mux.HandleFunc("/api/kube/clusters/", s.authMiddleware(s.handleKubeClusterRoute))
+	s.mux.HandleFunc("/api/cloudflare/accounts", s.authMiddleware(s.handleCloudflareAccounts))
+	s.mux.HandleFunc("/api/cloudflare/accounts/", s.authMiddleware(s.handleCloudflareAccountRoute))
 	// SSH Direct-TCPIP Reverse Proxy Tunnel
 	s.mux.HandleFunc("/api/tunnel/", s.authMiddleware(s.handleTunnel))
 	s.mux.HandleFunc("/ws/pkg/upgrade", s.authMiddleware(s.handleWSPkgUpgrade))
@@ -520,7 +525,6 @@ func (s *Server) handle2FAEnable(w http.ResponseWriter, r *http.Request) {
 	_ = s.db.SetSetting("last_totp_step", "0")
 	s.pending2FASetup.Delete(cookie.Value)
 
-
 	writeJSON(w, http.StatusOK, map[string]interface{}{"status": "enabled"})
 }
 
@@ -580,7 +584,6 @@ func (s *Server) handle2FADisable(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"status": "disabled"})
 }
-
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("pantau_session")
@@ -727,7 +730,6 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 			}
 			h.CustomKey = ""
 		}
-
 
 		// If one-time password provided, attempt key provisioning
 		if strings.TrimSpace(req.Password) != "" {
@@ -2028,33 +2030,33 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"ssh_public_key":              pubKey,
-			"telegram_token":              tgToken,
-			"telegram_chat_id":            tgChat,
-			"webhook_url":                 webhook,
-			"poll_interval_sec":           poll,
-			"github_backup_enabled":       ghEnabled,
-			"github_repo":                 ghRepo,
-			"github_token":                ghToken,
-			"github_branch":               ghBranch,
-			"github_file_path":            ghPath,
-			"snapshot_passphrase":         snapPass,
-			"backup_interval_hours":       backupInterval,
-			"last_backup_time":            lastBackupTime,
+			"ssh_public_key":               pubKey,
+			"telegram_token":               tgToken,
+			"telegram_chat_id":             tgChat,
+			"webhook_url":                  webhook,
+			"poll_interval_sec":            poll,
+			"github_backup_enabled":        ghEnabled,
+			"github_repo":                  ghRepo,
+			"github_token":                 ghToken,
+			"github_branch":                ghBranch,
+			"github_file_path":             ghPath,
+			"snapshot_passphrase":          snapPass,
+			"backup_interval_hours":        backupInterval,
+			"last_backup_time":             lastBackupTime,
 			"security_scan_interval_hours": securityScanInterval,
-			"last_backup_status":          lastBackupStatus,
-			"ntfy_url":                    ntfyURL,
-			"ntfy_token_set":              ntfyToken != "",
-			"slack_webhook_url":           slackURL,
-			"discord_webhook_url":         discordURL,
-			"smtp_host":                   smtpHost,
-			"smtp_port":                   smtpPort,
-			"smtp_user":                   smtpUser,
-			"smtp_pass_set":               smtpPass != "",
-			"smtp_from":                   smtpFrom,
-			"smtp_to":                     smtpTo,
-			"smtp_security":               smtpSecurity,
-			"alert_debounce_runs":         debounceRuns,
+			"last_backup_status":           lastBackupStatus,
+			"ntfy_url":                     ntfyURL,
+			"ntfy_token_set":               ntfyToken != "",
+			"slack_webhook_url":            slackURL,
+			"discord_webhook_url":          discordURL,
+			"smtp_host":                    smtpHost,
+			"smtp_port":                    smtpPort,
+			"smtp_user":                    smtpUser,
+			"smtp_pass_set":                smtpPass != "",
+			"smtp_from":                    smtpFrom,
+			"smtp_to":                      smtpTo,
+			"smtp_security":                smtpSecurity,
+			"alert_debounce_runs":          debounceRuns,
 		})
 	case http.MethodPost:
 		var req map[string]interface{}
@@ -3026,4 +3028,3 @@ func (s *Server) handleUpdateRestart(w http.ResponseWriter, r *http.Request) {
 		_ = s.updaterMgr.Restart()
 	}()
 }
-

@@ -468,6 +468,54 @@ When connecting to managed cloud clusters, Pantau relies on native `kubectl` cre
 - **`plugin not allowed`**: The `exec` command in your kubeconfig is not on the allowed list or contains directory paths. Use one of the supported plugins (`aws`, `kubelogin`, etc.).
 - **`file-path credential rejected`**: The kubeconfig points to local files on your machine (e.g. `certificate-authority: /path/to/ca.crt`). Flatten the file using `kubectl config view --raw --flatten` before pasting.
 - **`cluster verification failed`**: The Pantau server could not authenticate or reach the cluster API endpoint. Verify network egress, firewall rules, and cloud credentials in the Pantau process environment.
+
+### Managing Cloudflare via REST API v4
+
+Pantau allows operators to connect multiple Cloudflare accounts and manage domain zones, DNS records, cache invalidation, and essential security settings directly from the web interface without juggling multiple browser tabs or installing third-party command-line utilities.
+
+#### Connecting a Cloudflare Account
+
+1. In the **Side Panel** or main navigation, select **Cloudflare**.
+2. Click **Add Account**.
+3. Provide an identifiable name (e.g., `Production Cloudflare`, `Personal Projects`), an optional **Account ID** (required only if using account-scoped tokens), and your **API Token**.
+4. Pantau automatically performs pre-flight verification against `https://api.cloudflare.com/client/v4/user/tokens/verify` (or `/accounts/{id}/tokens/verify`) before persisting the record in SQLite.
+
+> [!IMPORTANT]
+> **Recommended Least-Privilege API Token Permissions**:
+> Never use unscoped Global API Keys. In your Cloudflare dashboard under **My Profile → API Tokens**, create a custom token limited to your specific zones with the following minimum permissions:
+> - `Zone - Zone - Read`: view zone list and status.
+> - `Zone - DNS - Edit`: view, add, update, and delete DNS records.
+> - `Zone - Cache Purge - Purge`: purge entire zone cache or specific URLs.
+> - `Zone - Zone Settings - Edit`: modify SSL mode, HTTPS redirects, security levels, and TLS versions.
+
+#### Zone & DNS Records Management
+
+- **Zones Overview**: Select an account to view all assigned domains with real-time status (`active`, `pending`), plan type, paused state, and authoritative name servers. Use the instant search bar to filter zones.
+- **DNS Records Table**: View records by name, type (`A`, `AAAA`, `CNAME`, `TXT`, `MX`, `NS`, `SRV`, `CAA`), content, and TTL (Auto / custom seconds).
+- **Add & Edit Records**: Modal forms validate required names and contents (bounded up to 255/2048 characters), enforce priority for MX records, and provide a toggle for Cloudflare proxying (orange cloud).
+- **Delete Confirmation**: Deleting a record triggers a confirmation modal to avoid accidental record loss.
+
+#### Cache Invalidation (Purge Cache)
+
+The **Cache** tab offers two purging modes:
+1. **Purge Everything**: Purges the entire Cloudflare edge cache for the active zone. Guarded by a confirmation dialog warning of temporary backend origin server load spikes.
+2. **Purge by URL**: Specify exact URLs line by line (up to 30 files per request, complying with Cloudflare API thresholds) to invalidate targeted assets without evicting the entire edge cache.
+
+#### Curated Zone Settings Allowlist
+
+Pantau exposes an allowlist of high-impact zone settings via the **Settings** tab:
+- **SSL / TLS Encryption**: `off`, `flexible`, `full`, `strict`.
+- **Always Use HTTPS**: redirect all HTTP requests to HTTPS (`on` / `off`).
+- **Security Level**: adjust challenge thresholds (`off`, `essentially_off`, `low`, `medium`, `high`, `under_attack`).
+- **Development Mode**: bypass edge cache for 3 hours for real-time origin asset updates (`on` / `off`).
+- **Minimum TLS Version**: enforce legacy cipher deprecation (`1.0`, `1.1`, `1.2`, `1.3`).
+- **Automatic HTTPS Rewrites**: upgrade mixed content links automatically (`on` / `off`).
+
+#### Security Model & Non-Goals
+
+- **Credential Protection**: API tokens are stored in the local SQLite database similarly to SSH private keys, excluded from all REST API responses (`json:"-"`), redacted in logs, and included in encrypted **System Snapshots** (AES-256-GCM).
+- **Hardcoded Endpoint & Input Validation**: All outbound requests strictly target `https://api.cloudflare.com/client/v4` (mitigating SSRF), and URL identifiers (`zoneID`, `recordID`) are validated against `^[0-9a-f]{32}$` to prevent path injection.
+- **Explicit Non-Goals**: Cloudflare Workers, R2 Storage, Cloudflare Tunnels (`cloudflared`), custom WAF/Firewall rules, and Page Rules remain out of scope and must be managed via Cloudflare's dashboard.
 ### Evaluating Server Longevity with Lifecycle Assessment
 
 Pantau continuously calculates an auditable **Lifecycle Score** (0–100) based on six weighted factors:

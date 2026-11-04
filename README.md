@@ -252,6 +252,13 @@ Pantau inspects remote hosts via non-interactive SSH commands, continuously vali
 - **Secure Kubeconfig Intake**: Validates inputs up to 128 KB, minifies to single-context JSON, strictly rejects arbitrary local file-path credentials (`tokenFile`, `client-key`, etc.), and restricts `exec` credential plugins to a strict allowlist (`aws`, `gke-gcloud-auth-plugin`, `kubelogin`, `az`, `doctl`, `oci`).
 - **Action Safety & Guardrails**: Enforce per-cluster policies (`full`, `no-exec`, or `read-only`), concrete impact confirmations for scale-to-0, rollout restart, pod deletion, and node cordon/drain.
 
+### 29. ☁️ Cloudflare Management via REST API v4
+- **Direct Account & Zone Management**: Manage multiple Cloudflare accounts and explore zones directly from Pantau's web interface without external dependencies, SDK bloat, or Global API Keys.
+- **DNS Records Lifecycle**: Comprehensive view and search across DNS records (A, AAAA, CNAME, TXT, MX, NS, SRV, CAA). Add, edit, and delete records with inline proxied toggle (Cloudflare orange cloud proxying).
+- **Cache Purge Controls**: Instant cache clearing with two dedicated modes: Purge Everything (with confirmation guardrail) and Purge by URL (up to 30 URLs per batch).
+- **Curated Zone Settings Allowlist**: Safely toggle essential security and performance options: SSL Mode (`off`, `flexible`, `full`, `strict`), Always Use HTTPS, Security Level, Development Mode, Minimum TLS Version, and Automatic HTTPS Rewrites.
+- **Zero-Exposure Credential Safety**: Scoped API Tokens are stored securely in SQLite like SSH private keys, excluded from API JSON responses, and protected inside encrypted System Snapshots.
+
 ---
 
 ## 🚀 Quick Start
