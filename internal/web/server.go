@@ -250,6 +250,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/ansible/playbooks/", s.authMiddleware(s.handleAnsiblePlaybookRoute))
 	s.mux.HandleFunc("/api/ansible/runs", s.authMiddleware(s.handleAnsibleRuns))
 	s.mux.HandleFunc("/api/ansible/config", s.authMiddleware(s.handleAnsibleConfig))
+	s.mux.HandleFunc("/api/ansible/assets", s.authMiddleware(s.handleAnsibleAssets))
+	s.mux.HandleFunc("/api/ansible/assets/", s.authMiddleware(s.handleAnsibleAssetRoute))
 	s.mux.HandleFunc("/api/ansible/library", s.authMiddleware(s.handleAnsibleLibrary))
 	s.mux.HandleFunc("/api/ansible/library/", s.authMiddleware(s.handleAnsibleLibraryRoute))
 	s.mux.HandleFunc("/api/ansible/runs/", s.authMiddleware(s.handleAnsibleRunRoute))

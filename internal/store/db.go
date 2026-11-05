@@ -447,6 +447,16 @@ func (d *DB) migrate() error {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+	CREATE TABLE IF NOT EXISTS ansible_assets (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		kind TEXT NOT NULL,
+		name TEXT NOT NULL,
+		data BLOB NOT NULL DEFAULT X'',
+		size INTEGER NOT NULL DEFAULT 0,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE (kind, name)
+	);
 	CREATE TABLE IF NOT EXISTS ansible_playbooks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -1334,6 +1344,14 @@ type SnapshotAnsiblePlaybook struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
+// SnapshotAnsibleAsset is a Jinja template or uploaded file (Data is base64 in the JSON, the snapshot is encrypted).
+type SnapshotAnsibleAsset struct {
+	Kind      string    `json:"kind"`
+	Name      string    `json:"name"`
+	Data      []byte    `json:"data"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // SnapshotAnsibleProject is an imported-folder ZIP of snapshots made while imports were bundles. It is read when
 // restoring (the entry YAML becomes an inline playbook) and never written.
 type SnapshotAnsibleProject struct {
@@ -1358,6 +1376,7 @@ type SnapshotPayload struct {
 	AnsiblePlaybooks   []SnapshotAnsiblePlaybook   `json:"ansible_playbooks,omitempty"`
 	AnsibleProjects    []SnapshotAnsibleProject    `json:"ansible_projects,omitempty"` // read-only legacy, see SnapshotAnsibleProject
 	AnsibleSchedules   []AnsibleSchedule           `json:"ansible_schedules,omitempty"`
+	AnsibleAssets      []SnapshotAnsibleAsset      `json:"ansible_assets,omitempty"`
 }
 
 func (d *DB) IsFresh() (bool, error) {
@@ -1489,6 +1508,12 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 		}
 	}
 	allSchedules, _ := d.ListAnsibleSchedules(0)
+	var allAssets []SnapshotAnsibleAsset
+	if assets, err := d.LoadAnsibleAssets(); err == nil {
+		for _, a := range assets {
+			allAssets = append(allAssets, SnapshotAnsibleAsset{Kind: a.Kind, Name: a.Name, Data: a.Data, UpdatedAt: a.UpdatedAt})
+		}
+	}
 
 	return &SnapshotPayload{
 		Version:            1,
@@ -1502,6 +1527,7 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 		CloudflareAccounts: allCFAccounts,
 		AnsiblePlaybooks:   allPlaybooks,
 		AnsibleSchedules:   allSchedules,
+		AnsibleAssets:      allAssets,
 	}, nil
 }
 
@@ -1515,7 +1541,7 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 	}
 	defer tx.Rollback()
 
-	tables := []string{"alerts", "incidents", "actual_items", "desired_rules", "hosts", "terminal_presets", "ssh_keys", "kube_clusters", "cloudflare_accounts", "ansible_runs", "ansible_schedules", "ansible_playbooks"}
+	tables := []string{"alerts", "incidents", "actual_items", "desired_rules", "hosts", "terminal_presets", "ssh_keys", "kube_clusters", "cloudflare_accounts", "ansible_runs", "ansible_schedules", "ansible_playbooks", "ansible_assets"}
 	for _, t := range tables {
 		if _, err := tx.Exec("DELETE FROM " + t); err != nil {
 			return fmt.Errorf("clear %s: %w", t, err)
@@ -1577,6 +1603,12 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 	for _, sc := range payload.AnsibleSchedules {
 		if err := insertAnsibleSchedule(tx, &sc); err != nil {
 			return fmt.Errorf("insert ansible schedule %d: %w", sc.ID, err)
+		}
+	}
+	for _, a := range payload.AnsibleAssets {
+		if _, err := tx.Exec(`INSERT INTO ansible_assets (kind, name, data, size, updated_at) VALUES (?, ?, ?, ?, ?)`,
+			a.Kind, a.Name, a.Data, len(a.Data), a.UpdatedAt); err != nil {
+			return fmt.Errorf("insert ansible asset %s/%s: %w", a.Kind, a.Name, err)
 		}
 	}
 

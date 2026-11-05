@@ -90,8 +90,13 @@ func Run(ctx context.Context, spec RunSpec, log io.Writer) (exitCode int, err er
 		if spec.OnCommit != nil {
 			spec.OnCommit(sha)
 		}
-	} else if err := os.WriteFile(playbookPath, []byte(spec.Playbook), 0600); err != nil {
-		return 0, fmt.Errorf("failed to write playbook.yml: %w", err)
+	} else {
+		if err := os.WriteFile(playbookPath, []byte(spec.Playbook), 0600); err != nil {
+			return 0, fmt.Errorf("failed to write playbook.yml: %w", err)
+		}
+		if err := writeAssets(workDir, spec.Assets); err != nil {
+			return 0, err
+		}
 	}
 
 	// Write ansible.cfg: Pantau's base settings plus the validated global additions from Ansible Settings.

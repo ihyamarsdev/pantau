@@ -532,6 +532,14 @@ _Avoid_: Static inventory, hosts file
 saklar opt-in administrator (`ansible_enabled`, default mati) yang wajib aktif sebelum Playbook dapat dijalankan; dipasangkan dengan deteksi biner `ansible-playbook`.
 _Avoid_: Feature flag, ansible switch
 
+**Ansible Template**:
+teks Jinja bernama (boleh bersubfolder, ≤256 KiB) yang disimpan di SQLite dan ditulis ke `templates/` di workspace setiap Playbook Run inline sehingga `template: src=` dapat merujuknya; dipakai bersama oleh semua playbook inline dan ikut System Snapshot terenkripsi.
+_Avoid_: Playbook template, jinja file, task template
+
+**Ansible File**:
+berkas apa pun (termasuk biner, ≤5 MiB) yang diunggah ke Pantau dan ditulis ke `files/` di workspace setiap Playbook Run inline sehingga `copy: src=` dapat merujuknya; tidak dapat diunduh kembali dan ikut System Snapshot terenkripsi.
+_Avoid_: Attachment, asset bundle, project file
+
 **Git Playbook Source**:
 Sumber Ansible Playbook berupa file YAML di repositori Git (URL https/ssh, branch/tag, path berkas, autentikasi none/token/kunci SSH Library) yang di-clone dangkal ke workspace sementara pada setiap Playbook Run; commit yang dijalankan dicatat pada run.
 _Avoid_: Repository entity, git sync, playbook import

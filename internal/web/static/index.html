@@ -3992,6 +3992,12 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <button type="button" class="tab" id="tabAnsibleSchedules" data-tab="schedules" role="tab" aria-selected="false" aria-controls="ansiblePanelSchedules" tabindex="-1" onclick="switchAnsibleTab('schedules')">
           <svg class="icon icon-sm"><use href="#i-calendar"/></svg> <span data-i18n="ansible_sched_title">Schedules</span>
         </button>
+        <button type="button" class="tab" id="tabAnsibleTemplates" data-tab="templates" role="tab" aria-selected="false" aria-controls="ansiblePanelTemplates" tabindex="-1" onclick="switchAnsibleTab('templates')">
+          <svg class="icon icon-sm"><use href="#i-file-code"/></svg> <span data-i18n="ansible_tab_templates">Templates</span>
+        </button>
+        <button type="button" class="tab" id="tabAnsibleFiles" data-tab="files" role="tab" aria-selected="false" aria-controls="ansiblePanelFiles" tabindex="-1" onclick="switchAnsibleTab('files')">
+          <svg class="icon icon-sm"><use href="#i-files"/></svg> <span data-i18n="ansible_tab_assets_files">Files</span>
+        </button>
         <button type="button" class="tab" id="tabAnsibleLibrary" data-tab="library" role="tab" aria-selected="false" aria-controls="ansiblePanelLibrary" tabindex="-1" onclick="switchAnsibleTab('library')">
           <svg class="icon icon-sm"><use href="#i-package"/></svg> <span data-i18n="ansible_tab_library">Library</span>
         </button>
@@ -4064,6 +4070,43 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
           <div class="empty-state-desc" data-i18n="ansible_sched_none">No schedules yet</div>
         </div>
       </div>
+      </div>
+      <div id="ansiblePanelTemplates" class="ans-section-panel" role="tabpanel" aria-labelledby="tabAnsibleTemplates" tabindex="0" style="display:none;flex-direction:column;gap:16px;">
+        <div class="dk-hint" style="background:var(--surface-2);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:8px 12px;font-size:var(--fs-xs);" data-i18n="ansible_tpl_hint">Jinja templates are stored in Pantau (included in encrypted System Snapshots) and shared by all inline playbooks. Reference one with template: src=&lt;name&gt;. Playbooks from a Git repository use the templates/ folder of their own repository instead.</div>
+        <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+          <h4 style="margin:0;font-size:var(--fs-md);font-weight:600;display:flex;align-items:center;gap:6px;">
+            <svg class="icon icon-sm text-accent"><use href="#i-file-code"/></svg> <span data-i18n="ansible_tpl_list_title">Jinja templates</span>
+          </h4>
+          <div id="ansibleTemplatesList" style="display:flex;flex-direction:column;gap:6px;"></div>
+          <div id="ansibleTemplatesEmpty" class="empty-state" style="display:none;padding:12px;font-size:var(--fs-xs);" data-i18n="ansible_tpl_empty">No templates yet</div>
+        </div>
+        <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+          <h4 style="margin:0;font-size:var(--fs-md);font-weight:600;" data-i18n="ansible_tpl_editor_title">Template editor</h4>
+          <input type="text" id="ansibleTemplateName" class="form-input mono" maxlength="200" placeholder="Name, e.g. nginx/site.conf.j2" data-i18n-placeholder="ansible_tpl_name_ph" />
+          <textarea id="ansibleTemplateContent" class="form-input mono" rows="14" spellcheck="false" style="white-space:pre;tab-size:2;" placeholder="server_name {{ domain }};" data-i18n-placeholder="ansible_tpl_content_ph"></textarea>
+          <div style="display:flex;justify-content:flex-end;gap:8px;">
+            <button type="button" class="btn btn-sm" onclick="newAnsibleTemplate()" data-i18n="ansible_tpl_new">New</button>
+            <button type="button" id="btnAnsibleTemplateSave" class="btn btn-sm btn-primary" onclick="saveAnsibleTemplate()" data-i18n="ansible_tpl_save">Save template</button>
+          </div>
+        </div>
+      </div>
+      <div id="ansiblePanelFiles" class="ans-section-panel" role="tabpanel" aria-labelledby="tabAnsibleFiles" tabindex="0" style="display:none;flex-direction:column;gap:16px;">
+        <div class="dk-hint" style="background:var(--surface-2);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:8px 12px;font-size:var(--fs-xs);" data-i18n="ansible_files_hint">Uploaded files are stored in Pantau and shared by all inline playbooks. They are included in encrypted System Snapshots, so do not upload secrets you would not keep in a backup. Reference one with copy: src=&lt;name&gt;. Files cannot be downloaded again. Playbooks from a Git repository use the files/ folder of their own repository instead. Maximum 5 MiB per file and 32 MiB in total.</div>
+        <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+          <h4 style="margin:0;font-size:var(--fs-md);font-weight:600;display:flex;align-items:center;gap:6px;">
+            <svg class="icon icon-sm text-accent"><use href="#i-files"/></svg> <span data-i18n="ansible_files_list_title">Uploaded files</span>
+          </h4>
+          <div id="ansibleFilesList" style="display:flex;flex-direction:column;gap:6px;"></div>
+          <div id="ansibleFilesEmpty" class="empty-state" style="display:none;padding:12px;font-size:var(--fs-xs);" data-i18n="ansible_files_empty">No files uploaded yet</div>
+        </div>
+        <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+          <h4 style="margin:0;font-size:var(--fs-md);font-weight:600;" data-i18n="ansible_files_upload_title">Upload files</h4>
+          <input type="text" id="ansibleFilePrefix" class="form-input mono" maxlength="100" placeholder="Subfolder (optional), e.g. certs/" data-i18n-placeholder="ansible_files_prefix_ph" />
+          <input type="file" id="ansibleFileInput" class="form-input" multiple />
+          <div style="display:flex;justify-content:flex-end;">
+            <button type="button" id="btnAnsibleFilesUpload" class="btn btn-sm btn-primary" onclick="uploadAnsibleFiles()" data-i18n="ansible_files_btn_upload">Upload</button>
+          </div>
+        </div>
       </div>
       <div id="ansiblePanelLibrary" class="ans-section-panel" role="tabpanel" aria-labelledby="tabAnsibleLibrary" tabindex="0" style="display:none;flex-direction:column;gap:16px;">
         <div id="ansibleLibUnavailableBanner" class="ans-gate-banner ans-gate-warn" style="display:none;">
@@ -8191,6 +8234,29 @@ const I18N = {
     "ansible_tab_playbooks": "Playbooks",
     "ansible_tab_library": "Library",
     "ansible_tab_settings": "Settings",
+    "ansible_tab_templates": "Templates",
+    "ansible_tab_assets_files": "Files",
+    "ansible_tpl_hint": "Jinja templates are stored in Pantau (included in encrypted System Snapshots) and shared by all inline playbooks. Reference one with template: src=&lt;name&gt;. Playbooks from a Git repository use the templates/ folder of their own repository instead.",
+    "ansible_tpl_list_title": "Jinja templates",
+    "ansible_tpl_empty": "No templates yet",
+    "ansible_tpl_editor_title": "Template editor",
+    "ansible_tpl_name_ph": "Name, e.g. nginx/site.conf.j2",
+    "ansible_tpl_content_ph": "server_name {{ domain }};",
+    "ansible_tpl_new": "New",
+    "ansible_tpl_save": "Save template",
+    "ansible_tpl_saved": "Template saved",
+    "ansible_tpl_name_required": "Template name is required.",
+    "ansible_files_hint": "Uploaded files are stored in Pantau and shared by all inline playbooks. They are included in encrypted System Snapshots, so do not upload secrets you would not keep in a backup. Reference one with copy: src=&lt;name&gt;. Files cannot be downloaded again. Playbooks from a Git repository use the files/ folder of their own repository instead. Maximum 5 MiB per file and 32 MiB in total.",
+    "ansible_files_list_title": "Uploaded files",
+    "ansible_files_empty": "No files uploaded yet",
+    "ansible_files_upload_title": "Upload files",
+    "ansible_files_prefix_ph": "Subfolder (optional), e.g. certs/",
+    "ansible_files_btn_upload": "Upload",
+    "ansible_files_none_selected": "Choose at least one file.",
+    "ansible_files_uploaded": "{n} file(s) uploaded",
+    "ansible_asset_confirm_delete_title": "Delete Item",
+    "ansible_asset_confirm_delete_msg": "Delete \"{name}\"? Playbooks that reference it will fail.",
+    "ansible_asset_deleted": "Deleted successfully",
     "ansible_sched_unavailable": "Schedules require an active Ansible Gate and an available ansible-playbook binary.",
     "ansible_gate_unavailable": "Ansible unavailable",
     "ansible_section_desc": "Store, run, and review agentless Ansible playbooks with inventory generated from Pantau hosts.",
@@ -9811,6 +9877,29 @@ const I18N = {
     "ansible_tab_playbooks": "Playbook",
     "ansible_tab_library": "Library",
     "ansible_tab_settings": "Pengaturan",
+    "ansible_tab_templates": "Template",
+    "ansible_tab_assets_files": "Berkas",
+    "ansible_tpl_hint": "Template Jinja disimpan di Pantau (ikut System Snapshot terenkripsi) dan dipakai bersama oleh semua playbook inline. Rujuk dengan template: src=&lt;nama&gt;. Playbook dari repositori Git memakai folder templates/ di repositorinya sendiri.",
+    "ansible_tpl_list_title": "Template Jinja",
+    "ansible_tpl_empty": "Belum ada template",
+    "ansible_tpl_editor_title": "Editor template",
+    "ansible_tpl_name_ph": "Nama, mis. nginx/site.conf.j2",
+    "ansible_tpl_content_ph": "server_name {{ domain }};",
+    "ansible_tpl_new": "Baru",
+    "ansible_tpl_save": "Simpan template",
+    "ansible_tpl_saved": "Template disimpan",
+    "ansible_tpl_name_required": "Nama template wajib diisi.",
+    "ansible_files_hint": "Berkas yang diunggah disimpan di Pantau dan dipakai bersama oleh semua playbook inline. Berkas ikut System Snapshot terenkripsi, jadi jangan unggah rahasia yang tidak ingin Anda simpan di cadangan. Rujuk dengan copy: src=&lt;nama&gt;. Berkas tidak dapat diunduh kembali. Playbook dari repositori Git memakai folder files/ di repositorinya sendiri. Maksimal 5 MiB per berkas dan 32 MiB total.",
+    "ansible_files_list_title": "Berkas terunggah",
+    "ansible_files_empty": "Belum ada berkas yang diunggah",
+    "ansible_files_upload_title": "Unggah berkas",
+    "ansible_files_prefix_ph": "Subfolder (opsional), mis. certs/",
+    "ansible_files_btn_upload": "Unggah",
+    "ansible_files_none_selected": "Pilih minimal satu berkas.",
+    "ansible_files_uploaded": "{n} berkas diunggah",
+    "ansible_asset_confirm_delete_title": "Hapus Item",
+    "ansible_asset_confirm_delete_msg": "Hapus \"{name}\"? Playbook yang merujuknya akan gagal.",
+    "ansible_asset_deleted": "Berhasil dihapus",
     "ansible_sched_unavailable": "Jadwal membutuhkan Ansible Gate aktif dan biner ansible-playbook yang tersedia.",
     "ansible_gate_unavailable": "Ansible tidak tersedia",
     "ansible_section_desc": "Simpan, jalankan, dan tinjau Ansible Playbook agentless dengan inventory yang dibuat otomatis dari host Pantau.",
@@ -25472,7 +25561,7 @@ let ansibleLogAutoScroll = true;
 let ansibleRunHistoryCache = [];
 
 function switchAnsibleTab(tab) {
-  if (!['playbooks', 'schedules', 'library', 'settings'].includes(tab)) tab = 'settings';
+  if (!['playbooks', 'schedules', 'templates', 'files', 'library', 'settings'].includes(tab)) tab = 'settings';
   currentAnsibleTab = tab;
   document.querySelectorAll('#ansibleTabs .tab').forEach(el => {
     const active = el.dataset.tab === tab;
@@ -25482,6 +25571,7 @@ function switchAnsibleTab(tab) {
     const panel = document.getElementById(el.getAttribute('aria-controls'));
     if (panel) panel.style.display = active ? 'flex' : 'none';
   });
+  if (tab === 'templates' || tab === 'files') loadAnsibleAssets();
   if (tab === 'library') loadAnsibleLibrary();
   if (tab === 'settings') loadAnsibleConfig();
 }
@@ -25690,6 +25780,7 @@ async function refreshAnsibleSection() {
   await loadAnsibleStatus();
   await loadAnsiblePlaybooks();
   await loadAnsibleSchedules();
+  if (currentAnsibleTab === 'templates' || currentAnsibleTab === 'files') await loadAnsibleAssets();
   if (currentAnsibleTab === 'library') await loadAnsibleLibrary();
   if (currentAnsibleTab === 'settings') await loadAnsibleConfig();
 }
@@ -25955,6 +26046,136 @@ async function submitAnsibleImportModal() {
   }
 }
 
+
+// ----------------- Ansible Templates & Files -----------------
+let ansibleAssetsCache = {template: [], file: []};
+
+async function loadAnsibleAssets() {
+  ansibleAssetsCache = {template: [], file: []};
+  try {
+    const res = await fetch('/api/ansible/assets');
+    if (res.ok) {
+      for (const a of (await res.json()).assets || []) {
+        if (ansibleAssetsCache[a.kind]) ansibleAssetsCache[a.kind].push(a);
+      }
+    }
+  } catch (_) {}
+  renderAnsibleAssets();
+}
+
+function renderAnsibleAssets() {
+  for (const [kind, listId, emptyId] of [['template', 'ansibleTemplatesList', 'ansibleTemplatesEmpty'], ['file', 'ansibleFilesList', 'ansibleFilesEmpty']]) {
+    const list = document.getElementById(listId);
+    const empty = document.getElementById(emptyId);
+    const items = ansibleAssetsCache[kind];
+    empty.style.display = items.length === 0 ? 'block' : 'none';
+    list.innerHTML = items.map(a => `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;background:var(--surface-2);border:1px solid var(--card-border);border-radius:var(--radius-sm);font-size:var(--fs-xs);">
+        <div style="min-width:0;display:flex;align-items:center;gap:6px;overflow:hidden;">
+          <span class="mono" style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(a.name)}">${escapeHtml(a.name)}</span>
+          <span class="badge" style="background:var(--surface-3);font-family:var(--font-mono);">${escapeHtml(formatBytes(a.size))}</span>
+        </div>
+        <div style="display:flex;gap:4px;">
+          ${kind === 'template' ? `<button type="button" class="btn btn-sm btn-ghost btn-icon" onclick="editAnsibleTemplate(${Number(a.id)})" title="${escapeHtml(t('edit', 'Edit'))}">${svgIcon('pencil', 'icon-xs')}</button>` : ''}
+          <button type="button" class="btn btn-sm btn-ghost btn-icon btn-danger" onclick="deleteAnsibleAsset('${kind}', ${Number(a.id)})" title="${escapeHtml(t('delete', 'Delete'))}">${svgIcon('trash-2', 'icon-xs')}</button>
+        </div>
+      </div>
+    `).join('');
+  }
+}
+
+// PUT streams the raw content: the same endpoint creates and replaces, for text and binary alike.
+async function putAnsibleAsset(kind, name, body) {
+  const res = await fetch(`/api/ansible/assets?kind=${kind}&name=${encodeURIComponent(name)}`, {method: 'PUT', body});
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `${res.status}`);
+  }
+}
+
+function newAnsibleTemplate() {
+  document.getElementById('ansibleTemplateName').value = '';
+  document.getElementById('ansibleTemplateContent').value = '';
+}
+
+async function editAnsibleTemplate(id) {
+  try {
+    const res = await fetch(`/api/ansible/assets/${id}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load');
+    document.getElementById('ansibleTemplateName').value = data.name;
+    document.getElementById('ansibleTemplateContent').value = data.content;
+    document.getElementById('ansibleTemplateContent').scrollIntoView({block: 'center'});
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+  }
+}
+
+async function saveAnsibleTemplate() {
+  const name = document.getElementById('ansibleTemplateName').value.trim();
+  if (!name) {
+    showToast(t('ansible_tpl_name_required', 'Template name is required.'), 'error');
+    return;
+  }
+  try {
+    await putAnsibleAsset('template', name, document.getElementById('ansibleTemplateContent').value);
+    showToast(t('ansible_tpl_saved', 'Template saved'), 'success');
+    await loadAnsibleAssets();
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+  }
+}
+
+async function uploadAnsibleFiles() {
+  const input = document.getElementById('ansibleFileInput');
+  const files = Array.from(input.files || []);
+  if (files.length === 0) {
+    showToast(t('ansible_files_none_selected', 'Choose at least one file.'), 'error');
+    return;
+  }
+  let prefix = document.getElementById('ansibleFilePrefix').value.trim().replace(/^\/+/, '');
+  if (prefix && !prefix.endsWith('/')) prefix += '/';
+  const btn = document.getElementById('btnAnsibleFilesUpload');
+  btn.disabled = true;
+  let done = 0;
+  try {
+    for (const f of files) {
+      try {
+        await putAnsibleAsset('file', prefix + f.name, f);
+        done++;
+      } catch (e) {
+        throw new Error(`${f.name}: ${e.message}`);
+      }
+    }
+    showToast(t('ansible_files_uploaded', '{n} file(s) uploaded').replace('{n}', done), 'success');
+    input.value = '';
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    await loadAnsibleAssets();
+  }
+}
+
+async function deleteAnsibleAsset(kind, id) {
+  const item = ansibleAssetsCache[kind].find(a => a.id === id);
+  const confirmed = await showConfirm({
+    title: t('ansible_asset_confirm_delete_title', 'Delete Item'),
+    message: t('ansible_asset_confirm_delete_msg', 'Delete "{name}"? Playbooks that reference it will fail.').replace('{name}', item ? item.name : id),
+    confirmText: t('delete', 'Delete'),
+    danger: true,
+  });
+  if (!confirmed) return;
+  try {
+    const res = await fetch(`/api/ansible/assets/${id}`, {method: 'DELETE'});
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Failed to delete');
+    showToast(t('ansible_asset_deleted', 'Deleted successfully'), 'success');
+    await loadAnsibleAssets();
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+  }
+}
 
 // ----------------- Ansible Library Flow -----------------
 let ansibleLibraryCache = {available: true, collections: [], roles: []};

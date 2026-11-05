@@ -98,6 +98,7 @@ type RunSpec struct {
 	Forks      int              // 0 => forks from ansible.cfg (Ansible default 5)
 	Timeout    time.Duration    // 0 => 1h
 	Git        *GitSource       // non-nil: playbook comes from this repository, Playbook is ignored
+	Assets     []Asset          // inline source only: templates/ and files/ written next to the playbook (a Git repo brings its own)
 	Config     string           // validated user additions to ansible.cfg (Ansible Settings), see ParseConfig
 	LibraryDir string           // shared role/collection library; "" disables it
 	OnCommit   func(sha string) // called once with the checked-out commit (git source only)
@@ -137,6 +138,17 @@ func (s RunSpec) Validate() error {
 		if len(s.Playbook) > 256*1024 {
 			return errors.New("playbook content exceeds 256 KiB")
 		}
+	}
+
+	var assetBytes int
+	for _, a := range s.Assets {
+		if err := ValidateAsset(a); err != nil {
+			return err
+		}
+		assetBytes += len(a.Data)
+	}
+	if assetBytes > MaxAssetsTotalBytes {
+		return errors.New("templates and files exceed 32 MiB in total")
 	}
 
 	// Verbosity 0..3

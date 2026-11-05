@@ -629,6 +629,29 @@ The **Ansible → Library** tab manages roles and collections stored on the Pant
 
 The library lives in `ansible-library/` next to the Pantau database (in Docker: keep it on the same volume). It is **not** part of System Snapshots: after restoring to a new machine, install the needed items again. This needs `ansible-galaxy` (installed together with ansible-core); the tab says so when it is missing. Only install content you trust: collection and role plugins run on the Pantau server with its privileges.
 
+#### Templates and Files (for `template:` and `copy:`)
+
+An inline playbook is a single YAML text, so a task such as `template: src=site.conf.j2` or `copy: src=ca.pem` would otherwise find nothing to read. The **Ansible → Templates** and **Ansible → Files** tabs store those supporting files in Pantau:
+
+- **Templates**: type a name (subfolders allowed, e.g. `nginx/site.conf.j2`) and the Jinja content, then **Save template**. Saving an existing name replaces it; the pencil icon loads a template back into the editor. Templates must be UTF-8 text, up to 256 KiB.
+- **Files**: choose one or more files (any type, binary included), optionally a **Subfolder** such as `certs/`, and **Upload**. Uploading an existing name replaces it. Up to 5 MiB per file.
+- Use them from the playbook exactly as in a normal Ansible project:
+
+  ```yaml
+  - ansible.builtin.template:
+      src: nginx/site.conf.j2     # Templates tab
+      dest: /etc/nginx/conf.d/site.conf
+  - ansible.builtin.copy:
+      src: certs/ca.pem           # Files tab (subfolder certs/)
+      dest: /etc/ssl/certs/ca.pem
+      mode: "0644"
+  ```
+
+  Template variables come from the playbook's `vars:`, the default extra vars, or the extra vars of the run.
+- Every run of an **inline** playbook (manual or scheduled) gets all stored templates and files in its temporary workspace. They are shared by all inline playbooks; deleting one makes the playbooks that reference it fail. Playbooks that come from **Git** use the `templates/` and `files/` folders of their own repository instead.
+- Limits: 32 MiB in total. Templates and files are stored in the database and included in encrypted System Snapshots, so do not upload secrets you would not keep in a backup. Uploaded files cannot be downloaded again.
+- Jinja is not checked when you save; mistakes show up in the run log. Use **Check** or **Diff** mode to try a template without changing hosts.
+
 #### Editing Playbooks and Variables
 
 The pencil on a playbook card opens one editor for editing and viewing:

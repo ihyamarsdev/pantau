@@ -33,7 +33,7 @@ func TestAnsibleSectionTabs(t *testing.T) {
 	script := `
 const assert = require('node:assert/strict');
 const elements = {};
-const names = ['playbooks', 'schedules', 'library', 'settings'];
+const names = ['playbooks', 'schedules', 'templates', 'files', 'library', 'settings'];
 const tabs = names.map(name => {
   const panel = 'ansiblePanel' + name[0].toUpperCase() + name.slice(1);
   elements[panel] = {style: {display: name === 'playbooks' ? 'flex' : 'none'}};
@@ -56,6 +56,7 @@ for (const id of ['ansibleGateBanner', 'ansibleGateTitle', 'ansibleGateDesc', 'a
   elements[id] = {style: {}, innerHTML: '', textContent: '', querySelectorAll: () => []};
 }
 function loadAnsibleLibrary() {}
+function loadAnsibleAssets() {}
 function loadAnsibleConfig() {}
 const document = {
   querySelectorAll(selector) {assert.equal(selector, '#ansibleTabs .tab'); return tabs;},
@@ -82,13 +83,13 @@ eval(` + strconv.Quote(js+`
   }
   for (const name of names) {switchAnsibleTab(name); checkTab(name);}
   switchAnsibleTab('unknown'); checkTab('settings');
-  for (const [index, key, expected] of [[3, 'ArrowRight', 'playbooks'], [0, 'ArrowLeft', 'settings'],
+  for (const [index, key, expected] of [[5, 'ArrowRight', 'playbooks'], [0, 'ArrowLeft', 'settings'],
     [1, 'Home', 'playbooks'], [1, 'End', 'settings']]) {
     let prevented = false;
     onAnsibleTabKeydown({target: tabs[index], key, preventDefault() {prevented = true;}});
     assert.ok(prevented); assert.equal(focused, expected); checkTab(expected);
   }
-  onAnsibleTabKeydown({target: tabs[3], key: 'Tab', preventDefault() {assert.fail('Tab must retain native behavior');}});
+  onAnsibleTabKeydown({target: tabs[5], key: 'Tab', preventDefault() {assert.fail('Tab must retain native behavior');}});
   checkTab('settings');
   ansibleStatusCache = {available: true, enabled: true};
   await loadAnsibleSchedules();

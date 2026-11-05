@@ -16,6 +16,6 @@ Impor Folder menyimpan ZIP (kemudian proyek bersama) dan playbook hasil impor ti
 
 ## Konsekuensi
 
-- Playbook yang bergantung pada berkas di sebelahnya (`template: src=`, `vars_files`, `include_tasks`, target `import_playbook`) tidak lengkap setelah impor: pengguna mengimpor target sebagai playbook tersendiri atau menempelkan isinya. Ini disengaja (permintaan pengguna: hanya teks playbook; role, collection, inventory, dan konfigurasi dari Pantau).
+- Playbook yang bergantung pada berkas di sebelahnya (`template: src=`, `vars_files`, `include_tasks`, target `import_playbook`) tidak lengkap setelah impor: pengguna mengimpor target sebagai playbook tersendiri atau menempelkan isinya. (Khusus `template:` dan `copy:`, [ADR 0055](0055-ansible-templates-and-uploaded-files.md) kemudian menambah tab Templates dan Files.) Ini disengaja (permintaan pengguna: hanya teks playbook; role, collection, inventory, dan konfigurasi dari Pantau).
 - Playbook hasil migrasi dari bundle kehilangan berkas pendampingnya; isi arsip lama tidak disimpan di mana pun setelah migrasi.
 - Satu mekanisme penyimpanan (teks di SQLite) menyederhanakan snapshot, run, jadwal, dan CRUD.

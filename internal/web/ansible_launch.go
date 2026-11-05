@@ -130,6 +130,13 @@ func (s *Server) launchAnsibleRun(pb *store.AnsiblePlaybook, p ansibleRunParams)
 		runSpec.Git = g
 	} else {
 		runSpec.Playbook = pb.Content
+		assets, err := s.db.LoadAnsibleAssets()
+		if err != nil {
+			return nil, launchErr(http.StatusInternalServerError, "%v", err)
+		}
+		for _, a := range assets {
+			runSpec.Assets = append(runSpec.Assets, ansible.Asset{Kind: a.Kind, Name: a.Name, Data: a.Data})
+		}
 	}
 	if err := runSpec.Validate(); err != nil {
 		return nil, launchErr(http.StatusBadRequest, "invalid run spec: %v", err)

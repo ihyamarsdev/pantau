@@ -629,6 +629,29 @@ Tab **Ansible → Library** mengelola role dan koleksi yang tersimpan di server 
 
 Library berada di `ansible-library/` di samping database Pantau (di Docker: simpan di volume yang sama). Library **tidak** ikut System Snapshot: setelah restore ke mesin baru, pasang ulang item yang dibutuhkan. Fitur ini membutuhkan `ansible-galaxy` (terpasang bersama ansible-core); tab memberi tahu bila tidak ada. Pasang hanya konten yang Anda percaya: plugin koleksi dan role berjalan di server Pantau dengan hak prosesnya.
 
+#### Template dan Berkas (untuk `template:` dan `copy:`)
+
+Playbook inline hanyalah satu teks YAML, sehingga task seperti `template: src=site.conf.j2` atau `copy: src=ca.pem` tidak menemukan berkas untuk dibaca. Tab **Ansible → Templates** dan **Ansible → Files** menyimpan berkas pendukung itu di Pantau:
+
+- **Templates**: ketik nama (boleh bersubfolder, mis. `nginx/site.conf.j2`) dan isi Jinja, lalu **Simpan template**. Menyimpan nama yang sudah ada akan menggantinya; ikon pensil memuat template kembali ke editor. Template harus teks UTF-8, maksimal 256 KiB.
+- **Files**: pilih satu atau beberapa berkas (jenis apa pun, termasuk biner), opsional **Subfolder** seperti `certs/`, lalu **Unggah**. Mengunggah nama yang sudah ada akan menggantinya. Maksimal 5 MiB per berkas.
+- Pakai dari playbook persis seperti proyek Ansible biasa:
+
+  ```yaml
+  - ansible.builtin.template:
+      src: nginx/site.conf.j2     # tab Templates
+      dest: /etc/nginx/conf.d/site.conf
+  - ansible.builtin.copy:
+      src: certs/ca.pem           # tab Files (subfolder certs/)
+      dest: /etc/ssl/certs/ca.pem
+      mode: "0644"
+  ```
+
+  Variabel template berasal dari `vars:` playbook, extra vars bawaan, atau extra vars saat run.
+- Setiap run playbook **inline** (manual maupun terjadwal) menerima semua template dan berkas tersimpan di workspace sementaranya. Isinya dipakai bersama oleh semua playbook inline; menghapus satu item membuat playbook yang merujuknya gagal. Playbook dari **Git** memakai folder `templates/` dan `files/` di repositorinya sendiri.
+- Batas: total 32 MiB. Template dan berkas disimpan di basis data dan ikut System Snapshot terenkripsi, jadi jangan unggah rahasia yang tidak ingin Anda simpan di cadangan. Berkas yang diunggah tidak dapat diunduh kembali.
+- Jinja tidak diperiksa saat menyimpan; kesalahan muncul di log run. Gunakan mode **Check** atau **Diff** untuk mencoba template tanpa mengubah host.
+
 #### Mengedit Playbook dan Variabel
 
 Ikon pensil pada kartu playbook membuka satu editor untuk mengedit sekaligus melihat:
