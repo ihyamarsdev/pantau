@@ -270,6 +270,18 @@ Pantau inspects remote hosts via non-interactive SSH commands, continuously vali
 - **Library & Ansible Configuration**: Install collections and roles from Ansible Galaxy (name/version or `requirements.yml`) or import them from local folders/tarballs; they are shared by every playbook instead of being vendored into each project. Global `ansible.cfg` additions (forks, pipelining, interpreter, become method, …) are edited in Ansible Settings; Pantau-managed keys are rejected.
 - **Cron Schedules**: Run playbooks unattended on a 5-field cron expression (server local time) against fixed Hosts or a Host Group, in any mode. Occurrences missed while Pantau was down or the Ansible Gate was off are skipped, never replayed.
 
+### 31. 🏗️ Terraform Management (Terraform Cloud-Style, Local CLI)
+- **Local CLI Execution Engine**: Manage Terraform and OpenTofu infrastructure through local `terraform` or `tofu` binaries on the Pantau server with real-time stdout/stderr log streaming and visual plan inspection.
+- **Complete Run Lifecycle & Approval Gate**: Enforces a structured pipeline (`plan` → built-in `policy check` → optional `cost estimate` → `approval gate` → `apply`). Runs with changes require mandatory administrative comments (`Confirm & Apply` or `Discard`) and policy override protection.
+- **Immutable State Versioning, Diff & Rollback**: State files are persisted in SQLite and materialized locally before runs. Features a pure-Go v4 state parser, resource inventory, visual state diffing, raw `.tfstate` download, and safe rollback (`current.serial + 1`).
+- **Workspace Locks & Concurrency Guards**: Automatic run-level locking (`locked_by = "run:<id>"`), manual administrative locking, and emergency Force Unlock. Max 1 active run per workspace and 3 active runs globally.
+- **Variables & Reusable Variable Sets**: Manage `terraform` and `env` variables with scalar or HCL values. Sensitive variables are write-only (`(sensitive)` in logs, `json:"-"` in API). Share common variables across multiple workspaces or globally via Variable Sets.
+- **Built-in Policy as Code & Cost Estimation**: Enforce operational guardrails without OPA (`deny_destroy`, `max_deletes`, `max_changes`, `deny_resource_types`, `require_tags`, `deny_open_cidr`) with `advisory`, `soft`, and `hard` enforcement. Infracost CLI integration provides automated monthly cost delta breakdowns when installed.
+- **Scheduled Drift Detection**: Automated background scheduler executes speculative `-refresh-only` plans at configurable intervals to detect real-world infrastructure drift against state.
+- **Private Module Catalog**: Browse internal module documentation, input/output declarations, required providers, and copyable `module "x" { ... }` usage snippets parsed from inline files or Git repos.
+- **Git VCS & Webhook Automation**: Connect workspaces to Git repositories (shallow clone, branch tracking, subdirectories, token/SSH auth) and trigger speculative plans automatically via secure webhooks with constant-time HMAC / secret token verification.
+- **Administrative Terraform Gate & Snapshot Safety**: Guarded by an explicit opt-in switch (`terraform_enabled`). Workspaces, variables, variable sets, policies, modules, and latest states are backed up inside encrypted System Snapshots.
+
 ---
 
 ## 🚀 Quick Start

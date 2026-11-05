@@ -31,6 +31,7 @@ Pantau beroperasi **100% agentless** melalui protokol standar SSH (`port 22`). S
    - [Pengelolaan Klaster Kubernetes Eksternal (EKS, GKE, AKS & Kubeconfig Mandiri)](#pengelolaan-klaster-kubernetes-eksternal-eks-gke-aks--kubeconfig-mandiri)
    - [Pengelolaan Cloudflare via REST API v4](#pengelolaan-cloudflare-via-rest-api-v4)
    - [Ansible Playbooks (Gaya Semaphore, Agentless)](#ansible-playbooks-gaya-semaphore-agentless)
+   - [Manajemen Terraform (Gaya Terraform Cloud, CLI Lokal)](#manajemen-terraform-gaya-terraform-cloud-cli-lokal)
    - [Evaluasi Komparatif Multi-Host & Matriks Penilaian](#evaluasi-komparatif-multi-host--matriks-penilaian)
 5. [Fase 4: Operasi Berkas & Aliran Data Lintas-Host](#5-fase-4-operasi-berkas--aliran-data-lintas-host)
    - [Cross-Host Transfer (Pipa Memori Tanpa Disk Lokal)](#cross-host-transfer-pipa-memori-tanpa-disk-lokal)
@@ -692,6 +693,144 @@ Aturan: run terjadwal memakai batas yang sama dengan run manual (1 run aktif per
   - Pantau secara otomatis mempertahankan **100 run selesai terbaru per playbook**. Riwayat yang lebih lama akan dihapus (*pruned*).
   - Riwayat run disimpan lokal di tabel `ansible_runs` dan dikecualikan dari System Snapshot agar ukuran backup tetap kecil.
 
+
+### Manajemen Terraform (Gaya Terraform Cloud, CLI Lokal)
+
+Pantau menyediakan subsistem manajemen Terraform dan OpenTofu mandiri yang terinspirasi dari HCP Terraform (Terraform Cloud). Administrator dapat mengelola **Workspace** terisolasi, mengeksekusi pipeline run lengkap (`plan` → `policy check` → `cost estimate` → `approval gate` → `apply`), melacak versi state (**State Versions**) immutable dengan diff visual dan rollback, mengelola variabel bersama (**Variable Sets**), menegakkan kebijakan tata kelola bawaan (**Policy as Code**), melihat dokumentasi **Private Module Catalog**, menjadwalkan deteksi drift otomatis (**Drift Detection**), serta mengintegrasikan webhook VCS Git—**tanpa memerlukan remote backend eksternal**.
+
+#### Mengaktifkan Terraform Gate
+
+Konfigurasi Terraform dapat menjalankan perintah sembarang di mesin controller melalui `provisioner "local-exec"`, `data "external"`, maupun modul pihak ketiga dari Git. Karena proses Terraform tidak dapat disandbox secara andal:
+1. **Terraform Gate** (`terraform_enabled`) berada dalam kondisi **nonaktif secara default**.
+2. Sebelum workspace atau run dapat dibuat atau dijalankan, administrator harus membuka **Terraform → Pengaturan** dan mengaktifkan saklar gerbang.
+3. Pengaktifan gerbang mewajibkan konfirmasi dialog keamanan eksplisit yang menegaskan bahwa sesi admin Pantau dengan Terraform aktif setara dengan akses eksekusi proses di server host.
+4. Pantau secara otomatis memeriksa ketersediaan biner `terraform` dan `tofu` lokal (serta biner opsional `infracost`). Status biner dan versinya ditampilkan pada banner status.
+
+#### Membuat dan Mengonfigurasi Workspace
+
+Workspace merepresentasikan satu unit environment infrastruktur yang terisolasi (konfigurasi, variabel, state, dan riwayat run):
+1. Pada **Side Panel**, pilih menu **Terraform → Workspaces** lalu klik tombol **Workspace Baru**.
+2. Atur parameter workspace:
+   - **Nama**: Identifier unik *case-insensitive* (`^[A-Za-z0-9_-]{1,64}$`).
+   - **Environment**: Label lingkungan kerja (`production`, `staging`, `development`).
+   - **Biner**: Pilih apakah run akan dieksekusi menggunakan biner `terraform` atau `tofu`.
+   - **Tag**: Label dipisahkan koma untuk pengelompokan dan pemfilteran workspace.
+   - **Sumber Konfigurasi**:
+     - **Berkas Inline**: Simpan hingga 50 berkas (maksimal 256 KiB per berkas; `.tf`, `.tfvars`, `.json`, `.yaml`, dll.) langsung di basis data Pantau.
+     - **Repositori Git**: Masukkan URL repositori (`https://` atau `ssh://`), nama branch target, direktori kerja di dalam repositori (bawaan: root), serta kredensial (token atau kunci SSH dari Library).
+3. Workspace dialokasikan direktori kerja privat di server Pantau (`<DataRoot>/terraform/<workspaceID>`) dengan izin direktori ketat `0700`.
+
+#### Alur Eksekusi Run: Plan, Approve, dan Apply
+
+Pantau menerapkan siklus hidup eksekusi multi-tahap yang aman dan terinspeksi:
+
+1. **Memicu Run**:
+   Klik tombol **Run Baru** pada workspace:
+   - **Tipe**: Standar `plan` (plan untuk kemudian diapply), `destroy` (plan penghancuran resource yang dikelola), atau `refresh` (refresh-only plan untuk rekonsiliasi state).
+   - **Speculative Plan**: Eksekusi plan simulasi sementara (berguna untuk menguji perubahan branch) yang tidak akan dilanjutkan ke tahap apply.
+   - **Target / Replace**: Batasi eksekusi pada alamat resource spesifik menggunakan sintaksis target standar.
+   - **Pesan**: Catatan commit atau tujuan eksekusi opsional.
+2. **Tahap Planning & Pemeriksaan Awal**:
+   Pantau mematerialisasikan state terbaru dari basis data, menyiapkan variabel lingkungan yang steril, menulis variabel ke `pantau.auto.tfvars.json` / `pantau-hcl.auto.tfvars`, lalu menjalankan `init` dan `plan -out=tfplan`.
+   - Log stdout/stderr dialirkan secara *real-time* ke penampil Console Log.
+   - Pratinjau visual plan diff terstruktur dibuat untuk memperlihatkan penambahan resource (`+`), pembaruan (`~`), penggantian (*replace* `-/+`), dan penghapusan (`-`).
+3. **Evaluasi Policy as Code**:
+   Bila terdapat kebijakan yang aktif, Pantau mengevaluasi representasi JSON plan terhadap aturan:
+   - `advisory`: Catatan peringatan informasional; tidak memblokir approval.
+   - `soft`: Memblokir approval standar hingga administrator mencentang opsi **Override Policy**.
+   - `hard`: Menolak run secara mutlak; apply dilarang keras (`policy_failed`).
+4. **Estimasi Biaya (Infracost)**:
+   Bila biner `infracost` terpasang di server Pantau dan variabel `INFRACOST_API_KEY` dikonfigurasi di environment, Pantau menghitung estimasi biaya bulanan sebelum dan sesudah perubahan, lalu menyajikan selisih biaya (*delta*) di ringkasan run. Bila Infracost tidak terpasang, tahap ini dilewati secara transparan tanpa menggagalkan run.
+5. **Approval Gate Mandatori**:
+   Ketika sebuah run menghasilkan perubahan infrastruktur (`has_changes = true`), alur eksekusi berhenti pada status `awaiting_approval`:
+   - **Confirm & Apply**: Menyetujui dan menerapkan plan. Komentar alasan dari operator bersifat **wajib** (minimal 3 karakter) untuk kebutuhan audit.
+   - **Discard**: Membuang perubahan yang direncanakan. Komentar alasan bersifat **wajib**.
+   - Bila terdapat peringatan kebijakan bertingkat `soft`, operator wajib mencentang **Override Policy** untuk mengaktifkan tombol konfirmasi.
+6. **Menerapkan Perubahan (Apply)**:
+   Setelah disetujui, Pantau menjalankan `apply tfplan` pada direktori eksekusi yang dipertahankan. Setelah tuntas, versi state immutable baru (**State Version**) dicatat di SQLite, nilai output disimpan, dan direktori kerja sementara run dibersihkan.
+
+#### State Versions, Diff, Rollback, dan Workspace Locking
+
+Pantau menggunakan SQLite sebagai sumber kebenaran tunggal (*single source of truth*) state Terraform, mengeliminasi kebutuhan remote state S3 eksternal:
+- **State Versions**: Setiap kali apply, refresh, atau impor manual selesai dengan sukses, Pantau membuat entri versi state baru dengan nomor serial, lineage, jumlah resource, dan checksum SHA-256.
+- **Visual State Diff**: Bandingkan dua versi state historis mana pun secara berdampingan untuk melihat resource dan atribut yang ditambah, dihapus, atau dimodifikasi.
+- **State Rollback**: Kembalikan state ke versi sebelumnya dalam satu klik. Pantau menjaga konsistensi lineage, menaikkan nomor serial (`current.serial + 1`), dan menyimpan rollback sebagai versi state baru untuk mencegah konflik serial di masa mendatang.
+- **Unduh & Impor Mentah**: Administrator dapat mengunduh berkas mentah `.tfstate` (disertai peringatan bahwa berkas dapat mengandung rahasia infrastruktur) atau mengimpor state yang sudah ada hingga ukuran 16 MiB.
+- **Penguncian Workspace (Workspace Locking)**:
+  - **Kunci Otomatis**: Workspace dikunci otomatis (`locked_by = "run:<id>"`) selama run berstatus antre, planning, menunggu approval, atau applying.
+  - **Kunci Manual**: Administrator dapat mengunci workspace secara manual dengan alasan tertentu guna mencegah pemicuan otomatis selama pemeliharaan.
+  - **Force Unlock**: Jika run terhenti atau bermasalah, administrator dapat memicu Force Unlock darurat untuk membatalkan run aktif, membuka kunci database, dan membersihkan berkas lock `.terraform.tfstate.lock.info` di disk.
+
+#### Variabel dan Variable Sets
+
+Kelola variabel konfigurasi secara teratur tanpa memasukkan nilai langsung ke dalam berkas `.tf`:
+- **Kategori Variabel**:
+  - `terraform`: Diteruskan ke proses Terraform sebagai variabel input. Variabel bertipe non-HCL diformat secara aman ke `pantau.auto.tfvars.json`; variabel bertipe HCL diformat ke `pantau-hcl.auto.tfvars`.
+  - `env`: Disuntikkan sebagai variabel lingkungan proses anak (misal: `AWS_ACCESS_KEY_ID`, `ARM_CLIENT_SECRET`).
+- **Nilai Sensitif**: Variabel yang ditandai sensitif bersifat *write-only*. Nilainya disensor sebagai string `(sensitive)` pada log eksekusi, tidak pernah dikembalikan ke respons API JSON (`json:"-"`), dan disembunyikan di antarmuka web.
+- **Variable Sets**: Kelompokkan variabel terkait (misal: *Kredensial Cloud Produksi*, *Konfigurasi DNS Global*) lalu kaitkan ke beberapa workspace sekaligus, atau jadikan **Global** agar berlaku otomatis ke seluruh workspace.
+- **Prioritas Resolusi**: Variabel level Workspace menimpa variabel dari Variable Set yang terhubung, yang mana menimpa Variable Set Global.
+
+#### Panel Outputs
+
+Periksa nilai output yang dihasilkan oleh state aktif terbaru pada tab **Outputs**:
+- Menampilkan nama output, nilai JSON, dan tipe data.
+- Output sensitif (dideklarasikan `sensitive = true` pada HCL) disembunyikan secara default (`null`, `value_hidden: true`) dan dapat dibuka dengan tombol **Reveal** oleh administrator terautentikasi.
+- Tombol salin satu-klik mempermudah penyalinan connection string atau alamat IP.
+
+#### Katalog Modul Privat (Private Module Catalog)
+
+Kelola katalog dokumentasi modul Terraform dan OpenTofu internal yang dapat digunakan kembali:
+1. Daftarkan modul dengan nama dan penyedianya (misal: `vpc / aws`, `cluster / kubernetes`).
+2. Unggah versi modul menggunakan berkas inline atau tautkan repositori Git.
+3. Pemindai HCL bawaan Pantau secara otomatis menguraikan kode modul dan menampilkan:
+   - Tabel parameter input lengkap (nama, tipe, deskripsi, nilai default, status wajib).
+   - Deklarasi dan deskripsi output.
+   - Tipe resource yang dideklarasikan dan versi provider minimum yang dibutuhkan.
+   - Dokumentasi pratinjau `README.md`.
+   - Cuplikan siap pakai `module "nama" { ... }`.
+
+#### Deteksi Drift Terjadwal (Drift Detection)
+
+Otomatisasi pengawasan terhadap perubahan di luar kendali (*out-of-band changes*):
+1. Atur interval pemeriksaan drift (**Drift Check Interval**, misal setiap 60, 360, atau 1440 menit) di pengaturan workspace.
+2. Scheduler latar belakang Pantau secara berkala menjalankan plan spekulatif dengan opsi `-refresh-only` tanpa menerapkan perubahan apa pun.
+3. Bila ditemukan perbedaan antara infrastruktur riil dan state file, status workspace ditandai **Drift Detected**, dan rincian perubahan dicatat agar dapat ditinjau oleh administrator.
+
+#### Aturan Kebijakan (Policies) dan Estimasi Biaya
+
+Tegakkan tata kelola dan pantau estimasi pengeluaran infrastruktur sebelum perubahan diterapkan:
+- **Kebijakan Bawaan**: Konfigurasikan batasan keamanan tanpa bahasa DSL rumit:
+  - `deny_destroy`: Menolak run yang merencanakan penghapusan resource.
+  - `max_deletes`: Membatasi jumlah maksimum resource yang boleh dihapus.
+  - `max_changes`: Membatasi jumlah maksimum perubahan resource.
+  - `deny_resource_types`: Melarang pembuatan tipe resource cloud tertentu.
+  - `require_tags`: Memastikan tag wajib disertakan pada resource yang dibuat.
+  - `deny_open_cidr`: Mencegah security group dengan aturan ingress terbuka `0.0.0.0/0`.
+- **Integrasi Infracost**:
+  Pasang biner `infracost` di server host Pantau. Berikan `INFRACOST_API_KEY` pada variabel lingkungan. Setiap plan yang dijalankan akan otomatis menghitung rincian biaya proyek bulanan dan selisih bersihnya langsung di ringkasan run.
+
+#### Integrasi Git VCS dan Pengaturan Webhook
+
+Otomatisasi tahap planning saat kode di-push ke repositori Git:
+1. Pada Pengaturan Workspace, aktifkan **Integrasi Webhook** dan salin URL webhook yang dibuat (`/api/terraform/webhook/{token}`).
+2. (Opsional) Buat atau masukkan **Webhook Secret** untuk validasi tanda tangan kriptografi.
+3. Konfigurasikan pada penyedia Git Anda:
+   - **GitHub**: Pada **Repository Settings → Webhooks**, isi Payload URL, pilih `application/json`, pilih event **Push**, dan tempelkan webhook secret (divalidasi melalui `X-Hub-Signature-256`).
+   - **GitLab**: Pada **Settings → Webhooks**, isi URL, masukkan secret token pada kolom **Secret token** (divalidasi melalui `X-Gitlab-Token`), dan aktifkan **Push events**.
+4. **Jaminan Keamanan**: Webhook **hanya memicu proses Plan spekulatif atau standar** saat terjadi push ke branch yang dikonfigurasi. Webhook **tidak pernah mengeksekusi Apply secara otomatis**. Semua penerapan perubahan ke infrastruktur tetap wajib melalui persetujuan manual di Approval Gate.
+
+#### Batasan dan Non-Goals yang Transparan
+
+Demi mempertahankan arsitektur mandiri, ringan, dan mudah dirawat, sejumlah fitur sengaja tidak dimasukkan ke dalam ruang lingkup:
+- **Tanpa Remote State Backend / S3**: Pantau menggunakan basis data SQLite lokal. Konfigurasi remote backend (`backend "s3"` / `backend "remote"`) di kode workspace tidak digunakan.
+- **Tanpa Auto-Apply**: Perubahan infrastruktur tidak dapat diatur untuk apply otomatis saat push Git; review manusia melalui Approval Gate bersifat mutlak.
+- **Tanpa OPA / Rego / Sentinel**: Kebijakan tata kelola dibatasi pada evaluator bawaan Go.
+- **Tanpa Kredensial Dinamis OIDC**: Kredensial cloud diteruskan melalui variabel sensitif berkategori `env`; pertukaran token dinamis STS/OIDC tidak dikelola otomatis oleh Pantau.
+- **Tanpa Protokol Registry Publik**: Katalog modul privat berfungsi sebagai penampil dokumentasi internal, bukan endpoint HTTP registry untuk `terraform init`.
+- **Tanpa Controller Windows**: Meski biner Pantau dapat berjalan di Windows, eksekusi workspace Terraform/OpenTofu dinonaktifkan di Windows (`Detect()` mengembalikan status tidak didukung).
+- **Biner**: Image Docker resmi menyertakan `terraform`, `tofu` (OpenTofu) dan `infracost`; pada instalasi non-Docker pasang `terraform` atau `tofu` di `PATH`. Infracost membutuhkan variabel `env` `INFRACOST_API_KEY` pada Workspace atau Variable Set.
+- **Batas Konkurensi**: Maksimal 1 run aktif per workspace dan 3 run aktif secara global. Permintaan yang melebihi batas menerima respons HTTP 409 atau 429.
 ### Evaluasi Kelayakan Server dengan Lifecycle Assessment
 
 Pantau menghitung nilai kelayakan sistem secara transparan melalui **Lifecycle Score** (0–100) berdasarkan 6 faktor evaluasi:

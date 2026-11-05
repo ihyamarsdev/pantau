@@ -129,37 +129,34 @@ func gitEnv(workDir, protocols string) []string {
 	return env
 }
 
-// cloneGit shallow-clones g into workDir/repo and returns the repository dir, the absolute playbook path and the
-// checked-out commit. protocols is the GIT_ALLOW_PROTOCOL value ("https:ssh" in production).
-func cloneGit(ctx context.Context, g GitSource, workDir, protocols string, log io.Writer) (repoDir, playbookPath, sha string, err error) {
+// CloneGitRepo shallow-clones a Git repository into workDir/repo and returns (repoDir, commitSHA, error).
+func CloneGitRepo(ctx context.Context, repoURL, branch, token, privateKey, workDir, protocols string, log io.Writer) (repoDir, sha string, err error) {
 	if log == nil {
 		log = io.Discard
 	}
 	gitBin, err := exec.LookPath("git")
 	if err != nil {
-		return "", "", "", errors.New("git not found in PATH")
+		return "", "", errors.New("git not found in PATH")
 	}
 	repoDir = filepath.Join(workDir, "repo")
 	env := gitEnv(workDir, protocols)
 
-	// -F /dev/null: same reason as ansible.cfg (never read the passwd-home ssh config).
 	sshCmd := "ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes"
-	if strings.TrimSpace(g.PrivateKey) != "" {
+	if strings.TrimSpace(privateKey) != "" {
 		kp := filepath.Join(workDir, "git_key")
-		if err := os.WriteFile(kp, []byte(strings.TrimSpace(g.PrivateKey)+"\n"), 0600); err != nil {
-			return "", "", "", fmt.Errorf("failed to write git key: %w", err)
+		if err := os.WriteFile(kp, []byte(strings.TrimSpace(privateKey)+"\n"), 0600); err != nil {
+			return "", "", fmt.Errorf("failed to write git key: %w", err)
 		}
 		sshCmd += " -i '" + kp + "'"
 	}
 	env = append(env, "GIT_SSH_COMMAND="+sshCmd)
 
-	if g.Token != "" {
-		u, perr := url.Parse(g.URL)
+	if token != "" {
+		u, perr := url.Parse(repoURL)
 		if perr != nil || u.Scheme != "https" {
-			return "", "", "", errors.New("token authentication requires an https:// git url")
+			return "", "", errors.New("token authentication requires an https:// git url")
 		}
-		// Scoped to the repository host and passed via env so the token never shows up in argv or the log.
-		cred := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + g.Token))
+		cred := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + token))
 		env = append(env, "GIT_CONFIG_COUNT=1",
 			"GIT_CONFIG_KEY_0=http.https://"+u.Host+"/.extraHeader",
 			"GIT_CONFIG_VALUE_0=Authorization: Basic "+cred)
@@ -167,13 +164,13 @@ func cloneGit(ctx context.Context, g GitSource, workDir, protocols string, log i
 
 	args := []string{"-c", "credential.helper=", "clone", "--depth", "1", "--single-branch", "--no-tags"}
 	ref := ""
-	if g.Branch != "" {
-		args = append(args, "--branch", g.Branch)
-		ref = " (" + g.Branch + ")"
+	if branch != "" {
+		args = append(args, "--branch", branch)
+		ref = " (" + branch + ")"
 	}
-	args = append(args, "--", g.URL, repoDir)
+	args = append(args, "--", repoURL, repoDir)
 
-	fmt.Fprintf(log, "[pantau] git clone %s%s\n", g.URL, ref)
+	fmt.Fprintf(log, "[pantau] git clone %s%s\n", repoURL, ref)
 	cmd := exec.Command(gitBin, args...)
 	cmd.Dir = workDir
 	cmd.Env = env
@@ -181,20 +178,30 @@ func cloneGit(ctx context.Context, g GitSource, workDir, protocols string, log i
 	cmd.Stderr = log
 	code, err := runCmd(ctx, cmd)
 	if err != nil {
-		return "", "", "", err
+		return "", "", err
 	}
 	if code != 0 {
-		return "", "", "", fmt.Errorf("git clone failed (exit %d)", code)
+		return "", "", fmt.Errorf("git clone failed (exit %d)", code)
 	}
 
 	rev := exec.Command(gitBin, "-C", repoDir, "rev-parse", "HEAD")
 	rev.Env = env
 	out, err := rev.Output()
 	if err != nil {
-		return "", "", "", fmt.Errorf("git rev-parse failed: %w", err)
+		return "", "", fmt.Errorf("git rev-parse failed: %w", err)
 	}
 	sha = strings.TrimSpace(string(out))
 	fmt.Fprintf(log, "[pantau] git commit %s\n", sha)
+	return repoDir, sha, nil
+}
+
+// cloneGit shallow-clones g into workDir/repo and returns the repository dir, the absolute playbook path and the
+// checked-out commit. protocols is the GIT_ALLOW_PROTOCOL value ("https:ssh" in production).
+func cloneGit(ctx context.Context, g GitSource, workDir, protocols string, log io.Writer) (repoDir, playbookPath, sha string, err error) {
+	repoDir, sha, err = CloneGitRepo(ctx, g.URL, g.Branch, g.Token, g.PrivateKey, workDir, protocols, log)
+	if err != nil {
+		return "", "", "", err
+	}
 
 	// The playbook must be a regular file that stays inside the clone even after resolving symlinks.
 	playbookPath = filepath.Join(repoDir, filepath.FromSlash(g.Path))

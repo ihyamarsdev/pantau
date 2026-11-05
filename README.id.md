@@ -270,6 +270,18 @@ Pantau menginspeksi Host remote melalui perintah SSH non-interaktif, memvalidasi
 - **Library & Konfigurasi Ansible**: Pasang koleksi dan role dari Ansible Galaxy (nama/versi atau `requirements.yml`) atau impor dari folder/tarball lokal; dipakai bersama oleh semua playbook alih-alih disertakan di setiap proyek. Tambahan `ansible.cfg` global (forks, pipelining, interpreter, become method, …) diatur di Pengaturan Ansible; kunci yang dikelola Pantau ditolak.
 - **Jadwal Cron**: Jalankan playbook otomatis dengan ekspresi cron 5 field (waktu lokal server) terhadap Host tertentu atau Host Group, dalam mode apa pun. Jadwal yang terlewat saat Pantau mati atau Ansible Gate nonaktif dilewati, tidak dijalankan susulan.
 
+### 31. 🏗️ Manajemen Terraform (Gaya Terraform Cloud, CLI Lokal)
+- **Engine Eksekusi Biner Lokal**: Kelola infrastruktur Terraform dan OpenTofu via biner `terraform` atau `tofu` lokal di server Pantau dengan streaming log stdout/stderr langsung dan penampil visual plan diff.
+- **Siklus Hidup Run & Approval Gate**: Menerapkan pipeline terstruktur (`plan` → evaluasi `policy check` bawaan → estimasi `cost estimate` opsional → `approval gate` → `apply`). Run dengan perubahan membutuhkan komentar alasan wajib dari admin (`Confirm & Apply` atau `Discard`) dan perlindungan override kebijakan.
+- **State Versioning Immutable, Diff & Rollback**: State disimpan di basis data SQLite lokal dan dimaterialisasikan ke disk sebelum eksekusi run. Dilengkapi parser v4 Go murni, inventori resource, perbandingan state diff terstruktur, unduhan berkas mentah `.tfstate`, serta rollback aman (`current.serial + 1`).
+- **Workspace Lock & Kendali Konkurensi**: Penguncian otomatis tingkat run (`locked_by = "run:<id>"`), penguncian manual admin, dan tombol darurat Force Unlock. Maksimal 1 run aktif per workspace dan 3 run aktif secara global.
+- **Variabel & Variable Set Bersama**: Kelola variabel kategori `terraform` dan `env` dalam nilai skalar maupun HCL. Nilai variabel sensitif disembunyikan (*write-only*, disensor `(sensitive)` di log, `json:"-"` di API). Bagikan variabel ke banyak workspace atau secara global via Variable Sets.
+- **Policy as Code Bawaan & Estimasi Biaya**: Tegakkan aturan tata kelola tanpa dependensi OPA (`deny_destroy`, `max_deletes`, `max_changes`, `deny_resource_types`, `require_tags`, `deny_open_cidr`) dengan tingkat penegakan `advisory`, `soft`, dan `hard`. Integrasi CLI Infracost menghitung rincian delta biaya bulanan secara otomatis bila terpasang.
+- **Deteksi Drift Terjadwal**: Scheduler latar belakang mengeksekusi plan spekulatif `-refresh-only` secara berkala untuk mendeteksi perbedaan antara infrastruktur riil dan state file.
+- **Katalog Modul Privat**: Jelajahi dokumentasi modul internal, input/output, provider wajib, dan cuplikan kode penggunaan `module "x" { ... }` dari berkas inline maupun repositori Git.
+- **Integrasi Git VCS & Otomatisasi Webhook**: Hubungkan workspace ke repositori Git (shallow clone, pemantauan branch, sub-direktori, autentikasi token/SSH) dan picu plan spekulatif secara otomatis via webhook aman berverifikasi HMAC / secret token constant-time.
+- **Terraform Gate & Perlindungan Snapshot**: Dilindungi saklar opt-in administrator (`terraform_enabled`). Konfigurasi workspace, variabel, variable set, policy, modul, dan state terbaru dicadangkan ke dalam System Snapshot terenkripsi.
+
 ---
 
 ## 🚀 Panduan Memulai Cepat (Quick Start)

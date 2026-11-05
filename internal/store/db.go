@@ -505,6 +505,123 @@ func (d *DB) migrate() error {
 		last_error TEXT NOT NULL DEFAULT '',
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+	CREATE TABLE IF NOT EXISTS tf_workspaces (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+		description TEXT NOT NULL DEFAULT '',
+		environment TEXT NOT NULL DEFAULT 'production',
+		tags TEXT NOT NULL DEFAULT '[]',
+		binary TEXT NOT NULL DEFAULT 'terraform',
+		source TEXT NOT NULL DEFAULT 'inline',
+		files TEXT NOT NULL DEFAULT '{}',
+		git_url TEXT NOT NULL DEFAULT '',
+		git_branch TEXT NOT NULL DEFAULT '',
+		git_path TEXT NOT NULL DEFAULT '',
+		git_auth TEXT NOT NULL DEFAULT 'none',
+		git_token TEXT NOT NULL DEFAULT '',
+		git_key_id INTEGER NOT NULL DEFAULT 0,
+		webhook_token TEXT NOT NULL UNIQUE,
+		webhook_secret TEXT NOT NULL DEFAULT '',
+		drift_interval_minutes INTEGER NOT NULL DEFAULT 0,
+		lock_reason TEXT NOT NULL DEFAULT '',
+		locked_by TEXT NOT NULL DEFAULT '',
+		locked_at DATETIME,
+		drift_detected INTEGER NOT NULL DEFAULT 0,
+		drift_checked_at DATETIME,
+		tf_version TEXT NOT NULL DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE TABLE IF NOT EXISTS tf_varsets (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+		description TEXT NOT NULL DEFAULT '',
+		global INTEGER NOT NULL DEFAULT 0
+	);
+	CREATE TABLE IF NOT EXISTS tf_varset_workspaces (
+		varset_id INTEGER NOT NULL REFERENCES tf_varsets(id) ON DELETE CASCADE,
+		workspace_id INTEGER NOT NULL REFERENCES tf_workspaces(id) ON DELETE CASCADE,
+		PRIMARY KEY (varset_id, workspace_id)
+	);
+	CREATE TABLE IF NOT EXISTS tf_variables (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		workspace_id INTEGER REFERENCES tf_workspaces(id) ON DELETE CASCADE,
+		varset_id INTEGER REFERENCES tf_varsets(id) ON DELETE CASCADE,
+		key TEXT NOT NULL,
+		value TEXT NOT NULL DEFAULT '',
+		category TEXT NOT NULL DEFAULT 'terraform',
+		hcl INTEGER NOT NULL DEFAULT 0,
+		sensitive INTEGER NOT NULL DEFAULT 0,
+		description TEXT NOT NULL DEFAULT '',
+		UNIQUE (workspace_id, varset_id, key, category)
+	);
+	CREATE TABLE IF NOT EXISTS tf_runs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		workspace_id INTEGER NOT NULL REFERENCES tf_workspaces(id) ON DELETE CASCADE,
+		type TEXT NOT NULL DEFAULT 'plan',
+		speculative INTEGER NOT NULL DEFAULT 0,
+		status TEXT NOT NULL DEFAULT 'queued',
+		trigger_kind TEXT NOT NULL DEFAULT 'manual',
+		message TEXT NOT NULL DEFAULT '',
+		targets TEXT NOT NULL DEFAULT '[]',
+		replace TEXT NOT NULL DEFAULT '[]',
+		commit_sha TEXT NOT NULL DEFAULT '',
+		plan_summary TEXT NOT NULL DEFAULT '{}',
+		drift TEXT NOT NULL DEFAULT '[]',
+		policy TEXT NOT NULL DEFAULT '{}',
+		cost TEXT NOT NULL DEFAULT '{}',
+		has_changes INTEGER NOT NULL DEFAULT 0,
+		exit_code INTEGER,
+		log TEXT NOT NULL DEFAULT '',
+		approved_by_comment TEXT NOT NULL DEFAULT '',
+		decision TEXT NOT NULL DEFAULT '',
+		decision_comment TEXT NOT NULL DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		started_at DATETIME,
+		finished_at DATETIME
+	);
+	CREATE INDEX IF NOT EXISTS idx_tf_runs_ws_id ON tf_runs(workspace_id, id);
+	CREATE TABLE IF NOT EXISTS tf_state_versions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		workspace_id INTEGER NOT NULL REFERENCES tf_workspaces(id) ON DELETE CASCADE,
+		run_id INTEGER NOT NULL DEFAULT 0,
+		serial INTEGER NOT NULL DEFAULT 0,
+		lineage TEXT NOT NULL DEFAULT '',
+		source TEXT NOT NULL DEFAULT 'apply',
+		size INTEGER NOT NULL DEFAULT 0,
+		resource_count INTEGER NOT NULL DEFAULT 0,
+		sha256 TEXT NOT NULL DEFAULT '',
+		state BLOB NOT NULL DEFAULT X'',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_tf_state_versions_ws ON tf_state_versions(workspace_id, id);
+	CREATE TABLE IF NOT EXISTS tf_policies (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+		description TEXT NOT NULL DEFAULT '',
+		kind TEXT NOT NULL DEFAULT '',
+		params TEXT NOT NULL DEFAULT '{}',
+		enforcement TEXT NOT NULL DEFAULT 'soft',
+		enabled INTEGER NOT NULL DEFAULT 1,
+		workspace_id INTEGER NOT NULL DEFAULT 0
+	);
+	CREATE TABLE IF NOT EXISTS tf_modules (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		provider TEXT NOT NULL,
+		description TEXT NOT NULL DEFAULT '',
+		UNIQUE (name, provider)
+	);
+	CREATE TABLE IF NOT EXISTS tf_module_versions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		module_id INTEGER NOT NULL REFERENCES tf_modules(id) ON DELETE CASCADE,
+		version TEXT NOT NULL,
+		files TEXT NOT NULL DEFAULT '{}',
+		doc TEXT NOT NULL DEFAULT '{}',
+		source_url TEXT NOT NULL DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE (module_id, version)
+	);
 	`
 	_, err := d.Exec(schema)
 	if err != nil {
@@ -1362,6 +1479,95 @@ type SnapshotAnsibleProject struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// SnapshotTFWorkspace stores workspace declarations for backup and restore.
+type SnapshotTFWorkspace struct {
+	ID                   int64     `json:"id"`
+	Name                 string    `json:"name"`
+	Description          string    `json:"description"`
+	Environment          string    `json:"environment"`
+	Tags                 string    `json:"tags"`
+	Binary               string    `json:"binary"`
+	Source               string    `json:"source"`
+	Files                string    `json:"files"`
+	GitURL               string    `json:"git_url"`
+	GitBranch            string    `json:"git_branch"`
+	GitPath              string    `json:"git_path"`
+	GitAuth              string    `json:"git_auth"`
+	GitToken             string    `json:"git_token"` // plaintext in SQLite; included in encrypted snapshot
+	GitKeyID             int64     `json:"git_key_id"`
+	WebhookToken         string    `json:"webhook_token"`
+	WebhookSecret        string    `json:"webhook_secret"`
+	DriftIntervalMinutes int       `json:"drift_interval_minutes"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
+}
+
+// SnapshotTFVariable stores variable declarations for backup and restore.
+type SnapshotTFVariable struct {
+	ID          int64  `json:"id"`
+	WorkspaceID int64  `json:"workspace_id,omitempty"`
+	VarsetID    int64  `json:"varset_id,omitempty"`
+	Key         string `json:"key"`
+	Value       string `json:"value"` // plaintext in SQLite; included in encrypted snapshot
+	Category    string `json:"category"`
+	HCL         bool   `json:"hcl"`
+	Sensitive   bool   `json:"sensitive"`
+	Description string `json:"description"`
+}
+
+// SnapshotTFVarset stores variable set declarations for backup and restore.
+type SnapshotTFVarset struct {
+	ID           int64   `json:"id"`
+	Name         string  `json:"name"`
+	Description  string  `json:"description"`
+	Global       bool    `json:"global"`
+	WorkspaceIDs []int64 `json:"workspace_ids,omitempty"`
+}
+
+// SnapshotTFPolicy stores policy declarations for backup and restore.
+type SnapshotTFPolicy struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Kind        string `json:"kind"`
+	Params      string `json:"params"`
+	Enforcement string `json:"enforcement"`
+	Enabled     bool   `json:"enabled"`
+	WorkspaceID int64  `json:"workspace_id"`
+}
+
+// SnapshotTFModuleVersion stores a module version in backup.
+type SnapshotTFModuleVersion struct {
+	ID        int64  `json:"id"`
+	ModuleID  int64  `json:"module_id"`
+	Version   string `json:"version"`
+	Files     string `json:"files"`
+	Doc       string `json:"doc"`
+	SourceURL string `json:"source_url"`
+	CreatedAt string `json:"created_at"`
+}
+
+// SnapshotTFModule stores a private module and its versions in backup.
+type SnapshotTFModule struct {
+	ID          int64                     `json:"id"`
+	Name        string                    `json:"name"`
+	Provider    string                    `json:"provider"`
+	Description string                    `json:"description"`
+	Versions    []SnapshotTFModuleVersion `json:"versions,omitempty"`
+}
+
+// SnapshotTFState stores the latest state per workspace in backup.
+type SnapshotTFState struct {
+	WorkspaceID   int64     `json:"workspace_id"`
+	Serial        int64     `json:"serial"`
+	Lineage       string    `json:"lineage"`
+	Size          int64     `json:"size"`
+	ResourceCount int       `json:"resource_count"`
+	SHA256        string    `json:"sha256"`
+	State         []byte    `json:"state"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
 // SnapshotPayload holds the sanitized system configuration for backup and restore.
 type SnapshotPayload struct {
 	Version            int                         `json:"version"`
@@ -1377,6 +1583,12 @@ type SnapshotPayload struct {
 	AnsibleProjects    []SnapshotAnsibleProject    `json:"ansible_projects,omitempty"` // read-only legacy, see SnapshotAnsibleProject
 	AnsibleSchedules   []AnsibleSchedule           `json:"ansible_schedules,omitempty"`
 	AnsibleAssets      []SnapshotAnsibleAsset      `json:"ansible_assets,omitempty"`
+	TerraformWorkspaces []SnapshotTFWorkspace `json:"terraform_workspaces,omitempty"`
+	TerraformVariables  []SnapshotTFVariable  `json:"terraform_variables,omitempty"`
+	TerraformVarsets    []SnapshotTFVarset    `json:"terraform_varsets,omitempty"`
+	TerraformPolicies   []SnapshotTFPolicy    `json:"terraform_policies,omitempty"`
+	TerraformModules    []SnapshotTFModule    `json:"terraform_modules,omitempty"`
+	TerraformStates     []SnapshotTFState     `json:"terraform_states,omitempty"`
 }
 
 func (d *DB) IsFresh() (bool, error) {
@@ -1515,6 +1727,103 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 		}
 	}
 
+	var allTFWorkspaces []SnapshotTFWorkspace
+	wsRows, err := d.Query(`SELECT id, name, description, environment, tags, binary, source, files, git_url, git_branch, git_path, git_auth, git_token, git_key_id, webhook_token, webhook_secret, drift_interval_minutes, created_at, updated_at FROM tf_workspaces ORDER BY id ASC`)
+	if err == nil {
+		defer wsRows.Close()
+		for wsRows.Next() {
+			var w SnapshotTFWorkspace
+			if err := wsRows.Scan(&w.ID, &w.Name, &w.Description, &w.Environment, &w.Tags, &w.Binary, &w.Source, &w.Files, &w.GitURL, &w.GitBranch, &w.GitPath, &w.GitAuth, &w.GitToken, &w.GitKeyID, &w.WebhookToken, &w.WebhookSecret, &w.DriftIntervalMinutes, &w.CreatedAt, &w.UpdatedAt); err == nil {
+				allTFWorkspaces = append(allTFWorkspaces, w)
+			}
+		}
+	}
+	var allTFVariables []SnapshotTFVariable
+	varRows, err := d.Query(`SELECT id, workspace_id, varset_id, key, value, category, hcl, sensitive, description FROM tf_variables ORDER BY id ASC`)
+	if err == nil {
+		defer varRows.Close()
+		for varRows.Next() {
+			var v SnapshotTFVariable
+			var hclInt, sensInt int
+			var wsID, vsID sql.NullInt64
+			if err := varRows.Scan(&v.ID, &wsID, &vsID, &v.Key, &v.Value, &v.Category, &hclInt, &sensInt, &v.Description); err == nil {
+				if wsID.Valid {
+					v.WorkspaceID = wsID.Int64
+				}
+				if vsID.Valid {
+					v.VarsetID = vsID.Int64
+				}
+				v.HCL = hclInt != 0
+				v.Sensitive = sensInt != 0
+				allTFVariables = append(allTFVariables, v)
+			}
+		}
+	}
+	var allTFVarsets []SnapshotTFVarset
+	vsRows, err := d.Query(`SELECT id, name, description, global FROM tf_varsets ORDER BY id ASC`)
+	if err == nil {
+		defer vsRows.Close()
+		for vsRows.Next() {
+			var s SnapshotTFVarset
+			var globalInt int
+			if err := vsRows.Scan(&s.ID, &s.Name, &s.Description, &globalInt); err == nil {
+				s.Global = globalInt != 0
+				s.WorkspaceIDs, _ = d.GetTFVarsetWorkspaceIDs(s.ID)
+				allTFVarsets = append(allTFVarsets, s)
+			}
+		}
+	}
+	var allTFPolicies []SnapshotTFPolicy
+	polRows, err := d.Query(`SELECT id, name, description, kind, params, enforcement, enabled, workspace_id FROM tf_policies ORDER BY id ASC`)
+	if err == nil {
+		defer polRows.Close()
+		for polRows.Next() {
+			var p SnapshotTFPolicy
+			var enInt int
+			if err := polRows.Scan(&p.ID, &p.Name, &p.Description, &p.Kind, &p.Params, &p.Enforcement, &enInt, &p.WorkspaceID); err == nil {
+				p.Enabled = enInt != 0
+				allTFPolicies = append(allTFPolicies, p)
+			}
+		}
+	}
+	var allTFModules []SnapshotTFModule
+	modRows, err := d.Query(`SELECT id, name, provider, description FROM tf_modules ORDER BY id ASC`)
+	if err == nil {
+		defer modRows.Close()
+		for modRows.Next() {
+			var m SnapshotTFModule
+			if err := modRows.Scan(&m.ID, &m.Name, &m.Provider, &m.Description); err == nil {
+				vRows, err := d.Query(`SELECT id, module_id, version, files, doc, source_url, created_at FROM tf_module_versions WHERE module_id = ? ORDER BY id ASC`, m.ID)
+				if err == nil {
+					for vRows.Next() {
+						var mv SnapshotTFModuleVersion
+						if err := vRows.Scan(&mv.ID, &mv.ModuleID, &mv.Version, &mv.Files, &mv.Doc, &mv.SourceURL, &mv.CreatedAt); err == nil {
+							m.Versions = append(m.Versions, mv)
+						}
+					}
+					vRows.Close()
+				}
+				allTFModules = append(allTFModules, m)
+			}
+		}
+	}
+	var allTFStates []SnapshotTFState
+	for _, ws := range allTFWorkspaces {
+		latest, err := d.LatestTFStateVersion(ws.ID)
+		if err == nil && latest != nil {
+			allTFStates = append(allTFStates, SnapshotTFState{
+				WorkspaceID:   latest.WorkspaceID,
+				Serial:        latest.Serial,
+				Lineage:       latest.Lineage,
+				Size:          latest.Size,
+				ResourceCount: latest.ResourceCount,
+				SHA256:        latest.SHA256,
+				State:         latest.State,
+				CreatedAt:     latest.CreatedAt,
+			})
+		}
+	}
+
 	return &SnapshotPayload{
 		Version:            1,
 		CreatedAt:          time.Now().UTC(),
@@ -1528,6 +1837,12 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 		AnsiblePlaybooks:   allPlaybooks,
 		AnsibleSchedules:   allSchedules,
 		AnsibleAssets:      allAssets,
+		TerraformWorkspaces: allTFWorkspaces,
+		TerraformVariables:  allTFVariables,
+		TerraformVarsets:    allTFVarsets,
+		TerraformPolicies:   allTFPolicies,
+		TerraformModules:    allTFModules,
+		TerraformStates:     allTFStates,
 	}, nil
 }
 
@@ -1541,7 +1856,12 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 	}
 	defer tx.Rollback()
 
-	tables := []string{"alerts", "incidents", "actual_items", "desired_rules", "hosts", "terminal_presets", "ssh_keys", "kube_clusters", "cloudflare_accounts", "ansible_runs", "ansible_schedules", "ansible_playbooks", "ansible_assets"}
+	tables := []string{
+		"alerts", "incidents", "actual_items", "desired_rules", "hosts", "terminal_presets",
+		"ssh_keys", "kube_clusters", "cloudflare_accounts",
+		"ansible_runs", "ansible_schedules", "ansible_playbooks", "ansible_assets",
+		"tf_runs", "tf_state_versions", "tf_variables", "tf_varset_workspaces", "tf_varsets", "tf_policies", "tf_module_versions", "tf_modules", "tf_workspaces",
+	}
 	for _, t := range tables {
 		if _, err := tx.Exec("DELETE FROM " + t); err != nil {
 			return fmt.Errorf("clear %s: %w", t, err)
@@ -1670,6 +1990,85 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 			p.ID, hid, p.Name, p.Command, p.SortOrder, useTmuxInt)
 	}
 
+	for _, w := range payload.TerraformWorkspaces {
+		_, err := tx.Exec(`
+			INSERT INTO tf_workspaces (
+				id, name, description, environment, tags, binary, source, files,
+				git_url, git_branch, git_path, git_auth, git_token, git_key_id,
+				webhook_token, webhook_secret, drift_interval_minutes, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`,
+			w.ID, w.Name, w.Description, w.Environment, w.Tags, w.Binary, w.Source, w.Files,
+			w.GitURL, w.GitBranch, w.GitPath, w.GitAuth, w.GitToken, w.GitKeyID,
+			w.WebhookToken, w.WebhookSecret, w.DriftIntervalMinutes, w.CreatedAt, w.UpdatedAt,
+		)
+		if err != nil {
+			return fmt.Errorf("insert tf workspace %d: %w", w.ID, err)
+		}
+	}
+	for _, vs := range payload.TerraformVarsets {
+		_, err := tx.Exec(`INSERT INTO tf_varsets (id, name, description, global) VALUES (?, ?, ?, ?)`,
+			vs.ID, vs.Name, vs.Description, boolToInt(vs.Global))
+		if err != nil {
+			return fmt.Errorf("insert tf varset %d: %w", vs.ID, err)
+		}
+		for _, wsID := range vs.WorkspaceIDs {
+			_, err := tx.Exec(`INSERT INTO tf_varset_workspaces (varset_id, workspace_id) VALUES (?, ?)`, vs.ID, wsID)
+			if err != nil {
+				return fmt.Errorf("insert tf varset workspace link (%d, %d): %w", vs.ID, wsID, err)
+			}
+		}
+	}
+	for _, v := range payload.TerraformVariables {
+		var wsID, vsID any
+		if v.WorkspaceID > 0 {
+			wsID = v.WorkspaceID
+		}
+		if v.VarsetID > 0 {
+			vsID = v.VarsetID
+		}
+		_, err := tx.Exec(`
+			INSERT INTO tf_variables (id, workspace_id, varset_id, key, value, category, hcl, sensitive, description)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, v.ID, wsID, vsID, v.Key, v.Value, v.Category, boolToInt(v.HCL), boolToInt(v.Sensitive), v.Description)
+		if err != nil {
+			return fmt.Errorf("insert tf variable %d: %w", v.ID, err)
+		}
+	}
+	for _, p := range payload.TerraformPolicies {
+		_, err := tx.Exec(`
+			INSERT INTO tf_policies (id, name, description, kind, params, enforcement, enabled, workspace_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`, p.ID, p.Name, p.Description, p.Kind, p.Params, p.Enforcement, boolToInt(p.Enabled), p.WorkspaceID)
+		if err != nil {
+			return fmt.Errorf("insert tf policy %d: %w", p.ID, err)
+		}
+	}
+	for _, m := range payload.TerraformModules {
+		_, err := tx.Exec(`INSERT INTO tf_modules (id, name, provider, description) VALUES (?, ?, ?, ?)`,
+			m.ID, m.Name, m.Provider, m.Description)
+		if err != nil {
+			return fmt.Errorf("insert tf module %d: %w", m.ID, err)
+		}
+		for _, mv := range m.Versions {
+			_, err := tx.Exec(`
+				INSERT INTO tf_module_versions (id, module_id, version, files, doc, source_url, created_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?)
+			`, mv.ID, mv.ModuleID, mv.Version, mv.Files, mv.Doc, mv.SourceURL, mv.CreatedAt)
+			if err != nil {
+				return fmt.Errorf("insert tf module version %d: %w", mv.ID, err)
+			}
+		}
+	}
+	for _, st := range payload.TerraformStates {
+		_, err := tx.Exec(`
+			INSERT INTO tf_state_versions (workspace_id, run_id, serial, lineage, source, size, resource_count, sha256, state, created_at)
+			VALUES (?, 0, ?, ?, 'import', ?, ?, ?, ?, ?)
+		`, st.WorkspaceID, st.Serial, st.Lineage, st.Size, st.ResourceCount, st.SHA256, st.State, st.CreatedAt)
+		if err != nil {
+			return fmt.Errorf("insert tf state version for workspace %d: %w", st.WorkspaceID, err)
+		}
+	}
 	for k, v := range payload.Settings {
 		_, err := tx.Exec(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, k, v)
 		if err != nil {

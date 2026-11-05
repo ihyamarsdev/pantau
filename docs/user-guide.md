@@ -31,6 +31,7 @@ Pantau operates **100% agentless** over standard SSH (`port 22`). It requires ze
    - [Managing External Kubernetes Clusters (EKS, GKE, AKS & Custom Kubeconfig)](#managing-external-kubernetes-clusters-eks-gke-aks--custom-kubeconfig)
    - [Managing Cloudflare via REST API v4](#managing-cloudflare-via-rest-api-v4)
    - [Ansible Playbooks (Semaphore-Style, Agentless)](#ansible-playbooks-semaphore-style-agentless)
+   - [Terraform Management (Terraform Cloud-Style, Local CLI)](#terraform-management-terraform-cloud-style-local-cli)
    - [Multi-Host Side-by-Side Comparison & Scoring Matrix](#multi-host-side-by-side-comparison--scoring-matrix)
 5. [Phase 4: File Operations & Cross-Host Data Transfer](#5-phase-4-file-operations--cross-host-data-transfer)
    - [Cross-Host Transfer (Zero-Disk Memory Pipes)](#cross-host-transfer-zero-disk-memory-pipes)
@@ -691,6 +692,144 @@ Rules: scheduled runs use the same limits as manual runs (1 active run per playb
 - **Retention Policy**:
   - Pantau automatically retains the latest **100 finished runs per playbook**. Older runs are pruned automatically.
   - Run histories are stored locally in SQLite (`ansible_runs`) and are excluded from system snapshots to preserve compact backup sizes.
+
+### Terraform Management (Terraform Cloud-Style, Local CLI)
+
+Pantau includes a self-hosted, centralized Terraform and OpenTofu management subsystem inspired by HCP Terraform (formerly Terraform Cloud). Operators can manage isolated **Workspaces**, run full execution pipelines (`plan` → `policy check` → `cost estimate` → `approval gate` → `apply`), track immutable **State Versions** with visual diffs and rollback, manage shared **Variable Sets**, enforce built-in **Policy as Code**, view **Private Module** documentation, schedule automated **Drift Detection**, and integrate with Git VCS and webhooks—with **zero remote backend dependencies**.
+
+#### Enabling the Terraform Gate
+
+Terraform configurations can execute arbitrary commands on the controller via `provisioner "local-exec"`, `data "external"`, and third-party modules. Because Terraform cannot be safely sandboxed without heavy virtualization:
+1. The **Terraform Gate** (`terraform_enabled`) is **disabled by default**.
+2. Before any workspace or run can be created or executed, an administrator must navigate to **Terraform → Settings** and toggle the gate on.
+3. Enabling the gate requires confirming an explicit security prompt acknowledging that admin access in Pantau with Terraform enabled is equivalent to local process execution on the server host.
+4. Pantau automatically inspects the server for local `terraform` and `tofu` binaries (as well as optional `infracost`). The active binaries and versions are displayed in the status banner.
+
+#### Creating and Configuring a Workspace
+
+A Workspace represents an isolated infrastructure environment (configuration, variables, state, and run history):
+1. In the **Side Panel**, navigate to **Terraform → Workspaces** and click **New Workspace**.
+2. Configure the workspace settings:
+   - **Name**: Unique case-insensitive identifier (`^[A-Za-z0-9_-]{1,64}$`).
+   - **Environment**: Logical tag (`production`, `staging`, `development`).
+   - **Binary**: Choose whether to run plans and applies using `terraform` or `tofu`.
+   - **Tags**: Comma-separated labels for organizing and filtering workspaces.
+   - **Configuration Source**:
+     - **Inline Files**: Store up to 50 files (max 256 KiB per file; `.tf`, `.tfvars`, `.json`, `.yaml`, etc.) directly in Pantau's database.
+     - **Git Repository**: Provide a repository URL (`https://` or `ssh://`), target branch, working directory within the repository (default root), and credentials (token or SSH Key from the Library).
+3. Workspaces are allocated a private working directory on the server (`<DataRoot>/terraform/<workspaceID>`) with `0700` filesystem permissions.
+
+#### Running a Pipeline: Plan, Approve, and Apply
+
+Pantau enforces an auditable, multi-stage run lifecycle:
+
+1. **Triggering a Run**:
+   Click **New Run** on a workspace:
+   - **Type**: Standard `plan` (forward plan to apply), `destroy` (plan destruction of managed resources), or `refresh` (refresh-only plan to reconcile state).
+   - **Speculative Plan**: Run a temporary dry-run plan (useful for testing branch changes) that will not proceed to apply.
+   - **Target / Replace**: Restrict execution to specific resource addresses using standard target syntax.
+   - **Message**: Optional commit or execution note.
+2. **Planning & Pre-Flight Checks**:
+   Pantau materializes the latest state from the database, sets up clean environment variables, writes variables to `pantau.auto.tfvars.json` / `pantau-hcl.auto.tfvars`, and executes `init` and `plan -out=tfplan`.
+   - Real-time stdout/stderr streams into the Console Log viewer.
+   - A structured visual plan diff is generated showing resource additions (`+`), modifications (`~`), replacements (`-/+`), and deletions (`-`).
+3. **Policy as Code Evaluation**:
+   If policies are configured, Pantau automatically evaluates the plan JSON against active rules:
+   - `advisory`: Informational warning; does not block approval.
+   - `soft`: Blocks standard approval until explicitly acknowledged via **Override Policy** checkbox.
+   - `hard`: Strictly rejects the run; apply cannot be executed (`policy_failed`).
+4. **Cost Estimation (Infracost)**:
+   If the `infracost` CLI binary is installed on the Pantau server and an `INFRACOST_API_KEY` is provided in environment variables, Pantau calculates the estimated monthly cost before and after the run, reporting the net cost delta. If Infracost is not installed, the step is skipped cleanly without failing the run.
+5. **The Approval Gate**:
+   When a run introduces infrastructure changes (`has_changes = true`), execution pauses at `awaiting_approval`:
+   - **Confirm & Apply**: Applies the plan. An operator comment is **mandatory** (minimum 3 characters) for auditing.
+   - **Discard**: Discards the planned changes. An operator comment is **mandatory**.
+   - If policy checks generated `soft` warnings, the operator must tick **Override Policy** to enable the confirm button.
+6. **Applying Changes**:
+   When confirmed, Pantau runs `apply tfplan` using the retained execution workspace. Once finished, a new immutable **State Version** is recorded in SQLite, outputs are captured, and the temporary run directory is cleaned up.
+
+#### State Versions, Diff, Rollback, and Workspace Locking
+
+Pantau uses SQLite as the authoritative source of truth for Terraform state, eliminating the need for remote S3 backends:
+- **State Versions**: Every successful apply, refresh, or manual import creates a new sequential state entry recording the serial number, lineage, resource count, and SHA-256 checksum.
+- **Visual State Diff**: Compare any two historical state versions side-by-side to review added, removed, or modified resources and attributes.
+- **State Rollback**: Roll back to a previous state version with one click. Pantau preserves lineage, increments the serial number (`current.serial + 1`), and records the rollback as a new state version, preventing serial number collisions.
+- **Raw Download & Import**: Administrators can download the full `.tfstate` JSON (with security warnings regarding sensitive data) or import existing state files up to 16 MiB.
+- **Workspace Locking**:
+  - **Automatic Lock**: Workspaces are automatically locked (`locked_by = "run:<id>"`) while a run is queued, planning, awaiting approval, or applying.
+  - **Manual Lock**: Administrators can lock a workspace with a custom reason to halt automated triggers during maintenance.
+  - **Force Unlock**: If a run crashes or hangs, the administrator can perform an emergency Force Unlock, which cancels the active run, unlocks the database, and clears residual `.terraform.tfstate.lock.info` files on disk.
+
+#### Variables and Variable Sets
+
+Manage configuration variables cleanly without hardcoding values in `.tf` files:
+- **Categories**:
+  - `terraform`: Injected into execution as Terraform input variables. Non-HCL variables are safely formatted into `pantau.auto.tfvars.json`; HCL variables are formatted into `pantau-hcl.auto.tfvars`.
+  - `env`: Injected as process environment variables (e.g. `AWS_ACCESS_KEY_ID`, `ARM_CLIENT_SECRET`).
+- **Sensitive Values**: Sensitive variables are strictly **write-only**. Their values are masked as `(sensitive)` in execution logs, never returned in API responses (`json:"-"`), and hidden in the UI.
+- **Variable Sets**: Group related variables together (e.g., *Production Cloud Credentials*, *Global DNS Configuration*) and attach them to multiple workspaces, or mark the set as **Global** to apply across all workspaces automatically.
+- **Resolution Precedence**: Workspace variables take precedence over attached Variable Sets, which take precedence over Global Variable Sets.
+
+#### Outputs
+
+Inspect outputs produced by the latest applied state in the **Outputs** panel:
+- Displays output name, JSON value, and type.
+- Sensitive outputs (marked `sensitive = true` in HCL) are masked by default (`null`, `value_hidden: true`) and can be revealed on demand via the **Reveal** toggle by authenticated administrators.
+- Includes quick 1-click clipboard copy for connection strings and IP addresses.
+
+#### Private Module Catalog
+
+Maintain an internal catalog of reusable Terraform and OpenTofu modules:
+1. Register a module with its name and provider (e.g. `vpc / aws`, `cluster / kubernetes`).
+2. Upload module versions using inline files or connect a Git repository.
+3. Pantau's built-in HCL parser automatically inspects the code and renders:
+   - Comprehensive input variable tables (names, types, descriptions, default values, required status).
+   - Output declarations and descriptions.
+   - Declared resource types and required provider versions.
+   - Formatted `README.md` documentation.
+   - Ready-to-copy `module "name" { ... }` configuration snippet.
+
+#### Scheduled Drift Detection
+
+Automate vigilance against out-of-band changes:
+1. Set a **Drift Check Interval** (e.g., every 60, 360, or 1440 minutes) in workspace settings.
+2. Pantau's background scheduler automatically triggers speculative `-refresh-only` runs without applying any changes.
+3. If deviations are discovered between real infrastructure and the state file, the workspace status flags **Drift Detected**, recording the drifted resources for operator review.
+
+#### Policies and Cost Estimation
+
+Enforce governance and track infrastructure spending before applying changes:
+- **Built-in Policies**: Configure guardrails without complex policy languages:
+  - `deny_destroy`: Rejects any run that plans resource deletions.
+  - `max_deletes`: Caps the number of permitted resource deletions.
+  - `max_changes`: Caps total resource modifications.
+  - `deny_resource_types`: Denies creation of specified cloud resource types.
+  - `require_tags`: Validates that mandatory tags are assigned to resources.
+  - `deny_open_cidr`: Prevents security groups with open `0.0.0.0/0` ingress rules.
+- **Infracost Integration**:
+  Install the `infracost` CLI on the Pantau server host. Provide your `INFRACOST_API_KEY` in environment variables. Every planned run will automatically evaluate cost breakdowns, reporting monthly project costs and net deltas directly in the run summary.
+
+#### Git VCS and Webhook Setup
+
+Automate planning when code is pushed to your version control system:
+1. In Workspace Settings, enable **Webhook Integration** and copy the generated webhook URL (`/api/terraform/webhook/{token}`).
+2. (Optional) Generate or configure a **Webhook Secret** for cryptographic signature validation.
+3. Configure your Git repository:
+   - **GitHub**: Under **Repository Settings → Webhooks**, set the Payload URL, choose `application/json`, select the **Push** event, and paste the webhook secret (validated via `X-Hub-Signature-256`).
+   - **GitLab**: Under **Settings → Webhooks**, set the URL, paste the secret token into **Secret token** (validated via `X-Gitlab-Token`), and enable **Push events**.
+4. **Safety Guarantee**: Webhooks **only trigger speculative or standard Plan runs** when a commit is pushed to the configured workspace branch. Webhooks **never execute an Apply automatically**. All production changes remain guarded behind the Approval Gate.
+
+#### Honest Limitations and Non-Goals
+
+To maintain a compact, agentless, and maintainable architecture, several enterprise features are intentionally out of scope:
+- **No Remote/S3 State Backend**: Pantau uses local SQLite storage. Remote backend configurations (`backend "s3"` / `backend "remote"`) in workspace code are not used.
+- **No Auto-Apply**: Production changes cannot be configured to auto-apply on push; human review via the Approval Gate is mandatory.
+- **No OPA / Rego / Sentinel**: Policies are restricted to built-in Go evaluators.
+- **No Dynamic OIDC Credentials**: Cloud credentials must be passed as sensitive `env` variables; dynamic STS/OIDC token exchanges are not natively managed.
+- **No Public Registry Protocol**: The module catalog is a documentation and exploration interface, not an HTTP `terraform init` registry endpoint.
+- **No Windows Controller**: While Pantau can run on Windows, Terraform/OpenTofu workspace execution is disabled on Windows hosts (`Detect()` reports unsupported).
+- **Binaries**: The official Docker image ships `terraform`, `tofu` (OpenTofu) and `infracost`; on non-Docker installs put `terraform` or `tofu` in `PATH`. Infracost needs an `INFRACOST_API_KEY` env variable on the Workspace or Variable Set.
+- **Concurrency Bounded**: Maximum 1 active run per workspace and 3 active runs globally. Excess requests receive HTTP 409 or 429.
 ### Evaluating Server Longevity with Lifecycle Assessment
 
 Pantau continuously calculates an auditable **Lifecycle Score** (0–100) based on six weighted factors:

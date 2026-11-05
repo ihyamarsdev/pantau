@@ -101,6 +101,7 @@ type Server struct {
 	ansibleAvail      func() (string, string, error)
 	ansibleMgr        *AnsibleRunManager
 	ansibleLibDir     string // shared role/collection library; "" disables it
+	tfMgr             *TerraformRunManager
 }
 
 func (s *Server) prepareHTML(raw []byte) {
@@ -168,6 +169,16 @@ func (s *Server) SetVersion(version string) {
 func (s *Server) SetDocsFS(dfs fs.FS) {
 	s.docsFS = dfs
 }
+func (s *Server) SetTerraformRunManager(mgr *TerraformRunManager) {
+	s.tfMgr = mgr
+}
+
+func (s *Server) SetTerraformDataDir(dataDir string) {
+	if s.db != nil {
+		s.tfMgr = NewTerraformRunManager(s.db, dataDir, nil, nil)
+	}
+}
+
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
@@ -257,6 +268,18 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/ansible/runs/", s.authMiddleware(s.handleAnsibleRunRoute))
 	s.mux.HandleFunc("/api/ansible/schedules", s.authMiddleware(s.handleAnsibleSchedules))
 	s.mux.HandleFunc("/api/ansible/schedules/", s.authMiddleware(s.handleAnsibleScheduleRoute))
+	// Terraform Management
+	s.mux.HandleFunc("/api/terraform/status", s.authMiddleware(s.handleTerraformStatus))
+	s.mux.HandleFunc("/api/terraform/workspaces", s.authMiddleware(s.handleTerraformWorkspaces))
+	s.mux.HandleFunc("/api/terraform/workspaces/", s.authMiddleware(s.handleTerraformWorkspaceRoute))
+	s.mux.HandleFunc("/api/terraform/runs/", s.authMiddleware(s.handleTerraformRunRoute))
+	s.mux.HandleFunc("/api/terraform/varsets", s.authMiddleware(s.handleTerraformVarsets))
+	s.mux.HandleFunc("/api/terraform/varsets/", s.authMiddleware(s.handleTerraformVarsetRoute))
+	s.mux.HandleFunc("/api/terraform/policies", s.authMiddleware(s.handleTerraformPolicies))
+	s.mux.HandleFunc("/api/terraform/policies/", s.authMiddleware(s.handleTerraformPolicyRoute))
+	s.mux.HandleFunc("/api/terraform/modules", s.authMiddleware(s.handleTerraformModules))
+	s.mux.HandleFunc("/api/terraform/modules/", s.authMiddleware(s.handleTerraformModuleRoute))
+	s.mux.HandleFunc("/api/terraform/webhook/", s.handleTerraformWebhook) // public, bypasses authMiddleware
 	// SSH Direct-TCPIP Reverse Proxy Tunnel
 	s.mux.HandleFunc("/api/tunnel/", s.authMiddleware(s.handleTunnel))
 	s.mux.HandleFunc("/ws/pkg/upgrade", s.authMiddleware(s.handleWSPkgUpgrade))

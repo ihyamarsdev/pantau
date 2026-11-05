@@ -320,6 +320,22 @@ func main() {
 	server.SetUpdaterManager(updaterMgr)
 	server.SetAnsibleLibraryDir(filepath.Join(filepath.Dir(dbPath), "ansible-library"))
 	server.StartAnsibleScheduler(ctx)
+	tfDataDir := filepath.Join(filepath.Dir(dbPath), "terraform")
+	server.SetTerraformDataDir(tfDataDir)
+	_, _ = db.MarkTFRunsInterrupted()
+	// Clean up awaiting_approval runs whose run directory was lost
+	if awaitingRuns, err := db.ListTFRuns(0, 200); err == nil {
+		for _, r := range awaitingRuns {
+			if r.Status == "awaiting_approval" {
+				runDir := filepath.Join(tfDataDir, strconv.FormatInt(r.WorkspaceID, 10), "runs", strconv.FormatInt(r.ID, 10))
+				if _, err := os.Stat(runDir); os.IsNotExist(err) {
+					_ = db.FinishTFRun(r.ID, "interrupted", nil, r.Log)
+					_ = db.UnlockTFWorkspace(r.WorkspaceID)
+				}
+			}
+		}
+	}
+	server.StartTerraformDriftScheduler(ctx)
 	server.SetDocsFS(embeddedDocs)
 	listener, port, err := listenPort(port, portExplicit)
 	if err != nil {

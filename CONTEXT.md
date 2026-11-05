@@ -563,3 +563,43 @@ _Avoid_: Mass exec, fleet command, multi-host terminal
 **Package Upgrade**:
 Aksi menerapkan pembaruan paket (`all`, atau `security` pada dnf/yum) di sebuah Host setelah pratinjau, mengikuti Docker Privilege Fallback; tanpa reboot otomatis dan tanpa rollback.
 _Avoid_: Patch run, system update, auto-update
+
+**Terraform Workspace**:
+Unit terisolasi (config + variabel + state + riwayat run) untuk satu environment.
+_Avoid_: Stack, project, environment folder
+
+**Terraform Run**:
+Satu siklus eksekusi (plan → policy check → cost estimate → approval → apply) pada Workspace.
+_Avoid_: Job, pipeline, build
+
+**Approval Gate**:
+Tahap wajib di mana Run dengan perubahan menunggu Confirm & Apply / Discard dengan komentar wajib.
+_Avoid_: Manual step, review
+
+**State Version**:
+Salinan immutable `terraform.tfstate` yang dicatat di DB setiap apply/refresh/rollback/import. DB = sumber kebenaran; file di disk dimaterialisasi sebelum tiap run.
+_Avoid_: State backup, snapshot
+
+**Workspace Lock**:
+Kunci Pantau yang mencegah Run baru (manual atau otomatis selama Run aktif); Force Unlock untuk darurat.
+_Avoid_: Mutex, state lock file
+
+**Variable Set**:
+Kumpulan variabel yang dibagikan ke banyak Workspace (atau global).
+_Avoid_: Shared vars, env group
+
+**Terraform Drift**:
+Perbedaan infrastruktur riil vs state yang terdeteksi plan `-refresh-only` (beda dari **Drift** inspeksi Host).
+_Avoid_: Config drift, mismatch
+
+**Policy Check**:
+Evaluasi aturan bawaan (Go) atas plan JSON dengan level `advisory` / `soft` / `hard`. Bukan OPA/Sentinel.
+_Avoid_: Compliance scan
+
+**Cost Estimate**:
+Estimasi delta biaya bulanan via biner `infracost` bila terpasang.
+_Avoid_: Billing
+
+**Terraform Gate**:
+Saklar opt-in admin (`terraform_enabled`, default mati) sebelum Run dapat dijalankan.
+_Avoid_: Feature flag
