@@ -259,6 +259,15 @@ Pantau inspects remote hosts via non-interactive SSH commands, continuously vali
 - **Curated Zone Settings Allowlist**: Safely toggle essential security and performance options: SSL Mode (`off`, `flexible`, `full`, `strict`), Always Use HTTPS, Security Level, Development Mode, Minimum TLS Version, and Automatic HTTPS Rewrites.
 - **Zero-Exposure Credential Safety**: Scoped API Tokens are stored securely in SQLite like SSH private keys, excluded from API JSON responses, and protected inside encrypted System Snapshots.
 
+### 30. 📜 Ansible Playbooks (Semaphore-Style, Agentless)
+- **Dynamic Inventory from Existing Fleet**: Execute Ansible Playbooks against target hosts and groups with zero static inventory files. Pantau automatically generates JSON inventories on the fly combining host addresses, SSH users, ports, and credentials from the SSH Key Library.
+- **Local CLI Execution Engine**: Executes playbooks via local `ansible-playbook` CLI on the Pantau server with live stdout/stderr streaming into an in-browser log viewer (polling byte offset every 1s with smart auto-scroll).
+- **Multi-Mode Operations**: Supports standard `run`, dry-run simulation (`check`), change comparison (`diff`), and syntax validation (`syntax`).
+- **Administrative Ansible Gate & Security Isolation**: Guarded by an explicit opt-in switch (`ansible_enabled`). Runs execute in sterile child environments with isolated `0600` private key files in `0700` temporary workspaces that are guaranteed wiped upon run completion, cancellation, or error.
+- **Rolling History & Snapshot Safety**: Automatically retains the latest 100 finished runs per playbook. Playbook definitions are backed up into AES-256-GCM encrypted System Snapshots.
+- **Git Playbook Source**: Run playbooks straight from a Git repository (`https://`, `ssh://` or `user@host:path`, branch/tag, per-repo path, none / access token / SSH Key Library auth). The repo is shallow-cloned per run so `roles/`, `group_vars/` and `files/` work; tokens never appear in args, logs or API responses, and the commit that ran is recorded in the run history.
+- **Cron Schedules**: Run playbooks unattended on a 5-field cron expression (server local time) against fixed Hosts or a Host Group, in any mode. Occurrences missed while Pantau was down or the Ansible Gate was off are skipped, never replayed.
+
 ---
 
 ## 🚀 Quick Start

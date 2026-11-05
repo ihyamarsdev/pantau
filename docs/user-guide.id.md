@@ -28,6 +28,9 @@ Pantau beroperasi **100% agentless** melalui protokol standar SSH (`port 22`). S
    - [In-App Activity Console & Live Telemetry Stream](#in-app-activity-console--live-telemetry-stream)
    - [Diagnostik Jaringan Agentless & Analisis Hop](#diagnostik-jaringan-agentless--analisis-hop)
    - [Evaluasi Kelayakan Server dengan Lifecycle Assessment](#evaluasi-kelayakan-server-dengan-lifecycle-assessment)
+   - [Pengelolaan Klaster Kubernetes Eksternal (EKS, GKE, AKS & Kubeconfig Mandiri)](#pengelolaan-klaster-kubernetes-eksternal-eks-gke-aks--kubeconfig-mandiri)
+   - [Pengelolaan Cloudflare via REST API v4](#pengelolaan-cloudflare-via-rest-api-v4)
+   - [Ansible Playbooks (Gaya Semaphore, Agentless)](#ansible-playbooks-gaya-semaphore-agentless)
    - [Evaluasi Komparatif Multi-Host & Matriks Penilaian](#evaluasi-komparatif-multi-host--matriks-penilaian)
 5. [Fase 4: Operasi Berkas & Aliran Data Lintas-Host](#5-fase-4-operasi-berkas--aliran-data-lintas-host)
    - [Cross-Host Transfer (Pipa Memori Tanpa Disk Lokal)](#cross-host-transfer-pipa-memori-tanpa-disk-lokal)
@@ -516,6 +519,105 @@ Tab **Settings** menyajikan pengaturan terpilih dari daftar izin (*allowlist*):
 - **Perlindungan Token**: API Token disimpan di basis data SQLite lokal setara dengan kunci privat SSH, tidak pernah diekspos melalui respons REST API (`json:"-"`), disensor dari logging, serta terenkripsi di dalam **System Snapshot** (AES-256-GCM).
 - **Pencegahan SSRF & Path Injection**: Panggilan keluar dipatok tetap ke `https://api.cloudflare.com/client/v4`, dan identifier URL divalidasi dengan regex heksadesimal 32 karakter `^[0-9a-f]{32}$`.
 - **Batas Non-Goals**: Cloudflare Workers, R2 Storage, Cloudflare Tunnels (`cloudflared`), aturan WAF/Firewall kustom, dan Page Rules berada di luar cakupan Pantau dan tetap dikelola melalui dasbor resmi Cloudflare.
+
+### Ansible Playbooks (Gaya Semaphore, Agentless)
+
+Pantau menyediakan subsistem otomatisasi Ansible terintegrasi yang terinspirasi dari Semaphore UI. Administrator dapat menyimpan Ansible Playbook langsung di basis data lokal SQLite Pantau, mengeksekusinya terhadap sekumpulan Host atau Host Group, memantau aliran log output tugas secara langsung, dan meninjau riwayat eksekusi—**tanpa memerlukan berkas inventori terpisah atau brankas kunci eksternal**.
+
+Bagian **Ansible** dibagi menjadi tab **Playbook** (daftar, pencarian, dan pembuatan playbook), **Jadwal** (otomatisasi cron), dan **Pengaturan** (Ansible Gate dan peringatan keamanan). Status gate selalu terlihat di header; klik status untuk membuka Pengaturan.
+
+#### Ansible Gate (Keamanan & Aktivasi)
+
+Ansible Playbook dijalankan **langsung pada server Pantau dengan hak akses proses Pantau**. Karena fitur bawaan Ansible seperti `connection: local`, `delegate_to: localhost`, `local_action`, dan modul lookup mengeksekusi perintah atau membaca berkas di mesin master controller, playbook tidak dapat disandbox secara sempurna.
+
+Untuk mencegah eksekusi yang tidak diinginkan:
+1. **Ansible Gate** (`ansible_enabled`) berada dalam kondisi **nonaktif secara default**.
+2. Sebelum playbook apa pun dapat dieksekusi, administrator harus membuka **Ansible → Pengaturan** di Side Panel dan mengaktifkan saklar melalui banner antarmuka.
+3. Pengaktifan gerbang mewajibkan konfirmasi dialog keamanan eksplisit yang menegaskan bahwa sesi admin Pantau dengan Ansible aktif setara dengan akses eksekusi di server master.
+4. Sistem juga memverifikasi keberadaan biner `ansible-playbook` di `PATH` server Pantau.
+
+#### Menulis & Menyimpan Playbook
+
+1. Pada **Side Panel**, pilih **Ansible → Playbook** lalu klik tombol **Playbook Baru**.
+2. Masukkan **Nama** yang deskriptif (1–64 karakter, unik *case-insensitive*) dan **Deskripsi** opsional.
+3. Tulis isi playbook YAML (hingga 256 KiB) menggunakan editor CodeMirror mode YAML yang terintegrasi.
+4. (Opsional) Masukkan nilai **Extra Vars** bawaan dalam format objek JSON yang valid (hingga 64 KiB).
+5. Simpan playbook. Definisi playbook disimpan di SQLite dan otomatis diikutsertakan dalam cadangan **System Snapshot** terenkripsi.
+
+#### Menjalankan Playbook
+
+Klik tombol **Run** pada baris playbook untuk membuka dialog eksekusi:
+
+1. **Pemilihan Target**:
+   - **Host Spesifik**: Pilih host individual dari daftar pencarian host.
+   - **Host Group**: Pilih satu atau beberapa grup via tombol chip. Target eksekusi dihitung secara otomatis sebagai gabungan (*union*) dari host individual terpilih dan seluruh host anggota grup yang dipilih.
+   - Maksimal 200 target host didukung dalam satu proses eksekusi run.
+2. **Pilihan Mode Eksekusi**:
+   - **Run (`run`)**: Eksekusi playbook normal terhadap target.
+   - **Check (`check`)**: Mode simulasi *dry-run* menggunakan opsi `--check` (tanpa menerapkan perubahan nyata pada host).
+   - **Diff (`diff`)**: Pratinjau perbandingan perubahan menggunakan opsi `--check --diff`.
+   - **Syntax (`syntax`)**: Pemeriksaan sintaksis dan struktur YAML menggunakan `--syntax-check` (dapat dijalankan dengan 0 target host).
+3. **Parameter Eksekusi**:
+   - **Extra Vars**: Timpa nilai variabel JSON bawaan khusus untuk run ini.
+   - **Tags & Skip Tags**: Filter tag dipisahkan koma yang mematuhi regex `^[A-Za-z0-9_.,:-]{1,256}$`.
+   - **Verbosity**: Pilih tingkat rincian log dari `0` (normal), `1` (`-v`), `2` (`-vv`), hingga `3` (`-vvv`).
+   - **Forks**: Jumlah koneksi host simultan (1–20, bawaan 5).
+   - **Become (Sudo)**: Aktifkan saklar `--become` untuk eskalasi hak akses sudo tanpa kata sandi.
+
+#### Generated Inventory & Lingkungan Anak yang Steril
+
+Saat eksekusi dimulai, Pantau melakukan langkah-langkah otomatis berikut:
+1. **Inventory JSON Dinamis**: Membangun berkas sementara `inventory.json` dengan struktur grup Ansible `all.hosts` dan `all.children.<group>.hosts`. Variabel koneksi seperti `ansible_host`, `ansible_port`, `ansible_user`, dan `ansible_python_interpreter=auto_silent` disuntikkan secara otomatis.
+2. **Isolasi Berkas Kunci**: Mengambil kunci privat SSH efektif tiap target host dari **SSH Key Library** atau custom key host, menulisnya ke berkas berizin `0600` di dalam direktori kerja sementara `0700` (`os.MkdirTemp`), lalu merujuknya via `ansible_ssh_private_key_file`.
+3. **Lingkungan Steril**: Proses anak `ansible-playbook` hanya mewariskan variabel penting (`PATH`, `LANG=C.UTF-8`, `HOME=<workspace>`, proxy, dan `ANSIBLE_*`). Berkas `ansible.cfg` sementara menonaktifkan pemeriksaan host key (`host_key_checking = False`), mencegah pemuatan konfigurasi tak terduga dari `/etc/ansible` atau `~/.ansible.cfg`, dan menjalankan `ssh` dengan `-F /dev/null` sehingga `~/.ssh/config` yang di-mount (umum di Docker) tidak dapat merusak koneksi (`Bad owner or permissions on /root/.ssh/config`).
+4. **Pembersihan Workspace Terjamin**: Seluruh direktori kerja sementara—termasuk berkas kunci privat dan inventori—selalu dihapus seketika seusai proses selesai, dibatalkan, atau mengalami kegagalan/crash.
+
+#### Playbook dari Repositori Git
+
+Ubah **Sumber** menjadi **Repositori Git** di editor playbook alih-alih menulis YAML inline:
+
+| Field | Keterangan |
+|---|---|
+| URL Repositori | `https://host/org/repo.git`, `ssh://git@host:port/org/repo.git` atau `git@host:org/repo.git`. Kredensial di dalam URL, `file://`, `git://`, `http://`, dan jalur lokal ditolak. |
+| Branch atau tag | Opsional; kosong memakai branch bawaan remote. |
+| Path playbook | Path relatif ke berkas `.yml`/`.yaml` di repositori, mis. `playbooks/site.yml`. Symlink yang keluar dari repositori ditolak. |
+| Autentikasi | **Tanpa** (repo publik); **Access token** (hanya `https://`, mis. personal access token GitHub/GitLab dengan akses baca); **Kunci SSH dari library** (hanya `ssh://` / `user@host:path`, kunci dari *SSH Key Library*). |
+
+Pada setiap run Pantau meng-clone dangkal (`--depth 1`) repositori ke workspace run yang privat, menjalankan `ansible-playbook` dari dalam clone (sehingga `roles/`, `group_vars/`, `host_vars/`, dan `files/` di samping playbook berfungsi), lalu menghapusnya. `ansible.cfg` milik repositori diabaikan. **Commit** yang di-checkout dicetak di awal log (`[pantau] git commit <sha>`) dan ditampilkan di riwayat run. Catatan:
+
+- Access token bersifat write-only: disimpan seperti kunci SSH, tidak pernah dikembalikan API, tidak pernah ada di argumen perintah maupun log, dan mengosongkan field saat mengubah berarti mempertahankan token lama.
+- `git` harus terpasang di server Pantau (sudah ada di image Docker). Editor memberi peringatan bila tidak ada.
+- Submodule dan requirement `ansible-galaxy` tidak diambil; simpan role di dalam repositori.
+- Menghapus kunci SSH yang dipakai sebuah playbook tidak dicegah; run berikutnya gagal dengan pesan yang jelas.
+- Plugin repositori (`library/`, `action_plugins/`, `lookup`) berjalan di server Pantau seperti isi playbook lainnya. Arahkan Pantau hanya ke repositori yang Anda percaya.
+
+#### Jadwal (Cron)
+
+Tab **Ansible → Jadwal** menampilkan tabel jadwal saat Ansible Gate aktif untuk menjalankan playbook tanpa pengawasan. Jika gate nonaktif atau biner Ansible tidak tersedia, tab ini menampilkan petunjuk untuk membuka **Pengaturan**:
+
+1. Klik **Jadwal Baru**, pilih playbook, nama opsional, dan **ekspresi cron** (5 field: menit, jam, hari-dalam-bulan, bulan, hari-dalam-minggu). Preset: tiap 5 menit (`*/5 * * * *`), tiap jam (`0 * * * *`), harian 03:00 (`0 3 * * *`), Minggu 03:00 (`0 3 * * 0`), bulanan (`0 3 1 * *`). Sintaks yang didukung: `*`, angka, rentang `a-b`, daftar `a,b`, langkah `*/n` dan `a-b/n`, serta `@hourly`, `@daily`, `@weekly`, `@monthly`, `@yearly`. Nama bulan/hari belum didukung. Bila hari-dalam-bulan dan hari-dalam-minggu sama-sama dibatasi, salah satunya cukup cocok (cron Vixie).
+2. Pilih target (**Host Group** dan/atau Host tertentu), mode (`run`, `check`, `diff`, `syntax`), tags, extra vars, verbosity, dan become. Target ditentukan saat jadwal berjalan, jadi Host yang ditambahkan ke grup belakangan ikut tercakup.
+3. Waktu mengikuti **zona waktu server Pantau** (ditampilkan di dialog; di Docker atur `TZ`, mis. `TZ=Asia/Jakarta`, jika tidak maka UTC).
+4. Tabel menampilkan run berikutnya, run terakhir (klik nomor run untuk membuka lognya), dan galat terakhir. Gunakan saklar untuk menjeda/melanjutkan jadwal tanpa menghapusnya.
+
+Aturan: run terjadwal memakai batas yang sama dengan run manual (1 run aktif per playbook, 3 global); jadwal yang mendapati playbook sibuk atau batas tercapai **tidak diantrikan**: mencatat `not started: …` lalu menunggu kemunculan berikutnya. Kemunculan yang terlambat lebih dari **5 menit** (Pantau mati atau Ansible Gate nonaktif) **dilewati, tidak pernah dijalankan susulan**, dan galat terakhir menampilkan `missed occurrence … skipped`. Run yang dimulai jadwal diberi label *terjadwal* di riwayat. Jadwal ikut System Snapshot terenkripsi (riwayat run tidak).
+
+#### Pemantauan Log Real-Time & Pembatalan Run
+
+1. **Penampil Log Monospace Live**: Keluaran stdout dan stderr digabungkan dan dialirkan secara langsung ke penampil log Workspace Modal via polling setiap 1 detik (`GET /api/ansible/runs/{id}/log?offset=N`) dengan smart auto-scroll.
+2. **Batas Ukuran Log**: Log run aktif disimpan di buffer memori hingga 2 MiB. Jika keluaran melebihi 2 MiB, bagian awal log akan dipotong (*head truncation*) dan diberi penanda `[pantau] log truncated`.
+3. **Pembatalan**: Klik tombol **Cancel** pada penampil log untuk membatalkan proses run yang sedang berjalan. Pantau mengirim sinyal SIGTERM ke grup proses, disusul SIGKILL setelah 5 detik jika proses belum berhenti.
+4. **Batas Waktu (Timeout)**: Eksekusi dibatasi waktu maksimal bawaan selama 1 jam.
+5. **Penanganan Interupsi**: Jika daemon Pantau dimatikan saat run masih berstatus `queued` atau `running`, run tersebut akan otomatis ditandai `interrupted` saat startup berikutnya.
+
+#### Riwayat Run, Retensi & Batas Konkurensi
+
+- **Batas Konkurensi**:
+  - Maksimal **1 run aktif per playbook** (permintaan bersamaan ditolak HTTP 409).
+  - Maksimal **3 run aktif global** di seluruh sistem Pantau (permintaan melebihi batas ditolak HTTP 429).
+- **Kebijakan Retensi**:
+  - Pantau secara otomatis mempertahankan **100 run selesai terbaru per playbook**. Riwayat yang lebih lama akan dihapus (*pruned*).
+  - Riwayat run disimpan lokal di tabel `ansible_runs` dan dikecualikan dari System Snapshot agar ukuran backup tetap kecil.
 
 ### Evaluasi Kelayakan Server dengan Lifecycle Assessment
 

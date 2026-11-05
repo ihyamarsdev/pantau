@@ -259,6 +259,15 @@ Pantau menginspeksi Host remote melalui perintah SSH non-interaktif, memvalidasi
 - **Daftar Putih Pengaturan Zone (*Zone Settings*)**: Sesuaikan opsi keamanan dan performa esensial secara aman: SSL Mode (`off`, `flexible`, `full`, `strict`), Always Use HTTPS, Security Level, Development Mode, Minimum TLS Version, dan Automatic HTTPS Rewrites.
 - **Keamanan Kredensial Tanpa Paparan**: API Token berlingkup disimpan aman di SQLite lokal seperti kunci privat SSH, tidak pernah dikembalikan oleh endpoint API, dan dilindungi dalam System Snapshot terenkripsi.
 
+### 30. 📜 Ansible Playbooks (Gaya Semaphore, Agentless)
+- **Generated Inventory Otomatis**: Jalankan Ansible Playbook terhadap Host dan Host Group tanpa perlu mengelola berkas inventori statis. Pantau menyusun inventori JSON sementara secara otomatis menggabungkan alamat host, port, pengguna, dan kunci dari SSH Key Library.
+- **Runner Subproses Lokal**: Mengeksekusi playbook via biner `ansible-playbook` lokal di server Pantau dengan streaming log stdout/stderr real-time ke penampil log web (polling offset byte tiap 1 detik dengan smart auto-scroll).
+- **Pilihan Mode Eksekusi**: Mendukung eksekusi normal (`run`), simulasi dry-run (`check`), perbandingan perubahan (`diff`), serta uji sintaksis (`syntax`).
+- **Ansible Gate & Isolasi Keamanan**: Dilindungi saklar opt-in administrator (`ansible_enabled`). Eksekusi berjalan dalam lingkungan steril dengan kunci privat `0600` di direktori sementara `0700` yang dijamin selalu dihapus bersih setelah eksekusi selesai atau dibatalkan.
+- **Retensi Riwayat & Keamanan Snapshot**: Mempertahankan 100 riwayat run terakhir per playbook secara otomatis. Definisi playbook dicadangkan ke dalam System Snapshot terenkripsi AES-256-GCM.
+- **Sumber Playbook dari Git**: Jalankan playbook langsung dari repositori Git (`https://`, `ssh://` atau `user@host:path`, branch/tag, path berkas, autentikasi none / access token / SSH Key Library). Repo di-clone dangkal per run sehingga `roles/`, `group_vars/`, dan `files/` berfungsi; token tidak pernah muncul di argumen, log, maupun respons API, dan commit yang dijalankan tercatat di riwayat run.
+- **Jadwal Cron**: Jalankan playbook otomatis dengan ekspresi cron 5 field (waktu lokal server) terhadap Host tertentu atau Host Group, dalam mode apa pun. Jadwal yang terlewat saat Pantau mati atau Ansible Gate nonaktif dilewati, tidak dijalankan susulan.
+
 ---
 
 ## 🚀 Panduan Memulai Cepat (Quick Start)

@@ -440,6 +440,54 @@ func (d *DB) migrate() error {
 		api_token TEXT NOT NULL DEFAULT '',
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+	CREATE TABLE IF NOT EXISTS ansible_playbooks (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+		description TEXT NOT NULL DEFAULT '',
+		content TEXT NOT NULL DEFAULT '',
+		extra_vars TEXT NOT NULL DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE TABLE IF NOT EXISTS ansible_runs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		playbook_id INTEGER NOT NULL REFERENCES ansible_playbooks(id) ON DELETE CASCADE,
+		playbook_name TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'queued',
+		mode TEXT NOT NULL DEFAULT 'run',
+		targets TEXT NOT NULL DEFAULT '[]',
+		extra_vars TEXT NOT NULL DEFAULT '',
+		tags TEXT NOT NULL DEFAULT '',
+		skip_tags TEXT NOT NULL DEFAULT '',
+		verbosity INTEGER NOT NULL DEFAULT 0,
+		become INTEGER NOT NULL DEFAULT 0,
+		exit_code INTEGER,
+		log TEXT NOT NULL DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		started_at DATETIME,
+		finished_at DATETIME
+	);
+	CREATE INDEX IF NOT EXISTS idx_ansible_runs_playbook_id_id ON ansible_runs(playbook_id, id);
+	CREATE TABLE IF NOT EXISTS ansible_schedules (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		playbook_id INTEGER NOT NULL REFERENCES ansible_playbooks(id) ON DELETE CASCADE,
+		name TEXT NOT NULL DEFAULT '',
+		cron TEXT NOT NULL,
+		enabled INTEGER NOT NULL DEFAULT 1,
+		mode TEXT NOT NULL DEFAULT 'run',
+		host_ids TEXT NOT NULL DEFAULT '[]',
+		group_name TEXT NOT NULL DEFAULT '',
+		extra_vars TEXT NOT NULL DEFAULT '',
+		tags TEXT NOT NULL DEFAULT '',
+		skip_tags TEXT NOT NULL DEFAULT '',
+		verbosity INTEGER NOT NULL DEFAULT 0,
+		become INTEGER NOT NULL DEFAULT 0,
+		next_run_at DATETIME,
+		last_run_at DATETIME,
+		last_run_id INTEGER NOT NULL DEFAULT 0,
+		last_error TEXT NOT NULL DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
 	`
 	_, err := d.Exec(schema)
 	if err != nil {
@@ -447,6 +495,16 @@ func (d *DB) migrate() error {
 	}
 
 	// Idempotent column additions for existing databases
+	for col, typ := range map[string]string{
+		"source": "TEXT NOT NULL DEFAULT 'inline'", "git_url": "TEXT NOT NULL DEFAULT ''", "git_branch": "TEXT NOT NULL DEFAULT ''",
+		"git_path": "TEXT NOT NULL DEFAULT ''", "git_auth": "TEXT NOT NULL DEFAULT 'none'", "git_token": "TEXT NOT NULL DEFAULT ''",
+		"git_key_id": "INTEGER NOT NULL DEFAULT 0",
+	} {
+		_ = d.alterAddColumn("ansible_playbooks", col, typ)
+	}
+	_ = d.alterAddColumn("ansible_runs", "trigger_kind", "TEXT NOT NULL DEFAULT 'manual'")
+	_ = d.alterAddColumn("ansible_runs", "schedule_id", "INTEGER NOT NULL DEFAULT 0")
+	_ = d.alterAddColumn("ansible_runs", "commit_sha", "TEXT NOT NULL DEFAULT ''")
 	_ = d.alterAddColumn("hosts", "net_rx_bytes", "INTEGER DEFAULT 0")
 	_ = d.alterAddColumn("hosts", "net_tx_bytes", "INTEGER DEFAULT 0")
 	_ = d.alterAddColumn("hosts", "net_rx_speed_bps", "INTEGER DEFAULT 0")
@@ -1245,6 +1303,22 @@ type SnapshotCloudflareAccount struct {
 	APIToken  string    `json:"api_token"`
 	CreatedAt time.Time `json:"created_at"`
 }
+type SnapshotAnsiblePlaybook struct {
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Content     string    `json:"content"`
+	ExtraVars   string    `json:"extra_vars"`
+	Source      string    `json:"source,omitempty"`
+	GitURL      string    `json:"git_url,omitempty"`
+	GitBranch   string    `json:"git_branch,omitempty"`
+	GitPath     string    `json:"git_path,omitempty"`
+	GitAuth     string    `json:"git_auth,omitempty"`
+	GitToken    string    `json:"git_token,omitempty"` // snapshot is encrypted (AES-256-GCM), like ssh_keys.private_key
+	GitKeyID    int64     `json:"git_key_id,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
 
 // SnapshotPayload holds the sanitized system configuration for backup and restore.
 type SnapshotPayload struct {
@@ -1257,6 +1331,8 @@ type SnapshotPayload struct {
 	SSHKeys            []SnapshotSSHKey            `json:"ssh_keys,omitempty"`
 	KubeClusters       []SnapshotKubeCluster       `json:"kube_clusters,omitempty"`
 	CloudflareAccounts []SnapshotCloudflareAccount `json:"cloudflare_accounts,omitempty"`
+	AnsiblePlaybooks   []SnapshotAnsiblePlaybook   `json:"ansible_playbooks,omitempty"`
+	AnsibleSchedules   []AnsibleSchedule           `json:"ansible_schedules,omitempty"`
 }
 
 func (d *DB) IsFresh() (bool, error) {
@@ -1376,6 +1452,18 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 			}
 		}
 	}
+	var allPlaybooks []SnapshotAnsiblePlaybook
+	pbRows, err := d.Query("SELECT id, name, description, content, extra_vars, source, git_url, git_branch, git_path, git_auth, git_token, git_key_id, created_at, updated_at FROM ansible_playbooks ORDER BY id ASC")
+	if err == nil {
+		defer pbRows.Close()
+		for pbRows.Next() {
+			var p SnapshotAnsiblePlaybook
+			if err := pbRows.Scan(&p.ID, &p.Name, &p.Description, &p.Content, &p.ExtraVars, &p.Source, &p.GitURL, &p.GitBranch, &p.GitPath, &p.GitAuth, &p.GitToken, &p.GitKeyID, &p.CreatedAt, &p.UpdatedAt); err == nil {
+				allPlaybooks = append(allPlaybooks, p)
+			}
+		}
+	}
+	allSchedules, _ := d.ListAnsibleSchedules(0)
 
 	return &SnapshotPayload{
 		Version:            1,
@@ -1387,6 +1475,8 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 		SSHKeys:            allSSHKeys,
 		KubeClusters:       allClusters,
 		CloudflareAccounts: allCFAccounts,
+		AnsiblePlaybooks:   allPlaybooks,
+		AnsibleSchedules:   allSchedules,
 	}, nil
 }
 
@@ -1400,7 +1490,7 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 	}
 	defer tx.Rollback()
 
-	tables := []string{"alerts", "incidents", "actual_items", "desired_rules", "hosts", "terminal_presets", "ssh_keys", "kube_clusters", "cloudflare_accounts"}
+	tables := []string{"alerts", "incidents", "actual_items", "desired_rules", "hosts", "terminal_presets", "ssh_keys", "kube_clusters", "cloudflare_accounts", "ansible_runs", "ansible_schedules", "ansible_playbooks"}
 	for _, t := range tables {
 		if _, err := tx.Exec("DELETE FROM " + t); err != nil {
 			return fmt.Errorf("clear %s: %w", t, err)
@@ -1431,6 +1521,24 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 			a.ID, a.Name, a.AccountID, a.APIToken, a.CreatedAt)
 		if err != nil {
 			return fmt.Errorf("insert cloudflare account %d: %w", a.ID, err)
+		}
+	}
+	for _, p := range payload.AnsiblePlaybooks {
+		if p.Source == "" {
+			p.Source = "inline"
+		}
+		if p.GitAuth == "" {
+			p.GitAuth = "none"
+		}
+		_, err := tx.Exec(`INSERT INTO ansible_playbooks (id, name, description, content, extra_vars, source, git_url, git_branch, git_path, git_auth, git_token, git_key_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			p.ID, p.Name, p.Description, p.Content, p.ExtraVars, p.Source, p.GitURL, p.GitBranch, p.GitPath, p.GitAuth, p.GitToken, p.GitKeyID, p.CreatedAt, p.UpdatedAt)
+		if err != nil {
+			return fmt.Errorf("insert ansible playbook %d: %w", p.ID, err)
+		}
+	}
+	for _, sc := range payload.AnsibleSchedules {
+		if err := insertAnsibleSchedule(tx, &sc); err != nil {
+			return fmt.Errorf("insert ansible schedule %d: %w", sc.ID, err)
 		}
 	}
 

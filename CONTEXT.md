@@ -515,6 +515,31 @@ _Avoid_: Site, domain entry
 **Zone Setting**:
 Pengaturan zone yang boleh diubah Pantau (allowlist: ssl, always_use_https, security_level, development_mode, min_tls_version, automatic_https_rewrites).
 _Avoid_: CF option, domain configuration
+
+**Ansible Playbook**:
+playbook YAML (nama, deskripsi, isi, extra vars bawaan) yang tersimpan di basis data Pantau.
+_Avoid_: Script, template task, job definition
+
+**Playbook Run**:
+satu eksekusi Ansible Playbook terhadap sekumpulan Host (status, mode, target, exit code, log, durasi).
+_Avoid_: Task, job, build
+
+**Generated Inventory**:
+inventory Ansible sementara yang dibangun otomatis dari Host terpilih (alamat, port, user, kunci SSH efektif) dan Host Group sebagai group Ansible; dihapus setelah run.
+_Avoid_: Static inventory, hosts file
+
+**Ansible Gate**:
+saklar opt-in administrator (`ansible_enabled`, default mati) yang wajib aktif sebelum Playbook dapat dijalankan; dipasangkan dengan deteksi biner `ansible-playbook`.
+_Avoid_: Feature flag, ansible switch
+
+**Git Playbook Source**:
+Sumber Ansible Playbook berupa file YAML di repositori Git (URL https/ssh, branch/tag, path berkas, autentikasi none/token/kunci SSH Library) yang di-clone dangkal ke workspace sementara pada setiap Playbook Run; commit yang dijalankan dicatat pada run.
+_Avoid_: Repository entity, git sync, playbook import
+
+**Ansible Schedule**:
+Jadwal cron 5-field (waktu lokal server Pantau) yang menjalankan Ansible Playbook otomatis terhadap Host/Host Group tetap; kemunculan yang terlewat lebih dari 5 menit dilewati, bukan dijalankan susulan.
+_Avoid_: Cron job, timer, automation rule
+
 **Alert Debounce**:
 Pengaturan (`alert_debounce_runs`, 1–10) yang menahan Incident, Alert, dan notifikasi sebuah Drift sampai terlihat pada N Inspection berturut-turut untuk rule yang sama; kembali sehat selalu menutup langsung.
 _Avoid_: Alert delay, grace period, flap filter

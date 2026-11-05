@@ -3220,6 +3220,11 @@ header {
   font-size: var(--fs-sm);
   color: var(--text);
 }
+.ans-sched-tbl th, .ans-sched-tbl td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--card-border); vertical-align: middle; }
+.ans-sched-tbl tbody tr:last-child td { border-bottom: 0; }
+.ans-sched-err { color: var(--danger); font-size: 11px; margin-top: 2px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ans-preset { cursor: pointer; user-select: none; }
+.ans-hostlist { max-height: 150px; overflow-y: auto; border: 1px solid var(--card-border); border-radius: var(--radius); padding: 8px; display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; background: var(--surface-2); }
 
 /* --- Cloudflare Zone Settings --- */
 .cf-set-group { border: 1px solid var(--card-border); border-radius: var(--radius); overflow: hidden; }
@@ -3233,6 +3238,21 @@ header {
 .cf-set-ctl select { height: 32px; min-width: 150px; font-size: var(--fs-xs); }
 .cf-set-flag { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 999px; background: var(--warning-soft); border: 1px solid var(--warning-border); color: var(--warning); }
 @media (max-width: 560px) { .cf-set-row { flex-direction: column; align-items: flex-start; } }
+
+/* --- Ansible Playbooks Section & Modals --- */
+#ansibleTabs { border-bottom: 1px solid var(--card-border); margin-bottom: 20px; }
+#ansibleTabs .tab { background: transparent; border-top: 0; border-right: 0; border-left: 0; font-family: inherit; display: inline-flex; align-items: center; gap: 6px; }
+.ans-section-panel { flex-direction: column; gap: 16px; min-width: 0; }
+.ans-gate-banner { border: 1px solid var(--card-border); border-radius: var(--radius-lg); padding: 14px 18px; margin-bottom: 20px; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.ans-gate-warn { background: var(--warning-soft); border-color: var(--warning-border); color: var(--warning); }
+.ans-gate-danger { background: var(--danger-soft); border-color: var(--danger-border); color: var(--danger); }
+.ans-gate-info { background: var(--surface-2); border-color: var(--card-border); color: var(--text); }
+.ans-gate-title { font-weight: 600; font-size: var(--fs-md); margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+.ans-gate-desc { font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.5; max-width: 820px; }
+.ans-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: var(--radius-full); font-size: var(--fs-xs); font-weight: 500; cursor: pointer; border: 1px solid var(--card-border); background: var(--surface-2); color: var(--text-muted); user-select: none; transition: all var(--dur) var(--ease); }
+.ans-chip:hover { border-color: var(--border-strong); color: var(--text); background: var(--surface-3); }
+.ans-chip.active { background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent-ring); font-weight: 600; }
+.ans-log-pane { flex: 1; min-height: 0; max-height: none; margin: 0; padding: 12px 16px; background: var(--code-bg); border: 1px solid var(--card-border); border-radius: var(--radius-md); font-family: var(--font-mono); font-size: var(--fs-xs); line-height: 1.5; color: var(--text); overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
 
 /* --- 2FA Setup Well & Recovery Grid --- */
 .qr-well {
@@ -3610,6 +3630,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 <symbol id="i-type" viewBox="0 0 24 24"><path d="M12 4v16" /><path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2" /><path d="M9 20h6" /></symbol>
 <symbol id="i-image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></symbol>
 <symbol id="i-menu" viewBox="0 0 24 24"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></symbol>
+<symbol id="i-ansible" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m14.5 17-2.3-6.5a.6.6 0 0 0-1.1 0L8.8 17"/><path d="M9.8 14.2h3.8"/><circle cx="14.8" cy="17.2" r="1" fill="currentColor"/></symbol>
 </svg>
 
 <div id="loginView" class="login-view-wrapper" style="display: none;">
@@ -3708,6 +3729,10 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
       <button type="button" class="side-panel-item" id="navItemCloudflare" onclick="switchSideNav('cloudflare')" role="tab" aria-selected="false" title="Cloudflare" data-i18n-title="nav_cloudflare">
         <svg class="icon"><use href="#i-cloud"/></svg>
         <span class="side-panel-label" data-i18n="nav_cloudflare">Cloudflare</span>
+      </button>
+      <button type="button" class="side-panel-item" id="navItemAnsible" onclick="switchSideNav('ansible')" role="tab" aria-selected="false" title="Ansible" data-i18n-title="nav_ansible">
+        <svg class="icon"><use href="#i-ansible"/></svg>
+        <span class="side-panel-label" data-i18n="nav_ansible">Ansible</span>
       </button>
     </div>
     <div class="side-panel-footer">
@@ -3942,6 +3967,111 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         </div>
       </div>
     </div>
+    <div id="sectionAnsible" class="app-section" style="display:none;">
+      <div class="section-header" style="margin-bottom:20px;position:relative;z-index:20;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <div>
+            <h2 style="margin:0 0 4px 0;font-size:var(--fs-xl);font-weight:600;" data-i18n="ansible_section_title">Ansible</h2>
+            <p style="margin:0;color:var(--text-muted);font-size:var(--fs-sm);" data-i18n="ansible_section_desc">Store, run, and review agentless Ansible playbooks with inventory generated from Pantau hosts.</p>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <button type="button" class="btn btn-sm header-btn" onclick="switchAnsibleTab('settings')" data-i18n-title="ansible_tab_settings" title="Settings">
+              <span id="ansibleGateStatus" role="status"></span>
+            </button>
+            <button id="btnAnsibleRefresh" class="btn btn-sm header-btn" onclick="refreshAnsibleSection()" title="Refresh" data-i18n-title="refresh" style="height:34px;display:inline-flex;align-items:center;gap:6px;">
+              <svg class="icon icon-sm"><use href="#i-refresh-cw"/></svg> <span data-i18n="refresh">Refresh</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div id="ansibleTabs" class="tabs" role="tablist" aria-label="Ansible" onkeydown="onAnsibleTabKeydown(event)">
+        <button type="button" class="tab active" id="tabAnsiblePlaybooks" data-tab="playbooks" role="tab" aria-selected="true" aria-controls="ansiblePanelPlaybooks" onclick="switchAnsibleTab('playbooks')">
+          <svg class="icon icon-sm"><use href="#i-ansible"/></svg> <span data-i18n="ansible_tab_playbooks">Playbooks</span>
+        </button>
+        <button type="button" class="tab" id="tabAnsibleSchedules" data-tab="schedules" role="tab" aria-selected="false" aria-controls="ansiblePanelSchedules" tabindex="-1" onclick="switchAnsibleTab('schedules')">
+          <svg class="icon icon-sm"><use href="#i-calendar"/></svg> <span data-i18n="ansible_sched_title">Schedules</span>
+        </button>
+        <button type="button" class="tab" id="tabAnsibleSettings" data-tab="settings" role="tab" aria-selected="false" aria-controls="ansiblePanelSettings" tabindex="-1" onclick="switchAnsibleTab('settings')">
+          <svg class="icon icon-sm"><use href="#i-settings"/></svg> <span data-i18n="ansible_tab_settings">Settings</span>
+        </button>
+      </div>
+
+      <div id="ansiblePanelPlaybooks" class="ans-section-panel" role="tabpanel" aria-labelledby="tabAnsiblePlaybooks" tabindex="0" style="display:flex;">
+      <!-- Playbooks list container -->
+      <div id="ansiblePlaybooksContainer" style="display:flex;flex-direction:column;gap:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <div class="search-box" style="margin:0;max-width:320px;">
+            <svg class="icon icon-sm text-muted"><use href="#i-search"/></svg>
+            <input type="text" id="ansiblePlaybookSearchInput" placeholder="Search playbooks..." data-i18n-placeholder="ansible_search_playbooks_ph" style="height:32px;font-size:var(--fs-xs);" oninput="filterAnsiblePlaybooks()" />
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <div id="ansiblePlaybookCountBadge" class="badge" style="background:var(--surface-2);border:1px solid var(--card-border);font-family:var(--font-mono);">0 playbooks</div>
+            <button type="button" id="btnAnsibleNewPlaybook" class="btn btn-sm btn-primary" onclick="openAnsiblePlaybookModal()" data-i18n-title="ansible_btn_new_playbook" title="New Playbook" style="display:inline-flex;align-items:center;gap:6px;">
+              <svg class="icon icon-sm"><use href="#i-plus"/></svg> <span data-i18n="ansible_btn_new_playbook">New Playbook</span>
+            </button>
+          </div>
+        </div>
+        <div id="ansiblePlaybooksGrid" class="grid"></div>
+        <div id="ansiblePlaybooksEmpty" class="empty-state" style="display:none;">
+          <div class="empty-state-icon"><svg class="icon icon-xl"><use href="#i-ansible"/></svg></div>
+          <div class="empty-state-desc" data-i18n="ansible_no_playbooks">No playbooks found</div>
+        </div>
+      </div>
+
+      </div>
+
+      <div id="ansiblePanelSchedules" class="ans-section-panel" role="tabpanel" aria-labelledby="tabAnsibleSchedules" tabindex="0" style="display:none;">
+        <div id="ansibleSchedulesUnavailable" class="empty-state" style="display:none;">
+          <div class="empty-state-desc" data-i18n="ansible_sched_unavailable">Schedules require an active Ansible Gate and an available ansible-playbook binary.</div>
+          <button type="button" class="btn btn-sm" onclick="switchAnsibleTab('settings')" data-i18n="ansible_tab_settings">Settings</button>
+        </div>
+      <!-- Schedules -->
+      <div id="ansibleSchedulesContainer" style="display:none;flex-direction:column;gap:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <div>
+            <h3 style="margin:0 0 2px 0;font-size:var(--fs-lg);font-weight:600;display:flex;align-items:center;gap:8px;"><svg class="icon icon-sm text-accent"><use href="#i-calendar"/></svg> <span data-i18n="ansible_sched_title">Schedules</span></h3>
+            <p id="ansibleSchedulesDesc" style="margin:0;color:var(--text-muted);font-size:var(--fs-xs);"></p>
+          </div>
+          <button type="button" class="btn btn-sm btn-primary" onclick="openAnsibleScheduleModal()" style="display:inline-flex;align-items:center;gap:6px;">
+            <svg class="icon icon-sm"><use href="#i-plus"/></svg> <span data-i18n="ansible_sched_new">New Schedule</span>
+          </button>
+        </div>
+        <div style="overflow-x:auto;border:1px solid var(--card-border);border-radius:var(--radius-md);">
+          <table class="ans-sched-tbl" style="width:100%;border-collapse:collapse;font-size:var(--fs-xs);">
+            <thead>
+              <tr>
+                <th data-i18n="ansible_sched_col_playbook">Playbook</th>
+                <th style="width:130px;" data-i18n="ansible_sched_col_cron">Cron</th>
+                <th data-i18n="ansible_col_targets">Targets</th>
+                <th style="width:80px;" data-i18n="ansible_col_mode">Mode</th>
+                <th style="width:150px;" data-i18n="ansible_sched_col_next">Next run</th>
+                <th style="width:170px;" data-i18n="ansible_sched_col_last">Last run</th>
+                <th style="width:80px;" data-i18n="ansible_sched_col_enabled">Enabled</th>
+                <th style="width:90px;text-align:right;" data-i18n="cf_col_actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="ansibleSchedulesBody"></tbody>
+          </table>
+        </div>
+        <div id="ansibleSchedulesEmpty" class="empty-state" style="display:none;padding:20px;">
+          <div class="empty-state-desc" data-i18n="ansible_sched_none">No schedules yet</div>
+        </div>
+      </div>
+      </div>
+
+      <div id="ansiblePanelSettings" class="ans-section-panel" role="tabpanel" aria-labelledby="tabAnsibleSettings" tabindex="0" style="display:none;">
+        <h3 style="margin:0;font-size:var(--fs-lg);" data-i18n="ansible_gate_title">Ansible Gate</h3>
+        <div id="ansibleGateBanner" class="ans-gate-banner ans-gate-info" style="display:none;">
+          <div style="min-width:0;flex:1;">
+            <div id="ansibleGateTitle" class="ans-gate-title"></div>
+            <div id="ansibleGateDesc" class="ans-gate-desc"></div>
+          </div>
+          <div id="ansibleGateAction" style="display:flex;align-items:center;gap:10px;flex-shrink:0;"></div>
+        </div>
+      </div>
+    </div>
+
 
   </div>
 
@@ -4489,6 +4619,331 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
     </div>
   </div>
 </div>
+<!-- Ansible Playbook Editor Modal (Action Dialog) -->
+<div id="ansiblePlaybookModal" class="modal">
+  <div class="modal-content modal-dialog-lg" style="max-width: 840px; display: flex; flex-direction: column; max-height: 90vh;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <svg class="icon icon-sm text-accent"><use href="#i-ansible"/></svg>
+        <h3 id="ansiblePlaybookModalTitle" style="font-size: var(--fs-md); margin: 0;" data-i18n="ansible_playbook_modal_add">New Playbook</h3>
+      </div>
+      <button class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('ansiblePlaybookModal')" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px; padding: 16px 20px; overflow-y: auto;">
+      <div class="dk-field">
+        <label for="ansiblePlaybookName"><span data-i18n="ansible_playbook_name_label">Name</span> *</label>
+        <input type="text" id="ansiblePlaybookName" class="form-input" style="width: 100%; box-sizing: border-box;" placeholder="e.g. ping-all or update-packages" />
+      </div>
+      <div class="dk-field">
+        <label for="ansiblePlaybookDesc" data-i18n="ansible_playbook_desc_label">Description (Optional)</label>
+        <input type="text" id="ansiblePlaybookDesc" class="form-input" style="width: 100%; box-sizing: border-box;" placeholder="Brief description of what this playbook performs" />
+      </div>
+      <div class="dk-field">
+        <label for="ansiblePlaybookSource" data-i18n="ansible_pb_source_label">Source</label>
+        <select id="ansiblePlaybookSource" class="form-input" onchange="onAnsiblePlaybookSourceChange()">
+          <option value="inline" data-i18n="ansible_pb_source_inline">Inline (YAML editor)</option>
+          <option value="git" data-i18n="ansible_pb_source_git">Git repository</option>
+        </select>
+      </div>
+      <div class="dk-field" id="ansiblePbInline" style="display: flex; flex-direction: column;">
+        <label for="ansiblePlaybookContent"><span data-i18n="ansible_playbook_content_label">Playbook Content (YAML)</span> *</label>
+        <div style="border: 1px solid var(--card-border); border-radius: var(--radius-sm); overflow: hidden; min-height: 240px;">
+          <textarea id="ansiblePlaybookContent" style="display: none;"></textarea>
+        </div>
+      </div>
+      <div id="ansiblePbGit" style="display: none; flex-direction: column; gap: 12px;">
+        <div id="ansibleGitMissing" role="alert" style="display:none;background:var(--warning-soft);border:1px solid var(--warning-border);border-radius:var(--radius-sm);padding:8px 12px;font-size:var(--fs-xs);color:var(--warning);" data-i18n="ansible_git_missing">git is not installed on the Pantau server; Git playbooks cannot run.</div>
+        <div class="dk-field">
+          <label for="ansibleGitUrl"><span data-i18n="ansible_git_url_label">Repository URL</span> *</label>
+          <input type="text" id="ansibleGitUrl" class="form-input mono" style="width:100%;box-sizing:border-box;" placeholder="https://github.com/acme/infra.git" autocomplete="off" />
+          <div class="dk-hint" data-i18n="ansible_git_url_hint">https://, ssh:// or git@host:path.git. Never put credentials in the URL.</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="dk-field">
+            <label for="ansibleGitBranch" data-i18n="ansible_git_branch_label">Branch or tag (optional)</label>
+            <input type="text" id="ansibleGitBranch" class="form-input mono" style="width:100%;box-sizing:border-box;" placeholder="main" autocomplete="off" />
+          </div>
+          <div class="dk-field">
+            <label for="ansibleGitPath"><span data-i18n="ansible_git_path_label">Playbook path in repository</span> *</label>
+            <input type="text" id="ansibleGitPath" class="form-input mono" style="width:100%;box-sizing:border-box;" placeholder="playbooks/site.yml" autocomplete="off" />
+          </div>
+        </div>
+        <div class="dk-field">
+          <label for="ansibleGitAuth" data-i18n="ansible_git_auth_label">Authentication</label>
+          <select id="ansibleGitAuth" class="form-input" onchange="onAnsibleGitAuthChange()">
+            <option value="none" data-i18n="ansible_git_auth_none">None (public repository)</option>
+            <option value="token" data-i18n="ansible_git_auth_token">Access token (https)</option>
+            <option value="ssh_key" data-i18n="ansible_git_auth_ssh">SSH key from library (ssh)</option>
+          </select>
+        </div>
+        <div class="dk-field" id="ansibleGitTokenField" style="display:none;">
+          <label for="ansibleGitToken" data-i18n="ansible_git_token_label">Access token</label>
+          <input type="password" id="ansibleGitToken" class="form-input mono" style="width:100%;box-sizing:border-box;" autocomplete="new-password" />
+          <div class="dk-hint" id="ansibleGitTokenHint"></div>
+        </div>
+        <div class="dk-field" id="ansibleGitKeyField" style="display:none;">
+          <label for="ansibleGitKeyId" data-i18n="ansible_git_key_label">SSH key</label>
+          <select id="ansibleGitKeyId" class="form-input"></select>
+        </div>
+        <div class="dk-field"><div class="dk-hint" data-i18n="ansible_git_clone_note">The repository is shallow-cloned fresh for every run into a private temporary directory and removed afterwards.</div></div>
+      </div>
+      <div class="dk-field">
+        <label for="ansiblePlaybookExtraVars" data-i18n="ansible_playbook_extravars_label">Default Extra Vars (JSON Object, Optional)</label>
+        <textarea id="ansiblePlaybookExtraVars" class="form-input mono" rows="3" style="width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: var(--fs-xs); resize: vertical;" placeholder='{"app_port": 8080}'></textarea>
+        <div class="dk-hint" data-i18n="ansible_playbook_extravars_hint">Must be a valid JSON object or empty. Passed as extra variables to runs.</div>
+      </div>
+      <div id="ansiblePlaybookError" role="alert" style="display: none; background: var(--danger-soft); border: 1px solid var(--danger-border); border-radius: var(--radius-sm); padding: 8px 12px; font-size: var(--fs-xs); color: var(--danger); white-space: pre-wrap; word-break: break-all;"></div>
+    </div>
+    <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end; align-items: center;">
+      <button type="button" class="btn btn-sm" onclick="closeModal('ansiblePlaybookModal')" data-i18n="cancel">Cancel</button>
+      <button type="button" class="btn btn-sm btn-primary" id="btnAnsiblePlaybookSubmit" onclick="submitAnsiblePlaybookModal()"><span id="btnAnsiblePlaybookSubmitText" data-i18n="save">Save</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- Ansible Schedule Modal (Action Dialog) -->
+<div id="ansibleScheduleModal" class="modal">
+  <div class="modal-content modal-dialog-lg" style="max-width: 820px; display: flex; flex-direction: column; max-height: 90vh;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <svg class="icon icon-sm text-accent"><use href="#i-calendar"/></svg>
+        <h3 id="ansibleScheduleModalTitle" style="font-size: var(--fs-md); margin: 0;" data-i18n="ansible_sched_new">New Schedule</h3>
+      </div>
+      <button class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('ansibleScheduleModal')" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px; padding: 16px 20px; overflow-y: auto;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="dk-field">
+          <label for="ansibleSchedPlaybook"><span data-i18n="ansible_sched_playbook_label">Playbook</span> *</label>
+          <select id="ansibleSchedPlaybook" class="form-input"></select>
+        </div>
+        <div class="dk-field">
+          <label for="ansibleSchedName" data-i18n="ansible_sched_name_label">Name (optional)</label>
+          <input type="text" id="ansibleSchedName" class="form-input" maxlength="64" style="width:100%;box-sizing:border-box;" />
+        </div>
+      </div>
+      <div class="dk-field">
+        <label for="ansibleSchedCron"><span data-i18n="ansible_sched_cron_label">Cron expression</span> *</label>
+        <input type="text" id="ansibleSchedCron" class="form-input mono" style="width:100%;box-sizing:border-box;" placeholder="0 3 * * *" autocomplete="off" />
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+          <span class="badge ans-preset" onclick="setAnsibleSchedCron('*/5 * * * *')" data-i18n="ansible_sched_p_5min">Every 5 min</span>
+          <span class="badge ans-preset" onclick="setAnsibleSchedCron('0 * * * *')" data-i18n="ansible_sched_p_hourly">Hourly</span>
+          <span class="badge ans-preset" onclick="setAnsibleSchedCron('0 3 * * *')" data-i18n="ansible_sched_p_daily">Daily 03:00</span>
+          <span class="badge ans-preset" onclick="setAnsibleSchedCron('0 3 * * 0')" data-i18n="ansible_sched_p_weekly">Sunday 03:00</span>
+          <span class="badge ans-preset" onclick="setAnsibleSchedCron('0 3 1 * *')" data-i18n="ansible_sched_p_monthly">Monthly (1st)</span>
+        </div>
+        <div class="dk-hint" id="ansibleSchedCronHint"></div>
+      </div>
+      <div class="dk-field">
+        <label for="ansibleSchedGroup" data-i18n="ansible_sched_group_label">Host Group (all members)</label>
+        <select id="ansibleSchedGroup" class="form-input"></select>
+      </div>
+      <div class="dk-field">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+          <label style="margin:0;" data-i18n="ansible_sched_hosts_label">Additional hosts</label>
+          <input type="text" id="ansibleSchedHostSearch" class="input" placeholder="Search hosts..." data-i18n-placeholder="bulk_search_ph" oninput="renderAnsibleSchedHosts()" style="height:30px;font-size:var(--fs-xs);width:180px;" />
+        </div>
+        <div id="ansibleSchedHosts" class="ans-hostlist" style="margin-top:6px;"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+        <div class="dk-field">
+          <label for="ansibleSchedMode" data-i18n="ansible_run_mode_label">Execution Mode</label>
+          <select id="ansibleSchedMode" class="form-input">
+            <option value="run" data-i18n="ansible_mode_run">Run (Standard Execution)</option>
+            <option value="check" data-i18n="ansible_mode_check">Check (--check dry-run)</option>
+            <option value="diff" data-i18n="ansible_mode_diff">Diff (--check --diff)</option>
+            <option value="syntax" data-i18n="ansible_mode_syntax">Syntax (--syntax-check)</option>
+          </select>
+        </div>
+        <div class="dk-field">
+          <label for="ansibleSchedTags" data-i18n="ansible_tags_label">Tags (Optional)</label>
+          <input type="text" id="ansibleSchedTags" class="form-input mono" style="width:100%;box-sizing:border-box;" />
+        </div>
+        <div class="dk-field">
+          <label for="ansibleSchedSkipTags" data-i18n="ansible_skip_tags_label">Skip Tags (Optional)</label>
+          <input type="text" id="ansibleSchedSkipTags" class="form-input mono" style="width:100%;box-sizing:border-box;" />
+        </div>
+      </div>
+      <div class="dk-field">
+        <label for="ansibleSchedExtraVars" data-i18n="ansible_extra_vars_label">Extra Vars Override (JSON Object, Optional)</label>
+        <textarea id="ansibleSchedExtraVars" class="form-input mono" rows="2" style="width:100%;box-sizing:border-box;font-family:var(--font-mono);font-size:var(--fs-xs);resize:vertical;"></textarea>
+      </div>
+      <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center;">
+        <label class="switch" style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none;">
+          <input type="checkbox" id="ansibleSchedBecome" />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+          <span class="switch-label" style="font-size:var(--fs-xs);font-weight:500;" data-i18n="ansible_become_label">Become (sudo without password)</span>
+        </label>
+        <label class="switch" style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none;">
+          <input type="checkbox" id="ansibleSchedEnabled" checked />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+          <span class="switch-label" style="font-size:var(--fs-xs);font-weight:500;" data-i18n="ansible_sched_enabled_label">Enabled</span>
+        </label>
+        <select id="ansibleSchedVerbosity" class="form-input" style="width:auto;" title="Verbosity">
+          <option value="0">Normal (0)</option>
+          <option value="1">-v</option>
+          <option value="2">-vv</option>
+          <option value="3">-vvv</option>
+        </select>
+      </div>
+      <div id="ansibleSchedError" role="alert" style="display: none; background: var(--danger-soft); border: 1px solid var(--danger-border); border-radius: var(--radius-sm); padding: 8px 12px; font-size: var(--fs-xs); color: var(--danger); white-space: pre-wrap; word-break: break-all;"></div>
+    </div>
+    <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end; align-items: center;">
+      <button type="button" class="btn btn-sm" onclick="closeModal('ansibleScheduleModal')" data-i18n="cancel">Cancel</button>
+      <button type="button" class="btn btn-sm btn-primary" id="btnAnsibleSchedSubmit" onclick="submitAnsibleScheduleModal()" data-i18n="save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Ansible Run Launch Modal (Action Dialog) -->
+<div id="ansibleRunLaunchModal" class="modal">
+  <div class="modal-content modal-dialog-lg" style="max-width: 820px; display: flex; flex-direction: column; max-height: 90vh;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <svg class="icon icon-sm text-accent"><use href="#i-play"/></svg>
+        <h3 id="ansibleRunLaunchModalTitle" style="font-size: var(--fs-md); margin: 0;" data-i18n="ansible_run_launch_title">Run Playbook</h3>
+      </div>
+      <button class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('ansibleRunLaunchModal')" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body" style="padding: 16px 20px; gap: 14px; overflow-y: auto; flex: 1;">
+      <!-- Target Selector -->
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <label class="form-label" style="font-weight: 600; margin: 0;"><span data-i18n="ansible_target_hosts_label">Target Hosts</span> <span id="ansibleTargetsReqStar" style="color: var(--danger);">*</span></label>
+          <span id="ansibleSelectedTargetsCount" style="font-size: var(--fs-xs); color: var(--text-muted); font-family: var(--font-mono);">0 / 200</span>
+        </div>
+        <div id="ansibleGroupChips" style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;"></div>
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <input type="text" id="ansibleHostSearch" class="input" placeholder="Search hosts..." data-i18n-placeholder="bulk_search_ph" oninput="renderAnsibleHostPicker()" style="height: 30px; font-size: var(--fs-xs); width: 180px;" />
+          <select id="ansibleGroupFilter" class="input" onchange="renderAnsibleHostPicker()" style="height: 30px; font-size: var(--fs-xs); width: auto; max-width: 180px;">
+            <option value="all" data-i18n="bulk_all_groups">All Groups</option>
+          </select>
+          <button type="button" class="btn btn-sm" onclick="ansibleSelectAllFiltered()" data-i18n="bulk_select_all">Select All</button>
+          <button type="button" class="btn btn-sm btn-ghost" onclick="ansibleClearSelection()" data-i18n="clear">Clear</button>
+        </div>
+        <div id="ansibleHostPicker" style="max-height: 160px; overflow-y: auto; border: 1px solid var(--card-border); border-radius: var(--radius); padding: 8px; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; background: var(--surface-2);"></div>
+      </div>
+
+      <!-- Run Parameters Grid -->
+      <div class="dk-form-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+        <div class="dk-field">
+          <label for="ansibleRunMode" data-i18n="ansible_run_mode_label">Execution Mode</label>
+          <select id="ansibleRunMode" class="form-input" onchange="onAnsibleRunModeChange()">
+            <option value="run" data-i18n="ansible_mode_run">Run (Standard Execution)</option>
+            <option value="check" data-i18n="ansible_mode_check">Check (--check dry-run)</option>
+            <option value="diff" data-i18n="ansible_mode_diff">Diff (--check --diff)</option>
+            <option value="syntax" data-i18n="ansible_mode_syntax">Syntax (--syntax-check)</option>
+          </select>
+        </div>
+        <div class="dk-field">
+          <label for="ansibleRunVerbosity" data-i18n="ansible_verbosity_label">Verbosity</label>
+          <select id="ansibleRunVerbosity" class="form-input">
+            <option value="0">Normal (0)</option>
+            <option value="1">-v (Verbose)</option>
+            <option value="2">-vv (More Verbose)</option>
+            <option value="3">-vvv (Debug)</option>
+          </select>
+        </div>
+        <div class="dk-field">
+          <label for="ansibleRunTags" data-i18n="ansible_tags_label">Tags (Optional)</label>
+          <input type="text" id="ansibleRunTags" class="form-input mono" placeholder="e.g. web,nginx" />
+        </div>
+        <div class="dk-field">
+          <label for="ansibleRunSkipTags" data-i18n="ansible_skip_tags_label">Skip Tags (Optional)</label>
+          <input type="text" id="ansibleRunSkipTags" class="form-input mono" placeholder="e.g. slow,backup" />
+        </div>
+        <div class="dk-field dk-full">
+          <label for="ansibleRunExtraVars" data-i18n="ansible_extra_vars_label">Extra Vars Override (JSON Object, Optional)</label>
+          <textarea id="ansibleRunExtraVars" class="form-input mono" rows="2" style="width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: var(--fs-xs); resize: vertical;" placeholder='Leave empty to use playbook default extra vars'></textarea>
+        </div>
+        <div class="dk-field dk-full" style="margin-top: 4px;">
+          <label class="switch" style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;">
+            <input type="checkbox" id="ansibleRunBecome" />
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+            <span class="switch-label" style="font-size: var(--fs-xs); font-weight: 500;" data-i18n="ansible_become_label">Become (sudo without password)</span>
+          </label>
+        </div>
+      </div>
+      <div id="ansibleRunLaunchError" role="alert" style="display: none; background: var(--danger-soft); border: 1px solid var(--danger-border); border-radius: var(--radius-sm); padding: 8px 12px; font-size: var(--fs-xs); color: var(--danger); white-space: pre-wrap; word-break: break-all;"></div>
+    </div>
+    <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end; align-items: center;">
+      <button type="button" class="btn btn-sm" onclick="closeModal('ansibleRunLaunchModal')" data-i18n="cancel">Cancel</button>
+      <button type="button" class="btn btn-sm btn-primary" id="btnAnsibleRunLaunchSubmit" onclick="submitAnsibleRunLaunch()"><svg class="icon icon-sm"><use href="#i-play"/></svg> <span data-i18n="ansible_btn_launch">Launch Run</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- Ansible Run Workspace Modal (Viewer + History) -->
+<div id="ansibleRunModal" class="modal">
+  <div class="modal-content modal-workspace" style="display: flex; flex-direction: column;">
+    <div class="modal-header" id="ansibleRunModalHeader" style="user-select: none; flex-wrap: wrap; gap: 8px;">
+      <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1;">
+        <svg class="icon icon-sm text-accent"><use href="#i-ansible"/></svg>
+        <h3 id="ansibleRunModalPlaybookName" style="font-size: var(--fs-md); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Playbook</h3>
+        <span id="ansibleRunStatusBadge" class="badge">queued</span>
+        <span id="ansibleRunDurationBadge" class="badge" style="background: var(--surface-2); border: 1px solid var(--card-border); font-family: var(--font-mono);">-</span>
+        <span id="ansibleRunModeBadge" class="badge" style="background: var(--surface-2); border: 1px solid var(--card-border);">run</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <button type="button" class="btn btn-sm btn-danger" id="btnAnsibleCancelRun" onclick="cancelCurrentAnsibleRun()" style="display: none; align-items: center; gap: 6px;">
+          <svg class="icon icon-sm"><use href="#i-x"/></svg> <span data-i18n="ansible_btn_cancel_run">Cancel Run</span>
+        </button>
+        <button class="btn btn-icon btn-sm" onclick="refreshCurrentAnsibleRunModal()" title="Refresh" data-i18n-title="refresh"><svg class="icon icon-sm"><use href="#i-refresh-cw"/></svg></button>
+        <button class="btn btn-icon btn-sm" onclick="closeModal('ansibleRunModal')" title="Close" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+      </div>
+    </div>
+    <div class="modal-tabs-bar">
+      <div class="tabs" id="ansibleRunTabs">
+        <div class="tab active" id="tabAnsibleRunLog" onclick="switchAnsibleRunTab('log')"><svg class="icon icon-sm"><use href="#i-scroll-text"/></svg> <span data-i18n="ansible_tab_log">Live Log</span></div>
+        <div class="tab" id="tabAnsibleRunHistory" onclick="switchAnsibleRunTab('history')"><svg class="icon icon-sm"><use href="#i-history"/></svg> <span data-i18n="ansible_tab_history">Run History</span></div>
+      </div>
+    </div>
+    <div class="modal-body" style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column;">
+      <!-- Tab 1: Live Log Pane -->
+      <div id="ansibleRunPanelLog" style="display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 10px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 10px; font-size: var(--fs-xs); color: var(--text-muted);">
+            <span id="ansibleRunTargetSummary"></span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <label style="display: flex; align-items: center; gap: 4px; font-size: var(--fs-xs); cursor: pointer; color: var(--text-muted); user-select: none;">
+              <input type="checkbox" id="ansibleLogAutoScroll" checked style="width: auto;" />
+              <span data-i18n="docker_logs_autoscroll">Auto-scroll</span>
+            </label>
+            <button type="button" class="btn btn-sm btn-ghost" onclick="copyAnsibleLog()" data-i18n="copy">Copy</button>
+            <button type="button" class="btn btn-sm btn-ghost" onclick="clearAnsibleLogView()" data-i18n="docker_logs_clear">Clear</button>
+          </div>
+        </div>
+        <pre id="ansibleLogOutput" class="ans-log-pane" onscroll="onAnsibleLogScroll()"></pre>
+      </div>
+
+      <!-- Tab 2: History Table -->
+      <div id="ansibleRunPanelHistory" style="display: none; flex-direction: column; flex: 1; min-height: 0; gap: 12px;">
+        <div style="overflow-x: auto; border: 1px solid var(--card-border); border-radius: var(--radius-md);">
+          <table style="width: 100%; border-collapse: collapse; font-size: var(--fs-xs);">
+            <thead>
+              <tr>
+                <th style="width: 70px;">#ID</th>
+                <th style="width: 100px;" data-i18n="run_status">Status</th>
+                <th style="width: 90px;" data-i18n="ansible_col_mode">Mode</th>
+                <th data-i18n="ansible_col_targets">Targets</th>
+                <th style="width: 80px;" data-i18n="ansible_col_exit">Exit</th>
+                <th style="width: 110px;" data-i18n="run_duration">Duration</th>
+                <th style="width: 140px;" data-i18n="run_time">Time</th>
+                <th style="width: 70px; text-align: right;" data-i18n="cf_col_actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="ansibleHistoryTableBody"></tbody>
+          </table>
+        </div>
+        <div id="ansibleHistoryEmpty" class="empty-state" style="display: none; padding: 24px;">
+          <div class="empty-state-desc" data-i18n="ansible_no_runs_recorded">No playbook runs recorded yet.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 
 
 <!-- Generic Confirmation Modal (Action Dialog) -->
@@ -7535,6 +7990,117 @@ const I18N = {
     "cf_err_purge_urls_limit": "Maximum 30 URLs can be purged per request",
     "cf_zone_paused": "Paused",
     "cf_manage_zone": "Manage Zone",
+    "nav_ansible": "Ansible",
+    "ansible_section_title": "Ansible",
+    "ansible_tab_playbooks": "Playbooks",
+    "ansible_tab_settings": "Settings",
+    "ansible_sched_unavailable": "Schedules require an active Ansible Gate and an available ansible-playbook binary.",
+    "ansible_gate_unavailable": "Ansible unavailable",
+    "ansible_section_desc": "Store, run, and review agentless Ansible playbooks with inventory generated from Pantau hosts.",
+    "ansible_btn_new_playbook": "New Playbook",
+    "ansible_search_playbooks_ph": "Search playbooks...",
+    "ansible_no_playbooks": "No playbooks found",
+    "ansible_gate_title": "Ansible Gate",
+    "ansible_gate_disabled_title": "Ansible Gate is Disabled",
+    "ansible_gate_disabled_warning": "Warning: Ansible Playbooks execute on the Pantau server with Pantau master process privileges. Tasks targeting localhost or local plugins can read/write data on the master server. Only enable this if you trust authorized Pantau administrators.",
+    "ansible_gate_btn_enable": "Enable Ansible Gate",
+    "ansible_gate_btn_disable": "Disable Gate",
+    "ansible_gate_active": "Ansible Gate is Active",
+    "ansible_gate_binary_missing": "ansible-playbook binary not found in server PATH. Install ansible-core on the Pantau server to run playbooks.",
+    "ansible_gate_confirm_enable_title": "Enable Ansible Gate",
+    "ansible_gate_confirm_enable_msg": "Are you sure you want to enable the Ansible Gate? Ansible playbooks will be allowed to execute locally on the Pantau server with the master process permissions.",
+    "ansible_gate_confirm_disable_title": "Disable Ansible Gate",
+    "ansible_gate_confirm_disable_msg": "Disable the Ansible Gate? Running playbooks will be prevented.",
+    "ansible_playbook_modal_add": "New Playbook",
+    "ansible_playbook_modal_edit": "Edit Playbook",
+    "ansible_playbook_name_label": "Playbook Name",
+    "ansible_playbook_desc_label": "Description",
+    "ansible_playbook_content_label": "Playbook Content (YAML)",
+    "ansible_playbook_extravars_label": "Default Extra Vars (JSON Object)",
+    "ansible_playbook_extravars_hint": "Must be a valid JSON object (or empty). Passed as default extra variables to runs.",
+    "ansible_run_launch_title": "Launch Playbook Run",
+    "ansible_target_hosts_label": "Target Hosts",
+    "ansible_run_mode_label": "Execution Mode",
+    "ansible_mode_run": "Run (Standard Execution)",
+    "ansible_mode_check": "Check (--check dry-run)",
+    "ansible_mode_diff": "Diff (--check --diff)",
+    "ansible_mode_syntax": "Syntax (--syntax-check)",
+    "ansible_verbosity_label": "Verbosity",
+    "ansible_tags_label": "Tags",
+    "ansible_skip_tags_label": "Skip Tags",
+    "ansible_extra_vars_label": "Extra Vars Override (JSON Object)",
+    "ansible_become_label": "Become (sudo without password)",
+    "ansible_btn_launch": "Launch Run",
+    "ansible_tab_log": "Live Log",
+    "ansible_tab_history": "Run History",
+    "ansible_col_mode": "Mode",
+    "ansible_col_targets": "Targets",
+    "ansible_col_exit": "Exit",
+    "ansible_btn_cancel_run": "Cancel Run",
+    "ansible_confirm_cancel_run_title": "Cancel Playbook Run",
+    "ansible_confirm_cancel_run_msg": "Cancel this running Playbook execution? Pantau will terminate the process group.",
+    "ansible_confirm_delete_pb_title": "Delete Playbook",
+    "ansible_confirm_delete_pb_msg": "Are you sure you want to delete Playbook \"{name}\"? All associated run history will also be permanently deleted.",
+    "ansible_playbook_saved": "Playbook saved successfully",
+    "ansible_pb_source_label": "Source",
+    "ansible_pb_source_inline": "Inline (YAML editor)",
+    "ansible_pb_source_git": "Git repository",
+    "ansible_git_url_label": "Repository URL",
+    "ansible_git_url_hint": "https://, ssh:// or git@host:path.git. Never put credentials in the URL.",
+    "ansible_git_branch_label": "Branch or tag (optional)",
+    "ansible_git_path_label": "Playbook path in repository",
+    "ansible_git_auth_label": "Authentication",
+    "ansible_git_auth_none": "None (public repository)",
+    "ansible_git_auth_token": "Access token (https)",
+    "ansible_git_auth_ssh": "SSH key from library (ssh)",
+    "ansible_git_token_label": "Access token",
+    "ansible_git_token_saved_hint": "A token is already stored. Leave empty to keep it.",
+    "ansible_git_token_hint": "Personal access token with read access to the repository. Stored like SSH keys; never shown again.",
+    "ansible_git_key_label": "SSH key",
+    "ansible_git_missing": "git is not installed on the Pantau server; Git playbooks cannot run.",
+    "ansible_git_clone_note": "The repository is shallow-cloned fresh for every run into a private temporary directory and removed afterwards.",
+    "ansible_err_git_required": "Repository URL and playbook path are required.",
+    "ansible_commit": "Commit",
+    "ansible_trigger_schedule": "scheduled",
+    "ansible_sched_title": "Schedules",
+    "ansible_sched_desc": "Run playbooks automatically on a cron schedule. Times use the Pantau server time zone ({tz}).",
+    "ansible_sched_new": "New Schedule",
+    "ansible_sched_edit": "Edit Schedule",
+    "ansible_sched_none": "No schedules yet",
+    "ansible_sched_col_playbook": "Playbook",
+    "ansible_sched_col_cron": "Cron",
+    "ansible_sched_col_next": "Next run",
+    "ansible_sched_col_last": "Last run",
+    "ansible_sched_col_enabled": "Enabled",
+    "ansible_sched_enabled_label": "Enabled",
+    "ansible_sched_name_label": "Name (optional)",
+    "ansible_sched_playbook_label": "Playbook",
+    "ansible_sched_cron_label": "Cron expression",
+    "ansible_sched_cron_hint": "minute hour day-of-month month day-of-week, e.g. 0 3 * * * = daily at 03:00 ({tz}). Occurrences missed while Pantau was down or the gate was off are skipped, not replayed.",
+    "ansible_sched_p_5min": "Every 5 min",
+    "ansible_sched_p_hourly": "Hourly",
+    "ansible_sched_p_daily": "Daily 03:00",
+    "ansible_sched_p_weekly": "Sunday 03:00",
+    "ansible_sched_p_monthly": "Monthly (1st)",
+    "ansible_sched_group_label": "Host Group (all members)",
+    "ansible_sched_group_none": "— none —",
+    "ansible_sched_hosts_label": "Additional hosts",
+    "ansible_sched_saved": "Schedule saved",
+    "ansible_sched_deleted": "Schedule deleted",
+    "ansible_sched_confirm_delete_title": "Delete Schedule",
+    "ansible_sched_confirm_delete_msg": "Delete this schedule? Past runs are kept.",
+    "ansible_sched_err_targets": "Select a host group or at least one host (Syntax mode allows none).",
+    "ansible_sched_err_playbook": "Create a playbook first, then select it.",
+    "ansible_sched_err_cron": "Cron expression is required.",
+    "ansible_playbook_deleted": "Playbook deleted successfully",
+    "ansible_run_started": "Playbook run started",
+    "ansible_run_cancelled": "Playbook run cancelled",
+    "ansible_no_runs_recorded": "No playbook runs recorded yet.",
+    "ansible_err_targets_required": "Please select at least 1 target host (Syntax mode allows zero targets).",
+    "ansible_err_name_content_required": "Playbook name and YAML content are required.",
+    "ansible_err_extravars_json": "Extra vars must be a valid JSON object.",
+    "ansible_btn_history": "History",
+    "ansible_btn_run": "Run",
   },
   id: {
     "brand_subtitle": "Manajemen Server Agentless",
@@ -8962,6 +9528,117 @@ const I18N = {
     "cf_err_purge_urls_limit": "Maksimum 30 URL dapat di-purge per permintaan",
     "cf_zone_paused": "Dijeda",
     "cf_manage_zone": "Kelola Zone",
+    "nav_ansible": "Ansible",
+    "ansible_section_title": "Ansible",
+    "ansible_tab_playbooks": "Playbook",
+    "ansible_tab_settings": "Pengaturan",
+    "ansible_sched_unavailable": "Jadwal membutuhkan Ansible Gate aktif dan biner ansible-playbook yang tersedia.",
+    "ansible_gate_unavailable": "Ansible tidak tersedia",
+    "ansible_section_desc": "Simpan, jalankan, dan tinjau Ansible Playbook agentless dengan inventory yang dibuat otomatis dari host Pantau.",
+    "ansible_btn_new_playbook": "Playbook Baru",
+    "ansible_search_playbooks_ph": "Cari playbook...",
+    "ansible_no_playbooks": "Tidak ada playbook yang ditemukan",
+    "ansible_gate_title": "Ansible Gate",
+    "ansible_gate_disabled_title": "Ansible Gate Nonaktif",
+    "ansible_gate_disabled_warning": "Peringatan Keamanan: Ansible Playbook dieksekusi di server Pantau dengan hak akses proses master Pantau. Task yang menargetkan localhost atau plugin lokal dapat membaca/menulis data di server master. Aktifkan hanya jika Anda mempercayai administrator Pantau yang berwenang.",
+    "ansible_gate_btn_enable": "Aktifkan Ansible Gate",
+    "ansible_gate_btn_disable": "Nonaktifkan Gate",
+    "ansible_gate_active": "Ansible Gate Aktif",
+    "ansible_gate_binary_missing": "Biner ansible-playbook tidak ditemukan di PATH server. Pasang ansible-core di server Pantau untuk menjalankan playbook.",
+    "ansible_gate_confirm_enable_title": "Aktifkan Ansible Gate",
+    "ansible_gate_confirm_enable_msg": "Apakah Anda yakin ingin mengaktifkan Ansible Gate? Ansible Playbook akan diizinkan berjalan secara lokal di server Pantau dengan hak proses master.",
+    "ansible_gate_confirm_disable_title": "Nonaktifkan Ansible Gate",
+    "ansible_gate_confirm_disable_msg": "Nonaktifkan Ansible Gate? Eksekusi playbook selanjutnya akan dicegah.",
+    "ansible_playbook_modal_add": "Playbook Baru",
+    "ansible_playbook_modal_edit": "Ubah Playbook",
+    "ansible_playbook_name_label": "Nama Playbook",
+    "ansible_playbook_desc_label": "Deskripsi",
+    "ansible_playbook_content_label": "Isi Playbook (YAML)",
+    "ansible_playbook_extravars_label": "Default Extra Vars (Objek JSON)",
+    "ansible_playbook_extravars_hint": "Harus berupa objek JSON yang valid (atau kosong). Diberikan sebagai variabel ekstra bawaan pada run.",
+    "ansible_run_launch_title": "Jalankan Playbook Run",
+    "ansible_target_hosts_label": "Target Host",
+    "ansible_run_mode_label": "Mode Eksekusi",
+    "ansible_mode_run": "Run (Eksekusi Standar)",
+    "ansible_mode_check": "Check (--check dry-run)",
+    "ansible_mode_diff": "Diff (--check --diff)",
+    "ansible_mode_syntax": "Syntax (--syntax-check)",
+    "ansible_verbosity_label": "Verbosity",
+    "ansible_tags_label": "Tag",
+    "ansible_skip_tags_label": "Lewati Tag",
+    "ansible_extra_vars_label": "Override Extra Vars (Objek JSON)",
+    "ansible_become_label": "Become (sudo tanpa password)",
+    "ansible_btn_launch": "Mulai Run",
+    "ansible_tab_log": "Log Langsung",
+    "ansible_tab_history": "Riwayat Run",
+    "ansible_col_mode": "Mode",
+    "ansible_col_targets": "Target",
+    "ansible_col_exit": "Exit",
+    "ansible_btn_cancel_run": "Batalkan Run",
+    "ansible_confirm_cancel_run_title": "Batalkan Playbook Run",
+    "ansible_confirm_cancel_run_msg": "Batalkan eksekusi Playbook yang sedang berjalan ini? Pantau akan menghentikan process group.",
+    "ansible_confirm_delete_pb_title": "Hapus Playbook",
+    "ansible_confirm_delete_pb_msg": "Apakah Anda yakin ingin menghapus Playbook \"{name}\"? Seluruh riwayat run terkait juga akan dihapus secara permanen.",
+    "ansible_playbook_saved": "Playbook berhasil disimpan",
+    "ansible_pb_source_label": "Sumber",
+    "ansible_pb_source_inline": "Inline (editor YAML)",
+    "ansible_pb_source_git": "Repositori Git",
+    "ansible_git_url_label": "URL Repositori",
+    "ansible_git_url_hint": "https://, ssh:// atau git@host:path.git. Jangan menaruh kredensial di URL.",
+    "ansible_git_branch_label": "Branch atau tag (opsional)",
+    "ansible_git_path_label": "Path playbook di repositori",
+    "ansible_git_auth_label": "Autentikasi",
+    "ansible_git_auth_none": "Tanpa (repositori publik)",
+    "ansible_git_auth_token": "Access token (https)",
+    "ansible_git_auth_ssh": "Kunci SSH dari library (ssh)",
+    "ansible_git_token_label": "Access token",
+    "ansible_git_token_saved_hint": "Token sudah tersimpan. Kosongkan untuk mempertahankannya.",
+    "ansible_git_token_hint": "Personal access token dengan akses baca ke repositori. Disimpan seperti kunci SSH; tidak pernah ditampilkan lagi.",
+    "ansible_git_key_label": "Kunci SSH",
+    "ansible_git_missing": "git belum terpasang di server Pantau; playbook Git tidak dapat dijalankan.",
+    "ansible_git_clone_note": "Repositori di-clone dangkal (shallow) baru setiap run ke direktori sementara privat dan dihapus setelahnya.",
+    "ansible_err_git_required": "URL repositori dan path playbook wajib diisi.",
+    "ansible_commit": "Commit",
+    "ansible_trigger_schedule": "terjadwal",
+    "ansible_sched_title": "Jadwal",
+    "ansible_sched_desc": "Jalankan playbook otomatis dengan jadwal cron. Waktu mengikuti zona waktu server Pantau ({tz}).",
+    "ansible_sched_new": "Jadwal Baru",
+    "ansible_sched_edit": "Ubah Jadwal",
+    "ansible_sched_none": "Belum ada jadwal",
+    "ansible_sched_col_playbook": "Playbook",
+    "ansible_sched_col_cron": "Cron",
+    "ansible_sched_col_next": "Run berikutnya",
+    "ansible_sched_col_last": "Run terakhir",
+    "ansible_sched_col_enabled": "Aktif",
+    "ansible_sched_enabled_label": "Aktif",
+    "ansible_sched_name_label": "Nama (opsional)",
+    "ansible_sched_playbook_label": "Playbook",
+    "ansible_sched_cron_label": "Ekspresi cron",
+    "ansible_sched_cron_hint": "menit jam hari-dalam-bulan bulan hari-dalam-minggu, mis. 0 3 * * * = setiap hari pukul 03:00 ({tz}). Jadwal yang terlewat saat Pantau mati atau gate nonaktif dilewati, tidak dijalankan susulan.",
+    "ansible_sched_p_5min": "Tiap 5 menit",
+    "ansible_sched_p_hourly": "Tiap jam",
+    "ansible_sched_p_daily": "Harian 03:00",
+    "ansible_sched_p_weekly": "Minggu 03:00",
+    "ansible_sched_p_monthly": "Bulanan (tgl 1)",
+    "ansible_sched_group_label": "Host Group (seluruh anggota)",
+    "ansible_sched_group_none": "— tidak ada —",
+    "ansible_sched_hosts_label": "Host tambahan",
+    "ansible_sched_saved": "Jadwal disimpan",
+    "ansible_sched_deleted": "Jadwal dihapus",
+    "ansible_sched_confirm_delete_title": "Hapus Jadwal",
+    "ansible_sched_confirm_delete_msg": "Hapus jadwal ini? Riwayat run sebelumnya tetap disimpan.",
+    "ansible_sched_err_targets": "Pilih Host Group atau minimal satu host (mode Syntax boleh tanpa target).",
+    "ansible_sched_err_playbook": "Buat playbook terlebih dahulu, lalu pilih di sini.",
+    "ansible_sched_err_cron": "Ekspresi cron wajib diisi.",
+    "ansible_playbook_deleted": "Playbook berhasil dihapus",
+    "ansible_run_started": "Playbook run dimulai",
+    "ansible_run_cancelled": "Playbook run dibatalkan",
+    "ansible_no_runs_recorded": "Belum ada playbook run yang tercatat.",
+    "ansible_err_targets_required": "Pilih setidaknya 1 target host (mode Syntax mengizinkan 0 target).",
+    "ansible_err_name_content_required": "Nama playbook dan isi YAML wajib diisi.",
+    "ansible_err_extravars_json": "Extra vars harus berupa objek JSON yang valid.",
+    "ansible_btn_history": "Riwayat",
+    "ansible_btn_run": "Run",
   }
 };
 
@@ -17902,6 +18579,12 @@ function closeModal(id) {
   if (id === 'pkgUpgradeLogsModal') {
     stopPkgUpgradeLogs();
   }
+  if (id === 'ansibleRunModal') {
+    stopAnsibleLogPolling();
+  }
+  if (id === 'ansiblePlaybookModal') {
+    destroyAnsibleYamlEditor();
+  }
   if (id === 'terminalDockModal') {
     minimizeTerminalDock();
     return;
@@ -21331,16 +22014,20 @@ function switchSideNav(section) {
   if (secDocker) secDocker.style.display = section === 'docker' ? 'block' : 'none';
   if (secKube) secKube.style.display = section === 'kube' ? 'block' : 'none';
   if (secCf) secCf.style.display = section === 'cloudflare' ? 'block' : 'none';
+  const secAns = document.getElementById('sectionAnsible');
+  if (secAns) secAns.style.display = section === 'ansible' ? 'block' : 'none';
   toggleSidePanelMobile(false);
   if (section !== 'kube') stopKubeAutorefresh();
   if (section === 'docker') renderDockerSection();
   else if (section === 'kube') { loadKubeClusters(); populateKubeHostSelect(); }
   else if (section === 'cloudflare') { loadCfAccounts(); }
+  else if (section === 'ansible') { refreshAnsibleSection(); }
 }
 function updateSideNavData() {
   if (currentSideNav === 'docker') renderDockerSection();
   if (currentSideNav === 'kube') { loadKubeClusters(); populateKubeHostSelect(); }
   if (currentSideNav === 'cloudflare') { loadCfAccounts(); }
+  if (currentSideNav === 'ansible') { refreshAnsibleSection(); }
 }
 async function openHostDocker(hostId) {
   setHostActiveTab(hostId, 'docker');
@@ -24399,6 +25086,1155 @@ async function updateCfZoneSetting(settingId, nextValue, el) {
     showToast(t('error_prefix', 'Error: ') + e.message, 'error');
     await loadCfZoneSettings();
   }
+}
+
+// ============================================================================
+// Ansible Playbooks (Semaphore-style)
+// ============================================================================
+let currentAnsibleTab = 'playbooks';
+let ansibleStatusCache = null;
+let ansiblePlaybooksCache = [];
+let ansibleSelectedHostIds = new Set();
+let ansibleRunTargetPlaybook = null;
+let ansiblePlaybookModalMode = 'add';
+let ansiblePlaybookEditId = null;
+let ansibleYamlEditor = null;
+
+let currentAnsibleRunId = null;
+let currentAnsibleRun = null;
+let currentAnsibleRunTab = 'log';
+let ansibleLogOffset = 0;
+let ansibleLogPollTimer = null;
+let ansibleLogAutoScroll = true;
+let ansibleRunHistoryCache = [];
+
+function switchAnsibleTab(tab) {
+  if (!['playbooks', 'schedules', 'settings'].includes(tab)) return;
+  currentAnsibleTab = tab;
+  document.querySelectorAll('#ansibleTabs .tab').forEach(el => {
+    const active = el.dataset.tab === tab;
+    el.classList.toggle('active', active);
+    el.setAttribute('aria-selected', String(active));
+    el.tabIndex = active ? 0 : -1;
+    document.getElementById(el.getAttribute('aria-controls')).style.display = active ? 'flex' : 'none';
+  });
+}
+
+function onAnsibleTabKeydown(event) {
+  const tabs = Array.from(document.querySelectorAll('#ansibleTabs .tab'));
+  const index = tabs.indexOf(event.target);
+  if (index < 0) return;
+  let next;
+  if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+  else if (event.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length;
+  else if (event.key === 'Home') next = 0;
+  else if (event.key === 'End') next = tabs.length - 1;
+  else return;
+  event.preventDefault();
+  switchAnsibleTab(tabs[next].dataset.tab);
+  tabs[next].focus();
+}
+
+async function loadAnsibleStatus() {
+  try {
+    const res = await fetch('/api/ansible/status');
+    if (res.ok) {
+      ansibleStatusCache = await res.json();
+    } else {
+      ansibleStatusCache = { available: false, enabled: false, error: 'Failed to fetch status' };
+    }
+  } catch (e) {
+    ansibleStatusCache = { available: false, enabled: false, error: e.message };
+  }
+  renderAnsibleGateBanner();
+  return ansibleStatusCache;
+}
+
+function renderAnsibleGateBanner() {
+  const banner = document.getElementById('ansibleGateBanner');
+  const titleEl = document.getElementById('ansibleGateTitle');
+  const descEl = document.getElementById('ansibleGateDesc');
+  const actionEl = document.getElementById('ansibleGateAction');
+  if (!banner || !titleEl || !descEl || !actionEl) return;
+
+  const st = ansibleStatusCache || { available: false, enabled: false };
+  const status = document.getElementById('ansibleGateStatus');
+  if (status) {
+    status.textContent = !st.available ? t('ansible_gate_unavailable', 'Ansible unavailable')
+      : st.enabled ? t('ansible_gate_active', 'Ansible Gate is Active') : t('ansible_gate_disabled_title', 'Ansible Gate is Disabled');
+    status.className = 'badge ' + (!st.available ? 'badge-danger' : st.enabled ? 'badge-healthy' : 'badge-warning');
+  }
+  banner.style.display = 'flex';
+
+  if (!st.available) {
+    banner.className = 'ans-gate-banner ans-gate-danger';
+    titleEl.innerHTML = `${svgIcon('ban', 'icon-sm')} <span>${escapeHtml(t('ansible_gate_title', 'Ansible Gate'))} — Binary Unavailable</span>`;
+    descEl.innerText = st.error || t('ansible_gate_binary_missing', 'ansible-playbook binary not found in server PATH. Install ansible-core on the Pantau server to run playbooks.');
+    actionEl.innerHTML = '';
+  } else if (!st.enabled) {
+    banner.className = 'ans-gate-banner ans-gate-warn';
+    titleEl.innerHTML = `${svgIcon('shield-alert', 'icon-sm')} <span>${escapeHtml(t('ansible_gate_disabled_title', 'Ansible Gate is Disabled'))} (${escapeHtml(st.version || 'installed')})</span>`;
+    descEl.innerText = t('ansible_gate_disabled_warning', 'Warning: Ansible Playbooks execute on the Pantau server with Pantau master process privileges. Tasks targeting localhost or local plugins can read/write data on the master server. Only enable this if you trust authorized Pantau administrators.');
+    actionEl.innerHTML = `<button type="button" class="btn btn-sm btn-primary" onclick="toggleAnsibleGate(true)" style="display:inline-flex;align-items:center;gap:6px;">
+      ${svgIcon('power', 'icon-xs')} <span>${escapeHtml(t('ansible_gate_btn_enable', 'Enable Ansible Gate'))}</span>
+    </button>`;
+  } else {
+    banner.className = 'ans-gate-banner ans-gate-info';
+    titleEl.innerHTML = `${svgIcon('circle-check', 'icon-sm')} <span>${escapeHtml(t('ansible_gate_active', 'Ansible Gate is Active'))}</span> <span class="badge badge-healthy" style="font-size:10px;">${escapeHtml(st.version || 'ansible-playbook')}</span>`;
+    descEl.innerText = t('ansible_gate_disabled_warning', 'Warning: Ansible Playbooks execute on the Pantau server with Pantau master process privileges. Tasks targeting localhost or local plugins can read/write data on the master server. Only enable this if you trust authorized Pantau administrators.');
+    actionEl.innerHTML = `<button type="button" class="btn btn-sm btn-ghost" onclick="toggleAnsibleGate(false)" style="color:var(--text-muted);display:inline-flex;align-items:center;gap:6px;">
+      ${svgIcon('power', 'icon-xs')} <span>${escapeHtml(t('ansible_gate_btn_disable', 'Disable Gate'))}</span>
+    </button>`;
+  }
+}
+
+async function toggleAnsibleGate(enable) {
+  if (enable) {
+    const ok = await showConfirm({
+      title: t('ansible_gate_confirm_enable_title', 'Enable Ansible Gate'),
+      message: t('ansible_gate_confirm_enable_msg', 'Are you sure you want to enable the Ansible Gate? Ansible playbooks will be allowed to execute locally on the Pantau server with the master process permissions.'),
+      confirmText: t('ansible_gate_btn_enable', 'Enable Ansible Gate'),
+      danger: true,
+    });
+    if (!ok) return;
+  } else {
+    const ok = await showConfirm({
+      title: t('ansible_gate_confirm_disable_title', 'Disable Ansible Gate'),
+      message: t('ansible_gate_confirm_disable_msg', 'Disable the Ansible Gate? Running playbooks will be prevented.'),
+      confirmText: t('ansible_gate_btn_disable', 'Disable Gate'),
+      danger: false,
+    });
+    if (!ok) return;
+  }
+
+  try {
+    const res = await fetch('/api/ansible/status', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: !!enable }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to update Ansible Gate status'), 'error');
+      return;
+    }
+    ansibleStatusCache = data;
+    renderAnsibleGateBanner();
+    await loadAnsiblePlaybooks();
+    await loadAnsibleSchedules();
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+  }
+}
+
+async function loadAnsiblePlaybooks() {
+  const countBadge = document.getElementById('ansiblePlaybookCountBadge');
+  try {
+    const res = await fetch('/api/ansible/playbooks');
+    const data = await res.json();
+    if (res.ok && Array.isArray(data.playbooks)) {
+      ansiblePlaybooksCache = data.playbooks;
+    } else {
+      ansiblePlaybooksCache = [];
+    }
+  } catch (e) {
+    ansiblePlaybooksCache = [];
+  }
+  if (countBadge) {
+    countBadge.textContent = `${ansiblePlaybooksCache.length} playbook${ansiblePlaybooksCache.length === 1 ? '' : 's'}`;
+  }
+  renderAnsiblePlaybooks();
+}
+
+function filterAnsiblePlaybooks() {
+  renderAnsiblePlaybooks();
+}
+
+function ansibleStatusBadgeClass(status) {
+  switch (String(status || '').toLowerCase()) {
+    case 'success': return 'badge-healthy';
+    case 'running': return 'badge-info';
+    case 'queued': return 'badge-warning';
+    case 'failed': return 'badge-danger';
+    case 'cancelled':
+    case 'interrupted': return 'badge-unknown';
+    default: return 'badge-unknown';
+  }
+}
+
+function formatAnsibleDuration(ms) {
+  if (ms === null || ms === undefined || ms < 0) return '-';
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  const rem = sec % 60;
+  return `${min}m ${rem}s`;
+}
+
+function renderAnsiblePlaybooks() {
+  const grid = document.getElementById('ansiblePlaybooksGrid');
+  const empty = document.getElementById('ansiblePlaybooksEmpty');
+  if (!grid || !empty) return;
+
+  const q = (document.getElementById('ansiblePlaybookSearchInput')?.value || '').toLowerCase().trim();
+  const list = q
+    ? ansiblePlaybooksCache.filter(p => (p.name || '').toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q))
+    : ansiblePlaybooksCache;
+
+  if (list.length === 0) {
+    grid.style.display = 'none';
+    empty.style.display = 'block';
+    return;
+  }
+  grid.style.display = 'grid';
+  empty.style.display = 'none';
+
+  grid.innerHTML = list.map(p => {
+    const lastStatus = p.last_status || 'never_run';
+    const lastRunRel = p.last_run_at ? formatRelativeTime(p.last_run_at).relative : '-';
+    const statusCls = ansibleStatusBadgeClass(lastStatus);
+    return `<div class="card host-card" style="display:flex;flex-direction:column;gap:10px;">
+      <div class="host-card-header">
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+          <svg class="icon icon-sm text-accent" style="flex-shrink:0;"><use href="#i-ansible"/></svg>
+          <span style="font-weight:600;font-size:var(--fs-md);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
+        </div>
+        <span class="badge ${statusCls}">${escapeHtml(lastStatus)}</span>
+      </div>
+      <div style="font-size:var(--fs-xs);color:var(--text-muted);min-height:32px;line-height:1.45;word-break:break-word;">
+        ${escapeHtml(p.description || 'No description provided')}
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:var(--fs-xs);color:var(--text-muted);">
+        <span>${svgIcon('clock', 'icon-xs')} <span>Last run: <b>${escapeHtml(lastRunRel)}</b></span></span>
+        ${p.source === 'git' ? `<span class="badge" style="background:var(--surface-2);border:1px solid var(--card-border);font-family:var(--font-mono);" title="${escapeHtml(p.git_url)} : ${escapeHtml(p.git_path)}">git${p.git_branch ? ' · ' + escapeHtml(p.git_branch) : ''}</span>` : ''}
+      </div>
+      <div style="margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:6px;border-top:1px solid var(--card-border);">
+        <div style="display:flex;gap:4px;">
+          <button type="button" class="btn btn-sm btn-ghost btn-icon" onclick="openAnsiblePlaybookModal(${p.id})" title="Edit playbook">${svgIcon('pencil', 'icon-sm')}</button>
+          <button type="button" class="btn btn-sm btn-ghost btn-icon" onclick="openAnsiblePlaybookHistory(${p.id})" title="Run history">${svgIcon('history', 'icon-sm')}</button>
+          <button type="button" class="btn btn-sm btn-ghost btn-icon btn-danger" onclick="deleteAnsiblePlaybook(${p.id})" title="Delete playbook">${svgIcon('trash-2', 'icon-sm')}</button>
+        </div>
+        <button type="button" class="btn btn-sm btn-primary" onclick="openAnsibleRunLaunchModal(${p.id})" style="display:inline-flex;align-items:center;gap:6px;">
+          ${svgIcon('play', 'icon-sm')} <span>${escapeHtml(t('ansible_btn_run', 'Run'))}</span>
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function refreshAnsibleSection() {
+  await loadAnsibleStatus();
+  await loadAnsiblePlaybooks();
+  await loadAnsibleSchedules();
+}
+
+function initAnsibleYamlEditor(content) {
+  const ta = document.getElementById('ansiblePlaybookContent');
+  if (!ta) return;
+  if (!ansibleYamlEditor) {
+    ansibleYamlEditor = CodeMirror.fromTextArea(ta, {
+      lineNumbers: true,
+      theme: 'vscode-dark',
+      mode: 'yaml',
+    });
+  }
+  ansibleYamlEditor.setValue(content || '');
+  setTimeout(() => { if (ansibleYamlEditor) ansibleYamlEditor.refresh(); }, 50);
+}
+
+function destroyAnsibleYamlEditor() {
+  if (ansibleYamlEditor) {
+    try {
+      ansibleYamlEditor.toTextArea();
+    } catch (e) {}
+    ansibleYamlEditor = null;
+  }
+}
+
+function onAnsiblePlaybookSourceChange() {
+  const src = document.getElementById('ansiblePlaybookSource')?.value || 'inline';
+  const inline = document.getElementById('ansiblePbInline');
+  const git = document.getElementById('ansiblePbGit');
+  if (inline) inline.style.display = src === 'inline' ? 'flex' : 'none';
+  if (git) git.style.display = src === 'git' ? 'flex' : 'none';
+  const missing = document.getElementById('ansibleGitMissing');
+  if (missing) missing.style.display = (src === 'git' && ansibleStatusCache && ansibleStatusCache.git_available === false) ? 'block' : 'none';
+  onAnsibleGitAuthChange();
+  if (src === 'inline' && ansibleYamlEditor) setTimeout(() => { if (ansibleYamlEditor) ansibleYamlEditor.refresh(); }, 30);
+}
+
+function onAnsibleGitAuthChange() {
+  const auth = document.getElementById('ansibleGitAuth')?.value || 'none';
+  const tokenField = document.getElementById('ansibleGitTokenField');
+  const keyField = document.getElementById('ansibleGitKeyField');
+  if (tokenField) tokenField.style.display = auth === 'token' ? 'block' : 'none';
+  if (keyField) keyField.style.display = auth === 'ssh_key' ? 'block' : 'none';
+}
+
+async function loadAnsibleGitKeys(selectedId) {
+  const sel = document.getElementById('ansibleGitKeyId');
+  if (!sel) return;
+  let keys = [];
+  try {
+    const res = await fetch('/api/ssh-keys');
+    if (res.ok) keys = (await res.json()) || [];
+  } catch (e) {}
+  sel.innerHTML = keys.map(k => `<option value="${Number(k.id)}" ${Number(k.id) === Number(selectedId) ? 'selected' : ''}>${escapeHtml(k.name)}${k.fingerprint ? ' (' + escapeHtml(k.fingerprint.slice(0, 18)) + '…)' : ''}</option>`).join('');
+}
+
+async function openAnsiblePlaybookModal(playbookId) {
+  const titleEl = document.getElementById('ansiblePlaybookModalTitle');
+  const nameInput = document.getElementById('ansiblePlaybookName');
+  const descInput = document.getElementById('ansiblePlaybookDesc');
+  const extraInput = document.getElementById('ansiblePlaybookExtraVars');
+  const errEl = document.getElementById('ansiblePlaybookError');
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  if (errEl) errEl.style.display = 'none';
+  setVal('ansibleGitToken', '');
+  const hint = document.getElementById('ansibleGitTokenHint');
+
+  let pb = null;
+  if (playbookId) {
+    ansiblePlaybookModalMode = 'edit';
+    ansiblePlaybookEditId = playbookId;
+    if (titleEl) titleEl.innerText = t('ansible_playbook_modal_edit', 'Edit Playbook');
+    try {
+      const res = await fetch(`/api/ansible/playbooks/${playbookId}`);
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to load playbook'), 'error');
+        return;
+      }
+      pb = data.playbook || {};
+    } catch (e) {
+      showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+      return;
+    }
+  } else {
+    ansiblePlaybookModalMode = 'add';
+    ansiblePlaybookEditId = null;
+    if (titleEl) titleEl.innerText = t('ansible_playbook_modal_add', 'New Playbook');
+  }
+
+  if (nameInput) nameInput.value = pb ? (pb.name || '') : '';
+  if (descInput) descInput.value = pb ? (pb.description || '') : '';
+  if (extraInput) extraInput.value = pb ? (pb.extra_vars || '') : '';
+  setVal('ansiblePlaybookSource', pb && pb.source === 'git' ? 'git' : 'inline');
+  setVal('ansibleGitUrl', pb ? (pb.git_url || '') : '');
+  setVal('ansibleGitBranch', pb ? (pb.git_branch || '') : '');
+  setVal('ansibleGitPath', pb ? (pb.git_path || '') : '');
+  setVal('ansibleGitAuth', pb && pb.git_auth ? pb.git_auth : 'none');
+  if (hint) hint.textContent = pb && pb.git_token_set ? t('ansible_git_token_saved_hint', 'A token is already stored. Leave empty to keep it.') : t('ansible_git_token_hint', 'Personal access token with read access to the repository. Stored like SSH keys; never shown again.');
+  await loadAnsibleGitKeys(pb ? pb.git_key_id : 0);
+
+  openModal('ansiblePlaybookModal');
+  const sampleYaml = "---\n- name: Ping all hosts\n  hosts: all\n  gather_facts: false\n  tasks:\n    - name: Ping\n      ansible.builtin.ping:\n";
+  initAnsibleYamlEditor(pb ? (pb.content || '') : sampleYaml);
+  onAnsiblePlaybookSourceChange();
+  if (nameInput) setTimeout(() => nameInput.focus(), 80);
+}
+
+async function submitAnsiblePlaybookModal() {
+  const nameInput = document.getElementById('ansiblePlaybookName');
+  const descInput = document.getElementById('ansiblePlaybookDesc');
+  const extraInput = document.getElementById('ansiblePlaybookExtraVars');
+  const errEl = document.getElementById('ansiblePlaybookError');
+  const submitBtn = document.getElementById('btnAnsiblePlaybookSubmit');
+  const showErr = (msg) => { if (errEl) { errEl.innerText = msg; errEl.style.display = 'block'; } };
+
+  const name = (nameInput ? nameInput.value : '').trim();
+  const description = (descInput ? descInput.value : '').trim();
+  const extraVars = (extraInput ? extraInput.value : '').trim();
+  const source = document.getElementById('ansiblePlaybookSource')?.value === 'git' ? 'git' : 'inline';
+
+  const payload = { name, description, extra_vars: extraVars, source };
+  if (source === 'git') {
+    payload.git_url = (document.getElementById('ansibleGitUrl')?.value || '').trim();
+    payload.git_branch = (document.getElementById('ansibleGitBranch')?.value || '').trim();
+    payload.git_path = (document.getElementById('ansibleGitPath')?.value || '').trim();
+    payload.git_auth = document.getElementById('ansibleGitAuth')?.value || 'none';
+    payload.git_token = document.getElementById('ansibleGitToken')?.value || '';
+    payload.git_key_id = parseInt(document.getElementById('ansibleGitKeyId')?.value || '0', 10) || 0;
+    if (!name || !payload.git_url || !payload.git_path) {
+      showErr(t('ansible_err_git_required', 'Repository URL and playbook path are required.'));
+      return;
+    }
+  } else {
+    payload.content = ansibleYamlEditor ? ansibleYamlEditor.getValue().trim() : '';
+    if (!name || !payload.content) {
+      showErr(t('ansible_err_name_content_required', 'Playbook name and YAML content are required.'));
+      return;
+    }
+  }
+
+  if (extraVars) {
+    try {
+      const parsed = JSON.parse(extraVars);
+      if (typeof parsed !== 'object' || Array.isArray(parsed) || parsed === null) {
+        throw new Error('Must be a JSON object');
+      }
+    } catch (e) {
+      showErr(t('ansible_err_extravars_json', 'Extra vars must be a valid JSON object.'));
+      return;
+    }
+  }
+
+  if (errEl) errEl.style.display = 'none';
+  if (submitBtn) submitBtn.disabled = true;
+
+  const isEdit = ansiblePlaybookModalMode === 'edit' && ansiblePlaybookEditId;
+  const url = isEdit ? `/api/ansible/playbooks/${ansiblePlaybookEditId}` : '/api/ansible/playbooks';
+  const method = isEdit ? 'PUT' : 'POST';
+
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showErr(data.error || 'Failed to save playbook');
+      return;
+    }
+    closeModal('ansiblePlaybookModal');
+    showToast(t('ansible_playbook_saved', 'Playbook saved successfully'), 'success');
+    await loadAnsiblePlaybooks();
+    await loadAnsibleSchedules();
+  } catch (e) {
+    showErr(e.message);
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
+}
+
+async function deleteAnsiblePlaybook(id) {
+  const pb = ansiblePlaybooksCache.find(p => p.id === id);
+  const name = pb ? pb.name : `#${id}`;
+  const confirmed = await showConfirm({
+    title: t('ansible_confirm_delete_pb_title', 'Delete Playbook'),
+    message: t('ansible_confirm_delete_pb_msg', 'Are you sure you want to delete Playbook "{name}"? All associated run history will also be permanently deleted.').replace('{name}', name),
+    confirmText: t('delete', 'Delete'),
+    danger: true,
+  });
+  if (!confirmed) return;
+
+  try {
+    const res = await fetch(`/api/ansible/playbooks/${id}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to delete playbook'), 'error');
+      return;
+    }
+    showToast(t('ansible_playbook_deleted', 'Playbook deleted successfully'), 'success');
+    await loadAnsiblePlaybooks();
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+  }
+}
+
+// Target selection helpers
+function getFilteredAnsibleHosts() {
+  const q = (document.getElementById('ansibleHostSearch')?.value || '').toLowerCase().trim();
+  const grp = document.getElementById('ansibleGroupFilter')?.value || 'all';
+  return (allRawHosts || []).filter(h => {
+    if (grp !== 'all') {
+      const hGrp = (h.group_name || '').trim();
+      if (grp === '__ungrouped__' && hGrp !== '') return false;
+      if (grp !== '__ungrouped__' && hGrp !== grp) return false;
+    }
+    if (!q) return true;
+    return (h.name || '').toLowerCase().includes(q) || (h.host || '').toLowerCase().includes(q);
+  });
+}
+
+function renderAnsibleGroupChips() {
+  const container = document.getElementById('ansibleGroupChips');
+  if (!container) return;
+  const groups = Array.from(new Set((allRawHosts || []).map(h => (h.group_name || '').trim()).filter(Boolean))).sort();
+  if (groups.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+  container.innerHTML = groups.map(g => {
+    const memberIds = (allRawHosts || []).filter(h => (h.group_name || '').trim() === g).map(h => h.id);
+    const allSelected = memberIds.length > 0 && memberIds.every(id => ansibleSelectedHostIds.has(id));
+    return `<button type="button" class="ans-chip ${allSelected ? 'active' : ''}" onclick="toggleAnsibleGroupMembers('${escapeHtml(g)}')" title="Select/Deselect group members">
+      ${svgIcon('folder', 'icon-xs')} <span>${escapeHtml(g)}</span> <span class="badge" style="font-size:10px;padding:0 4px;">${memberIds.length}</span>
+    </button>`;
+  }).join('');
+}
+
+function toggleAnsibleGroupMembers(groupName) {
+  const memberIds = (allRawHosts || []).filter(h => (h.group_name || '').trim() === groupName).map(h => h.id);
+  const allSelected = memberIds.length > 0 && memberIds.every(id => ansibleSelectedHostIds.has(id));
+  if (allSelected) {
+    memberIds.forEach(id => ansibleSelectedHostIds.delete(id));
+  } else {
+    memberIds.forEach(id => {
+      if (ansibleSelectedHostIds.size < 200) ansibleSelectedHostIds.add(id);
+    });
+  }
+  renderAnsibleHostPicker();
+}
+
+function renderAnsibleHostPicker() {
+  const container = document.getElementById('ansibleHostPicker');
+  const countEl = document.getElementById('ansibleSelectedTargetsCount');
+  if (!container) return;
+  if (countEl) countEl.innerText = `${ansibleSelectedHostIds.size} / 200`;
+
+  renderAnsibleGroupChips();
+  const hosts = getFilteredAnsibleHosts();
+  if (hosts.length === 0) {
+    container.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); font-size: var(--fs-xs); padding: 12px;">No matching hosts</div>`;
+    return;
+  }
+  container.innerHTML = hosts.map(h => {
+    const checked = ansibleSelectedHostIds.has(h.id);
+    return `<label style="display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); cursor: pointer; padding: 4px 6px; border-radius: var(--radius-sm); background: ${checked ? 'var(--hover)' : 'transparent'};">
+      <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleAnsibleHostTarget(${h.id}, this.checked)" />
+      <span style="font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(h.name)}">${escapeHtml(h.name)}</span>
+      ${h.group_name ? `<span class="badge" style="font-size:10px;padding:0 4px;margin-left:auto;">${escapeHtml(h.group_name)}</span>` : ''}
+    </label>`;
+  }).join('');
+}
+
+function toggleAnsibleHostTarget(id, checked) {
+  if (checked) {
+    if (ansibleSelectedHostIds.size >= 200) {
+      showToast('Maximum 200 target hosts reached', 'warning');
+      renderAnsibleHostPicker();
+      return;
+    }
+    ansibleSelectedHostIds.add(id);
+  } else {
+    ansibleSelectedHostIds.delete(id);
+  }
+  renderAnsibleHostPicker();
+}
+
+function ansibleSelectAllFiltered() {
+  const filtered = getFilteredAnsibleHosts();
+  for (const h of filtered) {
+    if (ansibleSelectedHostIds.size >= 200) break;
+    ansibleSelectedHostIds.add(h.id);
+  }
+  renderAnsibleHostPicker();
+}
+
+function ansibleClearSelection() {
+  ansibleSelectedHostIds.clear();
+  renderAnsibleHostPicker();
+}
+
+function onAnsibleRunModeChange() {
+  const mode = document.getElementById('ansibleRunMode')?.value || 'run';
+  const star = document.getElementById('ansibleTargetsReqStar');
+  if (star) star.style.display = mode === 'syntax' ? 'none' : 'inline';
+}
+
+function openAnsibleRunLaunchModal(playbookId) {
+  const pb = ansiblePlaybooksCache.find(p => p.id === playbookId);
+  if (!pb) return;
+  ansibleRunTargetPlaybook = pb;
+
+  const titleEl = document.getElementById('ansibleRunLaunchModalTitle');
+  if (titleEl) titleEl.innerText = `${t('ansible_run_launch_title', 'Run Playbook')}: ${pb.name}`;
+
+  const errEl = document.getElementById('ansibleRunLaunchError');
+  if (errEl) errEl.style.display = 'none';
+
+  ansibleSelectedHostIds.clear();
+  const searchInput = document.getElementById('ansibleHostSearch');
+  if (searchInput) searchInput.value = '';
+
+  const grpSelect = document.getElementById('ansibleGroupFilter');
+  if (grpSelect) {
+    const groups = Array.from(new Set((allRawHosts || []).map(h => (h.group_name || '').trim()).filter(Boolean))).sort();
+    grpSelect.innerHTML = `<option value="all">${t('bulk_all_groups', 'All Groups')}</option>` +
+      groups.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('') +
+      `<option value="__ungrouped__">${t('ungrouped', 'Ungrouped')}</option>`;
+  }
+
+  const modeSel = document.getElementById('ansibleRunMode');
+  if (modeSel) modeSel.value = 'run';
+  const verbSel = document.getElementById('ansibleRunVerbosity');
+  if (verbSel) verbSel.value = '0';
+  const tagsInp = document.getElementById('ansibleRunTags');
+  if (tagsInp) tagsInp.value = '';
+  const skipTagsInp = document.getElementById('ansibleRunSkipTags');
+  if (skipTagsInp) skipTagsInp.value = '';
+  const extraInp = document.getElementById('ansibleRunExtraVars');
+  if (extraInp) extraInp.value = '';
+  const becomeInp = document.getElementById('ansibleRunBecome');
+  if (becomeInp) becomeInp.checked = false;
+
+  onAnsibleRunModeChange();
+  renderAnsibleHostPicker();
+  openModal('ansibleRunLaunchModal');
+}
+
+async function submitAnsibleRunLaunch() {
+  if (!ansibleRunTargetPlaybook) return;
+  const errEl = document.getElementById('ansibleRunLaunchError');
+  const submitBtn = document.getElementById('btnAnsibleRunLaunchSubmit');
+
+  const mode = document.getElementById('ansibleRunMode')?.value || 'run';
+  const hostIds = Array.from(ansibleSelectedHostIds);
+  const verbosity = parseInt(document.getElementById('ansibleRunVerbosity')?.value || '0', 10);
+  const tags = (document.getElementById('ansibleRunTags')?.value || '').trim();
+  const skipTags = (document.getElementById('ansibleRunSkipTags')?.value || '').trim();
+  const extraVars = (document.getElementById('ansibleRunExtraVars')?.value || '').trim();
+  const become = !!document.getElementById('ansibleRunBecome')?.checked;
+
+  if (mode !== 'syntax' && hostIds.length === 0) {
+    if (errEl) {
+      errEl.innerText = t('ansible_err_targets_required', 'Please select at least 1 target host (Syntax mode allows zero targets).');
+      errEl.style.display = 'block';
+    }
+    return;
+  }
+
+  if (extraVars) {
+    try {
+      const parsed = JSON.parse(extraVars);
+      if (typeof parsed !== 'object' || Array.isArray(parsed) || parsed === null) {
+        throw new Error('Must be a JSON object');
+      }
+    } catch (e) {
+      if (errEl) {
+        errEl.innerText = t('ansible_err_extravars_json', 'Extra vars must be a valid JSON object.');
+        errEl.style.display = 'block';
+      }
+      return;
+    }
+  }
+
+  if (errEl) errEl.style.display = 'none';
+  if (submitBtn) submitBtn.disabled = true;
+
+  const payload = {
+    mode,
+    host_ids: hostIds,
+    verbosity,
+    become,
+    tags,
+    skip_tags: skipTags,
+    extra_vars: extraVars,
+  };
+
+  try {
+    const res = await fetch(`/api/ansible/playbooks/${ansibleRunTargetPlaybook.id}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      if (errEl) {
+        errEl.innerText = data.error || 'Failed to launch playbook run';
+        errEl.style.display = 'block';
+      }
+      return;
+    }
+    closeModal('ansibleRunLaunchModal');
+    showToast(t('ansible_run_started', 'Playbook run started'), 'success');
+    const runObj = data.run;
+    if (runObj && runObj.id) {
+      openAnsibleRunViewer(runObj.id);
+    }
+    await loadAnsiblePlaybooks();
+  } catch (e) {
+    if (errEl) {
+      errEl.innerText = e.message;
+      errEl.style.display = 'block';
+    }
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
+}
+
+// Viewer + Polling Log + History Modal
+async function openAnsibleRunViewer(runId) {
+  stopAnsibleLogPolling();
+  currentAnsibleRunId = runId;
+  ansibleLogOffset = 0;
+  ansibleLogAutoScroll = true;
+
+  const logPane = document.getElementById('ansibleLogOutput');
+  if (logPane) logPane.textContent = '';
+
+  openModal('ansibleRunModal');
+  switchAnsibleRunTab('log');
+
+  await pollAnsibleRunDetails();
+  startAnsibleLogPolling();
+}
+
+async function openAnsiblePlaybookHistory(playbookId) {
+  const pb = ansiblePlaybooksCache.find(p => p.id === playbookId);
+  currentAnsibleRunId = null;
+  currentAnsibleRun = null;
+  ansibleRunTargetPlaybook = pb || { id: playbookId, name: `Playbook #${playbookId}` };
+
+  const titleEl = document.getElementById('ansibleRunModalPlaybookName');
+  if (titleEl) titleEl.innerText = ansibleRunTargetPlaybook.name;
+
+  const statusBadge = document.getElementById('ansibleRunStatusBadge');
+  if (statusBadge) { statusBadge.textContent = '-'; statusBadge.className = 'badge'; }
+  const durBadge = document.getElementById('ansibleRunDurationBadge');
+  if (durBadge) durBadge.textContent = '-';
+  const modeBadge = document.getElementById('ansibleRunModeBadge');
+  if (modeBadge) modeBadge.textContent = '-';
+  const cancelBtn = document.getElementById('btnAnsibleCancelRun');
+  if (cancelBtn) cancelBtn.style.display = 'none';
+
+  openModal('ansibleRunModal');
+  switchAnsibleRunTab('history');
+  await loadAnsibleRunHistory(playbookId);
+}
+
+function switchAnsibleRunTab(tab) {
+  currentAnsibleRunTab = tab;
+  document.querySelectorAll('#ansibleRunTabs .tab').forEach(el => {
+    const isAct = el.id === ('tabAnsibleRun' + tab.charAt(0).toUpperCase() + tab.slice(1));
+    el.classList.toggle('active', isAct);
+  });
+  const pLog = document.getElementById('ansibleRunPanelLog');
+  const pHistory = document.getElementById('ansibleRunPanelHistory');
+  if (pLog) pLog.style.display = tab === 'log' ? 'flex' : 'none';
+  if (pHistory) pHistory.style.display = tab === 'history' ? 'flex' : 'none';
+
+  if (tab === 'history' && (currentAnsibleRun || ansibleRunTargetPlaybook)) {
+    const pbId = (currentAnsibleRun && currentAnsibleRun.playbook_id) || (ansibleRunTargetPlaybook && ansibleRunTargetPlaybook.id) || 0;
+    loadAnsibleRunHistory(pbId);
+  }
+}
+
+async function pollAnsibleRunDetails() {
+  if (!currentAnsibleRunId) return;
+  try {
+    const res = await fetch(`/api/ansible/runs/${currentAnsibleRunId}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const r = data.run;
+    if (!r) return;
+    currentAnsibleRun = r;
+
+    const titleEl = document.getElementById('ansibleRunModalPlaybookName');
+    if (titleEl) titleEl.innerText = r.playbook_name || `Playbook #${r.playbook_id}`;
+
+    const statusBadge = document.getElementById('ansibleRunStatusBadge');
+    if (statusBadge) {
+      statusBadge.textContent = r.status || 'unknown';
+      statusBadge.className = `badge ${ansibleStatusBadgeClass(r.status)}`;
+    }
+
+    const durBadge = document.getElementById('ansibleRunDurationBadge');
+    if (durBadge) {
+      if (r.started_at) {
+        const start = new Date(r.started_at).getTime();
+        const end = r.finished_at ? new Date(r.finished_at).getTime() : Date.now();
+        durBadge.textContent = formatAnsibleDuration(end - start);
+      } else {
+        durBadge.textContent = '-';
+      }
+    }
+
+    const modeBadge = document.getElementById('ansibleRunModeBadge');
+    if (modeBadge) modeBadge.textContent = r.mode || 'run';
+
+    const cancelBtn = document.getElementById('btnAnsibleCancelRun');
+    if (cancelBtn) {
+      cancelBtn.style.display = (r.status === 'queued' || r.status === 'running') ? 'inline-flex' : 'none';
+    }
+
+    const summaryEl = document.getElementById('ansibleRunTargetSummary');
+    if (summaryEl) {
+      let targetsDesc = '-';
+      try {
+        const tArr = JSON.parse(r.targets || '[]');
+        targetsDesc = Array.isArray(tArr) ? `${tArr.length} target${tArr.length === 1 ? '' : 's'}` : '-';
+      } catch (e) {}
+      summaryEl.innerText = `Mode: ${r.mode || 'run'} • Targets: ${targetsDesc} • Exit: ${r.exit_code !== null && r.exit_code !== undefined ? r.exit_code : '-'}`;
+    }
+  } catch (e) {}
+}
+
+function startAnsibleLogPolling() {
+  stopAnsibleLogPolling();
+  pollAnsibleLog();
+  ansibleLogPollTimer = setInterval(pollAnsibleLog, 1000);
+}
+
+function stopAnsibleLogPolling() {
+  if (ansibleLogPollTimer) {
+    clearInterval(ansibleLogPollTimer);
+    ansibleLogPollTimer = null;
+  }
+}
+
+async function pollAnsibleLog() {
+  if (!currentAnsibleRunId) return;
+  try {
+    const res = await fetch(`/api/ansible/runs/${currentAnsibleRunId}/log?offset=${ansibleLogOffset}`);
+    if (!res.ok) {
+      if (res.status === 404 || res.status === 409) stopAnsibleLogPolling();
+      return;
+    }
+    const data = await res.json();
+    if (data.data) {
+      const logPane = document.getElementById('ansibleLogOutput');
+      if (logPane) {
+        logPane.textContent += data.data;
+        if (ansibleLogAutoScroll) {
+          logPane.scrollTop = logPane.scrollHeight;
+        }
+      }
+    }
+    if (data.offset !== undefined && data.offset !== null) {
+      ansibleLogOffset = data.offset;
+    }
+    if (data.status) {
+      const statusBadge = document.getElementById('ansibleRunStatusBadge');
+      if (statusBadge) {
+        statusBadge.textContent = data.status;
+        statusBadge.className = `badge ${ansibleStatusBadgeClass(data.status)}`;
+      }
+      const cancelBtn = document.getElementById('btnAnsibleCancelRun');
+      if (cancelBtn) {
+        cancelBtn.style.display = (data.status === 'queued' || data.status === 'running') ? 'inline-flex' : 'none';
+      }
+    }
+    if (data.finished) {
+      stopAnsibleLogPolling();
+      await pollAnsibleRunDetails();
+      await loadAnsiblePlaybooks();
+    }
+  } catch (e) {}
+}
+
+function onAnsibleLogScroll() {
+  const pane = document.getElementById('ansibleLogOutput');
+  if (!pane) return;
+  const isAtBottom = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 30;
+  ansibleLogAutoScroll = isAtBottom;
+  const cb = document.getElementById('ansibleLogAutoScroll');
+  if (cb) cb.checked = isAtBottom;
+}
+
+function copyAnsibleLog() {
+  const pane = document.getElementById('ansibleLogOutput');
+  if (!pane || !pane.textContent) return;
+  copyTextToClipboard(pane.textContent);
+  showToast(t('copied', 'Copied to clipboard'), 'success');
+}
+
+function clearAnsibleLogView() {
+  const pane = document.getElementById('ansibleLogOutput');
+  if (pane) pane.textContent = '';
+}
+
+async function cancelCurrentAnsibleRun() {
+  if (!currentAnsibleRunId) return;
+  const confirmed = await showConfirm({
+    title: t('ansible_confirm_cancel_run_title', 'Cancel Playbook Run'),
+    message: t('ansible_confirm_cancel_run_msg', 'Cancel this running Playbook execution? Pantau will terminate the process group.'),
+    confirmText: t('ansible_btn_cancel_run', 'Cancel Run'),
+    danger: true,
+  });
+  if (!confirmed) return;
+
+  try {
+    const res = await fetch(`/api/ansible/runs/${currentAnsibleRunId}/cancel`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to cancel run'), 'error');
+      return;
+    }
+    showToast(t('ansible_run_cancelled', 'Playbook run cancelled'), 'info');
+    await pollAnsibleRunDetails();
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+  }
+}
+
+async function refreshCurrentAnsibleRunModal() {
+  if (currentAnsibleRunTab === 'log') {
+    await pollAnsibleRunDetails();
+    await pollAnsibleLog();
+  } else {
+    const pbId = (currentAnsibleRun && currentAnsibleRun.playbook_id) || (ansibleRunTargetPlaybook && ansibleRunTargetPlaybook.id) || 0;
+    await loadAnsibleRunHistory(pbId);
+  }
+}
+
+async function loadAnsibleRunHistory(playbookId) {
+  const tbody = document.getElementById('ansibleHistoryTableBody');
+  const empty = document.getElementById('ansibleHistoryEmpty');
+  if (!tbody || !empty) return;
+
+  const url = playbookId ? `/api/ansible/playbooks/${playbookId}/runs?limit=100` : '/api/ansible/runs?limit=100';
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (res.ok && Array.isArray(data.runs)) {
+      ansibleRunHistoryCache = data.runs;
+    } else {
+      ansibleRunHistoryCache = [];
+    }
+  } catch (e) {
+    ansibleRunHistoryCache = [];
+  }
+
+  if (ansibleRunHistoryCache.length === 0) {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  tbody.innerHTML = ansibleRunHistoryCache.map(r => {
+    let targetNames = '-';
+    try {
+      const tArr = JSON.parse(r.targets || '[]');
+      if (Array.isArray(tArr)) {
+        targetNames = tArr.map(x => x.name || `#${x.id}`).join(', ') || '-';
+      }
+    } catch (e) {}
+
+    let durText = '-';
+    if (r.started_at) {
+      const start = new Date(r.started_at).getTime();
+      const end = r.finished_at ? new Date(r.finished_at).getTime() : Date.now();
+      durText = formatAnsibleDuration(end - start);
+    }
+    const timeRel = r.created_at ? formatRelativeTime(r.created_at).relative : '-';
+    const statusCls = ansibleStatusBadgeClass(r.status);
+
+    return `<tr style="border-bottom: 1px solid var(--card-border); cursor: pointer;" onclick="openAnsibleRunViewer(${r.id})">
+      <td class="mono">#${r.id}</td>
+      <td><span class="badge ${statusCls}">${escapeHtml(r.status)}</span></td>
+      <td><span class="badge" style="background:var(--surface-2);border:1px solid var(--card-border);">${escapeHtml(r.mode || 'run')}</span>${r.trigger === 'schedule' ? ` <span class="badge badge-info" title="schedule #${Number(r.schedule_id)}">${escapeHtml(t('ansible_trigger_schedule', 'scheduled'))}</span>` : ''}${r.commit_sha ? ` <span class="badge mono" style="background:var(--surface-2);border:1px solid var(--card-border);" title="${escapeHtml(t('ansible_commit', 'Commit'))} ${escapeHtml(r.commit_sha)}">${escapeHtml(r.commit_sha.slice(0, 7))}</span>` : ''}</td>
+      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(targetNames)}">${escapeHtml(targetNames)}</td>
+      <td class="mono">${r.exit_code !== null && r.exit_code !== undefined ? r.exit_code : '-'}</td>
+      <td class="mono">${escapeHtml(durText)}</td>
+      <td style="color:var(--text-muted);">${escapeHtml(timeRel)}</td>
+      <td style="text-align:right;">
+        <button type="button" class="btn btn-sm btn-ghost btn-icon" onclick="event.stopPropagation();openAnsibleRunViewer(${r.id})" title="View Log">${svgIcon('scroll-text', 'icon-sm')}</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ---- Schedules ----
+let ansibleSchedulesCache = [];
+let ansibleSchedEditId = null;
+let ansibleSchedHostIds = new Set();
+
+async function loadAnsibleSchedules() {
+  const box = document.getElementById('ansibleSchedulesContainer');
+  if (!box) return;
+  const st = ansibleStatusCache || {};
+  const unavailable = document.getElementById('ansibleSchedulesUnavailable');
+  if (unavailable) unavailable.style.display = st.available && st.enabled ? 'none' : 'flex';
+  if (!st.available || !st.enabled) {
+    box.style.display = 'none';
+    ansibleSchedulesCache = [];
+    return;
+  }
+  box.style.display = 'flex';
+  const desc = document.getElementById('ansibleSchedulesDesc');
+  if (desc) desc.textContent = t('ansible_sched_desc', 'Run playbooks automatically on a cron schedule. Times use the Pantau server time zone ({tz}).').replace('{tz}', st.timezone || 'local');
+  try {
+    const res = await fetch('/api/ansible/schedules');
+    const data = await res.json();
+    ansibleSchedulesCache = res.ok && Array.isArray(data.schedules) ? data.schedules : [];
+  } catch (e) {
+    ansibleSchedulesCache = [];
+  }
+  renderAnsibleSchedules();
+}
+
+function renderAnsibleSchedules() {
+  const tbody = document.getElementById('ansibleSchedulesBody');
+  const empty = document.getElementById('ansibleSchedulesEmpty');
+  if (!tbody || !empty) return;
+  empty.style.display = ansibleSchedulesCache.length ? 'none' : 'block';
+  tbody.innerHTML = ansibleSchedulesCache.map(s => {
+    const hosts = (s.host_ids || []).length;
+    const targets = [s.group ? `${svgIcon('folder', 'icon-xs')} ${escapeHtml(s.group)}` : '', hosts ? `${hosts} host${hosts === 1 ? '' : 's'}` : ''].filter(Boolean).join(' + ') || '-';
+    const next = s.enabled && s.next_run_at ? new Date(s.next_run_at).toLocaleString() : '-';
+    let last = '-';
+    if (s.last_run_at) {
+      const rel = formatRelativeTime(s.last_run_at).relative;
+      last = s.last_run_id ? `<a href="#" onclick="event.preventDefault();openAnsibleRunViewer(${Number(s.last_run_id)})">#${Number(s.last_run_id)}</a> <span style="color:var(--text-muted);">${escapeHtml(rel)}</span>` : `<span style="color:var(--text-muted);">${escapeHtml(rel)}</span>`;
+    }
+    const err = s.last_error ? `<div class="ans-sched-err" title="${escapeHtml(s.last_error)}">${escapeHtml(s.last_error)}</div>` : '';
+    return `<tr>
+      <td><div style="font-weight:600;">${escapeHtml(s.playbook_name || '#' + s.playbook_id)}</div>${s.name ? `<div style="color:var(--text-muted);">${escapeHtml(s.name)}</div>` : ''}</td>
+      <td class="mono">${escapeHtml(s.cron)}</td>
+      <td>${targets}</td>
+      <td><span class="badge" style="background:var(--surface-2);border:1px solid var(--card-border);">${escapeHtml(s.mode)}</span></td>
+      <td>${escapeHtml(next)}</td>
+      <td>${last}${err}</td>
+      <td><label class="switch" style="margin:0;"><input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="toggleAnsibleSchedule(${Number(s.id)}, this.checked, this)" /><span class="switch-track"><span class="switch-thumb"></span></span></label></td>
+      <td style="text-align:right;white-space:nowrap;">
+        <button type="button" class="btn btn-sm btn-ghost btn-icon" onclick="openAnsibleScheduleModal(${Number(s.id)})" title="Edit">${svgIcon('pencil', 'icon-sm')}</button>
+        <button type="button" class="btn btn-sm btn-ghost btn-icon btn-danger" onclick="deleteAnsibleSchedule(${Number(s.id)})" title="Delete">${svgIcon('trash-2', 'icon-sm')}</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function ansibleSchedulePayload(s, over) {
+  return Object.assign({
+    playbook_id: s.playbook_id, name: s.name, cron: s.cron, enabled: s.enabled, mode: s.mode, host_ids: s.host_ids || [],
+    group: s.group || '', extra_vars: s.extra_vars || '', tags: s.tags || '', skip_tags: s.skip_tags || '',
+    verbosity: s.verbosity || 0, become: !!s.become,
+  }, over || {});
+}
+
+async function toggleAnsibleSchedule(id, enabled, el) {
+  const s = ansibleSchedulesCache.find(x => x.id === id);
+  if (!s) return;
+  if (el) el.disabled = true;
+  try {
+    const res = await fetch(`/api/ansible/schedules/${id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(ansibleSchedulePayload(s, { enabled })),
+    });
+    const data = await res.json();
+    if (!res.ok) showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to update schedule'), 'error');
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+  }
+  await loadAnsibleSchedules();
+}
+
+function setAnsibleSchedCron(expr) {
+  const el = document.getElementById('ansibleSchedCron');
+  if (el) el.value = expr;
+}
+
+function renderAnsibleSchedHosts() {
+  const box = document.getElementById('ansibleSchedHosts');
+  if (!box) return;
+  const q = (document.getElementById('ansibleSchedHostSearch')?.value || '').toLowerCase().trim();
+  const hosts = (allRawHosts || []).filter(h => !q || (h.name || '').toLowerCase().includes(q) || (h.host || '').toLowerCase().includes(q));
+  box.innerHTML = hosts.map(h => `<label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-xs);cursor:pointer;">
+    <input type="checkbox" style="width:auto;" ${ansibleSchedHostIds.has(h.id) ? 'checked' : ''} onchange="toggleAnsibleSchedHost(${Number(h.id)}, this.checked)" />
+    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(h.name)}">${escapeHtml(h.name)}</span>
+  </label>`).join('');
+}
+
+function toggleAnsibleSchedHost(id, checked) {
+  if (checked) ansibleSchedHostIds.add(id); else ansibleSchedHostIds.delete(id);
+}
+
+function openAnsibleScheduleModal(id) {
+  const s = id ? ansibleSchedulesCache.find(x => x.id === id) : null;
+  if (!s && ansiblePlaybooksCache.length === 0) {
+    showToast(t('ansible_sched_err_playbook', 'Create a playbook first, then select it.'), 'warning');
+    return;
+  }
+  ansibleSchedEditId = s ? s.id : null;
+  const set = (eid, v) => { const el = document.getElementById(eid); if (el) el.value = v; };
+  const title = document.getElementById('ansibleScheduleModalTitle');
+  if (title) title.innerText = s ? t('ansible_sched_edit', 'Edit Schedule') : t('ansible_sched_new', 'New Schedule');
+  const errEl = document.getElementById('ansibleSchedError');
+  if (errEl) errEl.style.display = 'none';
+
+  const pbSel = document.getElementById('ansibleSchedPlaybook');
+  if (pbSel) pbSel.innerHTML = ansiblePlaybooksCache.map(p => `<option value="${Number(p.id)}" ${s && s.playbook_id === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
+  const groups = Array.from(new Set((allRawHosts || []).map(h => (h.group_name || '').trim()).filter(Boolean))).sort();
+  const grpSel = document.getElementById('ansibleSchedGroup');
+  if (grpSel) grpSel.innerHTML = `<option value="">${escapeHtml(t('ansible_sched_group_none', '— none —'))}</option>` +
+    groups.map(g => `<option value="${escapeHtml(g)}" ${s && s.group === g ? 'selected' : ''}>${escapeHtml(g)}</option>`).join('');
+
+  set('ansibleSchedName', s ? s.name : '');
+  set('ansibleSchedCron', s ? s.cron : '0 3 * * *');
+  set('ansibleSchedMode', s ? s.mode : 'run');
+  set('ansibleSchedTags', s ? s.tags : '');
+  set('ansibleSchedSkipTags', s ? s.skip_tags : '');
+  set('ansibleSchedExtraVars', s ? s.extra_vars : '');
+  set('ansibleSchedVerbosity', String(s ? s.verbosity || 0 : 0));
+  set('ansibleSchedHostSearch', '');
+  document.getElementById('ansibleSchedBecome').checked = !!(s && s.become);
+  document.getElementById('ansibleSchedEnabled').checked = s ? !!s.enabled : true;
+  ansibleSchedHostIds = new Set(s ? (s.host_ids || []) : []);
+  const hint = document.getElementById('ansibleSchedCronHint');
+  if (hint) hint.textContent = t('ansible_sched_cron_hint', 'minute hour day-of-month month day-of-week. Missed occurrences are skipped ({tz}).').replace('{tz}', (ansibleStatusCache && ansibleStatusCache.timezone) || 'local');
+  renderAnsibleSchedHosts();
+  openModal('ansibleScheduleModal');
+}
+
+async function submitAnsibleScheduleModal() {
+  const errEl = document.getElementById('ansibleSchedError');
+  const btn = document.getElementById('btnAnsibleSchedSubmit');
+  const showErr = (msg) => { if (errEl) { errEl.innerText = msg; errEl.style.display = 'block'; } };
+  const val = (eid) => (document.getElementById(eid)?.value || '').trim();
+
+  const playbookId = parseInt(val('ansibleSchedPlaybook') || '0', 10);
+  const mode = val('ansibleSchedMode') || 'run';
+  const group = val('ansibleSchedGroup');
+  const hostIds = Array.from(ansibleSchedHostIds);
+  const cron = val('ansibleSchedCron');
+  const extraVars = val('ansibleSchedExtraVars');
+  if (!playbookId) return showErr(t('ansible_sched_err_playbook', 'Create a playbook first, then select it.'));
+  if (!cron) return showErr(t('ansible_sched_err_cron', 'Cron expression is required.'));
+  if (mode !== 'syntax' && !group && hostIds.length === 0) return showErr(t('ansible_sched_err_targets', 'Select a host group or at least one host (Syntax mode allows none).'));
+  if (extraVars) {
+    try {
+      const parsed = JSON.parse(extraVars);
+      if (typeof parsed !== 'object' || Array.isArray(parsed) || parsed === null) throw new Error('x');
+    } catch (e) {
+      return showErr(t('ansible_err_extravars_json', 'Extra vars must be a valid JSON object.'));
+    }
+  }
+
+  if (errEl) errEl.style.display = 'none';
+  if (btn) btn.disabled = true;
+  const payload = {
+    playbook_id: playbookId, name: val('ansibleSchedName'), cron, enabled: !!document.getElementById('ansibleSchedEnabled')?.checked,
+    mode, host_ids: hostIds, group, extra_vars: extraVars, tags: val('ansibleSchedTags'), skip_tags: val('ansibleSchedSkipTags'),
+    verbosity: parseInt(val('ansibleSchedVerbosity') || '0', 10), become: !!document.getElementById('ansibleSchedBecome')?.checked,
+  };
+  const url = ansibleSchedEditId ? `/api/ansible/schedules/${ansibleSchedEditId}` : '/api/ansible/schedules';
+  try {
+    const res = await fetch(url, { method: ansibleSchedEditId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const data = await res.json();
+    if (!res.ok) return showErr(data.error || 'Failed to save schedule');
+    closeModal('ansibleScheduleModal');
+    showToast(t('ansible_sched_saved', 'Schedule saved'), 'success');
+    await loadAnsibleSchedules();
+  } catch (e) {
+    showErr(e.message);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function deleteAnsibleSchedule(id) {
+  const ok = await showConfirm({
+    title: t('ansible_sched_confirm_delete_title', 'Delete Schedule'),
+    message: t('ansible_sched_confirm_delete_msg', 'Delete this schedule? Past runs are kept.'),
+    confirmText: t('delete', 'Delete'),
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    const res = await fetch(`/api/ansible/schedules/${id}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to delete schedule'), 'error');
+      return;
+    }
+    showToast(t('ansible_sched_deleted', 'Schedule deleted'), 'success');
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+  }
+  await loadAnsibleSchedules();
 }
 
 </script>

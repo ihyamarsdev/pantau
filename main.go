@@ -317,6 +317,7 @@ func main() {
 	server.SetVersion(ver)
 	server.SetSnapshotManager(snapshotMgr)
 	server.SetUpdaterManager(updaterMgr)
+	server.StartAnsibleScheduler(ctx)
 	server.SetDocsFS(embeddedDocs)
 	listener, port, err := listenPort(port, portExplicit)
 	if err != nil {

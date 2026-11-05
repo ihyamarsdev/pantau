@@ -28,6 +28,9 @@ Pantau operates **100% agentless** over standard SSH (`port 22`). It requires ze
    - [In-App Activity Console & Live Telemetry Stream](#in-app-activity-console--live-telemetry-stream)
    - [Agentless Network Diagnostics & Hop Analysis](#agentless-network-diagnostics--hop-analysis)
    - [Evaluating Server Longevity with Lifecycle Assessment](#evaluating-server-longevity-with-lifecycle-assessment)
+   - [Managing External Kubernetes Clusters (EKS, GKE, AKS & Custom Kubeconfig)](#managing-external-kubernetes-clusters-eks-gke-aks--custom-kubeconfig)
+   - [Managing Cloudflare via REST API v4](#managing-cloudflare-via-rest-api-v4)
+   - [Ansible Playbooks (Semaphore-Style, Agentless)](#ansible-playbooks-semaphore-style-agentless)
    - [Multi-Host Side-by-Side Comparison & Scoring Matrix](#multi-host-side-by-side-comparison--scoring-matrix)
 5. [Phase 4: File Operations & Cross-Host Data Transfer](#5-phase-4-file-operations--cross-host-data-transfer)
    - [Cross-Host Transfer (Zero-Disk Memory Pipes)](#cross-host-transfer-zero-disk-memory-pipes)
@@ -516,6 +519,105 @@ Pantau exposes an allowlist of high-impact zone settings via the **Settings** ta
 - **Credential Protection**: API tokens are stored in the local SQLite database similarly to SSH private keys, excluded from all REST API responses (`json:"-"`), redacted in logs, and included in encrypted **System Snapshots** (AES-256-GCM).
 - **Hardcoded Endpoint & Input Validation**: All outbound requests strictly target `https://api.cloudflare.com/client/v4` (mitigating SSRF), and URL identifiers (`zoneID`, `recordID`) are validated against `^[0-9a-f]{32}$` to prevent path injection.
 - **Explicit Non-Goals**: Cloudflare Workers, R2 Storage, Cloudflare Tunnels (`cloudflared`), custom WAF/Firewall rules, and Page Rules remain out of scope and must be managed via Cloudflare's dashboard.
+
+### Ansible Playbooks (Semaphore-Style, Agentless)
+
+Pantau includes an agentless Ansible automation subsystem inspired by Semaphore UI. Operators can write and store Ansible Playbooks in Pantau's local database, execute them against registered hosts, stream real-time task output, and review complete run histories—with **zero separate inventory files or external key vaults**.
+
+The **Ansible** section is split into **Playbooks** (list, search, and creation), **Schedules** (cron automation), and **Settings** (Ansible Gate and security warnings). The gate status stays visible in the header; click it to open Settings.
+
+#### The Ansible Gate (Security & Enablement)
+
+Ansible Playbooks run **directly on the Pantau server with the privileges of the Pantau process**. Because Ansible features such as `connection: local`, `delegate_to: localhost`, `local_action`, and lookup plugins execute commands or read files on the master controller, playbooks cannot be safely sandboxed.
+
+To prevent unauthorized execution:
+1. The **Ansible Gate** (`ansible_enabled`) is **disabled by default**.
+2. Before any playbook can run, an administrator must navigate to **Ansible → Settings** in the Side Panel and explicitly enable the gate via the banner button.
+3. Enabling the gate requires confirming an explicit security prompt acknowledging that admin access in Pantau with Ansible enabled is equivalent to local process execution on the server host.
+4. The system also verifies that the `ansible-playbook` binary is installed and reachable in `PATH`.
+
+#### Writing & Storing Playbooks
+
+1. In the **Side Panel**, navigate to **Ansible → Playbooks** and click **New Playbook**.
+2. Provide a descriptive **Name** (1–64 characters, unique case-insensitive) and an optional **Description**.
+3. Write the YAML playbook content (up to 256 KiB) in the integrated CodeMirror YAML editor.
+4. (Optional) Provide default **Extra Vars** formatted as a valid JSON object (up to 64 KiB).
+5. Save the playbook. Playbook definitions are stored in SQLite and automatically included in encrypted **System Snapshots**.
+
+#### Running a Playbook
+
+Click **Run** next to any playbook to open the Run Dialog:
+
+1. **Target Selection**:
+   - **Specific Hosts**: Select individual target hosts from the searchable host picker.
+   - **Host Groups**: Select one or more Host Groups via quick chips. Target hosts are dynamically calculated as the union of chosen individual hosts plus all hosts belonging to selected groups.
+   - Up to 200 target hosts are supported per execution run.
+2. **Execution Modes**:
+   - **Run (`run`)**: Normal playbook execution against targets.
+   - **Check (`check`)**: Dry-run simulation using `--check` (no actual host changes applied).
+   - **Diff (`diff`)**: Change comparison using `--check --diff` to preview configuration drifts.
+   - **Syntax (`syntax`)**: Validates YAML syntax and playbook structure using `--syntax-check` (can be run with 0 target hosts).
+3. **Runtime Parameters**:
+   - **Extra Vars**: Override default JSON variables for this run.
+   - **Tags & Skip Tags**: Comma-separated tag filters matching `^[A-Za-z0-9_.,:-]{1,256}$`.
+   - **Verbosity**: Choose between `0` (normal), `1` (`-v`), `2` (`-vv`), or `3` (`-vvv`).
+   - **Forks**: Number of parallel host connections (1–20, default 5).
+   - **Become (Sudo)**: Toggle `--become` for passwordless sudo privilege escalation.
+
+#### Generated Inventory & Clean Child Environment
+
+When a run starts, Pantau performs the following automated steps:
+1. **Dynamic JSON Inventory**: Generates a temporary `inventory.json` file structuring hosts into `all.hosts` and `all.children.<group>.hosts`. Connection variables (`ansible_host`, `ansible_port`, `ansible_user`, and `ansible_python_interpreter=auto_silent`) are automatically injected.
+2. **Isolated Key Files**: Resolves the effective SSH private key for each target host from the **SSH Key Library** or host custom key, writes them to `0600` files inside a temporary `0700` workspace directory (`os.MkdirTemp`), and references them via `ansible_ssh_private_key_file`.
+3. **Sterile Environment**: The child `ansible-playbook` process inherits only essential variables (`PATH`, `LANG=C.UTF-8`, `HOME=<workspace>`, proxy settings, and `ANSIBLE_*`). A dedicated temporary `ansible.cfg` disables host key checking (`host_key_checking = False`), prevents loading unexpected configurations from `/etc/ansible` or `~/.ansible.cfg`, and runs `ssh` with `-F /dev/null` so a bind-mounted `~/.ssh/config` (common in Docker) can never break the connection (`Bad owner or permissions on /root/.ssh/config`).
+4. **Guaranteed Workspace Cleanup**: The entire temporary workspace—including private key files and inventory—is unconditionally deleted when the run finishes, is canceled, or encounters a fatal crash.
+
+#### Playbooks from a Git Repository
+
+Set **Source** to **Git repository** in the playbook editor instead of writing YAML inline:
+
+| Field | Notes |
+|---|---|
+| Repository URL | `https://host/org/repo.git`, `ssh://git@host:port/org/repo.git` or `git@host:org/repo.git`. Credentials inside the URL, `file://`, `git://`, `http://` and local paths are rejected. |
+| Branch or tag | Optional; empty uses the remote's default branch. |
+| Playbook path | Relative path to a `.yml`/`.yaml` file inside the repository, e.g. `playbooks/site.yml`. Symlinks leaving the repository are rejected. |
+| Authentication | **None** (public repo); **Access token** (`https://` only, e.g. GitHub/GitLab personal access token with read access); **SSH key from library** (`ssh://` / `user@host:path` only, key from the *SSH Key Library*). |
+
+On every run Pantau shallow-clones (`--depth 1`) the repository into the private run workspace, runs `ansible-playbook` from the clone (so `roles/`, `group_vars/`, `host_vars/` and `files/` next to the playbook work) and deletes it afterwards. The repository's own `ansible.cfg` is ignored. The checked-out **commit** is printed at the top of the log (`[pantau] git commit <sha>`) and shown next to the run in the history. Notes:
+
+- The access token is write-only: it is stored like an SSH key, never returned by any API, never put in command-line arguments or logs, and leaving the field empty on edit keeps the stored token.
+- `git` must be installed on the Pantau server (included in the Docker image). The editor warns when it is missing.
+- Submodules and `ansible-galaxy` requirements are not fetched; keep roles inside the repository.
+- Deleting an SSH key that a playbook uses is not blocked; the next run then fails with a clear message.
+- A repository's plugins (`library/`, `action_plugins/`, `lookup`) run on the Pantau server like any playbook content. Only point Pantau at repositories you trust.
+
+#### Schedules (Cron)
+
+The **Ansible → Schedules** tab shows the schedules table while the Ansible Gate is active, to run playbooks unattended. If the gate is disabled or the Ansible binary is unavailable, the tab instead shows guidance to open **Settings**:
+
+1. Click **New Schedule**, pick the playbook, an optional name, and a **cron expression** (5 fields: minute, hour, day-of-month, month, day-of-week). Presets: every 5 minutes (`*/5 * * * *`), hourly (`0 * * * *`), daily 03:00 (`0 3 * * *`), Sunday 03:00 (`0 3 * * 0`), monthly (`0 3 1 * *`). Supported syntax: `*`, numbers, ranges `a-b`, lists `a,b`, steps `*/n` and `a-b/n`, and `@hourly`, `@daily`, `@weekly`, `@monthly`, `@yearly`. Month/day names are not supported. If both day-of-month and day-of-week are restricted, either may match (Vixie cron).
+2. Choose the targets (a **Host Group** and/or individual hosts), mode (`run`, `check`, `diff`, `syntax`), tags, extra vars, verbosity and become. Targets are resolved when the schedule fires, so hosts added to the group later are included.
+3. Times use the **Pantau server time zone** (shown in the dialog; in Docker set `TZ`, e.g. `TZ=Asia/Jakarta`, otherwise UTC).
+4. The table shows the next run, the last run (click the run number to open its log) and the last error. Use the switch to pause/resume a schedule without deleting it.
+
+Rules: scheduled runs use the same limits as manual runs (1 active run per playbook, 3 globally); a schedule that finds the playbook busy or the limit reached is **not queued**: it records `not started: …` and waits for the next occurrence. Occurrences that are more than **5 minutes late** (Pantau was stopped, or the Ansible Gate was off) are **skipped, never replayed**, and the last error shows `missed occurrence … skipped`. Runs started by a schedule are tagged *scheduled* in the history. Schedules are included in the encrypted System Snapshot (run history is not).
+
+#### Real-Time Log Streaming & Cancellation
+
+1. **Live Monospace Viewer**: Output from stdout and stderr is combined and streamed live into the Workspace Modal log viewer using 1-second polling (`GET /api/ansible/runs/{id}/log?offset=N`) with smart auto-scroll.
+2. **Log Limits**: Active run logs are buffered in memory up to 2 MiB. If output exceeds 2 MiB, the head of the log is truncated and marked with `[pantau] log truncated`.
+3. **Cancellation**: Click **Cancel** in the viewer to terminate an in-flight run. Pantau sends SIGTERM to the process group, followed by SIGKILL after 5 seconds if the process does not exit cleanly.
+4. **Timeout**: Runs are bounded by a default 1-hour timeout.
+5. **Interrupted Runs**: If the Pantau daemon restarts or terminates while runs are `queued` or `running`, they are automatically marked as `interrupted` upon server startup.
+
+#### Run History, Retention & Concurrency Limits
+
+- **Concurrency Limits**:
+  - Maximum **1 active run per playbook** (additional requests rejected with HTTP 409).
+  - Maximum **3 active runs globally** across the entire Pantau instance (further concurrent runs rejected with HTTP 429).
+- **Retention Policy**:
+  - Pantau automatically retains the latest **100 finished runs per playbook**. Older runs are pruned automatically.
+  - Run histories are stored locally in SQLite (`ansible_runs`) and are excluded from system snapshots to preserve compact backup sizes.
 ### Evaluating Server Longevity with Lifecycle Assessment
 
 Pantau continuously calculates an auditable **Lifecycle Score** (0–100) based on six weighted factors:

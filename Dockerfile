@@ -7,7 +7,7 @@ ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=${VERSION}" -o pantau .
 
 FROM alpine:latest
-RUN apk --no-cache add ca-certificates tzdata kubectl
+RUN apk --no-cache add ca-certificates tzdata kubectl ansible-core openssh-client git
 WORKDIR /app
 COPY --from=builder /app/pantau /app/pantau
 VOLUME ["/app/data"]

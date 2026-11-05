@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -29,6 +30,7 @@ import (
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/bcrypt"
 
+	"pantau/internal/ansible"
 	"pantau/internal/cloudflare"
 	"pantau/internal/inspector"
 	"pantau/internal/logger"
@@ -95,6 +97,9 @@ type Server struct {
 	inspectAllActive  bool
 	lastInspectAll    time.Time
 	cfClient          func(token string) *cloudflare.Client
+	ansibleRun        func(ctx context.Context, spec ansible.RunSpec, log io.Writer) (int, error)
+	ansibleAvail      func() (string, string, error)
+	ansibleMgr        *AnsibleRunManager
 }
 
 func (s *Server) prepareHTML(raw []byte) {
@@ -121,6 +126,12 @@ func NewServer(db *store.DB, ins *inspector.Inspector, disp *notify.Dispatcher) 
 		netdiagService: netdiag.NewService(db, ins),
 		mux:            http.NewServeMux(),
 		cfClient:       cloudflare.New,
+		ansibleRun:     ansible.Run,
+		ansibleAvail:   ansible.Available,
+	}
+	if db != nil {
+		_, _ = db.MarkAnsibleRunsInterrupted()
+		s.ansibleMgr = NewAnsibleRunManager(db, s.ansibleRun)
 	}
 	s.prepareHTML(embeddedHTML)
 	s.routes()
@@ -230,6 +241,14 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/kube/clusters/", s.authMiddleware(s.handleKubeClusterRoute))
 	s.mux.HandleFunc("/api/cloudflare/accounts", s.authMiddleware(s.handleCloudflareAccounts))
 	s.mux.HandleFunc("/api/cloudflare/accounts/", s.authMiddleware(s.handleCloudflareAccountRoute))
+	// Ansible Playbooks & Runs
+	s.mux.HandleFunc("/api/ansible/status", s.authMiddleware(s.handleAnsibleStatus))
+	s.mux.HandleFunc("/api/ansible/playbooks", s.authMiddleware(s.handleAnsiblePlaybooks))
+	s.mux.HandleFunc("/api/ansible/playbooks/", s.authMiddleware(s.handleAnsiblePlaybookRoute))
+	s.mux.HandleFunc("/api/ansible/runs", s.authMiddleware(s.handleAnsibleRuns))
+	s.mux.HandleFunc("/api/ansible/runs/", s.authMiddleware(s.handleAnsibleRunRoute))
+	s.mux.HandleFunc("/api/ansible/schedules", s.authMiddleware(s.handleAnsibleSchedules))
+	s.mux.HandleFunc("/api/ansible/schedules/", s.authMiddleware(s.handleAnsibleScheduleRoute))
 	// SSH Direct-TCPIP Reverse Proxy Tunnel
 	s.mux.HandleFunc("/api/tunnel/", s.authMiddleware(s.handleTunnel))
 	s.mux.HandleFunc("/ws/pkg/upgrade", s.authMiddleware(s.handleWSPkgUpgrade))
