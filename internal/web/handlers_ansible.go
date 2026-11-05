@@ -246,6 +246,8 @@ func (s *Server) handleAnsiblePlaybookRoute(w http.ResponseWriter, r *http.Reque
 		} else {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
+	case "contents":
+		s.handleAnsiblePlaybookContents(w, r, id)
 	default:
 		http.NotFound(w, r)
 	}

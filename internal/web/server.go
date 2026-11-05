@@ -100,6 +100,7 @@ type Server struct {
 	ansibleRun        func(ctx context.Context, spec ansible.RunSpec, log io.Writer) (int, error)
 	ansibleAvail      func() (string, string, error)
 	ansibleMgr        *AnsibleRunManager
+	ansibleLibDir     string // shared role/collection library; "" disables it
 }
 
 func (s *Server) prepareHTML(raw []byte) {
@@ -244,8 +245,13 @@ func (s *Server) routes() {
 	// Ansible Playbooks & Runs
 	s.mux.HandleFunc("/api/ansible/status", s.authMiddleware(s.handleAnsibleStatus))
 	s.mux.HandleFunc("/api/ansible/playbooks", s.authMiddleware(s.handleAnsiblePlaybooks))
+	s.mux.HandleFunc("/api/ansible/playbooks/import", s.authMiddleware(s.handleAnsibleImport))
+	s.mux.HandleFunc("/api/ansible/playbooks/analyze", s.authMiddleware(s.handleAnsiblePlaybookAnalyze))
 	s.mux.HandleFunc("/api/ansible/playbooks/", s.authMiddleware(s.handleAnsiblePlaybookRoute))
 	s.mux.HandleFunc("/api/ansible/runs", s.authMiddleware(s.handleAnsibleRuns))
+	s.mux.HandleFunc("/api/ansible/config", s.authMiddleware(s.handleAnsibleConfig))
+	s.mux.HandleFunc("/api/ansible/library", s.authMiddleware(s.handleAnsibleLibrary))
+	s.mux.HandleFunc("/api/ansible/library/", s.authMiddleware(s.handleAnsibleLibraryRoute))
 	s.mux.HandleFunc("/api/ansible/runs/", s.authMiddleware(s.handleAnsibleRunRoute))
 	s.mux.HandleFunc("/api/ansible/schedules", s.authMiddleware(s.handleAnsibleSchedules))
 	s.mux.HandleFunc("/api/ansible/schedules/", s.authMiddleware(s.handleAnsibleScheduleRoute))

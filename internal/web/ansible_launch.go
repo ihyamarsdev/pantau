@@ -110,26 +110,22 @@ func (s *Server) launchAnsibleRun(pb *store.AnsiblePlaybook, p ansibleRunParams)
 	}
 	snapJSON, _ := json.Marshal(snapTargets)
 
+	ansibleConfig, _ := s.db.GetSetting(ansibleConfigSetting)
 	runSpec := ansible.RunSpec{
-		Targets:   targets,
-		Mode:      p.Mode,
-		ExtraVars: extraVars,
-		Tags:      p.Tags,
-		SkipTags:  p.SkipTags,
-		Verbosity: p.Verbosity,
-		Become:    p.Become,
+		Targets:    targets,
+		Mode:       p.Mode,
+		ExtraVars:  extraVars,
+		Tags:       p.Tags,
+		SkipTags:   p.SkipTags,
+		Verbosity:  p.Verbosity,
+		Become:     p.Become,
+		Config:     ansibleConfig,
+		LibraryDir: s.ansibleLibDir,
 	}
 	if pb.Source == "git" {
-		g := &ansible.GitSource{URL: pb.GitURL, Branch: pb.GitBranch, Path: pb.GitPath}
-		switch pb.GitAuth {
-		case "token":
-			g.Token = pb.GitToken
-		case "ssh_key":
-			key, err := s.db.GetSSHKey(pb.GitKeyID)
-			if err != nil || key == nil {
-				return nil, launchErr(http.StatusBadRequest, "git ssh key %d no longer exists in the SSH Key Library", pb.GitKeyID)
-			}
-			g.PrivateKey = key.PrivateKey
+		g, err := s.ansibleGitSource(pb)
+		if err != nil {
+			return nil, launchErr(http.StatusBadRequest, "%v", err)
 		}
 		runSpec.Git = g
 	} else {

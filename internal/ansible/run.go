@@ -73,13 +73,12 @@ func Run(ctx context.Context, spec RunSpec, log io.Writer) (exitCode int, err er
 		}
 	}
 
-	// Write inventory.json
 	invPath := filepath.Join(workDir, "inventory.json")
 	if err := os.WriteFile(invPath, invBytes, 0600); err != nil {
 		return 0, fmt.Errorf("failed to write inventory.json: %w", err)
 	}
 
-	// Write playbook.yml (inline source) or clone the repository (git source)
+	// Prepare the playbook source separately from generated keys and configuration.
 	playbookPath := filepath.Join(workDir, "playbook.yml")
 	runDir := workDir
 	if spec.Git != nil {
@@ -95,20 +94,12 @@ func Run(ctx context.Context, spec RunSpec, log io.Writer) (exitCode int, err er
 		return 0, fmt.Errorf("failed to write playbook.yml: %w", err)
 	}
 
-	// Write ansible.cfg
-	// temporary ansible.cfg incl. host_key_checking=False/retry_files_enabled=False/nocows/ANSIBLE_FORCE_COLOR=0/ANSIBLE_HOME in tmp
+	// Write ansible.cfg: Pantau's base settings plus the validated global additions from Ansible Settings.
 	ansibleCfgPath := filepath.Join(workDir, "ansible.cfg")
-	// -F /dev/null: OpenSSH reads ~/.ssh/config from the passwd home (not $HOME) and aborts on "Bad owner or
-	// permissions" for bind-mounted configs (Docker). Hosts are fully described by the generated inventory.
-	// No ControlPersist: a lingering mux master would outlive the run and the workspace.
-	ansibleCfgContent := `[defaults]
-host_key_checking = False
-retry_files_enabled = False
-nocows = 1
-
-[ssh_connection]
-ssh_args = -F /dev/null -o UserKnownHostsFile=/dev/null
-`
+	ansibleCfgContent, err := BuildConfig(spec.Config)
+	if err != nil {
+		return 0, fmt.Errorf("invalid ansible config: %w", err)
+	}
 	if err := os.WriteFile(ansibleCfgPath, []byte(ansibleCfgContent), 0600); err != nil {
 		return 0, fmt.Errorf("failed to write ansible.cfg: %w", err)
 	}
@@ -127,11 +118,10 @@ ssh_args = -F /dev/null -o UserKnownHostsFile=/dev/null
 		// default run
 	}
 
-	forks := spec.Forks
-	if forks <= 0 {
-		forks = 5
+	// Without -f, forks from ansible.cfg (Ansible default: 5) applies.
+	if spec.Forks > 0 {
+		args = append(args, "-f", strconv.Itoa(spec.Forks))
 	}
-	args = append(args, "-f", strconv.Itoa(forks))
 
 	if spec.Verbosity > 0 {
 		v := spec.Verbosity
@@ -175,6 +165,21 @@ ssh_args = -F /dev/null -o UserKnownHostsFile=/dev/null
 		"ANSIBLE_CONFIG=" + ansibleCfgPath,
 		"ANSIBLE_FORCE_COLOR=0",
 		"ANSIBLE_HOME=" + ansibleHome,
+	}
+
+	// Search paths: the shared Library first, then Ansible's own defaults (a Git repository also finds its own roles).
+	var rolesPath, collectionsPath []string
+	if spec.LibraryDir != "" {
+		rolesPath = append(rolesPath, LibraryRolesDir(spec.LibraryDir))
+		collectionsPath = append(collectionsPath, LibraryCollectionsDir(spec.LibraryDir))
+	}
+	if len(rolesPath) > 0 {
+		rolesPath = append(rolesPath, filepath.Join(ansibleHome, "roles"), "/usr/share/ansible/roles", "/etc/ansible/roles")
+		collectionsPath = append(collectionsPath, filepath.Join(ansibleHome, "collections"), "/usr/share/ansible/collections")
+		cleanEnv = append(cleanEnv,
+			"ANSIBLE_ROLES_PATH="+strings.Join(rolesPath, string(os.PathListSeparator)),
+			"ANSIBLE_COLLECTIONS_PATH="+strings.Join(collectionsPath, string(os.PathListSeparator)),
+		)
 	}
 
 	for _, k := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy"} {

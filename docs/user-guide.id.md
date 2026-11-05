@@ -587,9 +587,59 @@ Pada setiap run Pantau meng-clone dangkal (`--depth 1`) repositori ke workspace 
 
 - Access token bersifat write-only: disimpan seperti kunci SSH, tidak pernah dikembalikan API, tidak pernah ada di argumen perintah maupun log, dan mengosongkan field saat mengubah berarti mempertahankan token lama.
 - `git` harus terpasang di server Pantau (sudah ada di image Docker). Editor memberi peringatan bila tidak ada.
-- Submodule dan requirement `ansible-galaxy` tidak diambil; simpan role di dalam repositori.
+- Submodule dan requirement `ansible-galaxy` tidak diambil; simpan role di dalam repositori atau pasang di tab **Library**.
 - Menghapus kunci SSH yang dipakai sebuah playbook tidak dicegah; run berikutnya gagal dengan pesan yang jelas.
 - Plugin repositori (`library/`, `action_plugins/`, `lookup`) berjalan di server Pantau seperti isi playbook lainnya. Arahkan Pantau hanya ke repositori yang Anda percaya.
+
+#### Impor Playbook dari Folder
+
+Gunakan **Ansible → Playbook → Impor Folder** untuk menyalin berkas YAML playbook dari proyek lokal ke Pantau. Playbook hasil impor adalah playbook inline biasa: Pantau menyimpan teksnya, Anda mengeditnya di Pantau, dan tidak ada bagian folder yang disimpan atau ditautkan.
+
+1. Pilih folder di browser (bukan path di server Pantau). `.git`, `__pycache__`, `.DS_Store`, `.ansible/`, dan `collections/` dilewati.
+2. Pantau menampilkan daftar YAML yang ditemukan dan **memilih otomatis yang merupakan playbook** (`hosts:` atau `import_playbook:` di level atas), seperti pratinjau impor Host. Centang playbook yang diinginkan (tersedia pilih semua/tidak ada) dan sesuaikan namanya; nama harus unik. Setiap berkas berukuran 1 byte–256 KiB; maksimal 100 playbook per impor.
+3. Klik **Impor Folder**. Bila ada nama yang sudah dipakai, tidak ada yang diimpor. Buka playbook baru untuk mengeditnya dan mengisi variabelnya, lalu mulai dengan **Syntax Check** sebelum run pertama. Pola `hosts:` playbook harus cocok dengan alias dan Host Group pada Generated Inventory Pantau.
+
+YAML disimpan di SQLite (ikut **System Snapshot** terenkripsi): periksa dari rahasia terlebih dahulu. Hanya berkas yang dicentang yang disalin: berkas yang dirujuk playbook di sebelahnya (template, `vars_files`, `include_tasks`, target `import_playbook`) **tidak** diimpor, jadi impor target tersebut sebagai playbook tersendiri atau tempel isinya.
+
+**Inventory, role, koleksi, dan `ansible.cfg` selalu berasal dari Pantau, bukan dari folder**: Pantau menghasilkan inventory dan kunci SSH sendiri, **Library** menyediakan role dan koleksi, dan pengaturan `ansible.cfg` seperti `forks`, `pipelining`, `interpreter_python`, atau `become_method` diatur di **Ansible → Pengaturan → Konfigurasi Ansible**. Path absolut ke kunci Git, berkas di luar playbook, dan executable yang hanya ada di laptop tidak tersedia di server Pantau. Hanya impor playbook tepercaya: playbook dan plugin lokal tetap dapat mengeksekusi kode dengan hak proses Pantau.
+
+#### Konfigurasi Ansible (`ansible.cfg`)
+
+**Ansible → Pengaturan → Konfigurasi Ansible** berisi tambahan `ansible.cfg` global yang diterapkan ke setiap run, berupa teks INI biasa:
+
+```ini
+[defaults]
+forks = 10
+interpreter_python = auto_silent
+
+[ssh_connection]
+pipelining = True
+```
+
+Bagian yang diizinkan: `defaults`, `ssh_connection`, `privilege_escalation`; satu `key = value` per baris, tanpa nilai multibaris. Kunci yang dikelola Pantau ditolak beserta nomor barisnya: `inventory`, `private_key_file`, `ssh_args`, `host_key_checking`, `retry_files_enabled`, `nocows`, `roles_path`, `collections_path(s)`, prompt password interaktif (`ask_pass`, `ask_vault_pass`, `become_ask_pass`) dan kunci berkas password. Bila run tidak menetapkan forks secara eksplisit, `forks` dari konfigurasi ini berlaku (default Ansible: 5). Konfigurasi ikut System Snapshot.
+
+#### Library: Role dan Koleksi
+
+Tab **Ansible → Library** mengelola role dan koleksi yang tersimpan di server Pantau dan tersedia untuk **semua** playbook (inline, Git, atau folder impor), sehingga proyek tidak perlu lagi menyertakannya:
+
+- **Pasang dari Galaxy**: pilih Koleksi atau Role, isi `namespace.nama` (role: nama di Galaxy, mis. `geerlingguy.nginx`) dan versi opsional. Koleksi memasang dependensinya. Output instalasi mengalir langsung ke panel di bawah form selama berjalan (baris perintah lebih dulu, lalu baris `… still working (Ns)` tiap 5 detik saat `ansible-galaxy` diam); prosesnya bisa memakan beberapa menit. Instalasi tetap selesai di server walau tab ditutup.
+- **Pasang dari requirements.yml**: tempel `requirements.yml` (`collections:` dan/atau `roles:`). Hanya nama dan versi yang diterima; sumber Git/URL ditolak.
+- **Impor Lokal**: unggah folder koleksi (dengan `galaxy.yml` di root), tarball koleksi (`.tar.gz`, mis. dari `ansible-galaxy collection build`/`download`), atau folder role (beri nama). Pemasangan lokal tidak mengambil dependensi sehingga berfungsi offline.
+- Gunakan ikon tempat sampah untuk menghapus item.
+
+Library berada di `ansible-library/` di samping database Pantau (di Docker: simpan di volume yang sama). Library **tidak** ikut System Snapshot: setelah restore ke mesin baru, pasang ulang item yang dibutuhkan. Fitur ini membutuhkan `ansible-galaxy` (terpasang bersama ansible-core); tab memberi tahu bila tidak ada. Pasang hanya konten yang Anda percaya: plugin koleksi dan role berjalan di server Pantau dengan hak prosesnya.
+
+#### Mengedit Playbook dan Variabel
+
+Ikon pensil pada kartu playbook membuka satu editor untuk mengedit sekaligus melihat:
+
+- Tab **Playbook**: nama, deskripsi, sumber, dan editor YAML (playbook inline) atau pengaturan Git.
+- Tab **Variabel**: variabel yang dirujuk playbook, dideteksi dengan memindai YAML saat Anda mengetik (termasuk edit yang belum disimpan); isi role dan template di Library tidak dipindai. **Wajib** = dipakai tetapi tidak didefinisikan di mana pun (perlu nilai dari Anda atau dari inventory); **Opsional** = hanya dipakai dengan `default()`/`is defined`; **Terdefinisi** = punya nilai di YAML (`vars:`) atau di extra vars default playbook. Variabel yang dibuat saat run (`register`, `set_fact`, variabel loop) dan magic variable Ansible dilewati. Ini heuristik statis: nama yang dibangun dinamis dan variabel dari inventory Anda sendiri bisa terlewat.
+  - Kolom **Nilai** adalah **extra vars default** playbook: ketik nilai untuk menetapkan atau menimpa variabel, klik ikon tempat sampah untuk menghapusnya (variabel kembali ke apa yang didefinisikan YAML). **Tambah variabel** membuat variabel yang tidak terdeteksi pemindaian. Nilai di-parse sebagai JSON bila memungkinkan (`8080` angka, `true` boolean, `["a","b"]` daftar); bungkus dengan tanda kutip (`"8080"`) untuk memaksa string. Variabel wajib tanpa nilai disorot.
+  - Variabel yang didefinisikan di blok `vars:` YAML (belum ada override) juga punya ikon tempat sampah: ikon itu menghapus barisnya dari YAML di editor (batalkan dengan Cancel). Hanya blok `vars:` biasa yang dikenali; selain itu ubah langsung di tab Playbook. Variabel yang hanya dirujuk tanpa definisi tidak bisa dihapus (ikon nonaktif).
+  - Perubahan disimpan dengan **Simpan**, seperti bagian editor lainnya. Run masih dapat menimpa semuanya di dialog peluncuran.
+- Tab **Berkas** (hanya playbook Git): penjelajah read-only dari clone dangkal terbaru (dialog bisa butuh beberapa detik dan menampilkan commit). `.env`, kunci, berkas biner, `.ansible/`, dan `collections/` tidak pernah ditampilkan. Batas: 1.000 berkas, total 4 MiB, 256 KiB per berkas. Edit playbook Git di repositorinya.
+
 
 #### Jadwal (Cron)
 

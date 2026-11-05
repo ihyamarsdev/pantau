@@ -536,6 +536,10 @@ _Avoid_: Feature flag, ansible switch
 Sumber Ansible Playbook berupa file YAML di repositori Git (URL https/ssh, branch/tag, path berkas, autentikasi none/token/kunci SSH Library) yang di-clone dangkal ke workspace sementara pada setiap Playbook Run; commit yang dijalankan dicatat pada run.
 _Avoid_: Repository entity, git sync, playbook import
 
+**Imported Playbook Folder**:
+Salinan folder proyek Ansible yang diunggah melalui browser dan disimpan sebagai arsip ZIP privat dalam SQLite (`source=bundle`), dengan satu path YAML utama dan seluruh berkas pendukung; diekstrak sementara pada setiap Playbook Run dan ikut System Snapshot terenkripsi. Tidak mengimpor Host atau konfigurasi inventory dari proyek.
+_Avoid_: Local path source, repository sync, inventory import
+
 **Ansible Schedule**:
 Jadwal cron 5-field (waktu lokal server Pantau) yang menjalankan Ansible Playbook otomatis terhadap Host/Host Group tetap; kemunculan yang terlewat lebih dari 5 menit dilewati, bukan dijalankan susulan.
 _Avoid_: Cron job, timer, automation rule

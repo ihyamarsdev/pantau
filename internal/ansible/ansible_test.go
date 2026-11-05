@@ -333,6 +333,8 @@ if [ -n "$SECRET_ENV_VAR" ]; then
     echo "LEAKED_SECRET: $SECRET_ENV_VAR"
 fi
 [ -n "$ANSIBLE_CONFIG" ] && cat "$ANSIBLE_CONFIG"
+[ -n "$ANSIBLE_ROLES_PATH" ] && echo "ROLES: $ANSIBLE_ROLES_PATH"
+[ -n "$ANSIBLE_COLLECTIONS_PATH" ] && echo "COLLECTIONS: $ANSIBLE_COLLECTIONS_PATH"
 
 # If special arg --simulate-sleep
 for arg in "$@"; do
@@ -443,6 +445,36 @@ exit 0
 		}
 		if !strings.Contains(out, "KEY_PERM: -rw-------") {
 			t.Errorf("Expected key permission -rw------- (0600), got output:\n%s", out)
+		}
+	})
+
+	t.Run("config additions library paths and forks", func(t *testing.T) {
+		lib := t.TempDir()
+		spec := RunSpec{
+			Playbook:   "---\n- hosts: all\n  tasks: []\n",
+			Targets:    []Target{{ID: 1, Name: "h1", Address: "1.1.1.1"}},
+			Mode:       "run",
+			Config:     "[defaults]\nforks = 12\n\n[privilege_escalation]\nbecome_method = doas\n",
+			LibraryDir: lib,
+		}
+		var logBuf strings.Builder
+		if _, err := Run(context.Background(), spec, &logBuf); err != nil {
+			t.Fatal(err)
+		}
+		out := logBuf.String()
+		for _, want := range []string{"forks = 12", "become_method = doas", "host_key_checking = False", "ssh_args = -F /dev/null",
+			"ROLES: " + LibraryRolesDir(lib) + ":", "COLLECTIONS: " + LibraryCollectionsDir(lib) + ":"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output lacks %q:\n%s", want, out)
+			}
+		}
+		if strings.Contains(out, " -f ") {
+			t.Errorf("without Forks the forks of ansible.cfg must apply, got: %s", out)
+		}
+
+		spec.Config = "[defaults]\ninventory = /etc/hosts\n"
+		if _, err := Run(context.Background(), spec, &logBuf); err == nil || !strings.Contains(err.Error(), "managed by Pantau") {
+			t.Errorf("a managed key must fail the run before it starts: %v", err)
 		}
 	})
 

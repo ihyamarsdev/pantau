@@ -587,9 +587,59 @@ On every run Pantau shallow-clones (`--depth 1`) the repository into the private
 
 - The access token is write-only: it is stored like an SSH key, never returned by any API, never put in command-line arguments or logs, and leaving the field empty on edit keeps the stored token.
 - `git` must be installed on the Pantau server (included in the Docker image). The editor warns when it is missing.
-- Submodules and `ansible-galaxy` requirements are not fetched; keep roles inside the repository.
+- Submodules and `ansible-galaxy` requirements are not fetched; keep roles inside the repository or install them in the **Library** tab.
 - Deleting an SSH key that a playbook uses is not blocked; the next run then fails with a clear message.
 - A repository's plugins (`library/`, `action_plugins/`, `lookup`) run on the Pantau server like any playbook content. Only point Pantau at repositories you trust.
+
+#### Importing Playbooks from a Folder
+
+Use **Ansible → Playbooks → Import Folder** to copy playbook YAML files from a local project into Pantau. Imported playbooks are ordinary inline playbooks: Pantau stores the text, you edit it in Pantau, and nothing of the folder is kept or linked.
+
+1. Select the folder in your browser (not a path on the Pantau server). `.git`, `__pycache__`, `.DS_Store`, `.ansible/`, and `collections/` are skipped.
+2. Pantau lists the YAML files it finds and **preselects the ones that are playbooks** (a top-level `hosts:` or `import_playbook:`), like the host import preview. Tick the playbooks you want (select all/none is available) and adjust their names; names must be unique. Each file may be 1 byte–256 KiB; up to 100 playbooks per import.
+3. Click **Import Folder**. If any name is already taken, nothing is imported. Open a new playbook to edit it and fill in its variables, and start with **Syntax Check** before the first run. The playbook's `hosts:` patterns must match aliases and Host Groups in Pantau's Generated Inventory.
+
+The YAML is stored in SQLite (included in encrypted **System Snapshots**): check it for secrets first. Only the ticked file is copied: files a playbook references next to itself (templates, `vars_files`, `include_tasks`, `import_playbook` targets) are **not** imported, so import such targets as playbooks of their own or paste their content in.
+
+**Inventory, roles, collections, and `ansible.cfg` always come from Pantau, never from the folder**: Pantau generates its own inventory and SSH keys, the **Library** provides roles and collections, and `ansible.cfg` settings such as `forks`, `pipelining`, `interpreter_python`, or `become_method` go in **Ansible → Settings → Ansible Configuration**. Absolute Git-key paths, files outside the playbook, and executables installed only on your laptop do not become available on the Pantau server. Only import trusted playbooks: playbooks and local plugins can still execute code with Pantau process privileges.
+
+#### Ansible Configuration (`ansible.cfg`)
+
+**Ansible → Settings → Ansible Configuration** holds global `ansible.cfg` additions applied to every run, as plain INI text:
+
+```ini
+[defaults]
+forks = 10
+interpreter_python = auto_silent
+
+[ssh_connection]
+pipelining = True
+```
+
+Allowed sections: `defaults`, `ssh_connection`, `privilege_escalation`; one `key = value` per line, no multi-line values. Keys Pantau manages are rejected with the offending line number: `inventory`, `private_key_file`, `ssh_args`, `host_key_checking`, `retry_files_enabled`, `nocows`, `roles_path`, `collections_path(s)`, interactive password prompts (`ask_pass`, `ask_vault_pass`, `become_ask_pass`) and password-file keys. Without an explicit forks option on the run, `forks` from this configuration applies (Ansible default: 5). The configuration is included in System Snapshots.
+
+#### Library: Roles and Collections
+
+The **Ansible → Library** tab manages roles and collections stored on the Pantau server and available to **every** playbook (inline, Git, or imported folder), so projects no longer need to vendor them:
+
+- **Install from Galaxy**: choose Collection or Role, enter `namespace.name` (roles: the Galaxy name, e.g. `geerlingguy.nginx`) and an optional version. Collections install their dependencies. The installer output streams into the panel below the form while it runs (the command line first, then a `… still working (Ns)` line every 5 seconds while `ansible-galaxy` is silent); it can take a few minutes. The install finishes on the server even if you close the tab.
+- **Install from requirements.yml**: paste a `requirements.yml` (`collections:` and/or `roles:`). Only names and versions are accepted; Git/URL sources are rejected.
+- **Import Local**: upload a collection folder (with `galaxy.yml` at its root) or a collection tarball (`.tar.gz`, e.g. from `ansible-galaxy collection build`/`download`), or a role folder (give it a name). Local installs do not fetch dependencies, so they work offline.
+- Use the trash icon to remove an item.
+
+The library lives in `ansible-library/` next to the Pantau database (in Docker: keep it on the same volume). It is **not** part of System Snapshots: after restoring to a new machine, install the needed items again. This needs `ansible-galaxy` (installed together with ansible-core); the tab says so when it is missing. Only install content you trust: collection and role plugins run on the Pantau server with its privileges.
+
+#### Editing Playbooks and Variables
+
+The pencil on a playbook card opens one editor for editing and viewing:
+
+- **Playbook** tab: name, description, source, and the YAML editor (inline playbooks) or the Git settings.
+- **Variables** tab: the variables the playbook references, found by scanning the YAML as you type (unsaved edits included); the contents of roles and templates in the Library are not scanned. **Required** = used but defined nowhere (it needs a value from you or from the inventory); **Optional** = only used with `default()`/`is defined`; **Defined** = has a value in the YAML (`vars:`) or in the playbook's default extra vars. Variables produced at run time (`register`, `set_fact`, loop variables) and Ansible magic variables are skipped. This is a static heuristic: dynamically built names and variables supplied by your own inventory can be missed.
+  - The **Value** column is the playbook's **default extra vars**: type a value to set or override a variable, click the trash icon to delete it (the variable then falls back to what the YAML defines). **Add variable** creates one the scan cannot see. Values are parsed as JSON when possible (`8080` is a number, `true` a boolean, `["a","b"]` a list); wrap a value in quotes (`"8080"`) to force a string. Required variables without a value are highlighted.
+  - A variable defined in the YAML's `vars:` block (with no override) also has a trash icon: it removes that entry from the YAML in the editor (Cancel discards it). Only a plain `vars:` block is recognised; otherwise edit in the Playbook tab. A variable that is only referenced and defined nowhere cannot be deleted (the icon is disabled).
+  - Changes are stored with **Save**, like the rest of the editor. A run can still override any of them in the launch dialog.
+- **Files** tab (Git playbooks only): a read-only browser of a fresh shallow clone (the dialog may take a few seconds and shows the commit). `.env`, keys, binaries, `.ansible/`, and `collections/` are never shown. Limits: 1,000 files, 4 MiB total, 256 KiB per file. Edit Git playbooks in their repository.
+
 
 #### Schedules (Cron)
 

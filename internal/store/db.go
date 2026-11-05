@@ -440,6 +440,13 @@ func (d *DB) migrate() error {
 		api_token TEXT NOT NULL DEFAULT '',
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+	CREATE TABLE IF NOT EXISTS ansible_projects (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL DEFAULT '',
+		data BLOB NOT NULL DEFAULT X'',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
 	CREATE TABLE IF NOT EXISTS ansible_playbooks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -501,6 +508,9 @@ func (d *DB) migrate() error {
 		"git_key_id": "INTEGER NOT NULL DEFAULT 0",
 	} {
 		_ = d.alterAddColumn("ansible_playbooks", col, typ)
+	}
+	if err := d.migrateAnsibleBundles(); err != nil {
+		return fmt.Errorf("migrate ansible bundles: %w", err)
 	}
 	_ = d.alterAddColumn("ansible_runs", "trigger_kind", "TEXT NOT NULL DEFAULT 'manual'")
 	_ = d.alterAddColumn("ansible_runs", "schedule_id", "INTEGER NOT NULL DEFAULT 0")
@@ -1304,20 +1314,34 @@ type SnapshotCloudflareAccount struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 type SnapshotAnsiblePlaybook struct {
-	ID          int64     `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	Content     string    `json:"content"`
-	ExtraVars   string    `json:"extra_vars"`
-	Source      string    `json:"source,omitempty"`
-	GitURL      string    `json:"git_url,omitempty"`
-	GitBranch   string    `json:"git_branch,omitempty"`
-	GitPath     string    `json:"git_path,omitempty"`
-	GitAuth     string    `json:"git_auth,omitempty"`
-	GitToken    string    `json:"git_token,omitempty"` // snapshot is encrypted (AES-256-GCM), like ssh_keys.private_key
-	GitKeyID    int64     `json:"git_key_id,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Content     string `json:"content"`
+	ExtraVars   string `json:"extra_vars"`
+	Source      string `json:"source,omitempty"`
+	GitURL      string `json:"git_url,omitempty"`
+	GitBranch   string `json:"git_branch,omitempty"`
+	GitPath     string `json:"git_path,omitempty"`
+	GitAuth     string `json:"git_auth,omitempty"`
+	GitToken    string `json:"git_token,omitempty"` // snapshot is encrypted (AES-256-GCM), like ssh_keys.private_key
+	GitKeyID    int64  `json:"git_key_id,omitempty"`
+	// Read-only legacy fields of snapshots made while imported folders were ZIP bundles; never written any more.
+	BundlePath string    `json:"bundle_path,omitempty"`
+	ProjectID  int64     `json:"project_id,omitempty"`
+	BundleData []byte    `json:"bundle_data,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// SnapshotAnsibleProject is an imported-folder ZIP of snapshots made while imports were bundles. It is read when
+// restoring (the entry YAML becomes an inline playbook) and never written.
+type SnapshotAnsibleProject struct {
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	Data      []byte    `json:"data,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // SnapshotPayload holds the sanitized system configuration for backup and restore.
@@ -1332,6 +1356,7 @@ type SnapshotPayload struct {
 	KubeClusters       []SnapshotKubeCluster       `json:"kube_clusters,omitempty"`
 	CloudflareAccounts []SnapshotCloudflareAccount `json:"cloudflare_accounts,omitempty"`
 	AnsiblePlaybooks   []SnapshotAnsiblePlaybook   `json:"ansible_playbooks,omitempty"`
+	AnsibleProjects    []SnapshotAnsibleProject    `json:"ansible_projects,omitempty"` // read-only legacy, see SnapshotAnsibleProject
 	AnsibleSchedules   []AnsibleSchedule           `json:"ansible_schedules,omitempty"`
 }
 
@@ -1523,12 +1548,25 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 			return fmt.Errorf("insert cloudflare account %d: %w", a.ID, err)
 		}
 	}
+	// Snapshots made while imported folders were ZIP bundles keep the archive on the playbook or in a project:
+	// the entry YAML is restored as an ordinary editable inline playbook.
+	legacyArchives := make(map[int64][]byte, len(payload.AnsibleProjects))
+	for _, pr := range payload.AnsibleProjects {
+		legacyArchives[pr.ID] = pr.Data
+	}
 	for _, p := range payload.AnsiblePlaybooks {
 		if p.Source == "" {
 			p.Source = "inline"
 		}
 		if p.GitAuth == "" {
 			p.GitAuth = "none"
+		}
+		if p.Source == "bundle" {
+			archive := p.BundleData
+			if len(archive) == 0 {
+				archive = legacyArchives[p.ProjectID]
+			}
+			p.Source, p.Content = "inline", bundleEntryText(archive, p.BundlePath)
 		}
 		_, err := tx.Exec(`INSERT INTO ansible_playbooks (id, name, description, content, extra_vars, source, git_url, git_branch, git_path, git_auth, git_token, git_key_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			p.ID, p.Name, p.Description, p.Content, p.ExtraVars, p.Source, p.GitURL, p.GitBranch, p.GitPath, p.GitAuth, p.GitToken, p.GitKeyID, p.CreatedAt, p.UpdatedAt)

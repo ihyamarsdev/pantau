@@ -87,18 +87,20 @@ type Target struct {
 }
 
 type RunSpec struct {
-	Playbook  string // isi YAML
-	Targets   []Target
-	Mode      string // "run" | "check" (--check) | "diff" (--check --diff) | "syntax" (--syntax-check)
-	ExtraVars string // "" atau objek JSON
-	Tags      string // koma
-	SkipTags  string
-	Verbosity int              // 0..3 -> -v..-vvv
-	Become    bool             // --become (sudo tanpa password)
-	Forks     int              // 0 => 5
-	Timeout   time.Duration    // 0 => 1h
-	Git       *GitSource       // non-nil: playbook comes from this repository, Playbook is ignored
-	OnCommit  func(sha string) // called once with the checked-out commit (git source only)
+	Playbook   string // isi YAML
+	Targets    []Target
+	Mode       string // "run" | "check" (--check) | "diff" (--check --diff) | "syntax" (--syntax-check)
+	ExtraVars  string // "" atau objek JSON
+	Tags       string // koma
+	SkipTags   string
+	Verbosity  int              // 0..3 -> -v..-vvv
+	Become     bool             // --become (sudo tanpa password)
+	Forks      int              // 0 => forks from ansible.cfg (Ansible default 5)
+	Timeout    time.Duration    // 0 => 1h
+	Git        *GitSource       // non-nil: playbook comes from this repository, Playbook is ignored
+	Config     string           // validated user additions to ansible.cfg (Ansible Settings), see ParseConfig
+	LibraryDir string           // shared role/collection library; "" disables it
+	OnCommit   func(sha string) // called once with the checked-out commit (git source only)
 }
 
 func (s RunSpec) Validate() error {
@@ -142,9 +144,12 @@ func (s RunSpec) Validate() error {
 		return fmt.Errorf("verbosity %d out of range (0..3)", s.Verbosity)
 	}
 
-	// Forks 0..20 (0 will default to 5 in Run)
+	// Forks 0..20 (0 defers to ansible.cfg)
 	if s.Forks < 0 || s.Forks > 20 {
 		return fmt.Errorf("forks %d out of range (0..20)", s.Forks)
+	}
+	if _, err := ParseConfig(s.Config); err != nil {
+		return fmt.Errorf("invalid ansible config: %w", err)
 	}
 
 	// Tags & SkipTags validation

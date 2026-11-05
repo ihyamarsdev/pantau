@@ -14,7 +14,7 @@ type AnsiblePlaybook struct {
 	Content     string `json:"content"`    // inline source only
 	ExtraVars   string `json:"extra_vars"` // JSON objek bawaan, "" bila kosong
 
-	Source      string `json:"source"` // "inline" | "git"
+	Source      string `json:"source"` // "inline" | "git" | "bundle"
 	GitURL      string `json:"git_url"`
 	GitBranch   string `json:"git_branch"`
 	GitPath     string `json:"git_path"`
@@ -75,25 +75,29 @@ func (d *DB) SetAnsibleEnabled(enabled bool) error {
 
 // CreateAnsiblePlaybook creates a new playbook with case-insensitive unique name.
 func (d *DB) CreateAnsiblePlaybook(p *AnsiblePlaybook) (int64, error) {
-	now := time.Now().UTC()
 	normalizeAnsibleSource(p)
-	res, err := d.Exec(`INSERT INTO ansible_playbooks (name, description, content, extra_vars, source, git_url, git_branch, git_path, git_auth, git_token, git_key_id, created_at, updated_at)
+	if err := insertAnsiblePlaybook(d, p, time.Now().UTC()); err != nil {
+		return 0, err
+	}
+	return p.ID, nil
+}
+
+func insertAnsiblePlaybook(x sqlExecer, p *AnsiblePlaybook, now time.Time) error {
+	res, err := x.Exec(`INSERT INTO ansible_playbooks (name, description, content, extra_vars, source, git_url, git_branch, git_path, git_auth, git_token, git_key_id, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.Name, p.Description, p.Content, p.ExtraVars, p.Source, p.GitURL, p.GitBranch, p.GitPath, p.GitAuth, p.GitToken, p.GitKeyID, now, now)
 	if err != nil {
 		if isUniqueConstraintError(err) {
-			return 0, ErrAnsiblePlaybookNameTaken
+			return fmt.Errorf("%w: %q", ErrAnsiblePlaybookNameTaken, p.Name)
 		}
-		return 0, err
+		return err
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		return 0, err
+		return err
 	}
-	p.ID = id
-	p.CreatedAt = now
-	p.UpdatedAt = now
-	return id, nil
+	p.ID, p.CreatedAt, p.UpdatedAt = id, now, now
+	return nil
 }
 
 func normalizeAnsibleSource(p *AnsiblePlaybook) {
@@ -165,8 +169,8 @@ func (d *DB) ListAnsiblePlaybooks() ([]AnsiblePlaybook, error) {
 	return list, rows.Err()
 }
 
-// UpdateAnsiblePlaybook updates name, description, content, extra_vars, the git source and updated_at.
-// The stored git token is kept unless p.GitToken is non-empty (it is dropped when GitAuth is not "token").
+// UpdateAnsiblePlaybook updates metadata and source data. The stored git token is kept unless p.GitToken is
+// non-empty (it is dropped when GitAuth is not "token").
 func (d *DB) UpdateAnsiblePlaybook(p *AnsiblePlaybook) error {
 	now := time.Now().UTC()
 	normalizeAnsibleSource(p)
@@ -194,6 +198,24 @@ func (d *DB) UpdateAnsiblePlaybook(p *AnsiblePlaybook) error {
 	}
 	p.UpdatedAt = now
 	return nil
+}
+
+// ImportAnsiblePlaybooks creates every playbook of pbs in one transaction (all or nothing). A taken name aborts
+// everything with ErrAnsiblePlaybookNameTaken (the message includes the name).
+func (d *DB) ImportAnsiblePlaybooks(pbs []*AnsiblePlaybook) error {
+	tx, err := d.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	now := time.Now().UTC()
+	for _, p := range pbs {
+		normalizeAnsibleSource(p)
+		if err := insertAnsiblePlaybook(tx, p, now); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // DeleteAnsiblePlaybook deletes a playbook with all its runs and schedules in a transaction.

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -317,6 +318,7 @@ func main() {
 	server.SetVersion(ver)
 	server.SetSnapshotManager(snapshotMgr)
 	server.SetUpdaterManager(updaterMgr)
+	server.SetAnsibleLibraryDir(filepath.Join(filepath.Dir(dbPath), "ansible-library"))
 	server.StartAnsibleScheduler(ctx)
 	server.SetDocsFS(embeddedDocs)
 	listener, port, err := listenPort(port, portExplicit)
