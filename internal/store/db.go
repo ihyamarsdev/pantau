@@ -505,6 +505,29 @@ func (d *DB) migrate() error {
 		last_error TEXT NOT NULL DEFAULT '',
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+	CREATE TABLE IF NOT EXISTS ansible_adhoc_runs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		module TEXT NOT NULL,
+		args TEXT NOT NULL DEFAULT '',
+		pattern TEXT NOT NULL DEFAULT 'all',
+		targets TEXT NOT NULL DEFAULT '[]',
+		become INTEGER NOT NULL DEFAULT 0,
+		verbosity INTEGER NOT NULL DEFAULT 0,
+		status TEXT NOT NULL DEFAULT 'queued',
+		exit_code INTEGER,
+		results TEXT NOT NULL DEFAULT '[]',
+		log TEXT NOT NULL DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		started_at DATETIME,
+		finished_at DATETIME
+	);
+	CREATE INDEX IF NOT EXISTS idx_ansible_adhoc_runs_id ON ansible_adhoc_runs(id DESC);
+	CREATE TABLE IF NOT EXISTS ansible_host_facts (
+		host_id INTEGER PRIMARY KEY REFERENCES hosts(id) ON DELETE CASCADE,
+		facts TEXT NOT NULL DEFAULT '{}',
+		summary TEXT NOT NULL DEFAULT '{}',
+		gathered_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
 	CREATE TABLE IF NOT EXISTS tf_workspaces (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -632,16 +655,24 @@ func (d *DB) migrate() error {
 	for col, typ := range map[string]string{
 		"source": "TEXT NOT NULL DEFAULT 'inline'", "git_url": "TEXT NOT NULL DEFAULT ''", "git_branch": "TEXT NOT NULL DEFAULT ''",
 		"git_path": "TEXT NOT NULL DEFAULT ''", "git_auth": "TEXT NOT NULL DEFAULT 'none'", "git_token": "TEXT NOT NULL DEFAULT ''",
-		"git_key_id": "INTEGER NOT NULL DEFAULT 0",
+		"git_key_id":       "INTEGER NOT NULL DEFAULT 0",
+		"survey":           "TEXT NOT NULL DEFAULT ''",
+		"last_sync_at":     "DATETIME",
+		"last_sync_commit": "TEXT NOT NULL DEFAULT ''",
+		"group_name":       "TEXT NOT NULL DEFAULT ''",
 	} {
 		_ = d.alterAddColumn("ansible_playbooks", col, typ)
 	}
+	_ = d.alterAddColumn("tf_workspaces", "group_name", "TEXT NOT NULL DEFAULT ''")
 	if err := d.migrateAnsibleBundles(); err != nil {
 		return fmt.Errorf("migrate ansible bundles: %w", err)
 	}
 	_ = d.alterAddColumn("ansible_runs", "trigger_kind", "TEXT NOT NULL DEFAULT 'manual'")
 	_ = d.alterAddColumn("ansible_runs", "schedule_id", "INTEGER NOT NULL DEFAULT 0")
 	_ = d.alterAddColumn("ansible_runs", "commit_sha", "TEXT NOT NULL DEFAULT ''")
+	_ = d.alterAddColumn("ansible_runs", "limit_pattern", "TEXT NOT NULL DEFAULT ''")
+	_ = d.alterAddColumn("ansible_runs", "recap", "TEXT NOT NULL DEFAULT ''")
+	_ = d.alterAddColumn("ansible_schedules", "limit_pattern", "TEXT NOT NULL DEFAULT ''")
 	_ = d.alterAddColumn("hosts", "net_rx_bytes", "INTEGER DEFAULT 0")
 	_ = d.alterAddColumn("hosts", "net_tx_bytes", "INTEGER DEFAULT 0")
 	_ = d.alterAddColumn("hosts", "net_rx_speed_bps", "INTEGER DEFAULT 0")
@@ -1441,18 +1472,22 @@ type SnapshotCloudflareAccount struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 type SnapshotAnsiblePlaybook struct {
-	ID          int64  `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Content     string `json:"content"`
-	ExtraVars   string `json:"extra_vars"`
-	Source      string `json:"source,omitempty"`
-	GitURL      string `json:"git_url,omitempty"`
-	GitBranch   string `json:"git_branch,omitempty"`
-	GitPath     string `json:"git_path,omitempty"`
-	GitAuth     string `json:"git_auth,omitempty"`
-	GitToken    string `json:"git_token,omitempty"` // snapshot is encrypted (AES-256-GCM), like ssh_keys.private_key
-	GitKeyID    int64  `json:"git_key_id,omitempty"`
+	ID             int64      `json:"id"`
+	Name           string     `json:"name"`
+	Description    string     `json:"description"`
+	Content        string     `json:"content"`
+	ExtraVars      string     `json:"extra_vars"`
+	Source         string     `json:"source,omitempty"`
+	GitURL         string     `json:"git_url,omitempty"`
+	GitBranch      string     `json:"git_branch,omitempty"`
+	GitPath        string     `json:"git_path,omitempty"`
+	GitAuth        string     `json:"git_auth,omitempty"`
+	GitToken       string     `json:"git_token,omitempty"` // snapshot is encrypted (AES-256-GCM), like ssh_keys.private_key
+	GitKeyID       int64      `json:"git_key_id,omitempty"`
+	Survey         string     `json:"survey,omitempty"` // JSON array of survey fields
+	LastSyncAt     *time.Time `json:"last_sync_at,omitempty"`
+	LastSyncCommit string     `json:"last_sync_commit,omitempty"`
+	GroupName      string     `json:"group_name,omitempty"`
 	// Read-only legacy fields of snapshots made while imported folders were ZIP bundles; never written any more.
 	BundlePath string    `json:"bundle_path,omitempty"`
 	ProjectID  int64     `json:"project_id,omitempty"`
@@ -1498,6 +1533,7 @@ type SnapshotTFWorkspace struct {
 	WebhookToken         string    `json:"webhook_token"`
 	WebhookSecret        string    `json:"webhook_secret"`
 	DriftIntervalMinutes int       `json:"drift_interval_minutes"`
+	GroupName            string    `json:"group_name,omitempty"`
 	CreatedAt            time.Time `json:"created_at"`
 	UpdatedAt            time.Time `json:"updated_at"`
 }
@@ -1570,25 +1606,25 @@ type SnapshotTFState struct {
 
 // SnapshotPayload holds the sanitized system configuration for backup and restore.
 type SnapshotPayload struct {
-	Version            int                         `json:"version"`
-	CreatedAt          time.Time                   `json:"created_at"`
-	Settings           map[string]string           `json:"settings"`
-	Hosts              []Host                      `json:"hosts"`
-	DesiredRules       []DesiredRule               `json:"desired_rules"`
-	TerminalPresets    []TerminalPreset            `json:"terminal_presets,omitempty"`
-	SSHKeys            []SnapshotSSHKey            `json:"ssh_keys,omitempty"`
-	KubeClusters       []SnapshotKubeCluster       `json:"kube_clusters,omitempty"`
-	CloudflareAccounts []SnapshotCloudflareAccount `json:"cloudflare_accounts,omitempty"`
-	AnsiblePlaybooks   []SnapshotAnsiblePlaybook   `json:"ansible_playbooks,omitempty"`
-	AnsibleProjects    []SnapshotAnsibleProject    `json:"ansible_projects,omitempty"` // read-only legacy, see SnapshotAnsibleProject
-	AnsibleSchedules   []AnsibleSchedule           `json:"ansible_schedules,omitempty"`
-	AnsibleAssets      []SnapshotAnsibleAsset      `json:"ansible_assets,omitempty"`
-	TerraformWorkspaces []SnapshotTFWorkspace `json:"terraform_workspaces,omitempty"`
-	TerraformVariables  []SnapshotTFVariable  `json:"terraform_variables,omitempty"`
-	TerraformVarsets    []SnapshotTFVarset    `json:"terraform_varsets,omitempty"`
-	TerraformPolicies   []SnapshotTFPolicy    `json:"terraform_policies,omitempty"`
-	TerraformModules    []SnapshotTFModule    `json:"terraform_modules,omitempty"`
-	TerraformStates     []SnapshotTFState     `json:"terraform_states,omitempty"`
+	Version             int                         `json:"version"`
+	CreatedAt           time.Time                   `json:"created_at"`
+	Settings            map[string]string           `json:"settings"`
+	Hosts               []Host                      `json:"hosts"`
+	DesiredRules        []DesiredRule               `json:"desired_rules"`
+	TerminalPresets     []TerminalPreset            `json:"terminal_presets,omitempty"`
+	SSHKeys             []SnapshotSSHKey            `json:"ssh_keys,omitempty"`
+	KubeClusters        []SnapshotKubeCluster       `json:"kube_clusters,omitempty"`
+	CloudflareAccounts  []SnapshotCloudflareAccount `json:"cloudflare_accounts,omitempty"`
+	AnsiblePlaybooks    []SnapshotAnsiblePlaybook   `json:"ansible_playbooks,omitempty"`
+	AnsibleProjects     []SnapshotAnsibleProject    `json:"ansible_projects,omitempty"` // read-only legacy, see SnapshotAnsibleProject
+	AnsibleSchedules    []AnsibleSchedule           `json:"ansible_schedules,omitempty"`
+	AnsibleAssets       []SnapshotAnsibleAsset      `json:"ansible_assets,omitempty"`
+	TerraformWorkspaces []SnapshotTFWorkspace       `json:"terraform_workspaces,omitempty"`
+	TerraformVariables  []SnapshotTFVariable        `json:"terraform_variables,omitempty"`
+	TerraformVarsets    []SnapshotTFVarset          `json:"terraform_varsets,omitempty"`
+	TerraformPolicies   []SnapshotTFPolicy          `json:"terraform_policies,omitempty"`
+	TerraformModules    []SnapshotTFModule          `json:"terraform_modules,omitempty"`
+	TerraformStates     []SnapshotTFState           `json:"terraform_states,omitempty"`
 }
 
 func (d *DB) IsFresh() (bool, error) {
@@ -1709,12 +1745,12 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 		}
 	}
 	var allPlaybooks []SnapshotAnsiblePlaybook
-	pbRows, err := d.Query("SELECT id, name, description, content, extra_vars, source, git_url, git_branch, git_path, git_auth, git_token, git_key_id, created_at, updated_at FROM ansible_playbooks ORDER BY id ASC")
+	pbRows, err := d.Query("SELECT id, name, description, content, extra_vars, source, git_url, git_branch, git_path, git_auth, git_token, git_key_id, survey, last_sync_at, last_sync_commit, group_name, created_at, updated_at FROM ansible_playbooks ORDER BY id ASC")
 	if err == nil {
 		defer pbRows.Close()
 		for pbRows.Next() {
 			var p SnapshotAnsiblePlaybook
-			if err := pbRows.Scan(&p.ID, &p.Name, &p.Description, &p.Content, &p.ExtraVars, &p.Source, &p.GitURL, &p.GitBranch, &p.GitPath, &p.GitAuth, &p.GitToken, &p.GitKeyID, &p.CreatedAt, &p.UpdatedAt); err == nil {
+			if err := pbRows.Scan(&p.ID, &p.Name, &p.Description, &p.Content, &p.ExtraVars, &p.Source, &p.GitURL, &p.GitBranch, &p.GitPath, &p.GitAuth, &p.GitToken, &p.GitKeyID, &p.Survey, &p.LastSyncAt, &p.LastSyncCommit, &p.GroupName, &p.CreatedAt, &p.UpdatedAt); err == nil {
 				allPlaybooks = append(allPlaybooks, p)
 			}
 		}
@@ -1728,12 +1764,12 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 	}
 
 	var allTFWorkspaces []SnapshotTFWorkspace
-	wsRows, err := d.Query(`SELECT id, name, description, environment, tags, binary, source, files, git_url, git_branch, git_path, git_auth, git_token, git_key_id, webhook_token, webhook_secret, drift_interval_minutes, created_at, updated_at FROM tf_workspaces ORDER BY id ASC`)
+	wsRows, err := d.Query(`SELECT id, name, description, environment, tags, binary, source, files, git_url, git_branch, git_path, git_auth, git_token, git_key_id, webhook_token, webhook_secret, drift_interval_minutes, group_name, created_at, updated_at FROM tf_workspaces ORDER BY id ASC`)
 	if err == nil {
 		defer wsRows.Close()
 		for wsRows.Next() {
 			var w SnapshotTFWorkspace
-			if err := wsRows.Scan(&w.ID, &w.Name, &w.Description, &w.Environment, &w.Tags, &w.Binary, &w.Source, &w.Files, &w.GitURL, &w.GitBranch, &w.GitPath, &w.GitAuth, &w.GitToken, &w.GitKeyID, &w.WebhookToken, &w.WebhookSecret, &w.DriftIntervalMinutes, &w.CreatedAt, &w.UpdatedAt); err == nil {
+			if err := wsRows.Scan(&w.ID, &w.Name, &w.Description, &w.Environment, &w.Tags, &w.Binary, &w.Source, &w.Files, &w.GitURL, &w.GitBranch, &w.GitPath, &w.GitAuth, &w.GitToken, &w.GitKeyID, &w.WebhookToken, &w.WebhookSecret, &w.DriftIntervalMinutes, &w.GroupName, &w.CreatedAt, &w.UpdatedAt); err == nil {
 				allTFWorkspaces = append(allTFWorkspaces, w)
 			}
 		}
@@ -1825,18 +1861,18 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 	}
 
 	return &SnapshotPayload{
-		Version:            1,
-		CreatedAt:          time.Now().UTC(),
-		Settings:           settings,
-		Hosts:              hosts,
-		DesiredRules:       allRules,
-		TerminalPresets:    allPresets,
-		SSHKeys:            allSSHKeys,
-		KubeClusters:       allClusters,
-		CloudflareAccounts: allCFAccounts,
-		AnsiblePlaybooks:   allPlaybooks,
-		AnsibleSchedules:   allSchedules,
-		AnsibleAssets:      allAssets,
+		Version:             1,
+		CreatedAt:           time.Now().UTC(),
+		Settings:            settings,
+		Hosts:               hosts,
+		DesiredRules:        allRules,
+		TerminalPresets:     allPresets,
+		SSHKeys:             allSSHKeys,
+		KubeClusters:        allClusters,
+		CloudflareAccounts:  allCFAccounts,
+		AnsiblePlaybooks:    allPlaybooks,
+		AnsibleSchedules:    allSchedules,
+		AnsibleAssets:       allAssets,
 		TerraformWorkspaces: allTFWorkspaces,
 		TerraformVariables:  allTFVariables,
 		TerraformVarsets:    allTFVarsets,
@@ -1914,8 +1950,8 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 			}
 			p.Source, p.Content = "inline", bundleEntryText(archive, p.BundlePath)
 		}
-		_, err := tx.Exec(`INSERT INTO ansible_playbooks (id, name, description, content, extra_vars, source, git_url, git_branch, git_path, git_auth, git_token, git_key_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			p.ID, p.Name, p.Description, p.Content, p.ExtraVars, p.Source, p.GitURL, p.GitBranch, p.GitPath, p.GitAuth, p.GitToken, p.GitKeyID, p.CreatedAt, p.UpdatedAt)
+		_, err := tx.Exec(`INSERT INTO ansible_playbooks (id, name, description, content, extra_vars, source, git_url, git_branch, git_path, git_auth, git_token, git_key_id, survey, last_sync_at, last_sync_commit, group_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			p.ID, p.Name, p.Description, p.Content, p.ExtraVars, p.Source, p.GitURL, p.GitBranch, p.GitPath, p.GitAuth, p.GitToken, p.GitKeyID, p.Survey, p.LastSyncAt, p.LastSyncCommit, p.GroupName, p.CreatedAt, p.UpdatedAt)
 		if err != nil {
 			return fmt.Errorf("insert ansible playbook %d: %w", p.ID, err)
 		}
@@ -1995,12 +2031,12 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 			INSERT INTO tf_workspaces (
 				id, name, description, environment, tags, binary, source, files,
 				git_url, git_branch, git_path, git_auth, git_token, git_key_id,
-				webhook_token, webhook_secret, drift_interval_minutes, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				webhook_token, webhook_secret, drift_interval_minutes, group_name, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`,
 			w.ID, w.Name, w.Description, w.Environment, w.Tags, w.Binary, w.Source, w.Files,
 			w.GitURL, w.GitBranch, w.GitPath, w.GitAuth, w.GitToken, w.GitKeyID,
-			w.WebhookToken, w.WebhookSecret, w.DriftIntervalMinutes, w.CreatedAt, w.UpdatedAt,
+			w.WebhookToken, w.WebhookSecret, w.DriftIntervalMinutes, w.GroupName, w.CreatedAt, w.UpdatedAt,
 		)
 		if err != nil {
 			return fmt.Errorf("insert tf workspace %d: %w", w.ID, err)

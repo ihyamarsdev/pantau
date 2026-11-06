@@ -64,3 +64,5 @@ Melengkapi [ADR 0035](0035-ssh-key-library.md) (SSH Key Library), [ADR 0006](000
 - Jadwal mengikuti zona waktu server; perubahan `TZ` mengubah arti ekspresi cron yang sudah tersimpan (`next_run_at` dihitung ulang pada edit atau saat penjadwal melihatnya kosong).
 - Lompatan waktu sistem (NTP, DST) dapat melewati/menggandakan satu kemunculan pada jam yang tidak ada/berulang; diterima.
 - Tabel runs menyimpan `trigger_kind`, `schedule_id`, `commit_sha`; migrasi `ALTER TABLE` idempoten pada DB lama.
+- Verifikasi repositori sebelum run dijadwalkan (Git Sync) dan batas target `--limit` pada jadwal dibahas di [ADR 0057](0057-ansible-ops-recap-tasktree-diff-survey-adhoc-facts-explorer.md).
+- Kemampuan penjelajahan berkas, penyuntingan, commit, dan push langsung ke repositori Git ditambahkan pada [ADR 0058](0058-git-edit-commit-push-for-ansible-and-terraform.md) (memperbarui sifat Git yang sebelumnya murni hanya-baca).

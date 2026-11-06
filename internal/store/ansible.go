@@ -23,6 +23,11 @@ type AnsiblePlaybook struct {
 	GitToken    string `json:"-"`             // NEVER serialized
 	GitTokenSet bool   `json:"git_token_set"` // whether a token is stored (computed)
 
+	Survey         string     `json:"survey"`       // JSON array of survey fields, "" bila tidak ada survey
+	LastSyncAt     *time.Time `json:"last_sync_at"` // git source: hasil Sync Now terakhir
+	LastSyncCommit string     `json:"last_sync_commit"`
+	GroupName      string     `json:"group_name"` // free-text label; "" = ungrouped (cosmetic, like Host Group)
+
 	CreatedAt  time.Time  `json:"created_at"`
 	UpdatedAt  time.Time  `json:"updated_at"`
 	LastStatus string     `json:"last_status,omitempty"` // dihitung saat List/Get dari run terakhir
@@ -44,6 +49,8 @@ type AnsibleRun struct {
 	Trigger      string     `json:"trigger"`     // "manual" | "schedule"
 	ScheduleID   int64      `json:"schedule_id"` // 0 for manual runs
 	CommitSHA    string     `json:"commit_sha"`  // git source only
+	Limit        string     `json:"limit"`       // --limit host pattern, "" = all targets
+	Recap        string     `json:"-"`           // JSON map alias -> recap counters; the API sends it as an object
 	ExitCode     *int       `json:"exit_code"`
 	Log          string     `json:"-"` // hanya via endpoint log
 	CreatedAt    time.Time  `json:"created_at"`
@@ -83,9 +90,9 @@ func (d *DB) CreateAnsiblePlaybook(p *AnsiblePlaybook) (int64, error) {
 }
 
 func insertAnsiblePlaybook(x sqlExecer, p *AnsiblePlaybook, now time.Time) error {
-	res, err := x.Exec(`INSERT INTO ansible_playbooks (name, description, content, extra_vars, source, git_url, git_branch, git_path, git_auth, git_token, git_key_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.Name, p.Description, p.Content, p.ExtraVars, p.Source, p.GitURL, p.GitBranch, p.GitPath, p.GitAuth, p.GitToken, p.GitKeyID, now, now)
+	res, err := x.Exec(`INSERT INTO ansible_playbooks (name, description, content, extra_vars, source, git_url, git_branch, git_path, git_auth, git_token, git_key_id, survey, group_name, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.Name, p.Description, p.Content, p.ExtraVars, p.Source, p.GitURL, p.GitBranch, p.GitPath, p.GitAuth, p.GitToken, p.GitKeyID, p.Survey, p.GroupName, now, now)
 	if err != nil {
 		if isUniqueConstraintError(err) {
 			return fmt.Errorf("%w: %q", ErrAnsiblePlaybookNameTaken, p.Name)
@@ -117,7 +124,8 @@ func normalizeAnsibleSource(p *AnsiblePlaybook) {
 
 const ansiblePlaybookSelect = `
 	SELECT p.id, p.name, p.description, %s, p.extra_vars, p.source, p.git_url, p.git_branch, p.git_path, p.git_auth,
-	       p.git_token, p.git_key_id, p.created_at, p.updated_at, r.status, r.created_at
+	       p.git_token, p.git_key_id, p.survey, p.last_sync_at, p.last_sync_commit, p.group_name, p.created_at, p.updated_at,
+	       r.status, r.created_at
 	FROM ansible_playbooks p
 	LEFT JOIN ansible_runs r ON r.id = (
 		SELECT r2.id FROM ansible_runs r2 WHERE r2.playbook_id = p.id ORDER BY r2.id DESC LIMIT 1
@@ -126,10 +134,14 @@ const ansiblePlaybookSelect = `
 func scanAnsiblePlaybook(sc rowScanner) (*AnsiblePlaybook, error) {
 	var p AnsiblePlaybook
 	var lastStatus sql.NullString
-	var lastRunAt sql.NullTime
+	var lastRunAt, lastSyncAt sql.NullTime
 	if err := sc.Scan(&p.ID, &p.Name, &p.Description, &p.Content, &p.ExtraVars, &p.Source, &p.GitURL, &p.GitBranch,
-		&p.GitPath, &p.GitAuth, &p.GitToken, &p.GitKeyID, &p.CreatedAt, &p.UpdatedAt, &lastStatus, &lastRunAt); err != nil {
+		&p.GitPath, &p.GitAuth, &p.GitToken, &p.GitKeyID, &p.Survey, &lastSyncAt, &p.LastSyncCommit, &p.GroupName,
+		&p.CreatedAt, &p.UpdatedAt, &lastStatus, &lastRunAt); err != nil {
 		return nil, err
+	}
+	if lastSyncAt.Valid {
+		p.LastSyncAt = &lastSyncAt.Time
 	}
 	p.GitTokenSet = p.GitToken != ""
 	if lastStatus.Valid {
@@ -177,12 +189,12 @@ func (d *DB) UpdateAnsiblePlaybook(p *AnsiblePlaybook) error {
 	res, err := d.Exec(`
 		UPDATE ansible_playbooks
 		SET name = ?, description = ?, content = ?, extra_vars = ?, source = ?, git_url = ?, git_branch = ?, git_path = ?,
-		    git_auth = ?, git_key_id = ?,
+		    git_auth = ?, git_key_id = ?, survey = ?, group_name = ?,
 		    git_token = CASE WHEN ? <> 'token' THEN '' WHEN ? <> '' THEN ? ELSE git_token END,
 		    updated_at = ?
 		WHERE id = ?
 	`, p.Name, p.Description, p.Content, p.ExtraVars, p.Source, p.GitURL, p.GitBranch, p.GitPath,
-		p.GitAuth, p.GitKeyID, p.GitAuth, p.GitToken, p.GitToken, now, p.ID)
+		p.GitAuth, p.GitKeyID, p.Survey, p.GroupName, p.GitAuth, p.GitToken, p.GitToken, now, p.ID)
 	if err != nil {
 		if isUniqueConstraintError(err) {
 			return ErrAnsiblePlaybookNameTaken
@@ -200,8 +212,40 @@ func (d *DB) UpdateAnsiblePlaybook(p *AnsiblePlaybook) error {
 	return nil
 }
 
+// SetAnsiblePlaybookSurvey stores the survey definition (a validated JSON array, "" for none). It leaves updated_at
+// alone: editing a form is not a change to the playbook.
+func (d *DB) SetAnsiblePlaybookSurvey(id int64, survey string) error {
+	res, err := d.Exec(`UPDATE ansible_playbooks SET survey = ? WHERE id = ?`, survey, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrAnsiblePlaybookNotFound
+	}
+	return nil
+}
+
+// SetAnsiblePlaybookGitSync records the result of a successful Sync Now.
+func (d *DB) SetAnsiblePlaybookGitSync(id int64, at time.Time, commit string) error {
+	res, err := d.Exec(`UPDATE ansible_playbooks SET last_sync_at = ?, last_sync_commit = ? WHERE id = ?`, at.UTC(), commit, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrAnsiblePlaybookNotFound
+	}
+	return nil
+}
+
 // ImportAnsiblePlaybooks creates every playbook of pbs in one transaction (all or nothing). A taken name aborts
-// everything with ErrAnsiblePlaybookNameTaken (the message includes the name).
 func (d *DB) ImportAnsiblePlaybooks(pbs []*AnsiblePlaybook) error {
 	tx, err := d.Begin()
 	if err != nil {
@@ -262,10 +306,10 @@ func (d *DB) CreateAnsibleRun(r *AnsibleRun) (int64, error) {
 	res, err := d.Exec(`
 		INSERT INTO ansible_runs (
 			playbook_id, playbook_name, status, mode, targets, extra_vars,
-			tags, skip_tags, verbosity, become, trigger_kind, schedule_id, commit_sha, exit_code, log, created_at, started_at, finished_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			tags, skip_tags, verbosity, become, trigger_kind, schedule_id, commit_sha, limit_pattern, exit_code, log, created_at, started_at, finished_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, r.PlaybookID, r.PlaybookName, r.Status, r.Mode, r.Targets, r.ExtraVars,
-		r.Tags, r.SkipTags, r.Verbosity, becomeInt, r.Trigger, r.ScheduleID, r.CommitSHA, r.ExitCode, r.Log, now, r.StartedAt, r.FinishedAt)
+		r.Tags, r.SkipTags, r.Verbosity, becomeInt, r.Trigger, r.ScheduleID, r.CommitSHA, r.Limit, r.ExitCode, r.Log, now, r.StartedAt, r.FinishedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -301,14 +345,14 @@ func (d *DB) StartAnsibleRun(id int64) error {
 	return nil
 }
 
-// FinishAnsibleRun marks a run as finished, setting status, exit code, log, and finished_at = now.
-func (d *DB) FinishAnsibleRun(id int64, status string, exitCode *int, log string) error {
+// FinishAnsibleRun marks a run as finished, setting status, exit code, log, recap (JSON, "" = none) and finished_at = now.
+func (d *DB) FinishAnsibleRun(id int64, status string, exitCode *int, log, recap string) error {
 	now := time.Now().UTC()
 	res, err := d.Exec(`
 		UPDATE ansible_runs
-		SET status = ?, exit_code = ?, log = ?, finished_at = ?
+		SET status = ?, exit_code = ?, log = ?, recap = ?, finished_at = ?
 		WHERE id = ?
-	`, status, exitCode, log, now, id)
+	`, status, exitCode, log, recap, now, id)
 	if err != nil {
 		return err
 	}
@@ -323,7 +367,7 @@ func (d *DB) FinishAnsibleRun(id int64, status string, exitCode *int, log string
 }
 
 const ansibleRunCols = `id, playbook_id, playbook_name, status, mode, targets, extra_vars, tags, skip_tags, verbosity, become,
-	trigger_kind, schedule_id, commit_sha, exit_code, created_at, started_at, finished_at`
+	trigger_kind, schedule_id, commit_sha, limit_pattern, recap, exit_code, created_at, started_at, finished_at`
 
 func scanAnsibleRun(sc rowScanner, withLog bool) (*AnsibleRun, error) {
 	var r AnsibleRun
@@ -331,7 +375,7 @@ func scanAnsibleRun(sc rowScanner, withLog bool) (*AnsibleRun, error) {
 	var exitCode sql.NullInt64
 	var startedAt, finishedAt sql.NullTime
 	dest := []any{&r.ID, &r.PlaybookID, &r.PlaybookName, &r.Status, &r.Mode, &r.Targets, &r.ExtraVars, &r.Tags, &r.SkipTags,
-		&r.Verbosity, &becomeInt, &r.Trigger, &r.ScheduleID, &r.CommitSHA, &exitCode, &r.CreatedAt, &startedAt, &finishedAt}
+		&r.Verbosity, &becomeInt, &r.Trigger, &r.ScheduleID, &r.CommitSHA, &r.Limit, &r.Recap, &exitCode, &r.CreatedAt, &startedAt, &finishedAt}
 	if withLog {
 		dest = append(dest, &r.Log)
 	}

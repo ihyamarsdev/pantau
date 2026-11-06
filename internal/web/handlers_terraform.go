@@ -61,6 +61,7 @@ func formatWorkspaceResponse(ws *store.TFWorkspace, includeFiles bool) map[strin
 		"name":                   ws.Name,
 		"description":            ws.Description,
 		"environment":            ws.Environment,
+		"group_name":             ws.GroupName,
 		"tags":                   tags,
 		"binary":                 ws.Binary,
 		"source":                 ws.Source,
@@ -275,6 +276,15 @@ func (s *Server) handleTerraformWorkspaces(w http.ResponseWriter, r *http.Reques
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		if group := strings.TrimSpace(q.Get("group")); group != "" {
+			kept := workspaces[:0]
+			for _, ws := range workspaces {
+				if strings.EqualFold(ws.GroupName, group) {
+					kept = append(kept, ws)
+				}
+			}
+			workspaces = kept
+		}
 
 		formatted := make([]map[string]interface{}, 0, len(workspaces))
 		for i := range workspaces {
@@ -288,6 +298,7 @@ func (s *Server) handleTerraformWorkspaces(w http.ResponseWriter, r *http.Reques
 		var req struct {
 			Name                 string            `json:"name"`
 			Description          string            `json:"description"`
+			GroupName            string            `json:"group_name"`
 			Environment          string            `json:"environment"`
 			Tags                 []string          `json:"tags"`
 			Binary               string            `json:"binary"`
@@ -348,10 +359,16 @@ func (s *Server) handleTerraformWorkspaces(w http.ResponseWriter, r *http.Reques
 			tagsJSON = string(b)
 		}
 
+		groupName, gerr := cleanGroupName(req.GroupName)
+		if gerr != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": gerr.Error()})
+			return
+		}
 		ws := &store.TFWorkspace{
 			Name:                 req.Name,
 			Description:          req.Description,
 			Environment:          req.Environment,
+			GroupName:            groupName,
 			Tags:                 tagsJSON,
 			Binary:               req.Binary,
 			Source:               req.Source,
@@ -467,6 +484,20 @@ func (s *Server) handleTerraformWorkspaceRoute(w http.ResponseWriter, r *http.Re
 	case "drift":
 		s.handleWorkspaceDrift(w, r, ws, rest[1:])
 		return
+	case "git":
+		if len(rest) >= 2 {
+			switch rest[1] {
+			case "files":
+				s.handleTerraformWorkspaceGitFiles(w, r, ws)
+				return
+			case "file":
+				s.handleTerraformWorkspaceGitFile(w, r, ws)
+				return
+			case "commit":
+				s.handleTerraformWorkspaceGitCommit(w, r, ws)
+				return
+			}
+		}
 	}
 
 	http.NotFound(w, r)
@@ -484,6 +515,7 @@ func (s *Server) handleWorkspaceDetail(w http.ResponseWriter, r *http.Request, w
 			Name                 string            `json:"name"`
 			Description          string            `json:"description"`
 			Environment          string            `json:"environment"`
+			GroupName            *string           `json:"group_name"` // nil keeps the stored group
 			Tags                 []string          `json:"tags"`
 			Binary               string            `json:"binary"`
 			Source               string            `json:"source"`
@@ -505,6 +537,14 @@ func (s *Server) handleWorkspaceDetail(w http.ResponseWriter, r *http.Request, w
 		}
 		ws.Description = req.Description
 		ws.Environment = req.Environment
+		if req.GroupName != nil {
+			g, gerr := cleanGroupName(*req.GroupName)
+			if gerr != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": gerr.Error()})
+				return
+			}
+			ws.GroupName = g
+		}
 		if req.Binary != "" {
 			ws.Binary = req.Binary
 		}

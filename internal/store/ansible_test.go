@@ -196,7 +196,7 @@ func TestAnsiblePlaybook_ListOmitsContentAndReflectsLastStatus(t *testing.T) {
 		t.Fatalf("create run 1: %v", err)
 	}
 	_ = db.StartAnsibleRun(r1ID)
-	_ = db.FinishAnsibleRun(r1ID, "failed", &exitCodeFailed, "some error log")
+	_ = db.FinishAnsibleRun(r1ID, "failed", &exitCodeFailed, "some error log", "")
 
 	// Verify Alpha has LastStatus == "failed"
 	pAlpha, err := db.GetAnsiblePlaybook(id1)
@@ -219,7 +219,7 @@ func TestAnsiblePlaybook_ListOmitsContentAndReflectsLastStatus(t *testing.T) {
 		t.Fatalf("create run 2: %v", err)
 	}
 	_ = db.StartAnsibleRun(r2ID)
-	_ = db.FinishAnsibleRun(r2ID, "success", &exitCodeSuccess, "all tasks completed ok")
+	_ = db.FinishAnsibleRun(r2ID, "success", &exitCodeSuccess, "all tasks completed ok", "")
 
 	// Last status on Alpha should now be "success" (from run 2, newest run)
 	pAlpha, _ = db.GetAnsiblePlaybook(id1)
@@ -274,7 +274,8 @@ func TestAnsibleRun_LifecycleAndLogNeverInJSON(t *testing.T) {
 		ExtraVars:    `{"env":"prod"}`,
 		Tags:         "deploy,web",
 		SkipTags:     "slow",
-		Verbosity:    2,
+		Limit:        "web-1,web-2",
+		Verbosity:    4,
 		Become:       true,
 		Log:          "initial log segment",
 	}
@@ -290,7 +291,8 @@ func TestAnsibleRun_LifecycleAndLogNeverInJSON(t *testing.T) {
 	if gotR.Status != "queued" {
 		t.Fatalf("expected status 'queued', got %q", gotR.Status)
 	}
-	if !gotR.Become || gotR.Verbosity != 2 || gotR.Tags != "deploy,web" || gotR.SkipTags != "slow" {
+	if !gotR.Become || gotR.Verbosity != 4 || gotR.Tags != "deploy,web" || gotR.SkipTags != "slow" ||
+		gotR.Limit != "web-1,web-2" || gotR.Recap != "" {
 		t.Fatalf("run fields mismatch: %+v", gotR)
 	}
 	if gotR.Log != "initial log segment" {
@@ -325,7 +327,8 @@ func TestAnsibleRun_LifecycleAndLogNeverInJSON(t *testing.T) {
 	// 3. Finish run -> success with exit code 0
 	ec := 0
 	fullLog := "PLAY [all] ****\nTASK [ping] ****\nok: [srv-1]\nPLAY RECAP ****\nsrv-1: ok=1\n"
-	if err := db.FinishAnsibleRun(runID, "success", &ec, fullLog); err != nil {
+	recap := `{"srv-1":{"ok":1,"changed":0,"unreachable":0,"failed":0,"skipped":0,"rescued":0,"ignored":0}}`
+	if err := db.FinishAnsibleRun(runID, "success", &ec, fullLog, recap); err != nil {
 		t.Fatalf("FinishAnsibleRun: %v", err)
 	}
 	finishedRun, err := db.GetAnsibleRun(runID)
@@ -337,6 +340,9 @@ func TestAnsibleRun_LifecycleAndLogNeverInJSON(t *testing.T) {
 	}
 	if finishedRun.Log != fullLog {
 		t.Fatalf("expected finished log %q, got %q", fullLog, finishedRun.Log)
+	}
+	if finishedRun.Recap != recap {
+		t.Fatalf("expected recap %q, got %q", recap, finishedRun.Recap)
 	}
 
 	// 4. ListAnsibleRuns omits Log
@@ -363,7 +369,7 @@ func TestAnsibleRun_LifecycleAndLogNeverInJSON(t *testing.T) {
 	if !errors.Is(err, store.ErrAnsibleRunNotFound) {
 		t.Fatalf("expected ErrAnsibleRunNotFound on start, got %v", err)
 	}
-	err = db.FinishAnsibleRun(999999, "failed", &ec, "err")
+	err = db.FinishAnsibleRun(999999, "failed", &ec, "err", "")
 	if !errors.Is(err, store.ErrAnsibleRunNotFound) {
 		t.Fatalf("expected ErrAnsibleRunNotFound on finish, got %v", err)
 	}
@@ -393,7 +399,7 @@ func TestAnsibleRun_PruningSemantic(t *testing.T) {
 			t.Fatalf("create run: %v", err)
 		}
 		_ = db.StartAnsibleRun(rID)
-		_ = db.FinishAnsibleRun(rID, "success", &ec, "log")
+		_ = db.FinishAnsibleRun(rID, "success", &ec, "log", "")
 	}
 
 	// Create 1 queued run and 1 running run
@@ -485,7 +491,7 @@ func TestAnsibleRun_MarkInterrupted(t *testing.T) {
 		PlaybookName: "App Deploy",
 	})
 	_ = db.StartAnsibleRun(fID)
-	_ = db.FinishAnsibleRun(fID, "success", &ec, "done")
+	_ = db.FinishAnsibleRun(fID, "success", &ec, "done", "")
 
 	// Call MarkAnsibleRunsInterrupted
 	affected, err := db.MarkAnsibleRunsInterrupted()

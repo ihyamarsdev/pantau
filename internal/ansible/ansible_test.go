@@ -122,12 +122,12 @@ func TestRunSpecValidate(t *testing.T) {
 			errSub:  "verbosity",
 		},
 		{
-			name: "invalid verbosity > 3",
+			name: "invalid verbosity > 4",
 			spec: RunSpec{
 				Playbook:  validPlaybook,
 				Targets:   validTargets,
 				Mode:      "run",
-				Verbosity: 4,
+				Verbosity: 5,
 			},
 			wantErr: true,
 			errSub:  "verbosity",
@@ -329,6 +329,7 @@ fi
 
 # Dump env and args for testing
 echo "ARGS: $@"
+echo "FORCE_COLOR: $ANSIBLE_FORCE_COLOR"
 if [ -n "$SECRET_ENV_VAR" ]; then
     echo "LEAKED_SECRET: $SECRET_ENV_VAR"
 fi
@@ -400,7 +401,8 @@ exit 0
 			ExtraVars: `{"foo":"bar"}`,
 			Tags:      "tagA",
 			SkipTags:  "tagB",
-			Verbosity: 2,
+			Verbosity: 4,
+			Limit:     "web-1,web-2",
 			Become:    true,
 			Forks:     8,
 		}
@@ -421,8 +423,15 @@ exit 0
 		if !strings.Contains(out, "--check") {
 			t.Errorf("Expected --check in args, got: %s", out)
 		}
-		if !strings.Contains(out, "-vv") {
-			t.Errorf("Expected -vv in args, got: %s", out)
+		if !strings.Contains(out, "-vvvv") {
+			t.Errorf("Expected -vvvv in args, got: %s", out)
+		}
+		if !strings.Contains(out, "--limit web-1,web-2") {
+			t.Errorf("Expected --limit in args, got: %s", out)
+		}
+		// Runs keep the ANSI coloring so the UI can render it.
+		if !strings.Contains(out, "FORCE_COLOR: 1") {
+			t.Errorf("Expected ANSIBLE_FORCE_COLOR=1 for a playbook run, got: %s", out)
 		}
 		if !strings.Contains(out, "--become") {
 			t.Errorf("Expected --become in args, got: %s", out)

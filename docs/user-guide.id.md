@@ -31,6 +31,12 @@ Pantau beroperasi **100% agentless** melalui protokol standar SSH (`port 22`). S
    - [Pengelolaan Klaster Kubernetes Eksternal (EKS, GKE, AKS & Kubeconfig Mandiri)](#pengelolaan-klaster-kubernetes-eksternal-eks-gke-aks--kubeconfig-mandiri)
    - [Pengelolaan Cloudflare via REST API v4](#pengelolaan-cloudflare-via-rest-api-v4)
    - [Ansible Playbooks (Gaya Semaphore, Agentless)](#ansible-playbooks-gaya-semaphore-agentless)
+   - [Membaca Run: Log, Task Tree, Recap & Diff](#membaca-run-log-task-tree-recap--diff)
+   - [Survey (Pertanyaan Launch Bertipe)](#survey-pertanyaan-launch-bertipe)
+   - [Run Ad-Hoc (Satu Modul, Tanpa Playbook)](#run-ad-hoc-satu-modul-tanpa-playbook)
+   - [Explorer Host & Group (Ping dan Facts)](#explorer-host--group-ping-dan-facts)
+   - [Git Sync (Memverifikasi Playbook Git)](#git-sync-memverifikasi-playbook-git)
+   - [Git Repository Editor (Edit, Commit & Push)](#git-repository-editor-edit-commit--push)
    - [Manajemen Terraform (Gaya Terraform Cloud, CLI Lokal)](#manajemen-terraform-gaya-terraform-cloud-cli-lokal)
    - [Evaluasi Komparatif Multi-Host & Matriks Penilaian](#evaluasi-komparatif-multi-host--matriks-penilaian)
 5. [Fase 4: Operasi Berkas & Aliran Data Lintas-Host](#5-fase-4-operasi-berkas--aliran-data-lintas-host)
@@ -525,7 +531,7 @@ Tab **Settings** menyajikan pengaturan terpilih dari daftar izin (*allowlist*):
 
 Pantau menyediakan subsistem otomatisasi Ansible terintegrasi yang terinspirasi dari Semaphore UI. Administrator dapat menyimpan Ansible Playbook langsung di basis data lokal SQLite Pantau, mengeksekusinya terhadap sekumpulan Host atau Host Group, memantau aliran log output tugas secara langsung, dan meninjau riwayat eksekusi—**tanpa memerlukan berkas inventori terpisah atau brankas kunci eksternal**.
 
-Bagian **Ansible** dibagi menjadi tab **Playbook** (daftar, pencarian, dan pembuatan playbook), **Jadwal** (otomatisasi cron), dan **Pengaturan** (Ansible Gate dan peringatan keamanan). Status gate selalu terlihat di header; klik status untuk membuka Pengaturan.
+Bagian **Ansible** dibagi menjadi tab **Playbook** (daftar, pencarian, dan pembuatan playbook), **Hosts** (explorer Group > Host dengan Ping dan Facts), **Ad-Hoc** (jalankan satu modul tanpa playbook), **Jadwal** (otomatisasi cron), **Template**, **Berkas**, **Library**, dan **Pengaturan** (Ansible Gate dan peringatan keamanan). Status gate selalu terlihat di header; klik status untuk membuka Pengaturan. Keputusan terkait: [ADR 0049](adr/0049-ansible-playbooks-semaphore-style.md), [ADR 0050](adr/0050-ansible-git-playbooks-and-cron-schedules.md), dan lapisan operasional di [ADR 0057](adr/0057-ansible-ops-recap-tasktree-diff-survey-adhoc-facts-explorer.md).
 
 #### Ansible Gate (Keamanan & Aktivasi)
 
@@ -541,10 +547,18 @@ Untuk mencegah eksekusi yang tidak diinginkan:
 
 1. Pada **Side Panel**, pilih **Ansible → Playbook** lalu klik tombol **Playbook Baru**.
 2. Masukkan **Nama** yang deskriptif (1–64 karakter, unik *case-insensitive*) dan **Deskripsi** opsional.
-3. Tulis isi playbook YAML (hingga 256 KiB) menggunakan editor CodeMirror mode YAML yang terintegrasi.
-4. (Opsional) Masukkan nilai **Extra Vars** bawaan dalam format objek JSON yang valid (hingga 64 KiB).
-5. Simpan playbook. Definisi playbook disimpan di SQLite dan otomatis diikutsertakan dalam cadangan **System Snapshot** terenkripsi.
+3. (Opsional) Masukkan **Grup** (`group_name`, teks bebas hingga 64 karakter; saran muncul dari grup playbook yang sudah ada). Kosongkan untuk playbook tanpa grup (*ungrouped*).
+4. Tulis isi playbook YAML (hingga 256 KiB) menggunakan editor CodeMirror mode YAML yang terintegrasi.
+5. (Opsional) Masukkan nilai **Extra Vars** bawaan dalam format objek JSON yang valid (hingga 64 KiB).
+6. Simpan playbook. Definisi playbook disimpan di SQLite dan otomatis diikutsertakan dalam cadangan **System Snapshot** terenkripsi.
 
+#### Pengelompokan & Organisasi Playbook
+
+Playbook dapat dikelompokkan ke dalam grup visual yang dimodelkan mengikuti Host Group:
+- **Mengatur Grup**: Masukkan nama grup (dipangkas, hingga 64 karakter) pada form playbook. Grup bersifat implisit—dibuat otomatis saat digunakan dan hilang jika tidak ada playbook yang memakainya.
+- **Bagian yang Dapat Dilipat (Collapsible Sections)**: Pada tampilan Playbook, kartu playbook dikelompokkan di bawah header grup yang dapat dilipat/dibuka lengkap dengan jumlah item. Status lipatan tersimpan di browser.
+- **Pemfilteran**: Gunakan dropdown filter Grup untuk menyaring playbook per grup tertentu, menampilkan semua grup, atau menampilkan hanya playbook **Tanpa Grup (Ungrouped)**.
+- **Label Kosmetik Murni**: Grup hanyalah label pengorganisasian visual; grup tidak memengaruhi eksekusi run, pembentukan inventory, kredensial, maupun izin akses.
 #### Menjalankan Playbook
 
 Klik tombol **Run** pada baris playbook untuk membuka dialog eksekusi:
@@ -561,7 +575,9 @@ Klik tombol **Run** pada baris playbook untuk membuka dialog eksekusi:
 3. **Parameter Eksekusi**:
    - **Extra Vars**: Timpa nilai variabel JSON bawaan khusus untuk run ini.
    - **Tags & Skip Tags**: Filter tag dipisahkan koma yang mematuhi regex `^[A-Za-z0-9_.,:-]{1,256}$`.
-   - **Verbosity**: Pilih tingkat rincian log dari `0` (normal), `1` (`-v`), `2` (`-vv`), hingga `3` (`-vvv`).
+   - **Limit**: Pola host Ansible opsional (`--limit`) yang mempersempit run ke sebagian target terpilih, mis. `web01,db03` atau `&web:!web02`. Karakter yang diizinkan: huruf, angka, `_ . , : ! & * [ ] -` (1–256 karakter); spasi, `;`, `$`, dan backtick ditolak, dan hanya nama Generated Inventory (nama Host tersanitasi dan Host Group) yang dapat dicocokkan. Kosong berarti tanpa batas.
+   - **Verbosity**: `0` (normal), `1` (`-v`), `2` (`-vv`), `3` (`-vvv`), atau `4` (`-vvvv`). Tingkat lebih tinggi menambah hasil per task dan debug koneksi, sekaligus memperpanjang log.
+   - **Penyajian**: Run mode `run` mencetak keluaran berwarna ANSI; log menyimpan kode escape mentah dan penampil mewarnainya. Saklar **Log | Task Tree | Recap | Diff** di atas penampil run memungkinkan membaca run yang sama dengan tiga cara lain (lihat di bawah).
    - **Forks**: Jumlah koneksi host simultan (1–20, bawaan 5).
    - **Become (Sudo)**: Aktifkan saklar `--become` untuk eskalasi hak akses sudo tanpa kata sandi.
 
@@ -670,7 +686,7 @@ Ikon pensil pada kartu playbook membuka satu editor untuk mengedit sekaligus mel
 Tab **Ansible → Jadwal** menampilkan tabel jadwal saat Ansible Gate aktif untuk menjalankan playbook tanpa pengawasan. Jika gate nonaktif atau biner Ansible tidak tersedia, tab ini menampilkan petunjuk untuk membuka **Pengaturan**:
 
 1. Klik **Jadwal Baru**, pilih playbook, nama opsional, dan **ekspresi cron** (5 field: menit, jam, hari-dalam-bulan, bulan, hari-dalam-minggu). Preset: tiap 5 menit (`*/5 * * * *`), tiap jam (`0 * * * *`), harian 03:00 (`0 3 * * *`), Minggu 03:00 (`0 3 * * 0`), bulanan (`0 3 1 * *`). Sintaks yang didukung: `*`, angka, rentang `a-b`, daftar `a,b`, langkah `*/n` dan `a-b/n`, serta `@hourly`, `@daily`, `@weekly`, `@monthly`, `@yearly`. Nama bulan/hari belum didukung. Bila hari-dalam-bulan dan hari-dalam-minggu sama-sama dibatasi, salah satunya cukup cocok (cron Vixie).
-2. Pilih target (**Host Group** dan/atau Host tertentu), mode (`run`, `check`, `diff`, `syntax`), tags, extra vars, verbosity, dan become. Target ditentukan saat jadwal berjalan, jadi Host yang ditambahkan ke grup belakangan ikut tercakup.
+2. Pilih target (**Host Group** dan/atau Host tertentu), mode (`run`, `check`, `diff`, `syntax`), tags, extra vars, **Limit**, verbosity (0–4), dan become. Target ditentukan saat jadwal berjalan, jadi Host yang ditambahkan ke grup belakangan ikut tercakup, sedangkan limit mempersempit himpunan hasil resolusi itu sama seperti pada run manual.
 3. Waktu mengikuti **zona waktu server Pantau** (ditampilkan di dialog; di Docker atur `TZ`, mis. `TZ=Asia/Jakarta`, jika tidak maka UTC).
 4. Tabel menampilkan run berikutnya, run terakhir (klik nomor run untuk membuka lognya), dan galat terakhir. Gunakan saklar untuk menjeda/melanjutkan jadwal tanpa menghapusnya.
 
@@ -693,6 +709,86 @@ Aturan: run terjadwal memakai batas yang sama dengan run manual (1 run aktif per
   - Pantau secara otomatis mempertahankan **100 run selesai terbaru per playbook**. Riwayat yang lebih lama akan dihapus (*pruned*).
   - Riwayat run disimpan lokal di tabel `ansible_runs` dan dikecualikan dari System Snapshot agar ukuran backup tetap kecil.
 
+#### Membaca Run: Log, Task Tree, Recap & Diff
+
+Buka run mana pun (dari riwayat playbook atau dari jadwal) untuk mendapatkan empat tampilan atas keluaran yang sama. Semuanya diturunkan dari log yang dicetak Ansible, sehingga run yang lognya terpotong di 2 MiB menampilkan pohon yang tidak lengkap; recap berbeda (lihat di bawah).
+
+- **Log**: aliran mentah dengan warna ANSI yang dirender dengan aman (teks di-escape HTML lebih dulu sebelum warna diterapkan, sehingga host target tidak dapat menyisipkan markup).
+- **Task Tree**: pohon **Play > Task > Host** yang dapat dilipat, setiap baris host membawa statusnya — `ok`, `changed`, `fatal`, `failed`, `skipping`, `unreachable`, `ignored`. Gunakan kotak pencarian untuk menemukan task berdasarkan nama dan pil filter status untuk menyembunyikan kebisingan (mis. hanya `failed` dan `unreachable`). Verbosity lebih tinggi memberi pohon lebih banyak bahan.
+- **Recap**: `PLAY RECAP` dari run, diparse server saat run selesai dan disimpan bersamanya. Setiap host mendapat bilah berwarna (ok hijau, changed oranye, unreachable merah tua, failed merah terang, skipped abu/biru) beserta totalnya. Daftar riwayat menampilkan bilah recap mini per run, sehingga run bermasalah terlihat tanpa membukanya.
+- **Diff**: hanya bermakna untuk run mode `diff`; blok `--- before` / `+++ after` / `@@` dipisah per berkas dengan baris tambahan hijau dan baris terhapus merah. Mode `check` dan `run` tidak pernah menghasilkan blok diff.
+
+#### Survey (Pertanyaan Launch Bertipe)
+
+Sebuah playbook dapat membawa **Survey**: pertanyaan bertipe yang ditanyakan setiap kali playbook dijalankan. Definisikan pada bagian **Survey** di editor playbook (tambah, hapus, urutkan field) atau melalui `PUT /api/ansible/playbooks/{id}/survey`:
+
+| Field | Keterangan |
+|---|---|
+| Key | Nama variabel extra var, `^[A-Za-z_][A-Za-z0-9_]{0,63}$`, unik dalam satu survey. |
+| Tipe | `text`, `textarea`, `number`, `integer`, `select`, `multiselect`, `boolean`, `password`. |
+| Opsi | Untuk `select` / `multiselect`: 1–50 nilai unik. |
+| Min / Max | Batas numerik untuk `number` / `integer`; panjang karakter untuk `text`, `textarea`, `password` (bilangan bulat, tidak negatif). |
+| Default | Jawaban terisi otomatis; juga dipakai bila field tidak wajib dibiarkan kosong. |
+| Wajib | Run ditolak di sisi server (bukan hanya di browser) bila jawaban tidak ada. |
+
+Batas: maksimal 30 field dan key unik. Server mengembalikan HTTP 400 untuk jawaban dengan key tak dikenal (jawaban langsung masuk ke berkas `-e` run) dan untuk field **wajib** yang dibiarkan tanpa jawaban maupun default. Bila playbook memiliki survey, dialog Run mengganti kotak JSON bebas dengan formulir tersebut (kotak JSON tetap tersedia untuk hal yang tidak dicakup survey).
+
+**Nilai mana yang menang.** Saat launch Pantau menggabungkan, dari terlemah ke terkuat: extra vars bawaan playbook, lalu jawaban survey (termasuk default untuk field opsional yang tidak dijawab), lalu extra vars yang diketik eksplisit di dialog launch. Jadi jawaban survey menimpa default `8000` milik playbook, dan operator yang mengetik `{"port": 9000}` pada extra vars launch tetap mendapat `9000`.
+
+**Kata sandi.** Field `password` diteruskan ke Ansible saat run tetapi tidak pernah ditulis ke record run — `extra_vars` menampilkan `(hidden)` — dan tidak pernah dikembalikan API. Nilainya **tidak** disaring dari log: task yang mencetaknya (`debug: var=secret`, keluaran `-vvv`, perintah gagal yang menggemanya) akan menampilkan nilai itu di log run, yang dapat dibaca seluruh tim admin. Utamakan mekanisme tanpa frasa sandi (kunci SSH, berkas dari tab **Berkas**) dan anggap kata sandi yang tercetak sudah bocor.
+
+Definisi survey disimpan bersama playbook di SQLite, diikutsertakan dalam System Snapshot terenkripsi, dan dikirim ke UI sebagai `survey` (daftar field) serta `has_survey` pada respons GET/list playbook.
+
+#### Run Ad-Hoc (Satu Modul, Tanpa Playbook)
+
+**Ansible → Ad-Hoc** menjalankan satu modul Ansible terhadap satu atau beberapa Host atau Host Group. Gunakan untuk pemeriksaan cepat dan operasi sekali jalan yang tidak layak disimpan sebagai playbook: `ping`, `setup`, `shell: uptime`, `command: df -h`, `service: name=nginx state=restarted`, `apt: update_cache=yes`, dan seterusnya.
+
+1. Pilih **Modul** dari daftar umum atau ketik sendiri (`ansible.builtin.ping` dan `ping` sama-sama diterima) dan opsional **Argumen**-nya (satu string `-a`, hingga 4 KiB; kosongkan untuk modul tanpa argumen seperti `ping`).
+2. Pilih **target**: Host individual, satu Host Group, dan/atau **Pattern** tambahan (bawaan `all`, aturan sama dengan **Limit** run).
+3. Opsional: aktifkan **Become**, atur **Forks**, **Verbosity** (0–4), dan extra vars (objek JSON, hingga 64 KiB).
+4. Jalankan: log dialirkan langsung di bawah formulir dan tabel hasil per host terisi saat host menjawab (success hijau, changed oranye, unreachable merah tua, failed merah).
+
+Run ad-hoc bersifat nyata: `shell`, `command`, dan `raw` mengeksekusi di target dengan akses SSH yang sudah dimiliki Pantau, setara terminal. Targetnya tetap terbatas pada Generated Inventory: pola hanya dapat mengalamatkan alias Host dan nama Host Group Pantau, sehingga `connection: local`, `delegate_to`, dan `local_action` tidak dapat dipakai untuk keluar ke mesin lain lewat pola itu sendiri.
+
+**Konkurensi dan riwayat**: maksimal **3 run ad-hoc** aktif sekaligus di seluruh instalasi; permintaan keempat ditolak (HTTP 429). Kuota ini dihitung **terpisah** dari run playbook, sehingga `ping` singkat tidak pernah menunggu di belakang playbook terjadwal dan sebaliknya. Riwayat menyimpan 100 run ad-hoc terbaru di tabel `ansible_adhoc_runs`; seperti run playbook, riwayat ini dikecualikan dari System Snapshot, dan run yang masih aktif saat Pantau berhenti ditandai `interrupted` pada start berikutnya. Run aktif dapat dibatalkan seperti run playbook.
+
+#### Explorer Host & Group (Ping dan Facts)
+
+**Ansible → Hosts** menampilkan armada persis seperti yang dilihat Ansible: pohon **Host Group > Host** yang dapat dilipat plus daftar *Ungrouped*. Setiap baris menampilkan grup tempat host berada menurut Host Group Pantau, badge inspeksi Pantau (sehat, peringatan, drift, tidak diketahui), dan **alias Ansible** host — nama tersanitasi yang benar-benar dipakai inventory, sehingga dapat disalin langsung ke baris `hosts:` playbook atau **Limit** run.
+
+- **Ping**: klik **Ping** (seluruh pohon atau host terpilih) untuk memulai `ansible … -m ping` ad-hoc. Setiap host lalu menampilkan **Reachable**, **Unreachable**, **Failed**, atau *belum dicek* hingga ping berikutnya. Ini menguji jalur Ansible secara khusus: keterjangkauan SSH, kredensial dari SSH Key Library, dan interpreter Python di target — host yang bisa diinspeksi Pantau tetap dapat unreachable bagi Ansible bila `ansible_python_interpreter` hilang.
+- **Facts**: tombol Facts membuka **penampil Facts** untuk satu host: kartu OS (distribusi, versi, kernel, arsitektur), hostname/FQDN, CPU (jumlah dan model), memori dan swap, mount, interface jaringan (IPv4/IPv6/MAC), IPv4 default, uptime, interpreter Python, dan virtualisasi, plus tab **JSON Mentah** dengan pencarian atas seluruh `ansible_facts`.
+
+Facts dikumpulkan dengan menjalankan `setup` di host (hingga 90 detik, keluaran 2 MiB) dan **di-cache per host**: penampil menunjukkan waktu pengumpulannya, dan **Refresh facts** mengumpulkan ulang. Hanya satu pengumpulan per host berjalan sekaligus (permintaan kedua mendapat HTTP 409), host gagal atau unreachable mengembalikan galat singkat alih-alih ringkasan parsial, dan cache dihapus bersama Host. Facts adalah data operasional, bukan konfigurasi: tidak diikutsertakan dalam System Snapshot.
+
+#### Git Sync (Memverifikasi Playbook Git)
+
+Untuk playbook yang bersumber repositori Git, editor menampilkan commit dan waktu sync terakhir yang berhasil plus tombol **Sync Now**. Sync Now melakukan clone dangkal dengan kredensial tersimpan, memastikan path playbook yang dikonfigurasi masih ada, lalu melaporkan **commit**, **branch**, dan **jalur `.yml`/`.yaml` terurut** yang ditemukan di repositori (direktori titik seperti `.git` atau `.ansible/` serta `node_modules` dilewati; maksimal 1.000 entri). Clone sementara selalu dihapus. Hasilnya diingat sebagai `last_sync_at` dan `last_sync_commit`, sehingga Anda tahu apakah branch bergerak sejak terakhir dilihat. Kegagalan clone, jaringan, atau autentikasi mengembalikan HTTP 502 dengan pesan singkat yang mempertahankan baris terakhir keluaran git tetapi mengganti URL repositori dengan `<repo>` dan membuang kredensial, sehingga token tidak pernah muncul di respons maupun log server. Repositori yang berhasil di-clone tetapi tidak memuat path playbook yang dikonfigurasi mengembalikan HTTP 400.
+
+Sync **tidak** menyimpan isi repositori dan tidak mengubah playbook: setiap run tetap melakukan clone baru. Gunakan setelah mengubah branch atau path, dan setelah merotasi token atau kunci, untuk menangkap salah ketik sebelum ditemukan oleh jadwal. Fitur ini hanya berlaku untuk sumber Git; sumber lain mengembalikan HTTP 400.
+
+#### Git Repository Editor (Edit, Commit & Push)
+
+Untuk playbook dengan `source = "git"`, operator dapat menekan tombol **Edit Repository** pada blok konfigurasi Git (di sebelah tombol **Sync Now**) untuk membuka antarmuka **Git Editor** (Workspace Modal).
+
+- **Penjelajahan & Pencarian Berkas**: Telusuri pohon berkas repositori dengan folder collapsible, pencarian berkas instan, serta penanda visual untuk berkas yang diubah (`M`), ditambah (`A`), atau dihapus (`D`).
+- **Penyuntingan Kode & Syntax Highlighting**: Sunting berkas dengan penyorotan sintaksis CodeMirror (YAML, shell, HCL/C-like, teks biasa).
+- **Operasi Berkas**: Gunakan toolbar untuk membuat berkas baru (**New File**), menghapus berkas (**Delete**), membatalkan perubahan (**Discard changes**), atau memuat ulang repositori (**Reload**). Bila ada perubahan belum disimpan, reload meminta konfirmasi dialog.
+- **Dialog Commit & Push**:
+  - Masukkan pesan commit yang deskriptif (wajib, 1–500 karakter).
+  - Nama dan email author diingat di `localStorage` peramban (bawaan: `Pantau <pantau@localhost>` jika dikosongkan).
+  - Pilihan target: **Push ke branch `{branch}`** atau **Buat branch baru** (masukkan nama branch baru yang sah).
+  - Tanpa force push: perintah dijalankan murni non-force (`--force` tidak pernah digunakan).
+- **Konkurensi Optimistis (HTTP 409 Conflict)**: Jika repositori remote telah diperbarui oleh commit lain sejak editor dibuka (`base_commit` tidak cocok dengan HEAD remote), permintaan ditolak dengan HTTP 409 (`ErrRepoChanged`). Dialog menampilkan tombol Reload agar operator dapat menyegarkan berkas dengan aman tanpa menimpa pekerjaan pihak lain.
+- **Kebutuhan Izin Tulis Token & Kunci SSH**:
+  - **GitHub Fine-Grained Personal Access Token**: Memerlukan izin **Repository permissions -> Contents: Read and write**.
+  - **GitHub Classic Token**: Memerlukan scope **`repo`** (atau `public_repo`).
+  - **GitLab Access Token**: Memerlukan scope **`write_repository`**.
+  - **Kunci SSH Deploy**: Kunci SSH yang dipasang di repositori remote wajib dicentang opsi **Allow write access**.
+  - Token baca-saja (*read-only*) akan berhasil saat membaca berkas namun gagal saat push dengan status HTTP 502 dan pesan keluaran git tersanitasi.
+- **Efek Samping Sinkronisasi**: Push commit yang sukses ke branch aktif playbook secara otomatis memperbarui catatan `last_sync_at` dan `last_sync_commit`.
+- **Batas & Validasi**: Maksimal 50 perubahan berkas per commit, 1 MiB per berkas, total ukuran payload 5 MiB, berkas wajib teks UTF-8 valid (berkas biner ditolak 415), tanpa symlink traversal, dan menolak jalur `..` atau `.git`.
+
 
 ### Manajemen Terraform (Gaya Terraform Cloud, CLI Lokal)
 
@@ -712,6 +808,7 @@ Workspace merepresentasikan satu unit environment infrastruktur yang terisolasi 
 1. Pada **Side Panel**, pilih menu **Terraform → Workspaces** lalu klik tombol **Workspace Baru**.
 2. Atur parameter workspace:
    - **Nama**: Identifier unik *case-insensitive* (`^[A-Za-z0-9_-]{1,64}$`).
+   - **Grup**: (Opsional) Label teks bebas (`group_name`, hingga 64 karakter) untuk mengelompokkan workspace. Saran otomatis muncul dari grup yang ada; kosongkan untuk tanpa grup.
    - **Environment**: Label lingkungan kerja (`production`, `staging`, `development`).
    - **Biner**: Pilih apakah run akan dieksekusi menggunakan biner `terraform` atau `tofu`.
    - **Tag**: Label dipisahkan koma untuk pengelompokan dan pemfilteran workspace.
@@ -719,6 +816,14 @@ Workspace merepresentasikan satu unit environment infrastruktur yang terisolasi 
      - **Berkas Inline**: Simpan hingga 50 berkas (maksimal 256 KiB per berkas; `.tf`, `.tfvars`, `.json`, `.yaml`, dll.) langsung di basis data Pantau.
      - **Repositori Git**: Masukkan URL repositori (`https://` atau `ssh://`), nama branch target, direktori kerja di dalam repositori (bawaan: root), serta kredensial (token atau kunci SSH dari Library).
 3. Workspace dialokasikan direktori kerja privat di server Pantau (`<DataRoot>/terraform/<workspaceID>`) dengan izin direktori ketat `0700`.
+
+#### Pengelompokan & Organisasi Workspace
+
+Workspace dapat dikelompokkan ke dalam bagian visual yang dimodelkan mengikuti Host Group:
+- **Mengatur Grup**: Masukkan nama grup (dipangkas, hingga 64 karakter) saat membuat atau mengedit workspace. Grup bersifat implisit dari kumpulan nilai unik `group_name`.
+- **Bagian yang Dapat Dilipat**: Kartu workspace ditampilkan di bawah header grup yang dapat diciutkan/dibentangkan baik pada mode Grid maupun List, lengkap dengan indikator jumlah workspace.
+- **Pemfilteran**: Gunakan dropdown filter Grup untuk menyaring berdasarkan grup, menampilkan seluruh grup, atau mengisolasi workspace **Tanpa Grup (Ungrouped)**.
+- **Label Kosmetik Murni**: Grup murni merupakan pembatas tampilan; pengelompokan tidak memengaruhi siklus run Terraform, file state, mekanisme penguncian (*locking*), maupun pembagian variable set.
 
 #### Alur Eksekusi Run: Plan, Approve, dan Apply
 
@@ -819,6 +924,23 @@ Otomatisasi tahap planning saat kode di-push ke repositori Git:
    - **GitHub**: Pada **Repository Settings → Webhooks**, isi Payload URL, pilih `application/json`, pilih event **Push**, dan tempelkan webhook secret (divalidasi melalui `X-Hub-Signature-256`).
    - **GitLab**: Pada **Settings → Webhooks**, isi URL, masukkan secret token pada kolom **Secret token** (divalidasi melalui `X-Gitlab-Token`), dan aktifkan **Push events**.
 4. **Jaminan Keamanan**: Webhook **hanya memicu proses Plan spekulatif atau standar** saat terjadi push ke branch yang dikonfigurasi. Webhook **tidak pernah mengeksekusi Apply secara otomatis**. Semua penerapan perubahan ke infrastruktur tetap wajib melalui persetujuan manual di Approval Gate.
+
+#### Menyunting Repositori Workspace (Git Editor)
+
+Workspace yang menggunakan repositori Git (`source = "git"`) memiliki tombol **Edit Repository** pada kartu VCS di dalam tab **Settings**.
+
+- **Pohon Berkas Penuh**: Daftar berkas ditampilkan relatif terhadap root repositori (bukan dibatasi sub-direktori `git_path`), memungkinkan penyuntingan berkas di luar folder kerja utama (misalnya modul root, konfigurasi `.tf` pendukung, atau berkas definisi variabel).
+- **Penyuntingan Kode & Manajemen Berkas**: Tambah berkas konfigurasi baru, sunting berkas `.tf` / `.tfvars` / dokumentasi, hapus berkas, dan batalkan perubahan lokal.
+- **Alur Commit & Push**:
+  - Masukkan pesan commit, nama pembuat, dan email.
+  - Pilih untuk push langsung ke branch aktif workspace atau buat **Branch baru**.
+  - Penegakan non-force push mencegah penimpaan riwayat remote secara tidak disengaja.
+- **Konkurensi Optimistis (HTTP 409 Conflict)**: Bila branch remote telah menerima commit baru sejak editor dibuka (`base_commit` tidak cocok dengan HEAD remote), Pantau menolak push dengan HTTP 409 (`ErrRepoChanged`) untuk melindungi integritas kode.
+- **Prasyarat Izin Tulis Token**:
+  - Token akses Git atau Kunci SSH Deploy wajib memiliki hak tulis (misal: GitHub Fine-Grained `Contents: Read and write`, GitHub classic `repo`, GitLab `write_repository`, atau SSH key dengan izin tulis).
+  - Token baca-saja (*read-only*) akan ditolak saat push dengan galat HTTP 502 disertai rincian git yang disanitasi.
+- **Efek Samping Webhook**: Melakukan commit dan push langsung ke branch yang dipantau workspace akan memicu webhook VCS Git (jika aktif), yang secara otomatis memulai antrean proses Plan spekulatif.
+- **Batas Operasional**: Maksimal 50 perubahan berkas per commit, 1 MiB per berkas, total 5 MiB payload, hanya berkas teks UTF-8 valid (berkas biner ditolak 415), dan sanitasi path ketat.
 
 #### Batasan dan Non-Goals yang Transparan
 

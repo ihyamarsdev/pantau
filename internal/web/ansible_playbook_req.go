@@ -13,17 +13,18 @@ import (
 // create); the returned playbook is a copy of base with the request applied. On failure it has already answered.
 func (s *Server) decodePlaybookRequest(w http.ResponseWriter, r *http.Request, base *store.AnsiblePlaybook) (*store.AnsiblePlaybook, bool) {
 	var req struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		Content     string `json:"content"`
-		ExtraVars   string `json:"extra_vars"`
-		Source      string `json:"source"`
-		GitURL      string `json:"git_url"`
-		GitBranch   string `json:"git_branch"`
-		GitPath     string `json:"git_path"`
-		GitAuth     string `json:"git_auth"`
-		GitToken    string `json:"git_token"`
-		GitKeyID    int64  `json:"git_key_id"`
+		Name        string  `json:"name"`
+		Description string  `json:"description"`
+		Content     string  `json:"content"`
+		ExtraVars   string  `json:"extra_vars"`
+		GroupName   *string `json:"group_name"` // nil keeps the stored group
+		Source      string  `json:"source"`
+		GitURL      string  `json:"git_url"`
+		GitBranch   string  `json:"git_branch"`
+		GitPath     string  `json:"git_path"`
+		GitAuth     string  `json:"git_auth"`
+		GitToken    string  `json:"git_token"`
+		GitKeyID    int64   `json:"git_key_id"`
 	}
 	if !decodeAnsibleBody(w, r, &req) {
 		return nil, false
@@ -54,6 +55,13 @@ func (s *Server) decodePlaybookRequest(w http.ResponseWriter, r *http.Request, b
 		*pb = *base
 	}
 	pb.Name, pb.Description, pb.ExtraVars = req.Name, req.Description, req.ExtraVars
+	if req.GroupName != nil {
+		g, err := cleanGroupName(*req.GroupName)
+		if err != nil {
+			return bad(err.Error())
+		}
+		pb.GroupName = g
+	}
 
 	switch req.Source {
 	case "", "inline":

@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"sync"
@@ -203,7 +204,16 @@ func (m *AnsibleRunManager) executeRun(ctx context.Context, ar *activeRun, run *
 	}
 
 	finalLog := ar.logBuf.String()
-	if dbErr := m.db.FinishAnsibleRun(ar.runID, finalStatus, finalExit, finalLog); dbErr != nil {
+
+	// Play Recap is stored as JSON so the run detail endpoint can return it as an object.
+	recapJSON := ""
+	if recap := ansible.ParseRecap(finalLog); len(recap) > 0 {
+		if b, err := json.Marshal(recap); err == nil {
+			recapJSON = string(b)
+		}
+	}
+
+	if dbErr := m.db.FinishAnsibleRun(ar.runID, finalStatus, finalExit, finalLog, recapJSON); dbErr != nil {
 		logger.Warn("ansible", run.PlaybookName, fmt.Sprintf("Failed to finish run %d in db: %v", ar.runID, dbErr))
 	}
 

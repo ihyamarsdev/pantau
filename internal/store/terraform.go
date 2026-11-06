@@ -69,6 +69,7 @@ type TFWorkspace struct {
 	Name                 string              `json:"name"`
 	Description          string              `json:"description"`
 	Environment          string              `json:"environment"`
+	GroupName            string              `json:"group_name"`      // free-text label; "" = ungrouped (cosmetic)
 	Tags                 string              `json:"tags"`            // JSON array string
 	Binary               string              `json:"binary"`          // "terraform" | "tofu"
 	Source               string              `json:"source"`          // "inline" | "git"
@@ -134,14 +135,14 @@ func (d *DB) CreateTFWorkspace(w *TFWorkspace) (int64, error) {
 		INSERT INTO tf_workspaces (
 			name, description, environment, tags, binary, source, files,
 			git_url, git_branch, git_path, git_auth, git_token, git_key_id,
-			webhook_token, webhook_secret, drift_interval_minutes,
+			webhook_token, webhook_secret, drift_interval_minutes, group_name,
 			lock_reason, locked_by, locked_at, drift_detected, drift_checked_at,
 			tf_version, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		w.Name, w.Description, w.Environment, w.Tags, w.Binary, w.Source, w.Files,
 		w.GitURL, w.GitBranch, w.GitPath, w.GitAuth, w.GitToken, w.GitKeyID,
-		w.WebhookToken, w.WebhookSecret, w.DriftIntervalMinutes,
+		w.WebhookToken, w.WebhookSecret, w.DriftIntervalMinutes, w.GroupName,
 		w.LockReason, w.LockedBy, w.LockedAt, boolToInt(w.DriftDetected), w.DriftCheckedAt,
 		w.TFVersion, now, now,
 	)
@@ -173,24 +174,24 @@ func (d *DB) UpdateTFWorkspace(w *TFWorkspace) error {
 			UPDATE tf_workspaces SET
 				name = ?, description = ?, environment = ?, tags = ?, binary = ?, source = ?, files = ?,
 				git_url = ?, git_branch = ?, git_path = ?, git_auth = ?, git_key_id = ?,
-				drift_interval_minutes = ?, updated_at = ?
+				drift_interval_minutes = ?, group_name = ?, updated_at = ?
 			WHERE id = ?
 		`,
 			w.Name, w.Description, w.Environment, w.Tags, w.Binary, w.Source, w.Files,
 			w.GitURL, w.GitBranch, w.GitPath, w.GitAuth, w.GitKeyID,
-			w.DriftIntervalMinutes, now, w.ID,
+			w.DriftIntervalMinutes, w.GroupName, now, w.ID,
 		)
 	} else {
 		res, err = d.Exec(`
 			UPDATE tf_workspaces SET
 				name = ?, description = ?, environment = ?, tags = ?, binary = ?, source = ?, files = ?,
 				git_url = ?, git_branch = ?, git_path = ?, git_auth = ?, git_token = ?, git_key_id = ?,
-				drift_interval_minutes = ?, updated_at = ?
+				drift_interval_minutes = ?, group_name = ?, updated_at = ?
 			WHERE id = ?
 		`,
 			w.Name, w.Description, w.Environment, w.Tags, w.Binary, w.Source, w.Files,
 			w.GitURL, w.GitBranch, w.GitPath, w.GitAuth, w.GitToken, w.GitKeyID,
-			w.DriftIntervalMinutes, now, w.ID,
+			w.DriftIntervalMinutes, w.GroupName, now, w.ID,
 		)
 	}
 	if err != nil {
@@ -229,7 +230,7 @@ func (d *DB) DeleteTFWorkspace(id int64) error {
 const tfWorkspaceCols = `
 	w.id, w.name, w.description, w.environment, w.tags, w.binary, w.source, %s,
 	w.git_url, w.git_branch, w.git_path, w.git_auth, w.git_token, w.git_key_id,
-	w.webhook_token, w.webhook_secret, w.drift_interval_minutes,
+	w.webhook_token, w.webhook_secret, w.drift_interval_minutes, w.group_name,
 	w.lock_reason, w.locked_by, w.locked_at, w.drift_detected, w.drift_checked_at,
 	w.tf_version, w.created_at, w.updated_at
 `
@@ -242,7 +243,7 @@ func scanTFWorkspace(sc rowScanner, withFiles bool) (*TFWorkspace, error) {
 	dest := []any{
 		&w.ID, &w.Name, &w.Description, &w.Environment, &w.Tags, &w.Binary, &w.Source, &files,
 		&w.GitURL, &w.GitBranch, &w.GitPath, &w.GitAuth, &w.GitToken, &w.GitKeyID,
-		&w.WebhookToken, &w.WebhookSecret, &w.DriftIntervalMinutes,
+		&w.WebhookToken, &w.WebhookSecret, &w.DriftIntervalMinutes, &w.GroupName,
 		&w.LockReason, &w.LockedBy, &lockedAt, &driftDetectedInt, &driftCheckedAt,
 		&w.TFVersion, &w.CreatedAt, &w.UpdatedAt,
 	}

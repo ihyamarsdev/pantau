@@ -709,3 +709,88 @@ func TestAnsiblePrivateKeyNeverExposed(t *testing.T) {
 		t.Fatalf("private key marker leaked in run log response!")
 	}
 }
+
+// Real Play Recap block as printed by ansible-core 2.21 (colored, via ANSIBLE_FORCE_COLOR=1).
+const realRecapLog = "\x1b[0;33mchanged: [web-01]\x1b[0m\n\n" +
+	"PLAY RECAP *********************************************************************\n" +
+	"\x1b[0;33mweb-01\x1b[0m                     : \x1b[0;32mok=3   \x1b[0m \x1b[0;33mchanged=1   \x1b[0m unreachable=0    failed=0    \x1b[0;36mskipped=1   \x1b[0m rescued=0    \x1b[1;35mignored=0   \x1b[0m\n"
+
+func TestAnsibleRunLimitVerbosityAndRecap(t *testing.T) {
+	srv, auth := setupAnsibleTestServer(t)
+	_ = srv.db.SetAnsibleEnabled(true)
+
+	hostID, _ := srv.db.CreateHost(&store.Host{Name: "web-01", Host: "10.0.0.1", Port: 22, User: "root", CustomKey: "KEY"})
+	pbID, _ := srv.db.CreateAnsiblePlaybook(&store.AnsiblePlaybook{Name: "pb", Content: "---\n- hosts: all\n  tasks: []\n"})
+
+	specs := make(chan ansible.RunSpec, 1)
+	srv.ansibleRun = func(ctx context.Context, spec ansible.RunSpec, log io.Writer) (int, error) {
+		specs <- spec
+		_, _ = io.WriteString(log, realRecapLog)
+		return 0, nil
+	}
+	srv.ansibleMgr = NewAnsibleRunManager(srv.db, srv.ansibleRun)
+
+	rec := doRequest(t, srv, auth, http.MethodPost, fmt.Sprintf("/api/ansible/playbooks/%d/run", pbID), map[string]interface{}{
+		"host_ids": []int64{hostID}, "limit": "web-01", "verbosity": 4,
+	})
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var runRes struct {
+		Run store.AnsibleRun `json:"run"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &runRes)
+	if runRes.Run.Limit != "web-01" || runRes.Run.Verbosity != 4 {
+		t.Fatalf("run limit/verbosity = %q/%d", runRes.Run.Limit, runRes.Run.Verbosity)
+	}
+
+	spec := <-specs
+	if spec.Limit != "web-01" || spec.Verbosity != 4 {
+		t.Fatalf("spec limit/verbosity = %q/%d, want web-01/4", spec.Limit, spec.Verbosity)
+	}
+
+	// Invalid limit is rejected before any run record is created.
+	rec = doRequest(t, srv, auth, http.MethodPost, fmt.Sprintf("/api/ansible/playbooks/%d/run", pbID), map[string]interface{}{
+		"host_ids": []int64{hostID}, "limit": "web 1;id",
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for bad limit, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Recap becomes available once the run finishes.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		rec = doRequest(t, srv, auth, http.MethodGet, fmt.Sprintf("/api/ansible/runs/%d", runRes.Run.ID), nil)
+		var detail struct {
+			Recap map[string]ansible.RecapHost `json:"recap"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &detail)
+		if h, ok := detail.Recap["web-01"]; ok {
+			if h.OK != 3 || h.Changed != 1 || h.Skipped != 1 {
+				t.Fatalf("recap = %+v", h)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("recap never appeared: %s", rec.Body.String())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	rec = doRequest(t, srv, auth, http.MethodGet, fmt.Sprintf("/api/ansible/playbooks/%d/runs", pbID), nil)
+	var list struct {
+		Runs []struct {
+			ID          int64 `json:"id"`
+			RecapTotals *struct {
+				OK      int `json:"ok"`
+				Changed int `json:"changed"`
+			} `json:"recap_totals"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatalf("unmarshal list: %v", err)
+	}
+	if len(list.Runs) == 0 || list.Runs[0].RecapTotals == nil || list.Runs[0].RecapTotals.OK != 3 || list.Runs[0].RecapTotals.Changed != 1 {
+		t.Fatalf("recap_totals missing: %s", rec.Body.String())
+	}
+}

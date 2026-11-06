@@ -139,27 +139,9 @@ func CloneGitRepo(ctx context.Context, repoURL, branch, token, privateKey, workD
 		return "", "", errors.New("git not found in PATH")
 	}
 	repoDir = filepath.Join(workDir, "repo")
-	env := gitEnv(workDir, protocols)
-
-	sshCmd := "ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes"
-	if strings.TrimSpace(privateKey) != "" {
-		kp := filepath.Join(workDir, "git_key")
-		if err := os.WriteFile(kp, []byte(strings.TrimSpace(privateKey)+"\n"), 0600); err != nil {
-			return "", "", fmt.Errorf("failed to write git key: %w", err)
-		}
-		sshCmd += " -i '" + kp + "'"
-	}
-	env = append(env, "GIT_SSH_COMMAND="+sshCmd)
-
-	if token != "" {
-		u, perr := url.Parse(repoURL)
-		if perr != nil || u.Scheme != "https" {
-			return "", "", errors.New("token authentication requires an https:// git url")
-		}
-		cred := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + token))
-		env = append(env, "GIT_CONFIG_COUNT=1",
-			"GIT_CONFIG_KEY_0=http.https://"+u.Host+"/.extraHeader",
-			"GIT_CONFIG_VALUE_0=Authorization: Basic "+cred)
+	env, err := setupGitEnv(repoURL, token, privateKey, workDir, protocols)
+	if err != nil {
+		return "", "", err
 	}
 
 	args := []string{"-c", "credential.helper=", "clone", "--depth", "1", "--single-branch", "--no-tags"}
@@ -220,4 +202,32 @@ func cloneGit(ctx context.Context, g GitSource, workDir, protocols string, log i
 		return "", "", "", fmt.Errorf("playbook %q is not a regular file", g.Path)
 	}
 	return repoDir, playbookPath, sha, nil
+}
+
+// setupGitEnv builds the environment slice with proxy settings, protocol restrictions,
+// optional SSH key, and optional HTTPS token header. Reused by clone, tree/file read, and push.
+func setupGitEnv(repoURL, token, privateKey, workDir, protocols string) ([]string, error) {
+	env := gitEnv(workDir, protocols)
+
+	sshCmd := "ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes"
+	if strings.TrimSpace(privateKey) != "" {
+		kp := filepath.Join(workDir, "git_key")
+		if err := os.WriteFile(kp, []byte(strings.TrimSpace(privateKey)+"\n"), 0600); err != nil {
+			return nil, fmt.Errorf("failed to write git key: %w", err)
+		}
+		sshCmd += " -i '" + kp + "'"
+	}
+	env = append(env, "GIT_SSH_COMMAND="+sshCmd)
+
+	if token != "" {
+		u, perr := url.Parse(repoURL)
+		if perr != nil || u.Scheme != "https" {
+			return nil, errors.New("token authentication requires an https:// git url")
+		}
+		cred := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + token))
+		env = append(env, "GIT_CONFIG_COUNT=1",
+			"GIT_CONFIG_KEY_0=http.https://"+u.Host+"/.extraHeader",
+			"GIT_CONFIG_VALUE_0=Authorization: Basic "+cred)
+	}
+	return env, nil
 }

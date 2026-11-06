@@ -817,6 +817,10 @@ func TestAnsibleUIInIndexHTML(t *testing.T) {
 			t.Errorf("expected JS function %q in index.html", fn)
 		}
 	}
+	// The card's History button is the only entry point to a playbook's run history; it was lost twice in UI rewrites.
+	if !strings.Contains(html, `onclick="openAnsiblePlaybookHistory(${p.id})"`) {
+		t.Error("playbook card is missing its Run History button")
+	}
 
 	panels := []struct{ name, content string }{
 		{"Playbooks", `id="ansiblePlaybooksContainer"`},

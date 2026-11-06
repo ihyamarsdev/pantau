@@ -99,9 +99,16 @@ type Server struct {
 	cfClient          func(token string) *cloudflare.Client
 	ansibleRun        func(ctx context.Context, spec ansible.RunSpec, log io.Writer) (int, error)
 	ansibleAvail      func() (string, string, error)
+	ansibleSync       func(ctx context.Context, g ansible.GitSource) (*ansible.GitSyncResult, error)
 	ansibleMgr        *AnsibleRunManager
 	ansibleLibDir     string // shared role/collection library; "" disables it
+	ansibleAdhocMgr   *AnsibleAdhocManager
+	adhocRunner       func(ctx context.Context, spec ansible.AdhocSpec, log io.Writer) (int, error)
+	factsGather       func(ctx context.Context, t ansible.Target, cfg, libDir string, log io.Writer) (map[string]any, error)
 	tfMgr             *TerraformRunManager
+	gitEditTree       func(ctx context.Context, g ansible.GitSource) (*ansible.RepoTree, error)
+	gitEditFile       func(ctx context.Context, g ansible.GitSource, path string) (string, string, error)
+	gitEditCommit     func(ctx context.Context, g ansible.GitSource, spec ansible.CommitSpec) (*ansible.CommitResult, error)
 }
 
 func (s *Server) prepareHTML(raw []byte) {
@@ -130,10 +137,16 @@ func NewServer(db *store.DB, ins *inspector.Inspector, disp *notify.Dispatcher) 
 		cfClient:       cloudflare.New,
 		ansibleRun:     ansible.Run,
 		ansibleAvail:   ansible.Available,
+		ansibleSync:    ansible.SyncGit,
+		gitEditTree:    ansible.ReadRepoTree,
+		gitEditFile:    ansible.ReadRepoFile,
+		gitEditCommit:  ansible.CommitAndPush,
 	}
 	if db != nil {
 		_, _ = db.MarkAnsibleRunsInterrupted()
 		s.ansibleMgr = NewAnsibleRunManager(db, s.ansibleRun)
+		_, _ = db.MarkAnsibleAdhocRunsInterrupted()
+		s.ansibleAdhocMgr = NewAnsibleAdhocManager(db, s.adhocRunner)
 	}
 	s.prepareHTML(embeddedHTML)
 	s.routes()
@@ -178,7 +191,6 @@ func (s *Server) SetTerraformDataDir(dataDir string) {
 		s.tfMgr = NewTerraformRunManager(s.db, dataDir, nil, nil)
 	}
 }
-
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
@@ -268,6 +280,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/ansible/runs/", s.authMiddleware(s.handleAnsibleRunRoute))
 	s.mux.HandleFunc("/api/ansible/schedules", s.authMiddleware(s.handleAnsibleSchedules))
 	s.mux.HandleFunc("/api/ansible/schedules/", s.authMiddleware(s.handleAnsibleScheduleRoute))
+	s.mux.HandleFunc("/api/ansible/adhoc", s.authMiddleware(s.handleAnsibleAdhoc))
+	s.mux.HandleFunc("/api/ansible/adhoc/", s.authMiddleware(s.handleAnsibleAdhocRoute))
+	s.mux.HandleFunc("/api/ansible/hosts/", s.authMiddleware(s.handleAnsibleHostFacts))
+	s.mux.HandleFunc("/api/ansible/explorer", s.authMiddleware(s.handleAnsibleExplorer))
 	// Terraform Management
 	s.mux.HandleFunc("/api/terraform/status", s.authMiddleware(s.handleTerraformStatus))
 	s.mux.HandleFunc("/api/terraform/workspaces", s.authMiddleware(s.handleTerraformWorkspaces))

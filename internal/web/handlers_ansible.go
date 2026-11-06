@@ -170,7 +170,7 @@ func (s *Server) handleAnsiblePlaybooks(w http.ResponseWriter, r *http.Request) 
 			playbooks = []store.AnsiblePlaybook{}
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"playbooks": playbooks,
+			"playbooks": playbooksWithSurvey(playbooks),
 		})
 
 	case http.MethodPost:
@@ -248,6 +248,26 @@ func (s *Server) handleAnsiblePlaybookRoute(w http.ResponseWriter, r *http.Reque
 		}
 	case "contents":
 		s.handleAnsiblePlaybookContents(w, r, id)
+	case "survey":
+		s.handleAnsiblePlaybookSurvey(w, r, id)
+	case "git":
+		if len(parts) == 3 {
+			switch parts[2] {
+			case "sync":
+				s.handleAnsiblePlaybookGitSync(w, r, id)
+				return
+			case "files":
+				s.handleAnsiblePlaybookGitFiles(w, r, id)
+				return
+			case "file":
+				s.handleAnsiblePlaybookGitFile(w, r, id)
+				return
+			case "commit":
+				s.handleAnsiblePlaybookGitCommit(w, r, id)
+				return
+			}
+		}
+		http.NotFound(w, r)
 	default:
 		http.NotFound(w, r)
 	}
@@ -266,7 +286,7 @@ func (s *Server) handleAnsiblePlaybookDetail(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"playbook": pb,
+			"playbook": playbookWithSurvey(pb),
 		})
 
 	case http.MethodPut:
@@ -304,7 +324,7 @@ func (s *Server) handleAnsiblePlaybookDetail(w http.ResponseWriter, r *http.Requ
 
 		logger.Info("ansible", pb.Name, fmt.Sprintf("Updated playbook %s (id %d)", pb.Name, id))
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"playbook": updated,
+			"playbook": playbookWithSurvey(updated),
 		})
 
 	case http.MethodDelete:
@@ -359,14 +379,16 @@ func (s *Server) handleAnsiblePlaybookRun(w http.ResponseWriter, r *http.Request
 	}
 
 	var req struct {
-		Mode      string  `json:"mode"`
-		HostIDs   []int64 `json:"host_ids"`
-		Group     string  `json:"group"`
-		ExtraVars string  `json:"extra_vars"`
-		Tags      string  `json:"tags"`
-		SkipTags  string  `json:"skip_tags"`
-		Verbosity int     `json:"verbosity"`
-		Become    bool    `json:"become"`
+		Mode          string                 `json:"mode"`
+		HostIDs       []int64                `json:"host_ids"`
+		Group         string                 `json:"group"`
+		ExtraVars     string                 `json:"extra_vars"`
+		Tags          string                 `json:"tags"`
+		SkipTags      string                 `json:"skip_tags"`
+		Limit         string                 `json:"limit"`
+		SurveyAnswers map[string]interface{} `json:"survey_answers"`
+		Verbosity     int                    `json:"verbosity"`
+		Become        bool                   `json:"become"`
 	}
 	if !decodeAnsibleBody(w, r, &req) {
 		return
@@ -374,7 +396,8 @@ func (s *Server) handleAnsiblePlaybookRun(w http.ResponseWriter, r *http.Request
 
 	run, lerr := s.launchAnsibleRun(pb, ansibleRunParams{
 		Mode: req.Mode, HostIDs: req.HostIDs, Group: req.Group, ExtraVars: req.ExtraVars, Tags: req.Tags,
-		SkipTags: req.SkipTags, Verbosity: req.Verbosity, Become: req.Become, Trigger: "manual",
+		SkipTags: req.SkipTags, Limit: req.Limit, SurveyAnswers: req.SurveyAnswers, Verbosity: req.Verbosity,
+		Become: req.Become, Trigger: "manual",
 	})
 	if lerr != nil {
 		writeJSON(w, lerr.Status, map[string]string{"error": lerr.Msg})
@@ -401,7 +424,7 @@ func (s *Server) handleAnsiblePlaybookRunsList(w http.ResponseWriter, r *http.Re
 		runs = []store.AnsibleRun{}
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"runs": runs,
+		"runs": runsWithRecapTotals(runs),
 	})
 }
 
@@ -432,7 +455,7 @@ func (s *Server) handleAnsibleRuns(w http.ResponseWriter, r *http.Request) {
 		runs = []store.AnsibleRun{}
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"runs": runs,
+		"runs": runsWithRecapTotals(runs),
 	})
 }
 
@@ -488,6 +511,38 @@ func (s *Server) handleAnsibleRunRoute(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// runRecap decodes a stored recap JSON column; an empty or broken value is an empty object.
+func runRecap(run *store.AnsibleRun) map[string]ansible.RecapHost {
+	recap := map[string]ansible.RecapHost{}
+	if run == nil || run.Recap == "" {
+		return recap
+	}
+	if err := json.Unmarshal([]byte(run.Recap), &recap); err != nil {
+		return map[string]ansible.RecapHost{}
+	}
+	return recap
+}
+
+// runsWithRecapTotals adds a `recap_totals` field to every listed run that has a stored recap.
+func runsWithRecapTotals(runs []store.AnsibleRun) []map[string]any {
+	out := make([]map[string]any, 0, len(runs))
+	for i := range runs {
+		var item map[string]any
+		b, err := json.Marshal(runs[i])
+		if err != nil || json.Unmarshal(b, &item) != nil {
+			item = map[string]any{"id": runs[i].ID}
+		}
+		if recap := runRecap(&runs[i]); len(recap) > 0 {
+			ok, changed, unreachable, failed, skipped := ansible.RecapTotals(recap)
+			item["recap_totals"] = map[string]int{
+				"ok": ok, "changed": changed, "unreachable": unreachable, "failed": failed, "skipped": skipped,
+			}
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
 func (s *Server) handleAnsibleRunDetail(w http.ResponseWriter, r *http.Request, id int64) {
 	run, err := s.db.GetAnsibleRun(id)
 	if err != nil {
@@ -499,7 +554,8 @@ func (s *Server) handleAnsibleRunDetail(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"run": run,
+		"run":   run,
+		"recap": runRecap(run),
 	})
 }
 

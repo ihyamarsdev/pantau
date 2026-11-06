@@ -12,16 +12,18 @@ import (
 
 // ansibleRunParams is everything needed to start one run; shared by the manual run endpoint and the scheduler.
 type ansibleRunParams struct {
-	Mode       string
-	HostIDs    []int64
-	Group      string
-	ExtraVars  string
-	Tags       string
-	SkipTags   string
-	Verbosity  int
-	Become     bool
-	Trigger    string // "manual" | "schedule"
-	ScheduleID int64
+	Mode          string
+	HostIDs       []int64
+	Group         string
+	ExtraVars     string
+	Tags          string
+	SkipTags      string
+	Limit         string
+	SurveyAnswers map[string]interface{} // raw launch answers, validated by ApplySurvey
+	Verbosity     int
+	Become        bool
+	Trigger       string // "manual" | "schedule"
+	ScheduleID    int64
 }
 
 // ansibleLaunchError carries the HTTP status the manual endpoint should answer with.
@@ -50,6 +52,8 @@ func (s *Server) launchAnsibleRun(pb *store.AnsiblePlaybook, p ansibleRunParams)
 		p.Trigger = "manual"
 	}
 
+	p.Limit = strings.TrimSpace(p.Limit)
+
 	// extra_vars empty -> fallback to playbook's default extra_vars
 	extraVars := strings.TrimSpace(p.ExtraVars)
 	if extraVars == "" {
@@ -60,6 +64,28 @@ func (s *Server) launchAnsibleRun(pb *store.AnsiblePlaybook, p ansibleRunParams)
 		if err := json.Unmarshal([]byte(extraVars), &obj); err != nil {
 			return nil, launchErr(http.StatusBadRequest, "extra_vars must be a valid JSON object")
 		}
+	}
+
+	// Survey answers are a launch form, so they rank as Tower does: an answer overrides the playbook's default
+	// extra vars, but extra_vars typed at launch win over the survey. Password answers are still handed to the
+	// runner; only the stored run record is masked (see storedExtraVars below).
+	recordVars := extraVars
+	if len(p.SurveyAnswers) > 0 || strings.TrimSpace(pb.Survey) != "" {
+		fields := ansible.ParseSurvey(pb.Survey)
+		answers, err := ansible.ApplySurvey(fields, p.SurveyAnswers)
+		if err != nil {
+			return nil, launchErr(http.StatusBadRequest, "%v", err)
+		}
+		merged, err := mergeExtraVars(pb.ExtraVars, varsJSON(answers), p.ExtraVars)
+		if err != nil {
+			return nil, launchErr(http.StatusBadRequest, "%v", err)
+		}
+		extraVars = merged
+		masked, err := mergeExtraVars(pb.ExtraVars, varsJSON(ansible.HideSurveySecrets(fields, answers)), p.ExtraVars)
+		if err != nil {
+			return nil, launchErr(http.StatusInternalServerError, "%v", err)
+		}
+		recordVars = masked
 	}
 
 	// Target resolution: union of host_ids + hosts matching group
@@ -117,6 +143,7 @@ func (s *Server) launchAnsibleRun(pb *store.AnsiblePlaybook, p ansibleRunParams)
 		ExtraVars:  extraVars,
 		Tags:       p.Tags,
 		SkipTags:   p.SkipTags,
+		Limit:      p.Limit,
 		Verbosity:  p.Verbosity,
 		Become:     p.Become,
 		Config:     ansibleConfig,
@@ -155,9 +182,10 @@ func (s *Server) launchAnsibleRun(pb *store.AnsiblePlaybook, p ansibleRunParams)
 		Status:       "queued",
 		Mode:         p.Mode,
 		Targets:      string(snapJSON),
-		ExtraVars:    extraVars,
+		ExtraVars:    recordVars,
 		Tags:         p.Tags,
 		SkipTags:     p.SkipTags,
+		Limit:        p.Limit,
 		Verbosity:    p.Verbosity,
 		Become:       p.Become,
 		Trigger:      p.Trigger,
@@ -190,4 +218,39 @@ func mapManagerError(err error) *ansibleLaunchError {
 		return launchErr(http.StatusTooManyRequests, "%v", err)
 	}
 	return launchErr(http.StatusInternalServerError, "%v", err)
+}
+
+// mergeExtraVars layers the extra vars objects low to high (playbook defaults, survey answers, launch extra vars)
+// and returns the compact JSON object, or "" when all three are empty or invalid.
+func mergeExtraVars(layers ...string) (string, error) {
+	out := map[string]interface{}{}
+	for _, raw := range layers {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		var obj map[string]interface{}
+		if err := json.Unmarshal([]byte(raw), &obj); err != nil {
+			return "", fmt.Errorf("extra_vars must be a valid JSON object")
+		}
+		for k, v := range obj {
+			out[k] = v
+		}
+	}
+	if len(out) == 0 {
+		return "", nil
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+func varsJSON(v map[string]interface{}) string {
+	if len(v) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(v)
+	return string(b)
 }

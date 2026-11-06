@@ -2,7 +2,7 @@
 
 Menyimpan Ansible Playbook, mengeksekusinya terhadap armada server, melihat aliran log langsung, dan melacak riwayat run dengan inventory yang dihasilkan otomatis dari Host, Host Group, dan SSH Key Library Pantau via subproses `ansible-playbook` lokal di server Pantau.
 
-Melengkapi [ADR 0035](0035-ssh-key-library.md) (SSH Key Library), [ADR 0006](0006-encrypted-system-snapshot-and-github-sync.md) (cadangan snapshot sistem terenkripsi), [ADR 0047](0047-external-kubernetes-clusters-from-kubeconfig.md) (eksekusi biner lokal server), dan [ADR 0048](0048-cloudflare-management-via-api.md) (integrasi manajemen operasional eksternal).
+Melengkapi [ADR 0035](0035-ssh-key-library.md) (SSH Key Library), [ADR 0006](0006-encrypted-system-snapshot-and-github-sync.md) (cadangan snapshot sistem terenkripsi), [ADR 0047](0047-external-kubernetes-clusters-from-kubeconfig.md) (eksekusi biner lokal server), dan [ADR 0048](0048-cloudflare-management-via-api.md) (integrasi manajemen operasional eksternal), serta dilengkapi lapisan operasional pada [ADR 0057](0057-ansible-ops-recap-tasktree-diff-survey-adhoc-facts-explorer.md) (Play Recap, Task Tree, Diff, Survey, ad-hoc, facts, explorer, Git Sync) yang tetap menghormati non-goal di bawah.
 
 ## Konteks dan Masalah
 

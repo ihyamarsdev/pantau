@@ -520,6 +520,10 @@ _Avoid_: CF option, domain configuration
 playbook YAML (nama, deskripsi, isi, extra vars bawaan) yang tersimpan di basis data Pantau.
 _Avoid_: Script, template task, job definition
 
+**Playbook Group**:
+Pengelompokan logis untuk satu atau lebih Ansible Playbook pada antarmuka Pantau berbasis teks bebas `group_name` (dimodelkan dari Host Group) untuk pemisahan visual dan filter tanpa mengubah eksekusi atau hak akses.
+_Avoid_: Playbook folder, playbook tag, playbook category
+
 **Playbook Run**:
 satu eksekusi Ansible Playbook terhadap sekumpulan Host (status, mode, target, exit code, log, durasi).
 _Avoid_: Task, job, build
@@ -552,6 +556,38 @@ _Avoid_: Local path source, repository sync, inventory import
 Jadwal cron 5-field (waktu lokal server Pantau) yang menjalankan Ansible Playbook otomatis terhadap Host/Host Group tetap; kemunculan yang terlewat lebih dari 5 menit dilewati, bukan dijalankan susulan.
 _Avoid_: Cron job, timer, automation rule
 
+**Play Recap**:
+Ringkasan `PLAY RECAP` per host (ok, changed, unreachable, failed, skipped, rescued, ignored) yang diparse server saat Playbook Run selesai, disimpan bersama run, dan dikembalikan API sebagai objek.
+_Avoid_: Run summary, result table, stats
+
+**Task Tree**:
+Pohon Play > Task > Host beserta status per host yang dirakit antarmuka dari log run tanpa ANSI; fitur tampilan, bukan data tersimpan.
+_Avoid_: Execution graph, DAG view, job steps
+
+**Diff Viewer**:
+Tampilan per berkas hasil blok diff (`--- before`/`+++ after`/`@@`) pada run mode `diff`, dirakit antarmuka dari log tanpa ANSI.
+_Avoid_: Patch view, change log, file diff
+
+**Survey**:
+Formulir variabel terstruktur milik sebuah Ansible Playbook (tipe, opsi, default, wajib) yang dijawab saat launch dan digabung ke extra vars; jawaban menimpa extra vars bawaan playbook, sedangkan extra vars eksplisit pada launch menimpa keduanya.
+_Avoid_: Form vars, parameter set, input schema
+
+**Ad-Hoc Run**:
+Satu eksekusi modul Ansible (`ping`, `shell`, `setup`, …) ke Host/Host Group terpilih tanpa playbook, dengan log live dan riwayat sendiri; maksimal 3 aktif secara global, terpisah dari kuota Playbook Run.
+_Avoid_: One-off task, quick command, temp playbook
+
+**Ansible Facts**:
+Hasil `setup` (`ansible_facts`) yang dikumpulkan untuk satu Host dan di-cache per host sebagai ringkasan + JSON mentah; bukan data deklarasi dan tidak ikut System Snapshot.
+_Avoid_: Inventory data, host metadata, machine info
+
+**Host & Group Explorer**:
+Tab Ansible yang menampilkan pohon Host Group > Host memakai alias Generated Inventory, lengkap dengan status inspeksi Pantau, status Ping ad-hoc, dan pintasan Facts.
+_Avoid_: Inventory manager, host list, group editor
+
+**Git Sync**:
+Verifikasi manual playbook bersumber Git dengan clone dangkal sementara yang melaporkan commit, branch, dan daftar YAML, lalu menyimpan waktu serta commit sync terakhir.
+_Avoid_: Repo refresh, git pull, repository checkout
+
 **Alert Debounce**:
 Pengaturan (`alert_debounce_runs`, 1–10) yang menahan Incident, Alert, dan notifikasi sebuah Drift sampai terlihat pada N Inspection berturut-turut untuk rule yang sama; kembali sehat selalu menutup langsung.
 _Avoid_: Alert delay, grace period, flap filter
@@ -567,6 +603,10 @@ _Avoid_: Patch run, system update, auto-update
 **Terraform Workspace**:
 Unit terisolasi (config + variabel + state + riwayat run) untuk satu environment.
 _Avoid_: Stack, project, environment folder
+
+**Workspace Group**:
+Pengelompokan logis untuk satu atau lebih Terraform Workspace pada antarmuka Pantau berbasis teks bebas `group_name` (dimodelkan dari Host Group) untuk pemisahan visual dan filter tanpa mengubah eksekusi, state, atau hak akses.
+_Avoid_: Workspace folder, stack group, workspace tag
 
 **Terraform Run**:
 Satu siklus eksekusi (plan → policy check → cost estimate → approval → apply) pada Workspace.
@@ -603,3 +643,15 @@ _Avoid_: Billing
 **Terraform Gate**:
 Saklar opt-in admin (`terraform_enabled`, default mati) sebelum Run dapat dijalankan.
 _Avoid_: Feature flag
+
+**Git Editor**:
+Komponen antarmuka berbasis Workspace Modal untuk menjelajah pohon berkas repositori, membuat berkas baru, menghapus berkas, menyunting konten dengan CodeMirror, serta melakukan commit dan push langsung ke repositori remote pada Playbook Ansible dan Workspace Terraform.
+_Avoid_: Web IDE, file manager, repo manager
+
+**Repository Commit**:
+Aksi merekam perubahan berkas ke riwayat Git lokal hasil clone dangkal sementara dan mendorongnya (*push*) ke branch upstream pada remote repositori tanpa opsi force push.
+_Avoid_: Save file, repo patch, sync commit
+
+**Base Commit**:
+Pengenal SHA commit repositori yang sedang dilihat pengguna saat membuka atau memuat ulang Git Editor; digunakan untuk validasi *optimistic concurrency* agar perubahan ditolak jika commit remote telah berganti (409 Conflict).
+_Avoid_: Parent commit, last commit, head commit

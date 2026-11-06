@@ -21,6 +21,7 @@ type AnsibleSchedule struct {
 	ExtraVars    string     `json:"extra_vars"`
 	Tags         string     `json:"tags"`
 	SkipTags     string     `json:"skip_tags"`
+	Limit        string     `json:"limit"`
 	Verbosity    int        `json:"verbosity"`
 	Become       bool       `json:"become"`
 	NextRunAt    *time.Time `json:"next_run_at"`
@@ -33,7 +34,7 @@ type AnsibleSchedule struct {
 var ErrAnsibleScheduleNotFound = errors.New("ansible schedule not found")
 
 const ansibleScheduleCols = `s.id, s.playbook_id, COALESCE(p.name, ''), s.name, s.cron, s.enabled, s.mode, s.host_ids, s.group_name,
-	s.extra_vars, s.tags, s.skip_tags, s.verbosity, s.become, s.next_run_at, s.last_run_at, s.last_run_id, s.last_error, s.created_at`
+	s.extra_vars, s.tags, s.skip_tags, s.limit_pattern, s.verbosity, s.become, s.next_run_at, s.last_run_at, s.last_run_id, s.last_error, s.created_at`
 
 func scanAnsibleSchedule(sc rowScanner) (*AnsibleSchedule, error) {
 	var s AnsibleSchedule
@@ -41,7 +42,7 @@ func scanAnsibleSchedule(sc rowScanner) (*AnsibleSchedule, error) {
 	var hostIDs string
 	var next, last sql.NullTime
 	if err := sc.Scan(&s.ID, &s.PlaybookID, &s.PlaybookName, &s.Name, &s.Cron, &enabled, &s.Mode, &hostIDs, &s.Group,
-		&s.ExtraVars, &s.Tags, &s.SkipTags, &s.Verbosity, &become, &next, &last, &s.LastRunID, &s.LastError, &s.CreatedAt); err != nil {
+		&s.ExtraVars, &s.Tags, &s.SkipTags, &s.Limit, &s.Verbosity, &become, &next, &last, &s.LastRunID, &s.LastError, &s.CreatedAt); err != nil {
 		return nil, err
 	}
 	s.Enabled, s.Become = enabled != 0, become != 0
@@ -75,10 +76,10 @@ func insertAnsibleSchedule(x sqlExecer, s *AnsibleSchedule) error {
 		created = time.Now().UTC()
 	}
 	res, err := x.Exec(`INSERT INTO ansible_schedules (id, playbook_id, name, cron, enabled, mode, host_ids, group_name, extra_vars, tags, skip_tags,
-		verbosity, become, next_run_at, last_run_at, last_run_id, last_error, created_at)
-		VALUES (NULLIF(?, 0), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		limit_pattern, verbosity, become, next_run_at, last_run_at, last_run_id, last_error, created_at)
+		VALUES (NULLIF(?, 0), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		s.ID, s.PlaybookID, s.Name, s.Cron, b2i(s.Enabled), s.Mode, string(ids), s.Group, s.ExtraVars, s.Tags, s.SkipTags,
-		s.Verbosity, b2i(s.Become), s.NextRunAt, s.LastRunAt, s.LastRunID, s.LastError, created)
+		s.Limit, s.Verbosity, b2i(s.Become), s.NextRunAt, s.LastRunAt, s.LastRunID, s.LastError, created)
 	if err != nil {
 		return err
 	}
@@ -130,9 +131,9 @@ func (d *DB) ListAnsibleSchedules(playbookID int64) ([]AnsibleSchedule, error) {
 func (d *DB) UpdateAnsibleSchedule(s *AnsibleSchedule) error {
 	ids, _ := json.Marshal(append([]int64{}, s.HostIDs...))
 	res, err := d.Exec(`UPDATE ansible_schedules SET playbook_id = ?, name = ?, cron = ?, enabled = ?, mode = ?, host_ids = ?, group_name = ?,
-		extra_vars = ?, tags = ?, skip_tags = ?, verbosity = ?, become = ?, next_run_at = ? WHERE id = ?`,
+		extra_vars = ?, tags = ?, skip_tags = ?, limit_pattern = ?, verbosity = ?, become = ?, next_run_at = ? WHERE id = ?`,
 		s.PlaybookID, s.Name, s.Cron, b2i(s.Enabled), s.Mode, string(ids), s.Group, s.ExtraVars, s.Tags, s.SkipTags,
-		s.Verbosity, b2i(s.Become), s.NextRunAt, s.ID)
+		s.Limit, s.Verbosity, b2i(s.Become), s.NextRunAt, s.ID)
 	if err != nil {
 		return err
 	}

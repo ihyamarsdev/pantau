@@ -129,11 +129,11 @@ func Run(ctx context.Context, spec RunSpec, log io.Writer) (exitCode int, err er
 	}
 
 	if spec.Verbosity > 0 {
-		v := spec.Verbosity
-		if v > 3 {
-			v = 3
-		}
-		args = append(args, "-"+strings.Repeat("v", v))
+		args = append(args, "-"+strings.Repeat("v", spec.Verbosity))
+	}
+
+	if spec.Limit != "" {
+		args = append(args, "--limit", spec.Limit)
 	}
 
 	if spec.Become {
@@ -159,7 +159,7 @@ func Run(ctx context.Context, spec RunSpec, log io.Writer) (exitCode int, err er
 
 	// Build clean environment
 	// Clean env: PATH, LANG=C.UTF-8, HOME=<tmp>, HTTP_PROXY, HTTPS_PROXY, NO_PROXY, + ANSIBLE_*
-	// ANSIBLE_CONFIG points to ansible.cfg, ANSIBLE_FORCE_COLOR=0, ANSIBLE_HOME in tmp
+	// ANSIBLE_CONFIG points to ansible.cfg, ANSIBLE_FORCE_COLOR=1 (colored log; the UI renders the ANSI), ANSIBLE_HOME in tmp
 	ansibleHome := filepath.Join(workDir, ".ansible")
 	_ = os.MkdirAll(ansibleHome, 0700)
 
@@ -168,7 +168,7 @@ func Run(ctx context.Context, spec RunSpec, log io.Writer) (exitCode int, err er
 		"LANG=C.UTF-8",
 		"HOME=" + workDir,
 		"ANSIBLE_CONFIG=" + ansibleCfgPath,
-		"ANSIBLE_FORCE_COLOR=0",
+		"ANSIBLE_FORCE_COLOR=1",
 		"ANSIBLE_HOME=" + ansibleHome,
 	}
 

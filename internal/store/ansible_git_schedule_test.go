@@ -94,7 +94,7 @@ func TestAnsibleSchedule_CRUDFireAndCascade(t *testing.T) {
 	next := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
 	sid, err := db.CreateAnsibleSchedule(&store.AnsibleSchedule{
 		PlaybookID: pid, Name: "n", Cron: "0 3 * * *", Enabled: true, Mode: "check", HostIDs: []int64{1, 2}, Group: "web",
-		ExtraVars: `{"a":1}`, Tags: "t", Verbosity: 1, Become: true, NextRunAt: &next,
+		ExtraVars: `{"a":1}`, Tags: "t", Limit: "web", Verbosity: 4, Become: true, NextRunAt: &next,
 	})
 	if err != nil || sid == 0 {
 		t.Fatalf("create: %v id=%d", err, sid)
@@ -104,6 +104,7 @@ func TestAnsibleSchedule_CRUDFireAndCascade(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.PlaybookName != "nightly" || !got.Enabled || !got.Become || len(got.HostIDs) != 2 || got.Group != "web" ||
+		got.Limit != "web" || got.Verbosity != 4 ||
 		got.NextRunAt == nil || !got.NextRunAt.Equal(next) {
 		t.Fatalf("round trip wrong: %+v", got)
 	}

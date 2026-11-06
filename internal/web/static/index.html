@@ -1701,6 +1701,28 @@ header {
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+.host-group-divider.collapsible {
+  cursor: pointer;
+  user-select: none;
+}
+.host-group-divider.collapsible:hover .host-group-title {
+  color: var(--text);
+}
+.host-list-group-row.collapsible {
+  cursor: pointer;
+  user-select: none;
+}
+.host-list-group-row.collapsible:hover td {
+  color: var(--text);
+}
+.grp-caret {
+  transition: transform var(--dur) var(--ease);
+  flex: none;
+}
+.grp-caret.collapsed {
+  transform: rotate(-90deg);
+}
+
 .card.host-card {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
@@ -4042,10 +4064,16 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
       <!-- Playbooks list container -->
       <div id="ansiblePlaybooksContainer" style="display:flex;flex-direction:column;gap:16px;">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
-          <div class="search-box" style="margin:0;max-width:320px;">
-            <svg class="icon icon-sm text-muted"><use href="#i-search"/></svg>
-            <input type="text" id="ansiblePlaybookSearchInput" placeholder="Search playbooks..." data-i18n-placeholder="ansible_search_playbooks_ph" style="height:32px;font-size:var(--fs-xs);" oninput="filterAnsiblePlaybooks()" />
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:1;max-width:540px;">
+            <div class="search-box" style="margin:0;max-width:320px;">
+              <svg class="icon icon-sm text-muted"><use href="#i-search"/></svg>
+              <input type="text" id="ansiblePlaybookSearchInput" placeholder="Search playbooks..." data-i18n-placeholder="ansible_search_playbooks_ph" style="height:32px;font-size:var(--fs-xs);" oninput="filterAnsiblePlaybooks()" />
+            </div>
+            <select id="ansiblePlaybookGroupFilter" class="form-input" style="height:32px;font-size:var(--fs-xs);width:auto;" onchange="filterAnsiblePlaybooks()">
+              <option value="all" data-i18n="filter_all_groups">All Groups</option>
+            </select>
           </div>
+
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <div id="ansiblePlaybookCountBadge" class="badge" style="background:var(--surface-2);border:1px solid var(--card-border);font-family:var(--font-mono);">0 playbooks</div>
             <button type="button" id="btnAnsibleImportFolder" class="btn btn-sm" onclick="openAnsibleImportModal()" style="display:inline-flex;align-items:center;gap:6px;">
@@ -4264,15 +4292,6 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         </div>
       </div>
 
-      <div id="tfGateBanner" class="ans-gate-banner ans-gate-info" style="display:none;">
-        <div style="min-width:0;flex:1;">
-          <div id="tfGateTitle" class="ans-gate-title"></div>
-          <div id="tfGateDesc" class="ans-gate-desc"></div>
-          <div id="tfBinaryDetails" style="font-size:var(--fs-xs);margin-top:6px;font-family:var(--font-mono);color:var(--text-muted);"></div>
-        </div>
-        <div id="tfGateAction" style="display:flex;align-items:center;gap:10px;flex-shrink:0;"></div>
-      </div>
-
       <div id="tfTabs" class="tabs" role="tablist" aria-label="Terraform" onkeydown="onTfTabKeydown(event)">
         <button type="button" class="tab active" id="tabTfWorkspaces" data-tab="workspaces" role="tab" aria-selected="true" aria-controls="tfPanelWorkspaces" onclick="switchTfTab('workspaces')">
           <svg class="icon icon-sm"><use href="#i-layers"/></svg> <span data-i18n="tf_tab_workspaces">Workspaces</span>
@@ -4308,6 +4327,10 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
             <select id="tfWsTagFilter" class="form-input" style="height:32px;font-size:var(--fs-xs);width:auto;" onchange="renderTfWorkspaces()">
               <option value="" data-i18n="tf_filter_all_tags">All Tags</option>
             </select>
+            <select id="tfWsGroupFilter" class="form-input" style="height:32px;font-size:var(--fs-xs);width:auto;" onchange="renderTfWorkspaces()">
+              <option value="all" data-i18n="filter_all_groups">All Groups</option>
+            </select>
+
           </div>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <div class="view-mode-toggle">
@@ -4381,6 +4404,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
           <h4 style="margin:0;font-size:var(--fs-md);font-weight:600;" data-i18n="tf_gate_panel_title">Terraform Gate &amp; CLI Detection</h4>
           <p style="margin:0;font-size:var(--fs-xs);color:var(--text-muted);" data-i18n="tf_gate_panel_desc">Terraform and OpenTofu binaries execute locally on the Pantau server with master process privileges. Infracost estimates plan monthly cost diff if installed.</p>
+          <div id="tfGateWarn" role="status" style="font-size:var(--fs-xs);line-height:1.5;"></div>
           <div id="tfGatePanelStatusList" style="display:flex;flex-direction:column;gap:8px;font-family:var(--font-mono);font-size:var(--fs-xs);"></div>
           <div style="margin-top:8px;">
             <button type="button" id="btnTfToggleGate" class="btn btn-sm btn-primary" onclick="toggleTfGate()"></button>
@@ -5055,6 +5079,12 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
           <label for="ansiblePlaybookDesc" data-i18n="ansible_playbook_desc_label">Description (Optional)</label>
           <input type="text" id="ansiblePlaybookDesc" class="form-input" style="width: 100%; box-sizing: border-box;" placeholder="Brief description of what this playbook performs" />
         </div>
+        <div class="dk-field">
+          <label for="ansiblePlaybookGroup" data-i18n="host_group">Group</label>
+          <input type="text" id="ansiblePlaybookGroup" class="form-input" list="ansiblePlaybookGroupList" style="width: 100%; box-sizing: border-box;" placeholder="e.g. Primary Server, Testing, DB Cluster" data-i18n-placeholder="host_group_ph" />
+          <datalist id="ansiblePlaybookGroupList"></datalist>
+        </div>
+
         <div class="dk-field">
           <label for="ansiblePlaybookSource" data-i18n="ansible_pb_source_label">Source</label>
           <select id="ansiblePlaybookSource" class="form-input" onchange="onAnsiblePlaybookSourceChange()">
@@ -10539,6 +10569,7 @@ function t(key, fallback) {
   return fallback !== undefined ? fallback : key;
 }
 
+var langRerenderHooks = [];
 function setLanguage(lang) {
   currentLang = lang === 'id' ? 'id' : 'en';
   localStorage.setItem('pantau_lang', currentLang);
@@ -10601,6 +10632,8 @@ function setLanguage(lang) {
       el.title = t('view_changelog', 'View Changelog');
     }
   });
+  // Lists that live in later script sections register here once their state exists (setLanguage also runs at boot).
+  langRerenderHooks.forEach(fn => fn());
 }
 
 function toggleLanguage() {
@@ -25993,6 +26026,7 @@ let ansibleSelectedHostIds = new Set();
 let ansibleRunTargetPlaybook = null;
 let ansiblePlaybookModalMode = 'add';
 let ansiblePlaybookEditId = null;
+let ansiblePlaybookOriginalGroup = '';
 let ansibleYamlEditor = null;
 
 let currentAnsibleRunId = null;
@@ -26145,7 +26179,22 @@ async function loadAnsiblePlaybooks() {
   renderAnsiblePlaybooks();
 }
 
-function filterAnsiblePlaybooks() {
+function getAnsiblePbCollapsed() {
+  try {
+    const raw = localStorage.getItem('pantau_ansible_pb_collapsed');
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch (e) {
+    return new Set();
+  }
+}
+
+function toggleAnsiblePbGroup(groupKey) {
+  const set = getAnsiblePbCollapsed();
+  if (set.has(groupKey)) set.delete(groupKey);
+  else set.add(groupKey);
+  try {
+    localStorage.setItem('pantau_ansible_pb_collapsed', JSON.stringify(Array.from(set)));
+  } catch (e) {}
   renderAnsiblePlaybooks();
 }
 
@@ -26170,15 +26219,44 @@ function formatAnsibleDuration(ms) {
   return `${min}m ${rem}s`;
 }
 
+function filterAnsiblePlaybooks() {
+  renderAnsiblePlaybooks();
+}
 function renderAnsiblePlaybooks() {
   const grid = document.getElementById('ansiblePlaybooksGrid');
   const empty = document.getElementById('ansiblePlaybooksEmpty');
   if (!grid || !empty) return;
 
+  const grpSelect = typeof document !== 'undefined' && typeof document.querySelector === 'function' ? document.querySelector('#ansiblePlaybookGroupFilter') : (typeof document !== 'undefined' && typeof elements !== 'undefined' && !elements['ansiblePlaybookGroupFilter'] ? null : document.getElementById('ansiblePlaybookGroupFilter'));
+
+
+  const groups = Array.from(new Set(ansiblePlaybooksCache.map(p => (p.group_name || '').trim()).filter(Boolean))).sort();
+  const hasUngrouped = ansiblePlaybooksCache.some(p => !(p.group_name || '').trim());
+  if (grpSelect) {
+    const curVal = grpSelect.value || 'all';
+    let opts = `<option value="all" data-i18n="filter_all_groups">${t('filter_all_groups', 'All Groups')}</option>`;
+    groups.forEach(g => { opts += `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`; });
+    if (hasUngrouped && groups.length > 0) {
+      opts += `<option value="__ungrouped__" data-i18n="filter_ungrouped">${t('filter_ungrouped', 'Ungrouped')}</option>`;
+    }
+    grpSelect.innerHTML = opts;
+    if (groups.includes(curVal) || (curVal === '__ungrouped__' && hasUngrouped)) grpSelect.value = curVal;
+    else grpSelect.value = 'all';
+  }
+  const selGrp = grpSelect ? grpSelect.value : 'all';
+
   const q = (document.getElementById('ansiblePlaybookSearchInput')?.value || '').toLowerCase().trim();
-  const list = q
-    ? ansiblePlaybooksCache.filter(p => (p.name || '').toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q))
-    : ansiblePlaybooksCache;
+  const list = ansiblePlaybooksCache.filter(p => {
+    const grp = (p.group_name || '').trim();
+    if (selGrp !== 'all') {
+      if (selGrp === '__ungrouped__' && grp !== '') return false;
+      if (selGrp !== '__ungrouped__' && grp !== selGrp) return false;
+    }
+    if (!q) return true;
+    return (p.name || '').toLowerCase().includes(q)
+      || (p.description || '').toLowerCase().includes(q)
+      || grp.toLowerCase().includes(q);
+  });
 
   if (list.length === 0) {
     grid.style.display = 'none';
@@ -26188,7 +26266,9 @@ function renderAnsiblePlaybooks() {
   grid.style.display = 'grid';
   empty.style.display = 'none';
 
-  grid.innerHTML = list.map(p => {
+  const anyHasGroup = ansiblePlaybooksCache.some(p => (p.group_name || '').trim() !== '');
+
+  const renderCard = p => {
     const lastStatus = p.last_status || 'never_run';
     const lastRunRel = p.last_run_at ? formatRelativeTime(p.last_run_at).relative : '-';
     const statusCls = ansibleStatusBadgeClass(lastStatus);
@@ -26209,6 +26289,7 @@ function renderAnsiblePlaybooks() {
       <div style="margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:6px;border-top:1px solid var(--card-border);">
         <div style="display:flex;gap:4px;">
           <button type="button" class="btn btn-sm btn-ghost btn-icon" onclick="openAnsiblePlaybookModal(${p.id})" title="Edit playbook">${svgIcon('pencil', 'icon-sm')}</button>
+          <button type="button" class="btn btn-sm btn-ghost btn-icon" onclick="openAnsiblePlaybookHistory(${p.id})" title="${escapeHtml(t('ansible_btn_history', 'History'))}">${svgIcon('history', 'icon-sm')}</button>
           <button type="button" class="btn btn-sm btn-ghost btn-icon btn-danger" onclick="deleteAnsiblePlaybook(${p.id})" title="Delete playbook">${svgIcon('trash-2', 'icon-sm')}</button>
         </div>
         <button type="button" class="btn btn-sm btn-primary" onclick="openAnsibleRunLaunchModal(${p.id})" style="display:inline-flex;align-items:center;gap:6px;">
@@ -26216,9 +26297,49 @@ function renderAnsiblePlaybooks() {
         </button>
       </div>
     </div>`;
-  }).join('');
-}
+  };
 
+  if (!anyHasGroup) {
+    grid.innerHTML = list.map(renderCard).join('');
+    return;
+  }
+
+  const collapsed = getAnsiblePbCollapsed();
+  const groupsMap = new Map();
+  const ungrouped = [];
+  list.forEach(p => {
+    const g = (p.group_name || '').trim();
+    if (!g) ungrouped.push(p);
+    else {
+      if (!groupsMap.has(g)) groupsMap.set(g, []);
+      groupsMap.get(g).push(p);
+    }
+  });
+  const sections = [];
+  Array.from(groupsMap.keys()).sort((a, b) => a.localeCompare(b)).forEach(name => {
+    sections.push({ key: 'g:' + name, name, items: groupsMap.get(name) });
+  });
+  if (ungrouped.length > 0) {
+    sections.push({ key: '__ungrouped__', name: t('group_ungrouped', 'Ungrouped'), items: ungrouped });
+  }
+
+  let html = '';
+  sections.forEach(sec => {
+    const isCol = collapsed.has(sec.key);
+    html += `<div class="host-group-divider collapsible" onclick="toggleAnsiblePbGroup('${escapeHtml(sec.key)}')">
+      <span class="host-group-title">
+        <svg class="icon icon-xs grp-caret ${isCol ? 'collapsed' : ''}"><use href="#i-chevron-down"/></svg>
+        <svg class="icon icon-sm"><use href="#i-folder"/></svg>
+        ${escapeHtml(sec.name)}
+      </span>
+      <span class="badge" style="font-size: var(--fs-xs); background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--card-border);">${sec.items.length}</span>
+    </div>`;
+    if (!isCol) {
+      html += sec.items.map(renderCard).join('');
+    }
+  });
+  grid.innerHTML = html;
+}
 async function refreshAnsibleSection() {
   await loadAnsibleStatus();
   await loadAnsiblePlaybooks();
@@ -27354,7 +27475,15 @@ async function openAnsiblePlaybookModal(playbookId) {
 
   if (nameInput) nameInput.value = pb ? (pb.name || '') : '';
   if (descInput) descInput.value = pb ? (pb.description || '') : '';
+  ansiblePlaybookOriginalGroup = pb ? (pb.group_name || '') : '';
+  const grpInput = document.getElementById('ansiblePlaybookGroup');
+  if (grpInput) grpInput.value = ansiblePlaybookOriginalGroup;
 
+  const grpDatalist = document.getElementById('ansiblePlaybookGroupList');
+  if (grpDatalist) {
+    const groups = Array.from(new Set(ansiblePlaybooksCache.map(p => (p.group_name || '').trim()).filter(Boolean))).sort();
+    grpDatalist.innerHTML = groups.map(g => `<option value="${escapeHtml(g)}">`).join('');
+  }
   if (pb && pb.extra_vars) {
     try {
       const parsed = typeof pb.extra_vars === 'string' ? JSON.parse(pb.extra_vars) : pb.extra_vars;
@@ -27394,7 +27523,16 @@ async function submitAnsiblePlaybookModal() {
   const source = document.getElementById('ansiblePlaybookSource')?.value || 'inline';
   const extraVars = Object.keys(ansiblePbExtraVarsMap).length > 0 ? JSON.stringify(ansiblePbExtraVarsMap) : '';
 
+  const grpVal = document.getElementById('ansiblePlaybookGroup')?.value;
   const payload = { name, description, extra_vars: extraVars, source };
+  if (grpVal !== undefined && grpVal !== '') {
+    payload.group_name = grpVal.trim();
+  } else if (ansiblePlaybookModalMode === 'edit' && ansiblePlaybookOriginalGroup !== undefined && ansiblePlaybookOriginalGroup !== '') {
+    payload.group_name = '';
+  }
+
+
+
   if (source === 'git') {
     payload.git_url = (document.getElementById('ansibleGitUrl')?.value || '').trim();
     payload.git_branch = (document.getElementById('ansibleGitBranch')?.value || '').trim();
@@ -28251,6 +28389,9 @@ const TF_TXT = {
   tfx_deleted: ['Deleted', 'Dihapus'],
   tfx_name: ['Name', 'Nama'],
   tfx_description: ['Description', 'Deskripsi'],
+  tfx_group: ['Group', 'Grup'],
+  tfx_group_ph: ['e.g. Primary Server, Testing, DB Cluster', 'mis. Server Utama, Testing, DB Cluster'],
+
   tfx_environment: ['Environment', 'Environment'],
   tfx_tags: ['Tags (comma separated)', 'Tag (pisahkan koma)'],
   tfx_binary: ['CLI binary', 'Biner CLI'],
@@ -28492,31 +28633,15 @@ async function loadTfStatus() {
 function tfBinText(b) { return b.err ? `${b.name} — ${b.err}` : String(b.version || b.name).replace(/^\S+\s+/, b.name + ' '); }
 function renderTfGate() {
   const st = tfStatus || { enabled: false, supported: false, binaries: [], infracost: {} };
-  const banner = tfEl('tfGateBanner');
-  const title = tfEl('tfGateTitle');
-  const desc = tfEl('tfGateDesc');
-  const action = tfEl('tfGateAction');
   const pill = tfEl('tfGateStatus');
-  if (!banner) return;
+  if (!pill) return;
   pill.textContent = !st.supported ? t('tf_gate_unavailable', 'Terraform unavailable') : st.enabled ? t('tf_gate_active', 'Terraform Gate is Active') : t('tf_gate_disabled_title', 'Terraform Gate is Disabled');
   pill.className = 'badge ' + (!st.supported ? 'badge-danger' : st.enabled ? 'badge-healthy' : 'badge-warning');
-  banner.style.display = 'flex';
-  tfEl('tfBinaryDetails').textContent = (st.binaries || []).map(tfBinText).join('  ·  ') + '  ·  infracost ' + (st.infracost && st.infracost.available ? (st.infracost.version || 'ok') : tx('tfx_not_installed'));
-  if (!st.supported) {
-    banner.className = 'ans-gate-banner ans-gate-danger';
-    title.innerHTML = `${svgIcon('ban', 'icon-sm')} <span>${tfE(tx('tfx_unsupported'))}</span>`;
-    desc.textContent = st.error || tx('tfx_no_binary');
-    action.innerHTML = '';
-  } else if (!st.enabled) {
-    banner.className = 'ans-gate-banner ans-gate-warn';
-    title.innerHTML = `${svgIcon('shield-alert', 'icon-sm')} <span>${tfE(t('tf_gate_disabled_title', 'Terraform Gate is Disabled'))}</span>`;
-    desc.textContent = t('tf_gate_warning', tx('tfx_gate_security'));
-    action.innerHTML = `<button type="button" class="btn btn-sm btn-primary" onclick="toggleTfGate(true)" style="display:inline-flex;align-items:center;gap:6px;">${svgIcon('power', 'icon-xs')} <span>${tfE(t('tf_gate_btn_enable', 'Enable Terraform Gate'))}</span></button>`;
-  } else {
-    banner.className = 'ans-gate-banner ans-gate-info';
-    title.innerHTML = `${svgIcon('circle-check', 'icon-sm')} <span>${tfE(t('tf_gate_active', 'Terraform Gate is Active'))}</span>`;
-    desc.textContent = t('tf_gate_warning', tx('tfx_gate_security'));
-    action.innerHTML = `<button type="button" class="btn btn-sm btn-ghost" onclick="toggleTfGate(false)" style="color:var(--text-muted);display:inline-flex;align-items:center;gap:6px;">${svgIcon('power', 'icon-xs')} <span>${tfE(t('tf_gate_btn_disable', 'Disable Gate'))}</span></button>`;
+  // Details (security warning, binaries, toggle) live only in the Gate tab; the header keeps just the status pill.
+  const warn = tfEl('tfGateWarn');
+  if (warn) {
+    warn.style.color = !st.supported ? 'var(--danger)' : 'var(--warning)';
+    warn.textContent = !st.supported ? (st.error || tx('tfx_no_binary')) : t('tf_gate_warning', tx('tfx_gate_security'));
   }
   const list = tfEl('tfGatePanelStatusList');
   if (list) {
@@ -28600,6 +28725,25 @@ async function loadTfWorkspaces() {
   if (!r.ok) { tfErr(r); tfWorkspaces = []; } else tfWorkspaces = r.data.workspaces || [];
   renderTfWorkspaces();
 }
+function getTfWsCollapsed() {
+  try {
+    const raw = localStorage.getItem('pantau_tf_ws_collapsed');
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch (e) {
+    return new Set();
+  }
+}
+
+function toggleTfWsGroup(groupKey) {
+  const set = getTfWsCollapsed();
+  if (set.has(groupKey)) set.delete(groupKey);
+  else set.add(groupKey);
+  try {
+    localStorage.setItem('pantau_tf_ws_collapsed', JSON.stringify(Array.from(set)));
+  } catch (e) {}
+  renderTfWorkspaces();
+}
+
 function setTfWsViewMode(mode) {
   tfWsViewMode = mode === 'list' ? 'list' : 'grid';
   localStorage.setItem('pantau_tf_view', tfWsViewMode);
@@ -28608,16 +28752,45 @@ function setTfWsViewMode(mode) {
 function renderTfWorkspaces() {
   const envSel = tfEl('tfWsEnvFilter');
   const tagSel = tfEl('tfWsTagFilter');
+  const grpSel = tfEl('tfWsGroupFilter');
   if (!envSel || !tagSel) return;
   const curEnv = envSel.value;
   const curTag = tagSel.value;
+  const curGrp = grpSel ? grpSel.value : 'all';
+
   const envs = Array.from(new Set(['production', 'staging', 'development'].concat(tfWorkspaces.map(w => w.environment).filter(Boolean)))).sort();
   const tags = Array.from(new Set(tfWorkspaces.flatMap(w => w.tags || []))).sort();
+  const groups = Array.from(new Set(tfWorkspaces.map(w => (w.group_name || '').trim()).filter(Boolean))).sort();
+  const hasUngrouped = tfWorkspaces.some(w => !(w.group_name || '').trim());
+
   envSel.innerHTML = `<option value="">${tfE(t('tf_filter_all_env', 'All Environments'))}</option>` + envs.map(e => `<option value="${tfE(e)}" ${e === curEnv ? 'selected' : ''}>${tfE(e)}</option>`).join('');
   tagSel.innerHTML = `<option value="">${tfE(t('tf_filter_all_tags', 'All Tags'))}</option>` + tags.map(e => `<option value="${tfE(e)}" ${e === curTag ? 'selected' : ''}>${tfE(e)}</option>`).join('');
+
+  if (grpSel) {
+    let opts = `<option value="all" data-i18n="filter_all_groups">${tfE(t('filter_all_groups', 'All Groups'))}</option>`;
+    groups.forEach(g => { opts += `<option value="${tfE(g)}">${tfE(g)}</option>`; });
+    if (hasUngrouped && groups.length > 0) {
+      opts += `<option value="__ungrouped__" data-i18n="filter_ungrouped">${tfE(t('filter_ungrouped', 'Ungrouped'))}</option>`;
+    }
+    grpSel.innerHTML = opts;
+    if (groups.includes(curGrp) || (curGrp === '__ungrouped__' && hasUngrouped)) grpSel.value = curGrp;
+    else grpSel.value = 'all';
+  }
+  const selGrp = grpSel ? grpSel.value : 'all';
+
   const q = (tfV('tfWsSearchInput')).toLowerCase().trim();
-  const list = tfWorkspaces.filter(w => (!q || (w.name + ' ' + (w.description || '')).toLowerCase().includes(q))
-    && (!envSel.value || w.environment === envSel.value) && (!tagSel.value || (w.tags || []).includes(tagSel.value)));
+  const list = tfWorkspaces.filter(w => {
+    const grp = (w.group_name || '').trim();
+    if (selGrp !== 'all') {
+      if (selGrp === '__ungrouped__' && grp !== '') return false;
+      if (selGrp !== '__ungrouped__' && grp !== selGrp) return false;
+    }
+    if (envSel.value && w.environment !== envSel.value) return false;
+    if (tagSel.value && !(w.tags || []).includes(tagSel.value)) return false;
+    if (!q) return true;
+    return (w.name + ' ' + (w.description || '')).toLowerCase().includes(q) || grp.toLowerCase().includes(q);
+  });
+
   tfEl('tfWsCountBadge').textContent = list.length + ' workspaces';
   tfEl('tfWsViewGridBtn').classList.toggle('active', tfWsViewMode === 'grid');
   tfEl('tfWsViewListBtn').classList.toggle('active', tfWsViewMode === 'list');
@@ -28628,34 +28801,118 @@ function renderTfWorkspaces() {
   if (!list.length) { empty.style.display = 'flex'; grid.style.display = 'none'; wrap.style.display = 'none'; return; }
   empty.style.display = 'none';
   const lastRun = w => w.last_run ? `${tfBadge(w.last_run.status)} <span style="color:var(--text-muted);">#${w.last_run.id}</span>` : '—';
+
+  const anyHasGroup = tfWorkspaces.some(w => (w.group_name || '').trim() !== '');
+
+  const renderGridCard = w => `<div class="card" style="cursor:pointer;" onclick="openTfWorkspace(${w.id})">
+    <div class="card-title"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${tfE(w.name)}</span>${tfBadge(w.status)}</div>
+    <div style="font-size:var(--fs-xs);color:var(--text-muted);min-height:16px;">${tfE(w.description || '')}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+      ${w.environment ? `<span class="badge">${tfE(w.environment)}</span>` : ''}
+      <span class="badge mono">${tfE(w.binary)}${w.tf_version ? ' ' + tfE(w.tf_version) : ''}</span>
+      ${w.drift_detected ? `<span class="badge badge-drifted">${tfE(t('tf_status_drifted', 'Drifted'))}</span>` : ''}
+      ${w.locked ? `<span class="badge badge-locked">${svgIcon('lock', 'icon-xs')} ${tfE(t('tf_status_locked', 'Locked'))}</span>` : ''}
+      ${(w.tags || []).map(x => `<span class="badge" style="background:var(--surface-2);">${tfE(x)}</span>`).join('')}
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:var(--fs-xs);color:var(--text-muted);"><span>${w.resource_count || 0} ${tfE(tx('tfx_tab_resources'))}</span><span>${lastRun(w)}</span></div>
+  </div>`;
+
+  const renderListRow = w => `<tr style="cursor:pointer;" onclick="openTfWorkspace(${w.id})">
+    <td><b>${tfE(w.name)}</b><div style="color:var(--text-muted);">${tfE(w.description || '')}</div></td>
+    <td>${tfBadge(w.status)}${w.drift_detected ? ` <span class="badge badge-drifted">${tfE(t('tf_status_drifted', 'Drifted'))}</span>` : ''}</td>
+    <td>${tfE(w.environment || '—')}</td><td class="mono">${tfE(w.binary)}</td><td>${w.resource_count || 0}</td><td>${lastRun(w)}</td>
+    <td style="text-align:right;white-space:nowrap;">
+      <button type="button" class="btn btn-icon btn-sm" onclick="event.stopPropagation();openTfWorkspaceModal(${w.id})" title="${tfE(t('edit', 'Edit'))}">${svgIcon('pencil', 'icon-xs')}</button>
+      <button type="button" class="btn btn-icon btn-sm" onclick="event.stopPropagation();deleteTfWorkspace(${w.id})" title="${tfE(t('delete', 'Delete'))}">${svgIcon('trash-2', 'icon-xs')}</button>
+    </td></tr>`;
+
   if (tfWsViewMode === 'grid') {
     wrap.style.display = 'none';
     grid.style.display = 'grid';
-    grid.innerHTML = list.map(w => `<div class="card" style="cursor:pointer;" onclick="openTfWorkspace(${w.id})">
-      <div class="card-title"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${tfE(w.name)}</span>${tfBadge(w.status)}</div>
-      <div style="font-size:var(--fs-xs);color:var(--text-muted);min-height:16px;">${tfE(w.description || '')}</div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
-        ${w.environment ? `<span class="badge">${tfE(w.environment)}</span>` : ''}
-        <span class="badge mono">${tfE(w.binary)}${w.tf_version ? ' ' + tfE(w.tf_version) : ''}</span>
-        ${w.drift_detected ? `<span class="badge badge-drifted">${tfE(t('tf_status_drifted', 'Drifted'))}</span>` : ''}
-        ${w.locked ? `<span class="badge badge-locked">${svgIcon('lock', 'icon-xs')} ${tfE(t('tf_status_locked', 'Locked'))}</span>` : ''}
-        ${(w.tags || []).map(x => `<span class="badge" style="background:var(--surface-2);">${tfE(x)}</span>`).join('')}
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:var(--fs-xs);color:var(--text-muted);"><span>${w.resource_count || 0} ${tfE(tx('tfx_tab_resources'))}</span><span>${lastRun(w)}</span></div>
-    </div>`).join('');
+    if (!anyHasGroup) {
+      grid.innerHTML = list.map(renderGridCard).join('');
+      return;
+    }
+    const collapsed = getTfWsCollapsed();
+    const groupsMap = new Map();
+    const ungrouped = [];
+    list.forEach(w => {
+      const g = (w.group_name || '').trim();
+      if (!g) ungrouped.push(w);
+      else {
+        if (!groupsMap.has(g)) groupsMap.set(g, []);
+        groupsMap.get(g).push(w);
+      }
+    });
+    const sections = [];
+    Array.from(groupsMap.keys()).sort((a, b) => a.localeCompare(b)).forEach(name => {
+      sections.push({ key: 'g:' + name, name, items: groupsMap.get(name) });
+    });
+    if (ungrouped.length > 0) {
+      sections.push({ key: '__ungrouped__', name: t('group_ungrouped', 'Ungrouped'), items: ungrouped });
+    }
+    let html = '';
+    sections.forEach(sec => {
+      const isCol = collapsed.has(sec.key);
+      html += `<div class="host-group-divider collapsible" onclick="toggleTfWsGroup('${escapeHtml(sec.key)}')">
+        <span class="host-group-title">
+          <svg class="icon icon-xs grp-caret ${isCol ? 'collapsed' : ''}"><use href="#i-chevron-down"/></svg>
+          <svg class="icon icon-sm"><use href="#i-folder"/></svg>
+          ${escapeHtml(sec.name)}
+        </span>
+        <span class="badge" style="font-size: var(--fs-xs); background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--card-border);">${sec.items.length}</span>
+      </div>`;
+      if (!isCol) {
+        html += sec.items.map(renderGridCard).join('');
+      }
+    });
+    grid.innerHTML = html;
   } else {
     grid.style.display = 'none';
     wrap.style.display = 'block';
-    tfEl('tfWsTableBody').innerHTML = list.map(w => `<tr style="cursor:pointer;" onclick="openTfWorkspace(${w.id})">
-      <td><b>${tfE(w.name)}</b><div style="color:var(--text-muted);">${tfE(w.description || '')}</div></td>
-      <td>${tfBadge(w.status)}${w.drift_detected ? ` <span class="badge badge-drifted">${tfE(t('tf_status_drifted', 'Drifted'))}</span>` : ''}</td>
-      <td>${tfE(w.environment || '—')}</td><td class="mono">${tfE(w.binary)}</td><td>${w.resource_count || 0}</td><td>${lastRun(w)}</td>
-      <td style="text-align:right;white-space:nowrap;">
-        <button type="button" class="btn btn-icon btn-sm" onclick="event.stopPropagation();openTfWorkspaceModal(${w.id})" title="${tfE(t('edit', 'Edit'))}">${svgIcon('pencil', 'icon-xs')}</button>
-        <button type="button" class="btn btn-icon btn-sm" onclick="event.stopPropagation();deleteTfWorkspace(${w.id})" title="${tfE(t('delete', 'Delete'))}">${svgIcon('trash-2', 'icon-xs')}</button>
-      </td></tr>`).join('');
+    if (!anyHasGroup) {
+      tfEl('tfWsTableBody').innerHTML = list.map(renderListRow).join('');
+      return;
+    }
+    const collapsed = getTfWsCollapsed();
+    const groupsMap = new Map();
+    const ungrouped = [];
+    list.forEach(w => {
+      const g = (w.group_name || '').trim();
+      if (!g) ungrouped.push(w);
+      else {
+        if (!groupsMap.has(g)) groupsMap.set(g, []);
+        groupsMap.get(g).push(w);
+      }
+    });
+    const sections = [];
+    Array.from(groupsMap.keys()).sort((a, b) => a.localeCompare(b)).forEach(name => {
+      sections.push({ key: 'g:' + name, name, items: groupsMap.get(name) });
+    });
+    if (ungrouped.length > 0) {
+      sections.push({ key: '__ungrouped__', name: t('group_ungrouped', 'Ungrouped'), items: ungrouped });
+    }
+    let html = '';
+    sections.forEach(sec => {
+      const isCol = collapsed.has(sec.key);
+      html += `<tr class="host-list-group-row collapsible" onclick="toggleTfWsGroup('${escapeHtml(sec.key)}')">
+        <td colspan="7">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <svg class="icon icon-xs grp-caret ${isCol ? 'collapsed' : ''}"><use href="#i-chevron-down"/></svg>
+            <svg class="icon icon-sm"><use href="#i-folder"/></svg>
+            <span>${escapeHtml(sec.name)}</span>
+            <span class="badge" style="font-size: var(--fs-xs); background: var(--card-bg); color: var(--text-muted); border: 1px solid var(--card-border);">${sec.items.length}</span>
+          </div>
+        </td>
+      </tr>`;
+      if (!isCol) {
+        html += sec.items.map(renderListRow).join('');
+      }
+    });
+    tfEl('tfWsTableBody').innerHTML = html;
   }
 }
+
 
 /* ---------- workspace create/edit ---------- */
 async function openTfWorkspaceModal(id) {
@@ -28670,6 +28927,7 @@ async function openTfWorkspaceModal(id) {
   const src = ws ? ws.source : 'inline';
   const body = `<div class="dk-form-grid">
     ${tfField(tx('tfx_name') + ' *', tfInput('tfWfName', ws && ws.name, 'maxlength="100"'))}
+    ${tfField(tx('tfx_group'), tfInput('tfWfGroup', ws && ws.group_name, 'list="tfGroupList" placeholder="' + tfE(tx('tfx_group_ph')) + '"') + '<datalist id="tfGroupList">' + Array.from(new Set(tfWorkspaces.map(w => (w.group_name || '').trim()).filter(Boolean))).sort().map(g => `<option value="${tfE(g)}">`).join('') + '</datalist>')}
     ${tfField(tx('tfx_environment'), tfInput('tfWfEnv', ws && ws.environment, 'list="tfEnvList" placeholder="production"') + '<datalist id="tfEnvList"><option value="production"><option value="staging"><option value="development"></datalist>')}
     ${tfField(tx('tfx_description'), tfInput('tfWfDesc', ws && ws.description), '', true)}
     ${tfField(tx('tfx_tags'), tfInput('tfWfTags', ws ? (ws.tags || []).join(', ') : ''))}
@@ -28711,7 +28969,8 @@ async function saveTfWorkspace(id) {
   if (!name) { tfDlgErr(1, tx('tfx_name_required')); return; }
   const source = tfV('tfWfSource');
   const body = {
-    name, description: tfV('tfWfDesc'), environment: tfV('tfWfEnv').trim(), tags: tfCsv(tfV('tfWfTags')),
+    name, description: tfV('tfWfDesc'), group_name: tfV('tfWfGroup').trim(), environment: tfV('tfWfEnv').trim(), tags: tfCsv(tfV('tfWfTags')),
+
     binary: tfV('tfWfBinary'), source, drift_interval_minutes: parseInt(tfV('tfWfDrift'), 10) || 0,
   };
   if (source === 'inline') body.files = tfFeCollect();
@@ -28769,7 +29028,9 @@ function tfRenderWsHead() {
   tfEl('tfWsHeadBadges').innerHTML = tfBadge(tfWs.status)
     + (tfWs.drift_detected ? ` <span class="badge badge-drifted">${tfE(t('tf_status_drifted', 'Drifted'))}</span>` : '')
     + (tfWs.locked ? ` <span class="badge badge-locked">${svgIcon('lock', 'icon-xs')} ${tfE(tfWs.lock_reason || tfWs.locked_by || t('tf_status_locked', 'Locked'))}</span>` : '')
-    + (tfWs.environment ? ` <span class="badge">${tfE(tfWs.environment)}</span>` : '');
+    + (tfWs.environment ? ` <span class="badge">${tfE(tfWs.environment)}</span>` : '')
+    + (tfWs.group_name ? ` <span class="badge" style="background:var(--surface-2);border:1px solid var(--card-border);">${svgIcon('folder', 'icon-xs')} ${tfE(tfWs.group_name)}</span>` : '');
+
   tfEl('tfWsTabs').innerHTML = TF_WS_TABS.map(([k, key]) => `<button type="button" class="tab ${k === tfWsTab ? 'active' : ''}" role="tab" aria-selected="${k === tfWsTab}" onclick="switchTfWsTab('${k}')">${tfE(t(key, k))}</button>`).join('');
 }
 function switchTfWsTab(tab) {
@@ -29552,6 +29813,9 @@ async function deleteTfModule(id) {
   showToast(tx('tfx_deleted'), 'success');
   await loadTfModules();
 }
+
+// Re-render the grouped lists when the language changes; registered last so every `let` above is initialised.
+langRerenderHooks.push(renderAnsiblePlaybooks, renderTfWorkspaces, tfRenderWsHead);
 </script>
 </body>
 </html>

@@ -88,7 +88,7 @@ func (s *Server) ansibleSchedulerTick(now time.Time) {
 		}
 		run, lerr := s.launchAnsibleRun(pb, ansibleRunParams{
 			Mode: sc.Mode, HostIDs: sc.HostIDs, Group: sc.Group, ExtraVars: sc.ExtraVars, Tags: sc.Tags, SkipTags: sc.SkipTags,
-			Verbosity: sc.Verbosity, Become: sc.Become, Trigger: "schedule", ScheduleID: sc.ID,
+			Limit: sc.Limit, Verbosity: sc.Verbosity, Become: sc.Become, Trigger: "schedule", ScheduleID: sc.ID,
 		})
 		if lerr != nil {
 			_ = s.db.RecordAnsibleScheduleFire(sc.ID, &now, 0, "not started: "+lerr.Msg, next)

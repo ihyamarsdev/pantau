@@ -23,7 +23,19 @@ var (
 	cachedAt   time.Time
 	cacheTTL   = 10 * time.Second
 	tagsRegex  = regexp.MustCompile(`^[A-Za-z0-9_.,:-]{1,256}$`)
+	limitRegex = regexp.MustCompile(`^[A-Za-z0-9_.,:!&*\[\]-]{1,256}$`)
 )
+
+// ValidatePattern checks an Ansible host pattern (--limit) against the allowed charset. Empty is valid.
+func ValidatePattern(p string) error {
+	if p == "" {
+		return nil
+	}
+	if !limitRegex.MatchString(p) {
+		return fmt.Errorf("invalid limit %q: must match %s", p, limitRegex.String())
+	}
+	return nil
+}
 
 // Available reports the ansible-playbook binary in PATH and the first line of `ansible-playbook --version`.
 // Result is cached with a 5s timeout during execution. On Windows it always errors.
@@ -93,7 +105,8 @@ type RunSpec struct {
 	ExtraVars  string // "" atau objek JSON
 	Tags       string // koma
 	SkipTags   string
-	Verbosity  int              // 0..3 -> -v..-vvv
+	Limit      string           // --limit host pattern, "" = all targets
+	Verbosity  int              // 0..4 -> -v..-vvvv
 	Become     bool             // --become (sudo tanpa password)
 	Forks      int              // 0 => forks from ansible.cfg (Ansible default 5)
 	Timeout    time.Duration    // 0 => 1h
@@ -151,9 +164,13 @@ func (s RunSpec) Validate() error {
 		return errors.New("templates and files exceed 32 MiB in total")
 	}
 
-	// Verbosity 0..3
-	if s.Verbosity < 0 || s.Verbosity > 3 {
-		return fmt.Errorf("verbosity %d out of range (0..3)", s.Verbosity)
+	// Verbosity 0..4
+	if s.Verbosity < 0 || s.Verbosity > 4 {
+		return fmt.Errorf("verbosity %d out of range (0..4)", s.Verbosity)
+	}
+
+	if err := ValidatePattern(s.Limit); err != nil {
+		return err
 	}
 
 	// Forks 0..20 (0 defers to ansible.cfg)

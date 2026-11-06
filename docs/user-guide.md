@@ -31,6 +31,12 @@ Pantau operates **100% agentless** over standard SSH (`port 22`). It requires ze
    - [Managing External Kubernetes Clusters (EKS, GKE, AKS & Custom Kubeconfig)](#managing-external-kubernetes-clusters-eks-gke-aks--custom-kubeconfig)
    - [Managing Cloudflare via REST API v4](#managing-cloudflare-via-rest-api-v4)
    - [Ansible Playbooks (Semaphore-Style, Agentless)](#ansible-playbooks-semaphore-style-agentless)
+   - [Reading a Run: Log, Task Tree, Recap & Diff](#reading-a-run-log-task-tree-recap--diff)
+   - [Survey (Typed Launch Questions)](#survey-typed-launch-questions)
+   - [Ad-Hoc Runs (One Module, No Playbook)](#ad-hoc-runs-one-module-no-playbook)
+   - [Host & Group Explorer (Ping and Facts)](#host--group-explorer-ping-and-facts)
+   - [Git Sync (Verifying a Git Playbook)](#git-sync-verifying-a-git-playbook)
+   - [Git Repository Editor (Edit, Commit & Push)](#git-repository-editor-edit-commit--push)
    - [Terraform Management (Terraform Cloud-Style, Local CLI)](#terraform-management-terraform-cloud-style-local-cli)
    - [Multi-Host Side-by-Side Comparison & Scoring Matrix](#multi-host-side-by-side-comparison--scoring-matrix)
 5. [Phase 4: File Operations & Cross-Host Data Transfer](#5-phase-4-file-operations--cross-host-data-transfer)
@@ -525,7 +531,7 @@ Pantau exposes an allowlist of high-impact zone settings via the **Settings** ta
 
 Pantau includes an agentless Ansible automation subsystem inspired by Semaphore UI. Operators can write and store Ansible Playbooks in Pantau's local database, execute them against registered hosts, stream real-time task output, and review complete run histories—with **zero separate inventory files or external key vaults**.
 
-The **Ansible** section is split into **Playbooks** (list, search, and creation), **Schedules** (cron automation), and **Settings** (Ansible Gate and security warnings). The gate status stays visible in the header; click it to open Settings.
+The **Ansible** section is split into **Playbooks** (list, search, and creation), **Hosts** (Group > Host explorer with Ping and Facts), **Ad-Hoc** (run a single module without a playbook), **Schedules** (cron automation), **Templates**, **Files**, **Library**, and **Settings** (Ansible Gate and security warnings). The gate status stays visible in the header; click it to open Settings. Related decisions: [ADR 0049](adr/0049-ansible-playbooks-semaphore-style.md), [ADR 0050](adr/0050-ansible-git-playbooks-and-cron-schedules.md), and the operational layer in [ADR 0057](adr/0057-ansible-ops-recap-tasktree-diff-survey-adhoc-facts-explorer.md).
 
 #### The Ansible Gate (Security & Enablement)
 
@@ -541,10 +547,18 @@ To prevent unauthorized execution:
 
 1. In the **Side Panel**, navigate to **Ansible → Playbooks** and click **New Playbook**.
 2. Provide a descriptive **Name** (1–64 characters, unique case-insensitive) and an optional **Description**.
-3. Write the YAML playbook content (up to 256 KiB) in the integrated CodeMirror YAML editor.
-4. (Optional) Provide default **Extra Vars** formatted as a valid JSON object (up to 64 KiB).
-5. Save the playbook. Playbook definitions are stored in SQLite and automatically included in encrypted **System Snapshots**.
+3. (Optional) Set a **Group** (`group_name`, free text up to 64 characters, suggestions appear from existing groups). Leave empty for an ungrouped playbook.
+4. Write the YAML playbook content (up to 256 KiB) in the integrated CodeMirror YAML editor.
+5. (Optional) Provide default **Extra Vars** formatted as a valid JSON object (up to 64 KiB).
+6. Save the playbook. Playbook definitions are stored in SQLite and automatically included in encrypted **System Snapshots**.
 
+#### Playbook Grouping & Organization
+
+Playbooks can be organized into visual groups modeled after Host Groups:
+- **Setting a Group**: Enter any group name (trimmed, up to 64 characters) in the playbook modal. Groups are implicit—created whenever a playbook uses them and removed when none do.
+- **Collapsible Sections**: In the Playbooks view, cards render under collapsible group headers with playbook counts. Click a section header to collapse or expand it; collapse state persists across reloads.
+- **Filtering**: Use the Group filter dropdown to narrow view to a specific group, all groups, or **Ungrouped** playbooks.
+- **Cosmetic Labeling**: Groups are organizational labels only; they do not alter execution behavior, inventory generation, runner credentials, or permissions.
 #### Running a Playbook
 
 Click **Run** next to any playbook to open the Run Dialog:
@@ -561,7 +575,9 @@ Click **Run** next to any playbook to open the Run Dialog:
 3. **Runtime Parameters**:
    - **Extra Vars**: Override default JSON variables for this run.
    - **Tags & Skip Tags**: Comma-separated tag filters matching `^[A-Za-z0-9_.,:-]{1,256}$`.
-   - **Verbosity**: Choose between `0` (normal), `1` (`-v`), `2` (`-vv`), or `3` (`-vvv`).
+   - **Limit**: optional Ansible host pattern (`--limit`) that narrows the run to a subset of the selected targets, e.g. `web01,db03` or `&web:!web02`. Allowed characters are letters, digits, `_ . , : ! & * [ ] -` (1–256 characters); spaces, `;`, `$` and backticks are rejected and only Generated Inventory names (sanitised Host names and Host Groups) can be matched. Empty means no limit.
+   - **Verbosity**: `0` (normal), `1` (`-v`), `2` (`-vv`), `3` (`-vvv`) or `4` (`-vvvv`). Higher levels add task results and connection debugging; they also make the log much longer.
+   - **Presentation**: Runs in mode `run` print ANSI-colored output, because the log keeps the raw escape codes and the viewer colorizes them. The **Log | Task Tree | Recap | Diff** switch at the top of the run viewer lets you read the same run the other three ways (see below).
    - **Forks**: Number of parallel host connections (1–20, default 5).
    - **Become (Sudo)**: Toggle `--become` for passwordless sudo privilege escalation.
 
@@ -670,7 +686,7 @@ The pencil on a playbook card opens one editor for editing and viewing:
 The **Ansible → Schedules** tab shows the schedules table while the Ansible Gate is active, to run playbooks unattended. If the gate is disabled or the Ansible binary is unavailable, the tab instead shows guidance to open **Settings**:
 
 1. Click **New Schedule**, pick the playbook, an optional name, and a **cron expression** (5 fields: minute, hour, day-of-month, month, day-of-week). Presets: every 5 minutes (`*/5 * * * *`), hourly (`0 * * * *`), daily 03:00 (`0 3 * * *`), Sunday 03:00 (`0 3 * * 0`), monthly (`0 3 1 * *`). Supported syntax: `*`, numbers, ranges `a-b`, lists `a,b`, steps `*/n` and `a-b/n`, and `@hourly`, `@daily`, `@weekly`, `@monthly`, `@yearly`. Month/day names are not supported. If both day-of-month and day-of-week are restricted, either may match (Vixie cron).
-2. Choose the targets (a **Host Group** and/or individual hosts), mode (`run`, `check`, `diff`, `syntax`), tags, extra vars, verbosity and become. Targets are resolved when the schedule fires, so hosts added to the group later are included.
+2. Choose the targets (a **Host Group** and/or individual hosts), mode (`run`, `check`, `diff`, `syntax`), tags, extra vars, **Limit**, verbosity (0–4) and become. Targets are resolved when the schedule fires, so hosts added to the group later are included, while the limit narrows that resolved set the same way it does for a manual run.
 3. Times use the **Pantau server time zone** (shown in the dialog; in Docker set `TZ`, e.g. `TZ=Asia/Jakarta`, otherwise UTC).
 4. The table shows the next run, the last run (click the run number to open its log) and the last error. Use the switch to pause/resume a schedule without deleting it.
 
@@ -693,6 +709,86 @@ Rules: scheduled runs use the same limits as manual runs (1 active run per playb
   - Pantau automatically retains the latest **100 finished runs per playbook**. Older runs are pruned automatically.
   - Run histories are stored locally in SQLite (`ansible_runs`) and are excluded from system snapshots to preserve compact backup sizes.
 
+#### Reading a Run: Log, Task Tree, Recap & Diff
+
+Open any run (from the playbook's history or from a schedule) to get four views of the same output. They are all derived from the log that Ansible printed, so a run whose log was truncated at 2 MiB shows an incomplete tree; the recap is different (see below).
+
+- **Log**: the raw stream, with ANSI colors rendered safely (the text is HTML-escaped before any color is applied, so nothing from the target host can inject markup).
+- **Task Tree**: a collapsible **Play > Task > Host** tree where each host line carries its status — `ok`, `changed`, `fatal`, `failed`, `skipping`, `unreachable`, `ignored`. Use the search box to find a task by name and the status filter pills to hide the noise (e.g. show only `failed` and `unreachable`). Raising verbosity gives the tree more to work with.
+- **Recap**: the `PLAY RECAP` of the run, parsed by the server when the run finished and stored with it. Each host gets a colored bar (ok green, changed orange, unreachable dark red, failed bright red, skipped grey/blue) plus the totals. The history list shows a mini recap bar per run, so a failed run is visible without opening it.
+- **Diff**: only meaningful for runs in mode `diff`; the `--- before` / `+++ after` / `@@` blocks are split per file with added lines in green and removed lines in red. Modes `check` and `run` never produce a diff block.
+
+#### Survey (Typed Launch Questions)
+
+A playbook can carry a **Survey**: typed questions that are asked every time the playbook is launched. Define it in the playbook editor's **Survey** section (add, remove, reorder fields) or through `PUT /api/ansible/playbooks/{id}/survey`:
+
+| Field | Notes |
+|---|---|
+| Key | Name of the extra variable, `^[A-Za-z_][A-Za-z0-9_]{0,63}$`, unique within the survey. |
+| Type | `text`, `textarea`, `number`, `integer`, `select`, `multiselect`, `boolean`, `password`. |
+| Options | For `select` / `multiselect`: 1–50 unique values. |
+| Min / Max | Numeric bounds for `number` / `integer`; character length for `text`, `textarea`, `password` (whole, non-negative numbers). |
+| Default | Pre-filled answer; also used when a non-required field is left empty. |
+| Required | The run is rejected server-side (not only in the browser) when an answer is missing. |
+
+Limits: at most 30 fields, keys are unique. The server returns HTTP 400 for an answer with an unknown key (answers go straight into the run's `-e` file) and for a **required** field left without an answer and without a default. When a playbook has a survey, the Run dialog replaces the free-form JSON box with the form (the JSON box stays available for anything the survey does not cover).
+
+**Which value wins.** At launch Pantau merges, from weakest to strongest: the playbook's default extra vars, then the survey answers (including defaults for unanswered optional fields), then the extra vars typed explicitly in the launch dialog. So a survey answer overrides the playbook's `8000` default, and an operator who types `{"port": 9000}` in the launch extra vars still gets `9000`.
+
+**Passwords.** A `password` field is passed to Ansible for the run but never written to the run record — `extra_vars` shows `(hidden)` — and never returned by the API. It is **not** scrubbed from the log: a task that prints it (`debug: var=secret`, `-vvv` output, a failing command that echoes it) will show the value in the run log, which the whole admin team can read. Prefer passphrase-free mechanisms (SSH keys, files from the **Files** tab) and treat a printed password as exposed.
+
+The survey definition is stored with the playbook in SQLite, included in encrypted System Snapshots, and exposed to the UI as `survey` (fields) and `has_survey` on the playbook GET/list responses.
+
+#### Ad-Hoc Runs (One Module, No Playbook)
+
+**Ansible → Ad-Hoc** runs a single Ansible module against one or more Hosts or a Host Group. Use it for quick checks and one-off operations that do not deserve a stored playbook: `ping`, `setup`, `shell: uptime`, `command: df -h`, `service: name=nginx state=restarted`, `apt: update_cache=yes`, and so on.
+
+1. Pick a **Module** from the common list or type one (`ansible.builtin.ping` and `ping` are both accepted) and optionally its **Arguments** (one `-a` string, up to 4 KiB; leave empty for modules without arguments, like `ping`).
+2. Choose the **targets**: individual Hosts, one Host Group, and/or an extra **Pattern** (default `all`, same rules as the run **Limit**).
+3. Optionally toggle **Become**, set **Forks**, **Verbosity** (0–4) and extra vars (a JSON object, up to 64 KiB).
+4. Run it: the log streams live below the form and a per-host result table fills in as hosts answer (success green, changed orange, unreachable dark red, failed red).
+
+Ad-hoc runs are real: `shell`, `command` and `raw` execute on the target with the same SSH access Pantau already has, which is equivalent to the terminal. They are still confined to the Generated Inventory: the pattern can only address Pantau Host aliases and Host Group names, so `connection: local`, `delegate_to` and `local_action` cannot be used to escape to another machine through the pattern itself.
+
+**Concurrency and history**: at most **3 ad-hoc runs** may be active at once across the installation; the fourth request is rejected (HTTP 429). This quota is counted **separately** from playbook runs, so a quick `ping` never waits behind a scheduled playbook and vice versa. History keeps the latest 100 ad-hoc runs in `ansible_adhoc_runs`; like playbook runs they are excluded from System Snapshots, and any run still active when Pantau stops is marked `interrupted` at the next start. An active run can be cancelled like a playbook run.
+
+#### Host & Group Explorer (Ping and Facts)
+
+**Ansible → Hosts** shows the fleet exactly as Ansible sees it: a collapsible tree of **Host Group > Host** plus an *Ungrouped* list. Every row shows the group the host belongs to through Pantau's Host Groups, the host's Pantau inspection badge (healthy, warning, drift, unknown), and the host's **Ansible alias** — the sanitised name generated inventory actually uses, so you can copy it straight into a playbook's `hosts:` line or the run **Limit**.
+
+- **Ping**: click **Ping** (whole tree or selected hosts) to start an ad-hoc `ansible … -m ping`. Each host then shows **Reachable**, **Unreachable**, **Failed**, or *not checked* until the next ping. This tests the Ansible path specifically: SSH reachability, credentials from the SSH Key Library, and the Python interpreter on the target — a host Pantau can inspect may still be unreachable to Ansible if `ansible_python_interpreter` is missing.
+- **Facts**: the Facts button opens the **Facts viewer** for one host: cards for OS (distribution, version, kernel, architecture), hostname/FQDN, CPU (count and model), memory and swap, mounts, network interfaces (IPv4/IPv6/MAC), default IPv4, uptime, Python interpreter and virtualisation, plus a **Raw JSON** tab with search over the full `ansible_facts`.
+
+Facts are gathered by running `setup` on the host (up to 90 seconds, 2 MiB of output) and are **cached per host**: the viewer shows when they were gathered, and **Refresh facts** collects them again. Only one gather per host runs at a time (a second request gets HTTP 409), a failure or unreachable host returns a short error instead of a partial summary, and the cache is deleted together with the Host. Facts are operational data, not configuration: they are not included in System Snapshots.
+
+#### Git Sync (Verifying a Git Playbook)
+
+For playbooks whose source is a Git repository, the editor shows the commit and time of the last successful sync plus a **Sync Now** button. Sync Now shallow-clones the repository with the stored credentials, checks that the configured playbook path still exists, and reports the **commit**, **branch** and the **sorted `.yml`/`.yaml` paths** found in the repository (dot directories such as `.git` or `.ansible/` and `node_modules` are skipped; at most 1,000 entries). The temporary clone is always deleted. The result is remembered as `last_sync_at` and `last_sync_commit`, so you can tell whether the branch moved since you last looked. A clone, network or authentication failure returns HTTP 502 with a short message that keeps the last lines of git's output but replaces the repository URL with `<repo>` and strips the credential, so a token never appears in the response or the server log. A repository that clones fine but does not contain the configured playbook path returns HTTP 400 instead.
+
+Sync does **not** store the repository content and does not change the playbook: every run still clones fresh. Use it after changing the branch or path, and after rotating a token or key, to catch typos before a schedule finds them. It applies to Git sources only; other sources return HTTP 400.
+
+#### Git Repository Editor (Edit, Commit & Push)
+
+For playbooks with `source = "git"`, operators can click **Edit Repository** in the Git configuration block (next to **Sync Now**) to open the in-browser **Git Editor** (Workspace Modal).
+
+- **Browse & Search**: Navigate the repository tree with collapsible folders, instant file search, and indicators for modified (`M`), added (`A`), or deleted (`D`) files.
+- **Edit & Syntax Highlighting**: Edit files with full syntax highlighting via CodeMirror (YAML, shell, HCL/C-like, plain text).
+- **File Operations**: Use the toolbar to create **New File**, **Delete** files, **Discard changes**, or **Reload** repository contents. If unsaved edits exist, reloading triggers a confirmation prompt.
+- **Commit & Push Dialog**:
+  - Enter a descriptive commit message (required, 1–500 chars).
+  - Author name and email are remembered in `localStorage` (defaults to `Pantau <pantau@localhost>` if left blank).
+  - Destination choice: **Push to branch `{branch}`** or **Create new branch** (enter a valid Git branch name).
+  - Strictly non-force push: `--force` is never executed.
+- **Stale-Repo Optimistic Concurrency (HTTP 409)**: If the remote repository has advanced (`base_commit` does not match remote HEAD), the push is rejected with HTTP 409 (`ErrRepoChanged`). The dialog prompts you to reload and reapply changes safely without silently clobbering upstream commits.
+- **Write Permission Requirements**:
+  - **GitHub Fine-Grained Personal Access Tokens**: Requires **Repository permissions -> Contents: Read and write**.
+  - **GitHub Classic Tokens**: Requires `repo` scope (or `public_repo`).
+  - **GitLab Access Tokens**: Requires `write_repository` scope.
+  - **SSH Deploy Keys**: The key added to the repository must have **Allow write access** checked.
+  - Read-only tokens will fail at push time with an HTTP 502 error displaying the sanitized git error output.
+- **Side Effects**: Successfully pushing a commit to the playbook's active branch automatically updates the playbook's `last_sync_at` and `last_sync_commit`.
+- **Limits & Boundaries**: Maximum 50 modified files per commit, 1 MiB per file, 5 MiB total payload, valid UTF-8 text only (binaries return 415), no symlink traversal, and no `..` or `.git` paths.
+
 ### Terraform Management (Terraform Cloud-Style, Local CLI)
 
 Pantau includes a self-hosted, centralized Terraform and OpenTofu management subsystem inspired by HCP Terraform (formerly Terraform Cloud). Operators can manage isolated **Workspaces**, run full execution pipelines (`plan` → `policy check` → `cost estimate` → `approval gate` → `apply`), track immutable **State Versions** with visual diffs and rollback, manage shared **Variable Sets**, enforce built-in **Policy as Code**, view **Private Module** documentation, schedule automated **Drift Detection**, and integrate with Git VCS and webhooks—with **zero remote backend dependencies**.
@@ -711,6 +807,7 @@ A Workspace represents an isolated infrastructure environment (configuration, va
 1. In the **Side Panel**, navigate to **Terraform → Workspaces** and click **New Workspace**.
 2. Configure the workspace settings:
    - **Name**: Unique case-insensitive identifier (`^[A-Za-z0-9_-]{1,64}$`).
+   - **Group**: (Optional) Free-text label (`group_name`, up to 64 characters) to categorize the workspace. Suggestions appear from existing workspace groups; leave blank for ungrouped.
    - **Environment**: Logical tag (`production`, `staging`, `development`).
    - **Binary**: Choose whether to run plans and applies using `terraform` or `tofu`.
    - **Tags**: Comma-separated labels for organizing and filtering workspaces.
@@ -719,6 +816,13 @@ A Workspace represents an isolated infrastructure environment (configuration, va
      - **Git Repository**: Provide a repository URL (`https://` or `ssh://`), target branch, working directory within the repository (default root), and credentials (token or SSH Key from the Library).
 3. Workspaces are allocated a private working directory on the server (`<DataRoot>/terraform/<workspaceID>`) with `0700` filesystem permissions.
 
+#### Workspace Grouping & Organization
+
+Workspaces can be organized into visual groups modeled after Host Groups:
+- **Setting a Group**: Enter a group name (trimmed, up to 64 characters) when creating or editing a workspace. Groups are implicit and created automatically from distinct values.
+- **Collapsible Sections & View Modes**: Workspaces render under collapsible group headers in both Grid and List view modes with counts. Toggle headers to collapse or expand sections.
+- **Filtering**: Use the Group dropdown to filter by group, show all, or isolate **Ungrouped** workspaces.
+- **Cosmetic Labeling**: Groups are organizational labels only; they do not affect Terraform runs, state files, locking, or variable set inheritance.
 #### Running a Pipeline: Plan, Approve, and Apply
 
 Pantau enforces an auditable, multi-stage run lifecycle:
@@ -818,6 +922,23 @@ Automate planning when code is pushed to your version control system:
    - **GitHub**: Under **Repository Settings → Webhooks**, set the Payload URL, choose `application/json`, select the **Push** event, and paste the webhook secret (validated via `X-Hub-Signature-256`).
    - **GitLab**: Under **Settings → Webhooks**, set the URL, paste the secret token into **Secret token** (validated via `X-Gitlab-Token`), and enable **Push events**.
 4. **Safety Guarantee**: Webhooks **only trigger speculative or standard Plan runs** when a commit is pushed to the configured workspace branch. Webhooks **never execute an Apply automatically**. All production changes remain guarded behind the Approval Gate.
+
+#### Editing Workspace Repositories (Git Editor)
+
+Workspaces using a Git repository source (`source = "git"`) include an **Edit Repository** button on the VCS card inside the **Settings** tab.
+
+- **Full Workspace Tree**: Files are displayed relative to the repository root (not bounded to the workspace's sub-directory `git_path`), allowing cross-directory edits (e.g. root modules, reusable `.tf` configurations, or variable definition files).
+- **Code Editing & File Management**: Add new configuration files, edit existing `.tf` / `.tfvars` / markdown files, delete files, and discard unsaved modifications.
+- **Commit & Push Flow**:
+  - Enter commit message, author name, and author email.
+  - Choose to commit directly to the workspace's active branch or create a **New branch**.
+  - Non-force push ensures changes never overwrite upstream history.
+- **Optimistic Concurrency (HTTP 409)**: If another commit landed on the branch since opening the editor (`base_commit` mismatch), Pantau rejects the push with HTTP 409 (`ErrRepoChanged`), protecting remote state.
+- **Write Permission Token Requirement**:
+  - The configured Git access token or SSH Deploy Key must possess write privileges (e.g., GitHub Fine-Grained `Contents: Read and write`, GitHub classic `repo`, GitLab `write_repository`, or writable SSH key).
+  - Tokens with read-only access will fail on push with an HTTP 502 error displaying sanitized git error details.
+- **Webhook Integration Side Effect**: When committing and pushing directly to the workspace's monitored branch, the newly pushed commit will trigger the configured Git webhook (if enabled), initiating an automated speculative plan run.
+- **Limits**: Maximum 50 changed files per commit, 1 MiB per file, 5 MiB total payload, valid UTF-8 text files only (binaries return 415), and strict path sanitization.
 
 #### Honest Limitations and Non-Goals
 

@@ -147,3 +147,13 @@ Model keamanan Terraform Management dirancang mengikuti standar pertahanan berla
    Meskipun biner Pantau di Windows dapat dikompilasi dengan sukses, subsistem runner Terraform dinonaktifkan di Windows (`Detect()` mengembalikan galat tidak didukung), konsisten dengan batasan runner Ansible.
 3. **Tanggung Jawab Pengelolaan State**:
    Karena backend beroperasi secara lokal, administrator bertanggung jawab menjaga keutuhan basis data `pantau.db` dan rutin melakukan pencadangan melalui fitur System Snapshot terenkripsi.
+4. **Penyuntingan dan Push Git**:
+   Fitur penjelajahan berkas, penyuntingan, commit, dan push repositori Git ditambahkan pada [ADR 0058](0058-git-edit-commit-push-for-ansible-and-terraform.md), melengkapi integrasi VCS yang sebelumnya hanya-baca.
+
+## Addendum: Grouping
+
+Pengelompokan Terraform Workspace dimodelkan mengikuti Host Group pada dashboard Hosts, menggunakan kolom teks bebas `group_name` (string, maksimal 64 karakter, tanpa karakter kontrol, dipangkas; kosong berarti tanpa grup).
+
+1. **Grup Implisit & Tanpa Hirarki**: Grup tidak dikelola sebagai entitas tersendiri, melainkan diturunkan secara implisit dari nilai `group_name` non-kosong unik pada daftar workspace. Tidak ada pengelompokan bersarang (*no nesting*).
+2. **System Snapshot**: Field `group_name` disertakan dalam System Snapshot terenkripsi; data lama otomatis bernilai kosong (`""` / *ungrouped*).
+3. **Kosmetik Murni**: Pengelompokan ini hanya mengatur pemisahan visual (bagian grup yang dapat dilipat / *collapsible* dan filter grup di antarmuka) dan sama sekali **tidak mengubah perilaku eksekusi, state, kunci lock, hak akses, atau izin** workspace.

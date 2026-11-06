@@ -134,6 +134,7 @@ func (s *Server) decodeScheduleRequest(w http.ResponseWriter, r *http.Request) (
 		ExtraVars  string  `json:"extra_vars"`
 		Tags       string  `json:"tags"`
 		SkipTags   string  `json:"skip_tags"`
+		Limit      string  `json:"limit"`
 		Verbosity  int     `json:"verbosity"`
 		Become     bool    `json:"become"`
 	}
@@ -160,7 +161,7 @@ func (s *Server) decodeScheduleRequest(w http.ResponseWriter, r *http.Request) (
 		req.Mode = "run"
 	}
 	// Validates mode-independent options (tags, verbosity, extra vars) with the same rules as a real run.
-	if err := (ansible.RunSpec{Mode: "syntax", Playbook: "x", ExtraVars: strings.TrimSpace(req.ExtraVars), Tags: req.Tags, SkipTags: req.SkipTags, Verbosity: req.Verbosity}).Validate(); err != nil {
+	if err := (ansible.RunSpec{Mode: "syntax", Playbook: "x", ExtraVars: strings.TrimSpace(req.ExtraVars), Tags: req.Tags, SkipTags: req.SkipTags, Limit: req.Limit, Verbosity: req.Verbosity}).Validate(); err != nil {
 		return bad(err.Error())
 	}
 	switch req.Mode {
@@ -198,7 +199,7 @@ func (s *Server) decodeScheduleRequest(w http.ResponseWriter, r *http.Request) (
 	sc := &store.AnsibleSchedule{
 		PlaybookID: req.PlaybookID, Name: req.Name, Cron: strings.TrimSpace(req.Cron), Enabled: req.Enabled, Mode: req.Mode,
 		HostIDs: req.HostIDs, Group: req.Group, ExtraVars: strings.TrimSpace(req.ExtraVars), Tags: req.Tags, SkipTags: req.SkipTags,
-		Verbosity: req.Verbosity, Become: req.Become,
+		Limit: strings.TrimSpace(req.Limit), Verbosity: req.Verbosity, Become: req.Become,
 	}
 	if req.Enabled {
 		if n := cr.Next(time.Now()); !n.IsZero() {
