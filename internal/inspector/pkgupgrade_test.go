@@ -1,8 +1,14 @@
 package inspector
 
 import (
+	"context"
+	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"pantau/internal/sshrunner"
 )
 
 func TestBuildUpgradeCommand(t *testing.T) {
@@ -288,5 +294,51 @@ func TestParseUpgradePreview_DnfCountsDistinctPackages(t *testing.T) {
 	}
 	if !names["python3.12"] || names["bash"] {
 		t.Errorf("dotted name must survive and bash must be non-security: %v", names)
+	}
+}
+
+// closingMock tracks Close() in a race-free way so a blocking exec can observe it.
+type closingMock struct {
+	*sshrunner.MockRunner
+	closed atomic.Bool
+}
+
+func (c *closingMock) Close() error {
+	c.closed.Store(true)
+	return c.MockRunner.Close()
+}
+
+func TestGetUpgradePreviewHonorsContextCancel(t *testing.T) {
+	ins, hostID := setupKubeInspector(t)
+	mock := &closingMock{MockRunner: sshrunner.NewMockRunner()}
+	mock.DefaultExec = func(cmd string) (string, string, int, error) {
+		// block like a live SSH exec; Close must be what unblocks us
+		for range 200 {
+			time.Sleep(10 * time.Millisecond)
+			if mock.closed.Load() {
+				return "", "", -1, errors.New("use of closed network connection")
+			}
+		}
+		return "", "", 0, nil
+	}
+	ins.factory = func(host string, port int, user, key string) (sshrunner.Runner, error) {
+		return mock, nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	start := time.Now()
+	_, err := ins.GetUpgradePreview(ctx, hostID)
+	elapsed := time.Since(start)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("GetUpgradePreview returned after %v; expected prompt cancellation", elapsed)
 	}
 }

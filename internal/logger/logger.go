@@ -50,8 +50,8 @@ func NewBroadcaster(capacity int) *Broadcaster {
 
 // DefaultBroadcaster returns the global default telemetry broadcaster.
 func DefaultBroadcaster() *Broadcaster {
-	defaultBroadcasterMu.RLock()
-	defer defaultBroadcasterMu.RUnlock()
+	defaultBroadcasterMu.Lock() // writes the global when nil, so RLock was a data race
+	defer defaultBroadcasterMu.Unlock()
 	if defaultBroadcaster == nil {
 		defaultBroadcaster = NewBroadcaster(100)
 	}

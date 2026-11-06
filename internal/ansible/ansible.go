@@ -21,7 +21,7 @@ var (
 	cachedVer  string
 	cachedErr  error
 	cachedAt   time.Time
-	cacheTTL   = 10 * time.Second
+	cacheTTL   = 60 * time.Second // scheduler ticks every 15s; a shorter TTL re-spawned ansible-playbook --version each tick
 	tagsRegex  = regexp.MustCompile(`^[A-Za-z0-9_.,:-]{1,256}$`)
 	limitRegex = regexp.MustCompile(`^[A-Za-z0-9_.,:!&*\[\]-]{1,256}$`)
 )

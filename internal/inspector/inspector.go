@@ -1157,6 +1157,89 @@ func calculateLifecycleScore(osInfo, loadStr string, cpuCores int, ramUsed, ramT
 	return score, notesStr, string(breakdownBytes)
 }
 
+// crontabListCmd is the exact command the cron rule branch runs; memoized per inspection by crontabMemoRunner.
+const crontabListCmd = `crontab -l 2>/dev/null`
+
+// ponytail: N enabled cron rules each re-ran `crontab -l`; this wrapper memoizes one successful run per inspection.
+type crontabMemoRunner struct {
+	sshrunner.Runner
+	cached bool
+	stdout string
+	stderr string
+	code   int
+}
+
+func (r *crontabMemoRunner) Exec(cmd string) (string, string, int, error) {
+	if cmd != crontabListCmd {
+		return r.Runner.Exec(cmd)
+	}
+	if !r.cached {
+		var err error
+		r.stdout, r.stderr, r.code, err = r.Runner.Exec(cmd)
+		if err != nil {
+			return r.stdout, r.stderr, r.code, err // ponytail: never memoize errors
+		}
+		r.cached = true
+	}
+	return r.stdout, r.stderr, r.code, nil
+}
+
+// serviceStatusCmd is the exact per-rule service probe command; shared with serviceMemoRunner so a
+// prefetched batch answer maps to the identical command string.
+func serviceStatusCmd(target string) string {
+	return fmt.Sprintf(`sh -c 'if [ "$(uname -s)" = "Darwin" ]; then `+
+		`if launchctl print "system/$1" 2>/dev/null | grep -q "state = running"; then echo "active"; `+
+		`elif launchctl list 2>/dev/null | grep -F "$1" | awk '\''{if ($1 ~ /^[0-9]+$/ && $1 > 0) exit 0; else exit 1}'\''; then echo "active"; `+
+		`else echo "inactive"; fi; `+
+		`elif command -v systemctl >/dev/null 2>&1; then systemctl is-active "$1" 2>/dev/null; `+
+		`elif service "$1" status 2>&1 | grep -iq "running"; then echo "active"; `+
+		`else echo "inactive"; fi' -- %s`, shellQuote(target))
+}
+
+// serviceBatchCmd probes all service targets in one systemctl call; it prints one state line per
+// target in order, or serviceBatchSentinel when systemctl is unavailable (e.g. Darwin/SysVinit).
+const serviceBatchSentinel = "__PANTAU_NO_SYSTEMD__"
+
+func serviceBatchCmd(targets []string) string {
+	quoted := make([]string, len(targets))
+	for i, t := range targets {
+		quoted[i] = shellQuote(t)
+	}
+	return fmt.Sprintf(`sh -c 'command -v systemctl >/dev/null 2>&1 || { echo %s; exit 0; }; systemctl is-active %s 2>/dev/null'`,
+		serviceBatchSentinel, strings.Join(quoted, " "))
+}
+
+// ponytail: N service rules each re-ran the polyglot probe; on Linux+systemd one batched exec answers them all.
+type serviceMemoRunner struct {
+	sshrunner.Runner
+	answers map[string]string // exact per-rule probe command -> stdout
+}
+
+func (r *serviceMemoRunner) Exec(cmd string) (string, string, int, error) {
+	if out, ok := r.answers[cmd]; ok {
+		return out, "", 0, nil
+	}
+	return r.Runner.Exec(cmd)
+}
+
+// prefetchServiceStates returns a wrapper answering each per-rule service probe from one batched
+// systemctl exec, or nil to fall back to the per-rule path (any mismatch, non-Linux, or error).
+func prefetchServiceStates(runner sshrunner.Runner, targets []string) *serviceMemoRunner {
+	out, _, _, err := runner.Exec(serviceBatchCmd(targets))
+	if err != nil {
+		return nil // ponytail: never answer from a failed batch
+	}
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(lines) != len(targets) || lines[0] == serviceBatchSentinel {
+		return nil
+	}
+	answers := make(map[string]string, len(targets))
+	for i, t := range targets {
+		answers[serviceStatusCmd(t)] = strings.TrimSpace(lines[i]) + "\n"
+	}
+	return &serviceMemoRunner{Runner: runner, answers: answers}
+}
+
 func (ins *Inspector) evaluateDesiredRules(h *store.Host, runner sshrunner.Runner) (bool, []string, int, error) {
 	rules, err := ins.db.ListDesiredRules(h.ID)
 	if err != nil {
@@ -1167,9 +1250,37 @@ func (ins *Inspector) evaluateDesiredRules(h *store.Host, runner sshrunner.Runne
 		debounceRuns = ParseDebounceRuns(debStr)
 	}
 
+	// ponytail: snapshot prior statuses once; per-rule ListActualItems made evaluation O(N^2) in rules.
+	existingItems, _ := ins.db.ListActualItems(h.ID)
+	prevStatuses := make(map[string]string, len(existingItems))
+	for _, ex := range existingItems {
+		prevStatuses[ex.Kind+"\x00"+ex.Target] = ex.Status
+	}
+
 	driftFound := false
 	var driftSummaries []string
 	checkedCount := 0
+	cronMemo := &crontabMemoRunner{Runner: runner}
+
+	// ponytail: one batched systemctl exec replaces one exec per service rule (Linux+systemd only).
+	var ruleRunner sshrunner.Runner = cronMemo
+	if !strings.Contains(strings.ToLower(h.OSInfo), "darwin") {
+		seen := make(map[string]bool)
+		var svcTargets []string
+		for _, rule := range rules {
+			if rule.Enabled && rule.Kind == "service" && rule.Target != "" && !seen[rule.Target] {
+				seen[rule.Target] = true
+				svcTargets = append(svcTargets, rule.Target)
+			}
+		}
+		if len(svcTargets) >= 2 {
+			if svcMemo := prefetchServiceStates(cronMemo, svcTargets); svcMemo != nil {
+				ruleRunner = svcMemo
+			}
+		}
+	}
+
+	var actualItems []*store.ActualItem // ponytail: one batched transaction instead of one commit per rule
 
 	for _, rule := range rules {
 		if !rule.Enabled {
@@ -1177,7 +1288,7 @@ func (ins *Inspector) evaluateDesiredRules(h *store.Host, runner sshrunner.Runne
 		}
 		checkedCount++
 
-		current, status, details, rootCause := ins.evaluateRule(h, runner, &rule)
+		current, status, details, rootCause := ins.evaluateRule(h, ruleRunner, &rule)
 		if status == "drift" {
 			driftFound = true
 			msg := fmt.Sprintf("%s '%s': %s", rule.Kind, rule.Target, details)
@@ -1187,26 +1298,17 @@ func (ins *Inspector) evaluateDesiredRules(h *store.Host, runner sshrunner.Runne
 			driftSummaries = append(driftSummaries, msg)
 		}
 
-		// Check previous status for incident recording
-		existingItems, _ := ins.db.ListActualItems(h.ID)
-		var prevStatus string
-		for _, ex := range existingItems {
-			if ex.Kind == rule.Kind && ex.Target == rule.Target {
-				prevStatus = ex.Status
-				break
-			}
-		}
+		prevStatus := prevStatuses[rule.Kind+"\x00"+rule.Target]
 
 		// Record actual item state
-		actualItem := &store.ActualItem{
+		actualItems = append(actualItems, &store.ActualItem{
 			HostID:  h.ID,
 			Kind:    rule.Kind,
 			Target:  rule.Target,
 			Current: current,
 			Status:  status,
 			Details: details,
-		}
-		_ = ins.db.UpsertActualItem(actualItem)
+		})
 
 		// Transition into drift -> record incident + alert + root cause excerpt
 		triggerAlert := false
@@ -1253,6 +1355,7 @@ func (ins *Inspector) evaluateDesiredRules(h *store.Host, runner sshrunner.Runne
 		}
 	}
 
+	_ = ins.db.UpsertActualItems(actualItems)
 	_ = ins.db.PruneActualItems(h.ID) // legacy leftovers of rules deleted before pruning existed
 	return driftFound, driftSummaries, checkedCount, nil
 }
@@ -1379,13 +1482,7 @@ func (ins *Inspector) evaluateRule(h *store.Host, runner sshrunner.Runner, rule 
 	case "service":
 		// Target is service name (e.g. "mysql", "mysqld", "nginx", "httpd")
 		// Polyglot check supporting macOS launchctl (substring label match), systemd, and SysVinit.
-		svcCmd := fmt.Sprintf(`sh -c 'if [ "$(uname -s)" = "Darwin" ]; then `+
-			`if launchctl print "system/$1" 2>/dev/null | grep -q "state = running"; then echo "active"; `+
-			`elif launchctl list 2>/dev/null | grep -F "$1" | awk '\''{if ($1 ~ /^[0-9]+$/ && $1 > 0) exit 0; else exit 1}'\''; then echo "active"; `+
-			`else echo "inactive"; fi; `+
-			`elif command -v systemctl >/dev/null 2>&1; then systemctl is-active "$1" 2>/dev/null; `+
-			`elif service "$1" status 2>&1 | grep -iq "running"; then echo "active"; `+
-			`else echo "inactive"; fi' -- %s`, shellQuote(rule.Target))
+		svcCmd := serviceStatusCmd(rule.Target)
 		out, _, _, _ := runner.Exec(svcCmd)
 		activeState := strings.TrimSpace(out)
 		current = activeState

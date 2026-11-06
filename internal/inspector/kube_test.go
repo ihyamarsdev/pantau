@@ -974,3 +974,19 @@ func TestKubeLogStreamCmds(t *testing.T) {
 		t.Errorf("pod log stream cmd missing container: %s", prevCmd)
 	}
 }
+
+func TestKubePodsOversizedPayload(t *testing.T) {
+	ins, hostID := setupKubeInspector(t)
+	ins.factory = func(host string, port int, user, key string) (sshrunner.Runner, error) {
+		m := sshrunner.NewMockRunner()
+		m.DefaultExec = func(cmd string) (string, string, int, error) {
+			return strings.Repeat("a", maxKubePodsPayload+1), "", 0, nil
+		}
+		return m, nil
+	}
+
+	_, err := ins.KubePods(hostID, "")
+	if err == nil || !strings.Contains(err.Error(), "narrow the namespace") {
+		t.Fatalf("expected size-guard error for oversized pod list, got %v", err)
+	}
+}

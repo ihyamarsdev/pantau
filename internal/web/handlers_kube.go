@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gorilla/websocket"
 
@@ -18,6 +20,9 @@ import (
 )
 
 const kubeBodyLimit = 256 * 1024 // yaml manifests capped at 64 KB; the rest is JSON overhead
+
+// ponytail: var for tests; bounds total runRead failover across candidate hosts.
+var kubeFailoverBudget = 20 * time.Second
 
 var kubeExecBlockRe = regexp.MustCompile(`(?i)\b(kubectl|kc|k3s\s+kubectl)\b.*\bexec\b`)
 
@@ -200,9 +205,15 @@ func (s *Server) handleKubeManage(w http.ResponseWriter, r *http.Request, hostID
 		}
 	}
 
+	// ponytail: bound total failover so offline candidates can't stack 30s exec timeouts per host.
+	failoverCtx, cancelFailover := context.WithTimeout(r.Context(), kubeFailoverBudget)
+	defer cancelFailover()
 	runRead := func(fn func(targetID int64) (map[string]interface{}, error)) {
 		var primaryErr string
 		for i, c := range candidates {
+			if i > 0 && failoverCtx.Err() != nil {
+				break // budget spent; stop trying further candidates
+			}
 			resp, err := fn(c.ID)
 			if err == nil {
 				writeJSON(w, http.StatusOK, withEnvelope(resp, primary, c, primaryErr))
@@ -613,6 +624,7 @@ func (s *Server) handleWSKubeLogs(w http.ResponseWriter, r *http.Request) {
 		for {
 			if _, _, err := ws.ReadMessage(); err != nil {
 				outWriter.Close()
+				runner.Close() // kills a local `kubectl logs -f` child / drops the SSH channel
 				return
 			}
 		}

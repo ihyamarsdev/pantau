@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -604,5 +605,71 @@ func TestHostCreateUpdateKubeModeValidation(t *testing.T) {
 	}
 	if updatedHost.KubeClusterID != "server_cluster_id" {
 		t.Errorf("expected preserved kube_cluster_id 'server_cluster_id', got %q", updatedHost.KubeClusterID)
+	}
+}
+
+// TestKubeRunReadFailoverBudget verifies the failover loop stops trying candidates once
+// the overall budget is spent instead of stacking per-candidate exec timeouts.
+func TestKubeRunReadFailoverBudget(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test_kube_budget.db")
+	db, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init test db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	ids := make([]int64, 0, 3)
+	for _, name := range []string{"h1", "h2", "h3"} {
+		id, err := db.CreateHost(&store.Host{Name: name, Host: name, KubeClusterID: "cluster-a"})
+		if err != nil {
+			t.Fatalf("create host: %v", err)
+		}
+		ids = append(ids, id)
+	}
+
+	var mu sync.Mutex
+	execCounts := map[string]int{}
+	ins := inspector.New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) {
+		m := sshrunner.NewMockRunner()
+		h := host
+		m.DefaultExec = func(cmd string) (string, string, int, error) {
+			mu.Lock()
+			execCounts[h]++
+			mu.Unlock()
+			switch h {
+			case "h1":
+				return "", "", 1, errors.New("primary down")
+			case "h2":
+				time.Sleep(60 * time.Millisecond) // overshoots the shrunk budget
+				return "", "", 1, errors.New("secondary down")
+			default:
+				return "ok", "", 0, nil
+			}
+		}
+		return m, nil
+	}, nil)
+	srv := NewServer(db, ins, nil)
+	token := "kube_budget_token"
+	srv.sessions.Store(token, time.Now().Add(time.Hour))
+
+	oldBudget := kubeFailoverBudget
+	kubeFailoverBudget = 40 * time.Millisecond
+	defer func() { kubeFailoverBudget = oldBudget }()
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/hosts/%d/kube/namespaces", ids[0]), nil)
+	req.AddCookie(&http.Cookie{Name: "pantau_session", Value: token})
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for runRead failure envelope, got %d: %s", w.Code, w.Body.String())
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if execCounts["h1"] != 1 || execCounts["h2"] != 1 {
+		t.Errorf("expected one exec on h1 and h2, got %v", execCounts)
+	}
+	if execCounts["h3"] != 0 {
+		t.Errorf("expected failover budget to stop before h3, got %d execs", execCounts["h3"])
 	}
 }

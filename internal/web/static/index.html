@@ -12031,6 +12031,7 @@ function openAddHostModal() {
   document.getElementById('hostUser').value = 'root';
   document.getElementById('hostPassword').value = '';
   document.getElementById('hostCustomKey').value = '';
+  document.getElementById('hostCustomKey').placeholder = '-----BEGIN OPENSSH PRIVATE KEY-----';
   document.getElementById('hostCommissionDate').value = '';
   document.getElementById('hostNote').value = '';
   document.getElementById('hostGroup').value = '';
@@ -12055,7 +12056,9 @@ function openEditHostModal(hostId) {
   document.getElementById('hostUser').value = h.user || 'root';
   document.getElementById('hostGroup').value = h.group_name || '';
   document.getElementById('hostPassword').value = '';
-  document.getElementById('hostCustomKey').value = h.custom_key || '';
+  const ckEl = document.getElementById('hostCustomKey');
+  ckEl.value = '';
+  ckEl.placeholder = h.has_custom_key ? '(stored key hidden - leave blank to keep it)' : '-----BEGIN OPENSSH PRIVATE KEY-----';
   document.getElementById('hostCommissionDate').value = h.commission_date || '';
   document.getElementById('hostNote').value = h.notes || '';
   const kmEdit = document.getElementById('hostKubeMode');
@@ -12064,7 +12067,7 @@ function openEditHostModal(hostId) {
   const testBtn = document.getElementById('btnTestHostInModal');
   if (testBtn) testBtn.style.display = 'inline-flex';
   updateGroupSuggestions();
-  const hasCustom = !!(h.custom_key && h.custom_key.trim());
+  const hasCustom = !!h.has_custom_key;
   populateHostKeySelect(h.key_id || 0, hasCustom);
   openModal('hostModal');
 }
@@ -12118,6 +12121,11 @@ async function saveHost() {
     group_name: (document.getElementById('hostGroup')?.value || '').trim(),
     kube_mode: document.getElementById('hostKubeMode')?.value || 'full',
   };
+  if (id && selectedKey === 'custom' && !customKey.trim()) {
+    // the API never returns the stored key; blank + keep flag leaves it unchanged
+    const cur = allRawHosts.find(x => String(x.id) === String(id));
+    if (cur && cur.has_custom_key) payload.keep_custom_key = true;
+  }
   const method = id ? 'PUT' : 'POST';
   const url = id ? '/api/hosts/' + id : '/api/hosts';
   const res = await fetch(url, {

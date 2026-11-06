@@ -394,7 +394,14 @@ exit $rc
 	return "sh -c " + shellQuote(script), nil
 }
 
+// upgradeExecResult carries one ExecTimeout outcome for the ctx-aware wrapper.
+type upgradeExecResult struct {
+	stdout string
+	err    error
+}
+
 // GetUpgradePreview executes the discovery script on host and parses the preview.
+// It returns ctx.Err() promptly when the caller cancels.
 func (ins *Inspector) GetUpgradePreview(ctx context.Context, hostID int64) (*UpgradePreview, error) {
 	host, err := ins.db.GetHost(hostID)
 	if err != nil || host == nil {
@@ -407,10 +414,22 @@ func (ins *Inspector) GetUpgradePreview(ctx context.Context, hostID int64) (*Upg
 	}
 	defer runner.Close()
 
-	stdout, _, _, err := runner.ExecTimeout("sh -c "+shellQuote(UpgradePreviewDetectionScript), 60*time.Second)
-	if err != nil {
-		return nil, fmt.Errorf("exec preview script failed: %w", err)
-	}
+	// ponytail: exec has no ctx-aware variant; close the runner on cancel to unblock the goroutine.
+	resCh := make(chan upgradeExecResult, 1)
+	go func() {
+		stdout, _, _, err := runner.ExecTimeout("sh -c "+shellQuote(UpgradePreviewDetectionScript), 60*time.Second)
+		resCh <- upgradeExecResult{stdout: stdout, err: err}
+	}()
 
-	return ParseUpgradePreview(stdout), nil
+	select {
+	case res := <-resCh:
+		if res.err != nil {
+			return nil, fmt.Errorf("exec preview script failed: %w", res.err)
+		}
+		return ParseUpgradePreview(res.stdout), nil
+	case <-ctx.Done():
+		// Closing the client errors the in-flight exec (LiveSSHRunner); mocks finish later into the buffered chan.
+		_ = runner.Close()
+		return nil, ctx.Err()
+	}
 }

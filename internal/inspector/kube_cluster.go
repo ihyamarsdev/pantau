@@ -25,14 +25,14 @@ import (
 const maxKubeconfigBytes = 128 * 1024
 
 var allowedExecCommands = map[string]bool{
-	"aws":                   true,
-	"aws-iam-authenticator": true,
+	"aws":                    true,
+	"aws-iam-authenticator":  true,
 	"gke-gcloud-auth-plugin": true,
-	"gcloud":                true,
-	"kubelogin":             true,
-	"az":                    true,
-	"doctl":                 true,
-	"oci":                   true,
+	"gcloud":                 true,
+	"kubelogin":              true,
+	"az":                     true,
+	"doctl":                  true,
+	"oci":                    true,
 }
 
 // shortcut: target < 0 addresses an external cluster, hostID > 0 addresses an SSH host.
@@ -301,6 +301,9 @@ type localKubeRunner struct {
 	kubeconfigPath string
 	cleanupFunc    func()
 	closeOnce      sync.Once
+
+	streamMu   sync.Mutex
+	streamPgid int // process group of the active Stream child, 0 when none
 }
 
 func newLocalKubeRunner(kubeconfigContent string) (*localKubeRunner, error) {
@@ -364,16 +367,60 @@ func (r *localKubeRunner) ExecTimeout(cmdStr string, timeout time.Duration) (std
 }
 
 func (r *localKubeRunner) Stream(cmdStr string, out io.Writer) error {
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		return err
+	}
+	defer pr.Close()
+
 	cmd := exec.Command("sh", "-c", cmdStr)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = append(os.Environ(), "KUBECONFIG="+r.kubeconfigPath)
-	cmd.Stdout = out
-	cmd.Stderr = out
+	cmd.Stdout = pw
+	cmd.Stderr = pw
 
 	if err := cmd.Start(); err != nil {
+		pw.Close()
 		return err
 	}
-	return cmd.Wait()
+	defer pw.Close()
+
+	// ponytail: register the child so Close() can kill it when the stream consumer goes away.
+	r.streamMu.Lock()
+	r.streamPgid = cmd.Process.Pid
+	r.streamMu.Unlock()
+	defer func() {
+		r.streamMu.Lock()
+		r.streamPgid = 0
+		r.streamMu.Unlock()
+	}()
+
+	// ponytail: copy child output ourselves so a closed/erroring consumer writer kills the process group.
+	waitCh := make(chan error, 1)
+	go func() { waitCh <- cmd.Wait() }()
+	copyDone := make(chan error, 1)
+	go func() {
+		_, cerr := io.Copy(out, pr)
+		copyDone <- cerr
+	}()
+
+	select {
+	case waitErr := <-waitCh:
+		_ = pw.Close() // unblock the copier; child exit already closed its pipe end
+		if cerr := <-copyDone; cerr != nil && waitErr == nil {
+			waitErr = cerr
+		}
+		return waitErr
+	case cerr := <-copyDone:
+		if cerr != nil && cmd.Process != nil && cmd.Process.Pid > 0 {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		}
+		waitErr := <-waitCh
+		if cerr != nil {
+			waitErr = fmt.Errorf("stream stopped: %w", cerr)
+		}
+		return waitErr
+	}
 }
 
 func (r *localKubeRunner) PipeCommand(cmdStr string, in io.Reader, out io.Writer) error {
@@ -409,6 +456,11 @@ func (r *localKubeRunner) DialContext(ctx context.Context, network, addr string)
 
 func (r *localKubeRunner) Close() error {
 	r.closeOnce.Do(func() {
+		r.streamMu.Lock()
+		if pgid := r.streamPgid; pgid > 0 {
+			_ = syscall.Kill(-pgid, syscall.SIGKILL) // stop a running `kubectl logs -f` child
+		}
+		r.streamMu.Unlock()
 		if r.cleanupFunc != nil {
 			r.cleanupFunc()
 		}

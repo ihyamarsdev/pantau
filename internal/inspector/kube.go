@@ -19,6 +19,8 @@ const (
 	kubeQueryTimeout = 30 * time.Second
 	kubeYAMLMax      = 64 * 1024
 	kubeDrainTimeout = 310 * time.Second // max drain 300s + SSH/awk margin
+	// maxKubePodsPayload bounds cluster-wide `get pods -o json` memory like the 2 MB metrics guards.
+	maxKubePodsPayload = 32 * 1024 * 1024
 )
 
 // kubePrelude defines kc() preferring k3s, then rke2, else exiting with the required error message.
@@ -367,6 +369,9 @@ kc get --raw %s 2>/dev/null || true
 	out, err := ins.kubeQuery(hostID, script, "kube pods", kubeQueryTimeout)
 	if err != nil {
 		return nil, err
+	}
+	if len(out) > maxKubePodsPayload {
+		return nil, fmt.Errorf("pod list output exceeds %d MB; narrow the namespace", maxKubePodsPayload/(1024*1024))
 	}
 	return parseKubePods(out)
 }

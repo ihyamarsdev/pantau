@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -20,6 +21,8 @@ import (
 
 type DB struct {
 	*sql.DB
+	// ponytail: GetSetting is hit on every inspection/tick; single-process app, so every settings write path clears this.
+	settingsCache sync.Map
 }
 type SSHKey struct {
 	ID          int64     `json:"id"`
@@ -43,7 +46,8 @@ type Host struct {
 	Host               string     `json:"host"`
 	Port               int        `json:"port"`
 	User               string     `json:"user"`
-	CustomKey          string     `json:"custom_key,omitempty"`
+	CustomKey          string     `json:"custom_key,omitempty"` // secret: API handlers must blank it (redactHost); only System Snapshot serializes it
+	HasCustomKey       bool       `json:"has_custom_key"`
 	KeyID              int64      `json:"key_id"`
 	Status             string     `json:"status"` // healthy, degraded, down, unknown
 	OSInfo             string     `json:"os_info"`
@@ -226,12 +230,12 @@ func Open(dbPath string) (*DB, error) {
 		_ = os.MkdirAll(dir, 0755)
 	}
 
-	db, err := sql.Open("sqlite", dbPath+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(1)")
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 
-	s := &DB{db}
+	s := &DB{DB: db}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
@@ -352,6 +356,7 @@ func (d *DB) migrate() error {
 		root_cause_excerpt TEXT DEFAULT '',
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+	CREATE INDEX IF NOT EXISTS idx_incidents_host ON incidents(host_id, id DESC);
 
 	CREATE TABLE IF NOT EXISTS alerts (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -362,6 +367,7 @@ func (d *DB) migrate() error {
 		acknowledged INTEGER DEFAULT 0,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+	CREATE INDEX IF NOT EXISTS idx_alerts_host ON alerts(host_id, acknowledged);
 
 	CREATE TABLE IF NOT EXISTS terminal_presets (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -716,6 +722,7 @@ func (d *DB) alterAddColumn(table, column, colType string) error {
 }
 
 func (d *DB) initDefaults() error {
+	defer d.settingsCache.Clear()
 	// 1. Ensure default admin password exists (default: "admin")
 	var hash string
 	err := d.QueryRow("SELECT value FROM settings WHERE key = 'admin_password_hash'").Scan(&hash)
@@ -822,6 +829,7 @@ func GenerateRSAKeyPair(bits int) (privPEM, pubAuthorized string, err error) {
 
 // RegenerateGlobalSSHKey generates a new universal RSA-4096 keypair and saves it to settings.
 func (d *DB) RegenerateGlobalSSHKey() (string, error) {
+	defer d.settingsCache.Clear()
 	privPEM, pubAuthorized, err := GenerateRSAKeyPair(4096)
 	if err != nil {
 		return "", err
@@ -843,20 +851,28 @@ func (d *DB) RegenerateGlobalSSHKey() (string, error) {
 
 // Settings helpers
 func (d *DB) GetSetting(key string) (string, error) {
+	if v, ok := d.settingsCache.Load(key); ok {
+		return v.(string), nil
+	}
 	var val string
 	err := d.QueryRow("SELECT value FROM settings WHERE key = ?", key).Scan(&val)
 	if err == sql.ErrNoRows {
 		return "", nil
 	}
+	if err == nil {
+		d.settingsCache.Store(key, val)
+	}
 	return val, err
 }
 
 func (d *DB) SetSetting(key, val string) error {
+	defer d.settingsCache.Delete(key)
 	_, err := d.Exec("INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", key, val)
 	return err
 }
 
 func (d *DB) DeleteSetting(key string) error {
+	defer d.settingsCache.Delete(key)
 	_, err := d.Exec("DELETE FROM settings WHERE key = ?", key)
 	return err
 }
@@ -901,6 +917,7 @@ func scanHost(s rowScanner) (*Host, error) {
 	if h.KubeMode == "" {
 		h.KubeMode = "full"
 	}
+	h.HasCustomKey = strings.TrimSpace(h.CustomKey) != ""
 	return &h, nil
 }
 
@@ -921,6 +938,13 @@ func (d *DB) ListHosts() ([]Host, error) {
 		list = append(list, *h)
 	}
 	return list, nil
+}
+
+// CountHosts avoids loading every host row when only the total is needed.
+func (d *DB) CountHosts() (int, error) {
+	var n int
+	err := d.QueryRow(`SELECT COUNT(*) FROM hosts`).Scan(&n)
+	return n, err
 }
 
 func (d *DB) GetHost(id int64) (*Host, error) {
@@ -1146,8 +1170,11 @@ func (d *DB) RecordInspectionRun(run *InspectionRun) error {
 	run.ID, _ = res.LastInsertId()
 
 	// ponytail: Dual-bucket auto-pruning preserves up to 100 latest OK runs and 100 latest issue runs (drift/error/down/degraded) per host without background schedulers.
-	_, _ = d.Exec(`DELETE FROM inspection_runs WHERE host_id = ? AND status = 'ok' AND id NOT IN (SELECT id FROM inspection_runs WHERE host_id = ? AND status = 'ok' ORDER BY id DESC LIMIT 100)`, run.HostID, run.HostID)
-	_, _ = d.Exec(`DELETE FROM inspection_runs WHERE host_id = ? AND status != 'ok' AND id NOT IN (SELECT id FROM inspection_runs WHERE host_id = ? AND status != 'ok' ORDER BY id DESC LIMIT 100)`, run.HostID, run.HostID)
+	if run.Status == "ok" {
+		_, _ = d.Exec(`DELETE FROM inspection_runs WHERE host_id = ? AND status = 'ok' AND id NOT IN (SELECT id FROM inspection_runs WHERE host_id = ? AND status = 'ok' ORDER BY id DESC LIMIT 100)`, run.HostID, run.HostID)
+	} else {
+		_, _ = d.Exec(`DELETE FROM inspection_runs WHERE host_id = ? AND status != 'ok' AND id NOT IN (SELECT id FROM inspection_runs WHERE host_id = ? AND status != 'ok' ORDER BY id DESC LIMIT 100)`, run.HostID, run.HostID)
+	}
 	return nil
 }
 
@@ -1284,7 +1311,13 @@ func (d *DB) UpsertActualItem(it *ActualItem) error {
 func (d *DB) RecordIncident(inc *Incident) error {
 	_, err := d.Exec(`INSERT INTO incidents(host_id, kind, target, event_type, summary, root_cause_excerpt) VALUES (?, ?, ?, ?, ?, ?)`,
 		inc.HostID, inc.Kind, inc.Target, inc.EventType, inc.Summary, inc.RootCauseExcerpt)
-	return err
+	if err != nil {
+		return err
+	}
+	if inc.HostID != 0 { // ponytail: keep latest 500 incidents per host
+		_, _ = d.Exec(`DELETE FROM incidents WHERE host_id = ? AND id NOT IN (SELECT id FROM incidents WHERE host_id = ? ORDER BY id DESC LIMIT 500)`, inc.HostID, inc.HostID)
+	}
+	return nil
 }
 
 func (d *DB) ListIncidents(hostID int64, limit int) ([]Incident, error) {
@@ -1312,6 +1345,9 @@ func (d *DB) CreateAlert(alt *Alert) (int64, error) {
 		alt.HostID, alt.Level, alt.Message, alt.RootCause)
 	if err != nil {
 		return 0, err
+	}
+	if alt.HostID != 0 { // ponytail: keep latest 500 acknowledged alerts per host; unacknowledged never pruned
+		_, _ = d.Exec(`DELETE FROM alerts WHERE host_id = ? AND acknowledged = 1 AND id NOT IN (SELECT id FROM alerts WHERE host_id = ? AND acknowledged = 1 ORDER BY id DESC LIMIT 500)`, alt.HostID, alt.HostID)
 	}
 	return res.LastInsertId()
 }
@@ -1883,6 +1919,7 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 }
 
 func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
+	defer d.settingsCache.Clear()
 	if payload == nil {
 		return fmt.Errorf("empty snapshot payload")
 	}

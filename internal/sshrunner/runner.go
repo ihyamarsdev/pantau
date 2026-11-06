@@ -3,6 +3,7 @@ package sshrunner
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ import (
 var (
 	tofuMu         sync.RWMutex
 	tofuKnownHosts = make(map[string]ssh.PublicKey)
+	pemSigners     sync.Map // [32]byte sha256(PEM) -> []ssh.Signer; bounded by distinct keys
 )
 
 // TOFUHostKeyCallback automatically accepts and trusts the host key upon first connection,
@@ -67,7 +69,21 @@ type LiveSSHRunner struct {
 	client *ssh.Client
 }
 
+// parseAllPrivateKeys memoizes by key hash so each inspection skips PEM parsing; errors are never cached.
 func parseAllPrivateKeys(pemBytes []byte) ([]ssh.Signer, error) {
+	key := sha256.Sum256(pemBytes)
+	if v, ok := pemSigners.Load(key); ok {
+		return v.([]ssh.Signer), nil
+	}
+	signers, err := doParseAllPrivateKeys(pemBytes)
+	if err != nil {
+		return nil, err
+	}
+	pemSigners.Store(key, signers)
+	return signers, nil
+}
+
+func doParseAllPrivateKeys(pemBytes []byte) ([]ssh.Signer, error) {
 	var signers []ssh.Signer
 	rest := pemBytes
 	for {
@@ -113,12 +129,28 @@ func Connect(host string, port int, user, privateKeyPEM string, timeout time.Dur
 	configureLegacyCompatibleSSH(config)
 
 	addr := fmt.Sprintf("%s:%d", host, port)
-	client, err := ssh.Dial("tcp", addr, config)
+	client, err := dialSSH(addr, config, timeout)
 	if err != nil {
 		return nil, fmt.Errorf("dial ssh %s: %w", addr, err)
 	}
 
 	return &LiveSSHRunner{client: client}, nil
+}
+
+// ponytail: ssh.Dial's Timeout only bounds the TCP dial, not the SSH handshake; bound both.
+func dialSSH(addr string, config *ssh.ClientConfig, timeout time.Duration) (*ssh.Client, error) {
+	conn, err := net.DialTimeout("tcp", addr, timeout)
+	if err != nil {
+		return nil, err
+	}
+	conn.SetDeadline(time.Now().Add(timeout))
+	c, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	conn.SetDeadline(time.Time{})
+	return ssh.NewClient(c, chans, reqs), nil
 }
 
 // configureLegacyCompatibleSSH applies a comprehensive set of key exchanges, ciphers, and host key algorithms
@@ -178,7 +210,7 @@ func DefaultKeyProvisioner(host string, port int, user, password, pubKey string)
 	configureLegacyCompatibleSSH(config)
 
 	addr := fmt.Sprintf("%s:%d", host, port)
-	client, err := ssh.Dial("tcp", addr, config)
+	client, err := dialSSH(addr, config, 8*time.Second)
 	if err != nil {
 		return fmt.Errorf("ssh password authentication failed: %w", err)
 	}

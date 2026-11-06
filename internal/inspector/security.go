@@ -173,7 +173,7 @@ if command -v systemctl >/dev/null 2>&1; then
 fi
 if command -v nft >/dev/null 2>&1; then
     echo "---NFT---"
-    nft list ruleset 2>&1
+    nft list tables 2>&1
 fi
 if command -v iptables >/dev/null 2>&1; then
     echo "---IPTABLES---"

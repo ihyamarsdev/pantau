@@ -15,6 +15,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -351,6 +352,9 @@ func main() {
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
 		Handler: server,
+		// ponytail: bound slow-header clients and idle keep-alives; no Read/WriteTimeout because SSE, WebSocket and file streams are long-lived.
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	updaterMgr.SetShutdownFunc(func() {
@@ -419,6 +423,12 @@ func startInspectionWorker(ctx context.Context, db *store.DB, ins *inspector.Ins
 	}
 }
 
+// ponytail: cap background inspections at 5 (same as Inspect All); inspectQueued stops a host waiting for a slot from being queued again on the next tick.
+var (
+	inspectSem    = make(chan struct{}, 5)
+	inspectQueued sync.Map
+)
+
 // runInspectionCycle executes a single inspection sweep across hosts that are due.
 // Returns false if background inspection is disabled (poll_interval_sec = 0) or on error.
 func runInspectionCycle(db *store.DB, ins *inspector.Inspector) bool {
@@ -443,7 +453,13 @@ func runInspectionCycle(db *store.DB, ins *inspector.Inspector) bool {
 	now := time.Now()
 	for _, h := range hosts {
 		if (h.LastInspected == nil || now.Sub(*h.LastInspected) >= interval) && !ins.IsInspecting(h.ID) {
+			if _, queued := inspectQueued.LoadOrStore(h.ID, struct{}{}); queued {
+				continue
+			}
 			go func(hostID int64) {
+				defer inspectQueued.Delete(hostID)
+				inspectSem <- struct{}{}
+				defer func() { <-inspectSem }()
 				_ = ins.InspectHost(hostID)
 			}(h.ID)
 		}

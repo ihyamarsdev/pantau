@@ -15,6 +15,7 @@ import (
 	"io"
 	"io/fs"
 	"math"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -196,6 +197,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
 }
 
+// vendorGzCache maps name → gzip bytes; embedded vendor files are immutable and ~15, so it is bounded
+var vendorGzCache sync.Map
+
+func writeVendorGz(w http.ResponseWriter, name string, gz []byte) {
+	ct := mime.TypeByExtension(path.Ext(name))
+	if ct == "" {
+		ct = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("Content-Encoding", "gzip")
+	w.Header().Set("Content-Length", strconv.Itoa(len(gz)))
+	_, _ = w.Write(gz)
+}
+
 func (s *Server) routes() {
 	// Static / UI
 	s.mux.HandleFunc("/", s.handleIndex)
@@ -208,7 +223,31 @@ func (s *Server) routes() {
 	vendorHandler := http.StripPrefix("/vendor/", http.FileServer(http.FS(vendorFS())))
 	s.mux.HandleFunc("/vendor/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		vendorHandler.ServeHTTP(w, r)
+		w.Header().Set("Vary", "Accept-Encoding")
+		// ponytail: gzip vendor js/css on first request (xterm 283KB→~70KB); HEAD/Range/non-gzip fall through
+		name := path.Clean(strings.TrimPrefix(r.URL.Path, "/vendor/"))
+		ext := path.Ext(name)
+		if r.Method != http.MethodGet || r.Header.Get("Range") != "" ||
+			!strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") ||
+			(ext != ".js" && ext != ".css") {
+			vendorHandler.ServeHTTP(w, r)
+			return
+		}
+		if gz, ok := vendorGzCache.Load(name); ok {
+			writeVendorGz(w, name, gz.([]byte))
+			return
+		}
+		raw, err := fs.ReadFile(vendorFS(), name)
+		if err != nil {
+			vendorHandler.ServeHTTP(w, r)
+			return
+		}
+		var buf bytes.Buffer
+		gw, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+		_, _ = gw.Write(raw)
+		_ = gw.Close()
+		vendorGzCache.Store(name, buf.Bytes())
+		writeVendorGz(w, name, buf.Bytes())
 	})
 
 	// Auth & 2FA
@@ -733,6 +772,15 @@ func (s *Server) validateCommissionDate(commDate string, existingHost *store.Hos
 	return nil
 }
 
+// redactHost blanks the stored private key before a Host leaves the API; has_custom_key tells the UI one exists.
+func redactHost(h *store.Host) {
+	if h == nil {
+		return
+	}
+	h.HasCustomKey = h.HasCustomKey || strings.TrimSpace(h.CustomKey) != ""
+	h.CustomKey = ""
+}
+
 func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -741,7 +789,36 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, http.StatusOK, hosts)
+		for i := range hosts {
+			redactHost(&hosts[i])
+		}
+		// ponytail: ETag on identity bytes so gzip and non-gzip clients share it
+		body, err := json.Marshal(hosts)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		body = append(body, '\n')
+		sum := sha256.Sum256(body)
+		etag := fmt.Sprintf(`"%x"`, sum[:8])
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("ETag", etag)
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			w.Header().Set("Content-Encoding", "gzip")
+			w.Header().Set("Vary", "Accept-Encoding")
+			var buf bytes.Buffer
+			gw, _ := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
+			_, _ = gw.Write(body)
+			_ = gw.Close()
+			_, _ = w.Write(buf.Bytes())
+			return
+		}
+		_, _ = w.Write(body)
 	case http.MethodPost:
 		var req struct {
 			store.Host
@@ -826,6 +903,7 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.ID = id
+		redactHost(&h)
 		writeJSON(w, http.StatusCreated, h)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -981,6 +1059,7 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "host not found", http.StatusNotFound)
 				return
 			}
+			redactHost(host)
 			rules, _ := s.db.ListDesiredRules(hostID)
 			items, _ := s.db.ListActualItems(hostID)
 			incidents, _ := s.db.ListIncidents(hostID, 20)
@@ -993,11 +1072,15 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 				"runs":         runs,
 			})
 		case http.MethodPut:
-			var h store.Host
-			if err := json.NewDecoder(r.Body).Decode(&h); err != nil {
+			var req struct {
+				store.Host
+				KeepCustomKey bool `json:"keep_custom_key"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, "bad request", http.StatusBadRequest)
 				return
 			}
+			h := req.Host
 			h.ID = hostID
 			h.Name = strings.TrimSpace(h.Name)
 			h.Host = strings.TrimSpace(h.Host)
@@ -1008,6 +1091,10 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 			if existing == nil {
 				http.Error(w, "host not found", http.StatusNotFound)
 				return
+			}
+			// The API never returns the stored key, so a blank custom_key plus keep_custom_key means "unchanged".
+			if req.KeepCustomKey && h.KeyID == 0 && strings.TrimSpace(h.CustomKey) == "" {
+				h.CustomKey = existing.CustomKey
 			}
 			if err := s.validateCommissionDate(h.CommissionDate, existing); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
@@ -1171,6 +1258,7 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 			_ = s.inspector.RecalculateHostLifecycle(hostID)
 		}
 		updated, _ := s.db.GetHost(hostID)
+		redactHost(updated)
 		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "host": updated})
 
 	case "notes":
@@ -1327,6 +1415,7 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		host, _ = s.db.GetHost(hostID)
+		redactHost(host)
 		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "host": host})
 		return
 
@@ -2760,7 +2849,7 @@ func (s *Server) checkAuthOrFresh(r *http.Request) bool {
 
 func (s *Server) handleSnapshotStatus(w http.ResponseWriter, r *http.Request) {
 	fresh, _ := s.db.IsFresh()
-	hosts, _ := s.db.ListHosts()
+	hostCount, _ := s.db.CountHosts()
 	ghEnabled, _ := s.db.GetSetting("github_backup_enabled")
 	ghRepo, _ := s.db.GetSetting("github_repo")
 	lastTime, _ := s.db.GetSetting("last_backup_time")
@@ -2769,7 +2858,7 @@ func (s *Server) handleSnapshotStatus(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"fresh":                 fresh,
-		"host_count":            len(hosts),
+		"host_count":            hostCount,
 		"github_backup_enabled": ghEnabled == "1",
 		"github_repo":           ghRepo,
 		"last_backup_time":      lastTime,

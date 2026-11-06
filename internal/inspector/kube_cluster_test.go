@@ -1,6 +1,7 @@
 package inspector
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,6 +11,38 @@ import (
 
 	"pantau/internal/store"
 )
+
+func TestLocalKubeRunnerStreamStopsOnClose(t *testing.T) {
+	r := &localKubeRunner{kubeconfigPath: "unused-kubeconfig"}
+
+	// Normal completion still works.
+	var normalOut bytes.Buffer
+	if err := r.Stream("echo hi", &normalOut); err != nil {
+		t.Fatalf("normal stream failed: %v", err)
+	}
+	if !strings.Contains(normalOut.String(), "hi") {
+		t.Fatalf("expected stream output, got %q", normalOut.String())
+	}
+
+	// A long-running child must be killed when Close is called (WS client disconnect).
+	r = &localKubeRunner{kubeconfigPath: "unused-kubeconfig"}
+	var out bytes.Buffer
+	done := make(chan error, 1)
+	go func() { done <- r.Stream("echo start; sleep 30", &out) }()
+	time.Sleep(200 * time.Millisecond) // let the child start and emit
+
+	if err := r.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stream did not return within 5s of Close; child was not killed")
+	}
+	if out.Len() == 0 {
+		t.Fatal("expected stream output before close")
+	}
+}
 
 // writeFakeKubectl writes an executable fake kubectl script in a temp dir and prepends it to PATH.
 func writeFakeKubectl(t *testing.T, scriptContent string) string {
