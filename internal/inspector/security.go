@@ -163,9 +163,13 @@ fi
 grep -h -s -E 'APT::Periodic::(Update-Package-Lists|Unattended-Upgrade)' /etc/apt/apt.conf.d/* 2>/dev/null
 
 echo "===FIREWALL==="
+FW_S=""
+if [ "$PANTAU_TRY_SUDO" = "1" ] && [ "$(id -u 2>/dev/null)" != "0" ]; then
+    if sudo -n true 2>/dev/null; then FW_S="sudo -n"; echo "---FW_SUDO:ok---"; else echo "---FW_SUDO:denied---"; fi
+fi
 if command -v ufw >/dev/null 2>&1; then
     echo "---UFW---"
-    ufw status 2>&1
+    $FW_S ufw status 2>&1
 fi
 if command -v systemctl >/dev/null 2>&1; then
     echo "---FIREWALLD---"
@@ -173,11 +177,11 @@ if command -v systemctl >/dev/null 2>&1; then
 fi
 if command -v nft >/dev/null 2>&1; then
     echo "---NFT---"
-    nft list tables 2>&1
+    $FW_S nft list tables 2>&1
 fi
 if command -v iptables >/dev/null 2>&1; then
     echo "---IPTABLES---"
-    iptables -S 2>&1 || iptables -L -n 2>&1
+    $FW_S iptables -S 2>&1 || $FW_S iptables -L -n 2>&1
 fi
 fi`
 
@@ -230,7 +234,12 @@ func (ins *Inspector) ScanSecurityWithTimeout(hostID int64, timeout time.Duratio
 		}
 	}()
 
-	stdout, _, _, err := runner.Exec(SecurityScanBatchCmd)
+	// Firewall tables need root. Passwordless sudo is tried unless it was refused recently (shared backoff).
+	trySudo := "0"
+	if ins.sudoProbeAllowed(hostID) {
+		trySudo = "1"
+	}
+	stdout, _, _, err := runner.Exec("PANTAU_TRY_SUDO=" + trySudo + "\n" + SecurityScanBatchCmd)
 	if err != nil {
 		if ctx.Err() != nil {
 			return fmt.Errorf("exec security scan timed out: %w", ctx.Err())
@@ -238,6 +247,12 @@ func (ins *Inspector) ScanSecurityWithTimeout(hostID int64, timeout time.Duratio
 		return fmt.Errorf("exec security scan: %w", err)
 	}
 
+	switch {
+	case strings.Contains(stdout, "---FW_SUDO:ok---"):
+		ins.noteSudo(hostID, false)
+	case strings.Contains(stdout, "---FW_SUDO:denied---"):
+		ins.noteSudo(hostID, true)
+	}
 	scan := parseSecurityScanOutput(stdout, hostID)
 	scan.HostID = hostID
 	scan.ScannedAt = time.Now()
