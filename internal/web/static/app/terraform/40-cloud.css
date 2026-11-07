@@ -1,0 +1,43 @@
+/* Cloud Accounts tab + workspace link card — scoped under .tf-ca*. */
+.tf-ca { display: flex; flex-direction: column; gap: 16px; }
+.tf-ca-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.tf-ca-hint { font-size: var(--fs-xs); color: var(--text-muted); max-width: 70ch; }
+.tf-ca-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(380px, 100%), 1fr)); gap: 16px; align-items: start; }
+.tf-ca-card { display: flex; flex-direction: column; gap: 10px; padding: 16px; min-width: 0; }
+.tf-ca-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.tf-ca-name { font-size: var(--fs-md); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tf-ca-desc { font-size: var(--fs-xs); color: var(--text-muted); overflow-wrap: anywhere; }
+.tf-ca-used { font-size: var(--fs-xs); color: var(--text-muted); }
+.tf-ca-kv { margin: 0; display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; background: var(--code-bg); border: 1px solid var(--card-border); border-radius: var(--radius-sm); }
+.tf-ca-kv:empty { display: none; }
+.tf-ca-kv > div { display: flex; gap: 12px; justify-content: space-between; align-items: baseline; font-size: var(--fs-xs); min-width: 0; }
+.tf-ca-kv dt { color: var(--text-muted); flex-shrink: 0; }
+.tf-ca-kv dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.tf-ca-secret { color: var(--text-faint); letter-spacing: 0.04em; }
+.tf-ca-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 2px; }
+.tf-ca-actions [data-ca-del] { margin-left: auto; }
+.tf-ca-actions .spinner { display: inline-flex; }
+.tf-ca-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding: 48px 16px; color: var(--text-muted); border: 1px dashed var(--card-border); border-radius: var(--radius-lg); }
+.tf-ca-empty .icon { width: 32px; height: 32px; color: var(--text-faint); }
+.tf-ca-empty-title { font-size: var(--fs-md); font-weight: 600; color: var(--text); }
+.tf-ca-empty-desc { font-size: var(--fs-xs); max-width: 60ch; }
+
+/* provider badges (no external logos) */
+.tf-ca-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: var(--radius-full); font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; background: var(--active); color: var(--text-muted); border: 1px solid var(--card-border); }
+.tf-ca-aws { background: rgba(255, 153, 0, 0.14); color: #ffa733; border-color: rgba(255, 153, 0, 0.35); }
+.tf-ca-gcp { background: rgba(52, 168, 83, 0.14); color: #4cc16b; border-color: rgba(52, 168, 83, 0.35); }
+.tf-ca-azure { background: rgba(59, 130, 246, 0.14); color: #6aa3f8; border-color: rgba(59, 130, 246, 0.35); }
+.tf-ca-digitalocean { background: rgba(34, 184, 207, 0.14); color: #3ccbe0; border-color: rgba(34, 184, 207, 0.35); }
+.tf-ca-hetzner { background: var(--danger-soft); color: var(--danger); border-color: var(--danger-border); }
+
+/* dialog */
+.tf-ca-form { gap: 12px 16px; }
+.tf-ca-fieldwrap { border-top: 1px solid var(--card-border); padding-top: 12px; }
+.tf-ca-fieldwrap > .dk-form-grid { gap: 12px 16px; }
+
+/* workspace link card */
+.tf-ca-link-hint, .tf-ca-link-empty { font-size: var(--fs-xs); color: var(--text-muted); }
+.tf-ca-linklist { display: flex; flex-direction: column; gap: 6px; }
+.tf-ca-linkrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 8px; border: 1px solid var(--card-border); border-radius: var(--radius-sm); cursor: pointer; }
+.tf-ca-linkrow:hover { background: var(--hover); }
+.tf-ca-linkname { font-size: var(--fs-sm); font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: auto; }

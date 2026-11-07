@@ -122,6 +122,20 @@ func (m *TerraformRunManager) BuildRunConfig(ws *store.TFWorkspace) (terraform.C
 	}
 
 	cfg.Env = make(map[string]string)
+	// Cloud account env first so variable-set env vars with the same key override it.
+	// It goes through Config.Env, so plan/apply log redaction covers the credentials.
+	for _, id := range ws.CloudAccountIDs {
+		acct, err := m.db.GetTFCloudAccount(id)
+		if err != nil {
+			return cfg, fmt.Errorf("failed to load cloud account %d: %w", id, err)
+		}
+		if acct == nil {
+			continue
+		}
+		for k, v := range terraform.CloudEnv(acct.Provider, acct.Fields) {
+			cfg.Env[k] = v
+		}
+	}
 	for _, v := range effVars {
 		if v.Category == "env" {
 			cfg.Env[v.Key] = v.Value

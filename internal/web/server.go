@@ -222,6 +222,8 @@ func (s *Server) routes() {
 	// App bundles: first-party UI modules, concatenated from embedded static/app/<dir>
 	s.mux.HandleFunc("/app/ansible.js", serveAppBundle("ansible", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/ansible.css", serveAppBundle("ansible", ".css", "text/css; charset=utf-8"))
+	s.mux.HandleFunc("/app/terraform.css", serveAppBundle("terraform", ".css", "text/css; charset=utf-8"))
+	s.mux.HandleFunc("/app/terraform.js", serveAppBundle("terraform", ".js", "text/javascript; charset=utf-8"))
 
 	// Vendor static assets (airgapped / local cache)
 	vendorHandler := http.StripPrefix("/vendor/", http.FileServer(http.FS(vendorFS())))
@@ -338,6 +340,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/terraform/runs/", s.authMiddleware(s.handleTerraformRunRoute))
 	s.mux.HandleFunc("/api/terraform/varsets", s.authMiddleware(s.handleTerraformVarsets))
 	s.mux.HandleFunc("/api/terraform/varsets/", s.authMiddleware(s.handleTerraformVarsetRoute))
+	s.mux.HandleFunc("/api/terraform/cloud-accounts", s.authMiddleware(s.handleTerraformCloudAccounts))
+	s.mux.HandleFunc("/api/terraform/cloud-accounts/", s.authMiddleware(s.handleTerraformCloudAccountRoute))
 	s.mux.HandleFunc("/api/terraform/policies", s.authMiddleware(s.handleTerraformPolicies))
 	s.mux.HandleFunc("/api/terraform/policies/", s.authMiddleware(s.handleTerraformPolicyRoute))
 	s.mux.HandleFunc("/api/terraform/modules", s.authMiddleware(s.handleTerraformModules))

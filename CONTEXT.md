@@ -508,6 +508,10 @@ _Avoid_: Cluster config, kube profile, raw kubeconfig
 Entri kredensial (nama, `account_id` opsional, API Token) yang terdaftar di Pantau untuk mengelola Zone Cloudflare via API.
 _Avoid_: CF profile, API key entry
 
+**Cloud Account**:
+Kredensial provider cloud (AWS, Google Cloud, Azure, DigitalOcean, Hetzner) yang terdaftar di Pantau dan dihubungkan ke Terraform Workspace; saat Run, nilainya disuntikkan sebagai variabel lingkungan (variabel `env` Workspace menimpanya).
+_Avoid_: Cloud profile, credential set
+
 **Cloudflare Zone**:
 Domain yang dikelola di akun Cloudflare (nama, status, plan, name server).
 _Avoid_: Site, domain entry
@@ -649,7 +653,7 @@ Komponen antarmuka untuk menjelajah pohon berkas repositori, membuat berkas baru
 _Avoid_: Web IDE, file manager, repo manager
 
 **Side Drawer**:
-Panel yang menempel di tepi kanan area konten Ansible (di bawah header, di atas footer) untuk membuka satu Playbook atau satu Run tanpa meninggalkan tabel. Mendukung tumpukan (push/back), perlebar, dan penjagaan perubahan belum disimpan.
+Panel yang menempel di tepi kanan area konten Ansible (di bawah header, di atas footer) untuk membuka satu Playbook atau satu Run tanpa meninggalkan tabel. Mendukung tumpukan (push/back), perlebar, dan penjagaan perubahan belum disimpan. Pola yang sama dipakai view workspace Terraform (`#tfDrawer`), dengan backdrop dan tab Overview/Runs/State/Variables/Drift/Settings.
 _Avoid_: Modal, popup, flyout
 
 **Run Viewer**:

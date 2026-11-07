@@ -820,6 +820,8 @@ A Workspace represents an isolated infrastructure environment (configuration, va
      - **Git Repository**: Provide a repository URL (`https://` or `ssh://`), target branch, working directory within the repository (default root), and credentials (token or SSH Key from the Library).
 3. Workspaces are allocated a private working directory on the server (`<DataRoot>/terraform/<workspaceID>`) with `0700` filesystem permissions.
 
+Clicking a workspace card or row opens the workspace in a **side drawer** docked on the right (same pattern as the Ansible drawer) with the tabs **Overview**, **Configuration**, **Runs**, **State**, **Variables**, **Drift** and **Settings**. Files and settings are edited in place: the **Configuration** tab edits inline files in a code editor (add/delete files, `Ctrl+S`, Save & plan; Git workspaces open the Git editor) and the **Settings** tab edits name, group, environment, tags, binary, drift interval and Git connection directly. The expand button widens the drawer to nearly the full screen (the choice is remembered); **Esc**, the backdrop or the close button closes it.
+
 #### Workspace Grouping & Organization
 
 Workspaces can be organized into visual groups modeled after Host Groups:
@@ -877,6 +879,25 @@ Manage configuration variables cleanly without hardcoding values in `.tf` files:
 - **Sensitive Values**: Sensitive variables are strictly **write-only**. Their values are masked as `(sensitive)` in execution logs, never returned in API responses (`json:"-"`), and hidden in the UI.
 - **Variable Sets**: Group related variables together (e.g., *Production Cloud Credentials*, *Global DNS Configuration*) and attach them to multiple workspaces, or mark the set as **Global** to apply across all workspaces automatically.
 - **Resolution Precedence**: Workspace variables take precedence over attached Variable Sets, which take precedence over Global Variable Sets.
+
+#### Cloud Accounts
+
+Register provider credentials once and let every run of a workspace use them, instead of copying keys into workspace variables.
+1. Open **Terraform → Cloud Accounts** and click **New account**. Pick a provider (AWS, Google Cloud, Microsoft Azure, DigitalOcean, Hetzner), name it, and fill in the credential fields.
+2. Click **Test connection** on the account. Pantau verifies the credentials against the provider API: AWS `sts:GetCallerIdentity`, Google Cloud service-account token + project lookup, Azure client-credentials token, DigitalOcean `/v2/account`, Hetzner `/v1/servers`. The result (and the identity found) is shown on the account.
+3. Open a workspace drawer → **Settings** → **Cloud accounts** card and tick the accounts to link. A workspace can link several accounts; deleting an account unlinks it everywhere.
+4. Every run of a linked workspace (plan, apply, drift, webhook, state operations, cost estimate) receives the credentials as environment variables:
+
+| Provider | Environment variables |
+|---|---|
+| AWS | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_DEFAULT_REGION` + `AWS_REGION` (default `us-east-1`) |
+| Google Cloud | `GOOGLE_PROJECT` + `GOOGLE_CLOUD_PROJECT`, `GOOGLE_REGION`, `GOOGLE_CREDENTIALS` (service-account JSON) |
+| Microsoft Azure | `ARM_SUBSCRIPTION_ID`, `ARM_TENANT_ID`, `ARM_CLIENT_ID`, `ARM_CLIENT_SECRET` |
+| DigitalOcean | `DIGITALOCEAN_TOKEN` |
+| Hetzner | `HCLOUD_TOKEN` |
+
+- **Precedence**: with several linked accounts, later accounts (by id) win on conflicts; workspace and Variable Set variables of category `env` override cloud-account values.
+- **Security**: credentials are stored in the Pantau database, are never returned by the API (secret fields show as "stored"; leave a secret field empty when editing to keep it), are included in the encrypted snapshot backups, and are redacted in run logs. Only static credentials are supported (no OIDC / workload identity).
 
 #### Outputs
 

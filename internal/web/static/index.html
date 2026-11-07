@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="/vendor/codemirror.min.css" />
 <link rel="stylesheet" href="/vendor/nord.min.css" />
 <link rel="stylesheet" href="/app/ansible.css" />
+<link rel="stylesheet" href="/app/terraform.css" />
 <style>
 @font-face { font-family: 'Inter'; src: url('/vendor/fonts/inter-latin-var.woff2') format('woff2'); font-weight: 100 900; font-style: normal; font-display: swap; }
 @font-face { font-family: 'JetBrains Mono'; src: url('/vendor/fonts/jetbrains-mono-latin-var.woff2') format('woff2'); font-weight: 100 800; font-style: normal; font-display: swap; }
@@ -4026,6 +4027,9 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <button type="button" class="tab" id="tabTfVarsets" data-tab="varsets" role="tab" aria-selected="false" aria-controls="tfPanelVarsets" tabindex="-1" onclick="switchTfTab('varsets')">
           <svg class="icon icon-sm"><use href="#i-sliders-horizontal"/></svg> <span data-i18n="tf_tab_varsets">Variable Sets</span>
         </button>
+        <button type="button" class="tab" id="tabTfCloud" data-tab="cloud" role="tab" aria-selected="false" aria-controls="tfPanelCloud" tabindex="-1" onclick="switchTfTab('cloud')">
+          <svg class="icon icon-sm"><use href="#i-cloud"/></svg> <span data-i18n="tf_tab_cloud">Cloud Accounts</span>
+        </button>
         <button type="button" class="tab" id="tabTfPolicies" data-tab="policies" role="tab" aria-selected="false" aria-controls="tfPanelPolicies" tabindex="-1" onclick="switchTfTab('policies')">
           <svg class="icon icon-sm"><use href="#i-shield"/></svg> <span data-i18n="tf_tab_policies">Policies</span>
         </button>
@@ -4104,7 +4108,12 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <div id="tfVarsetsList" style="display:flex;flex-direction:column;gap:12px;"></div>
       </div>
 
-      <!-- Tab 3: Policies -->
+      <!-- Tab 3: Cloud Accounts -->
+      <div id="tfPanelCloud" class="ans-section-panel" role="tabpanel" aria-labelledby="tabTfCloud" tabindex="0" style="display:none;flex-direction:column;">
+        <div id="tfCloudRoot"></div>
+      </div>
+
+      <!-- Tab 4: Policies -->
       <div id="tfPanelPolicies" class="ans-section-panel" role="tabpanel" aria-labelledby="tabTfPolicies" tabindex="0" style="display:none;">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
           <div style="font-size:var(--fs-xs);color:var(--text-muted);" data-i18n="tf_policies_hint">Policy as Code guards runs with built-in rules (deny_destroy, max_deletes, max_changes, deny_resource_types, require_tags, deny_open_cidr).</div>
@@ -4523,23 +4532,23 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
   </div>
 </div>
 
-<!-- Terraform Workspace Modal -->
-<div id="tfWsModal" class="modal">
-  <div class="modal-content modal-workspace" style="display: flex; flex-direction: column;">
-    <div class="modal-header">
-      <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1;">
-        <svg class="icon icon-sm text-accent"><use href="#i-terraform"/></svg>
-        <h3 id="tfWsModalName" style="font-size: var(--fs-md); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></h3>
-        <span id="tfWsHeadBadges" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;"></span>
-      </div>
+<!-- Terraform Workspace Drawer (docked, mirrors the Ansible drawer) -->
+<div id="tfDrawerRoot" class="tf-drawer-root" hidden>
+  <div class="tf-drawer-backdrop" onclick="closeTfWorkspace()"></div>
+  <aside id="tfDrawer" class="tf-drawer" role="dialog" aria-modal="false" aria-labelledby="tfWsModalName">
+    <div class="tf-drawer-head">
+      <svg class="icon icon-sm text-accent"><use href="#i-terraform"/></svg>
+      <h3 id="tfWsModalName" style="font-size: var(--fs-md); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1;"></h3>
+      <span id="tfWsHeadBadges" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;"></span>
       <div style="display: flex; align-items: center; gap: 8px;">
         <button class="btn btn-icon btn-sm" onclick="tfReloadWs().then(() => switchTfWsTab(tfWsTab))" title="Refresh" data-i18n-title="refresh"><svg class="icon icon-sm"><use href="#i-refresh-cw"/></svg></button>
-        <button class="btn btn-icon btn-sm" onclick="closeTfWorkspace()" title="Close" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+        <button type="button" id="tfDrawerWide" class="tf-drawer-wide btn-icon btn-sm" onclick="tfToggleDrawerWide()" title="Expand Drawer" data-i18n-title="tf_drawer_expand" aria-label="Expand Drawer"><svg class="icon icon-sm"><use href="#i-maximize-2"/></svg></button>
+        <button type="button" class="btn btn-icon btn-sm" onclick="closeTfWorkspace()" title="Close" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
       </div>
     </div>
-    <div id="tfWsTabs" class="tabs" role="tablist" style="padding: 0 20px; flex-shrink: 0;"></div>
-    <div id="tfWsBody" class="modal-body" style="flex: 1; min-height: 0; overflow: auto; padding: 16px 20px;"></div>
-  </div>
+    <div id="tfWsTabs" class="tabs tf-drawer-tabs" role="tablist"></div>
+    <div id="tfWsBody" class="tf-drawer-body"></div>
+  </aside>
 </div>
 
 <!-- Terraform Action Dialogs (level 1 and stacked level 2) -->
@@ -7778,6 +7787,8 @@ const I18N = {
     "tf_section_desc": "Manage workspaces, state versions, runs, variables, modules, and drift detection.",
     "tf_tab_workspaces": "Workspaces",
     "tf_tab_varsets": "Variable Sets",
+    "tf_tab_cloud": "Cloud Accounts",
+    "tf_ov_cloud": "Cloud accounts",
     "tf_tab_policies": "Policies",
     "tf_tab_modules": "Module Catalog",
     "tf_tab_gate": "Terraform Gate",
@@ -7819,11 +7830,15 @@ const I18N = {
     "tf_ws_modal_new": "New Workspace",
     "tf_ws_modal_edit": "Edit Workspace",
     "tf_tab_overview": "Overview",
+    "tf_tab_config": "Configuration",
     "tf_tab_runs": "Runs",
     "tf_tab_state": "State",
     "tf_tab_variables": "Variables",
     "tf_tab_drift": "Drift",
     "tf_tab_settings": "Settings",
+    "tf_drawer_expand": "Expand Drawer",
+    "tf_drawer_collapse": "Collapse Drawer",
+    "tf_drawer_recent_runs": "Recent Runs",
     "tf_btn_start_run": "Start Run",
     "tf_btn_lock": "Lock",
     "tf_btn_unlock": "Unlock",
@@ -9320,6 +9335,8 @@ const I18N = {
     "tf_section_desc": "Kelola workspace, state version, run, variabel, modul, dan deteksi drift.",
     "tf_tab_workspaces": "Workspace",
     "tf_tab_varsets": "Variable Set",
+    "tf_tab_cloud": "Akun Cloud",
+    "tf_ov_cloud": "Akun cloud",
     "tf_tab_policies": "Policy",
     "tf_tab_modules": "Katalog Modul",
     "tf_tab_gate": "Terraform Gate",
@@ -9361,11 +9378,15 @@ const I18N = {
     "tf_ws_modal_new": "Workspace Baru",
     "tf_ws_modal_edit": "Ubah Workspace",
     "tf_tab_overview": "Overview",
+    "tf_tab_config": "Konfigurasi",
     "tf_tab_runs": "Run",
     "tf_tab_state": "State",
     "tf_tab_variables": "Variabel",
     "tf_tab_drift": "Drift",
     "tf_tab_settings": "Pengaturan",
+    "tf_drawer_expand": "Perluas Panel",
+    "tf_drawer_collapse": "Ciutkan Panel",
+    "tf_drawer_recent_runs": "Run Terakhir",
     "tf_btn_start_run": "Mulai Run",
     "tf_btn_lock": "Kunci",
     "tf_btn_unlock": "Buka Kunci",
@@ -18512,7 +18533,9 @@ window.addEventListener('keydown', (e) => {
       } else {
         closeModal(topModal.id);
       }
+      return;
     }
+    if (tfDrawerOpen()) closeTfWorkspace();
   }
 });
 
@@ -24894,6 +24917,7 @@ const TF_TXT = {
   tfx_copied: ['Copied', 'Tersalin'],
   tfx_sensitive_val: ['(sensitive)', '(sensitif)'],
   tfx_no_runs: ['No runs yet', 'Belum ada run'],
+  tfx_no_runs_hint: ['Run a plan to preview the changes before anything is applied.', 'Jalankan plan untuk melihat perubahan sebelum apa pun diterapkan.'],
   tfx_run_n: ['Run #{n}', 'Run #{n}'],
   tfx_trigger: ['Trigger', 'Pemicu'],
   tfx_commit: ['Commit', 'Commit'],
@@ -25073,7 +25097,7 @@ let tfOutputsRevealed = false;
 let tfStateVersions = [];
 let tfFE = { files: {}, cur: '' };
 const TF_ACTIVE_RUN = ['queued', 'planning', 'applying'];
-const TF_WS_TABS = [['overview', 'tf_tab_overview'], ['runs', 'tf_tab_runs'], ['state', 'tf_tab_state'], ['variables', 'tf_tab_variables'], ['drift', 'tf_tab_drift'], ['settings', 'tf_tab_settings']];
+const TF_WS_TABS = [['overview', 'tf_tab_overview'], ['config', 'tf_tab_config'], ['runs', 'tf_tab_runs'], ['state', 'tf_tab_state'], ['variables', 'tf_tab_variables'], ['drift', 'tf_tab_drift'], ['settings', 'tf_tab_settings']];
 
 async function tfApi(method, url, body) {
   const opt = { method, headers: {} };
@@ -25247,7 +25271,7 @@ async function toggleTfGate(enable) {
   await refreshTfSection();
 }
 function switchTfTab(tab) {
-  if (!['workspaces', 'varsets', 'policies', 'modules', 'gate'].includes(tab)) tab = 'workspaces';
+  if (!['workspaces', 'varsets', 'cloud', 'policies', 'modules', 'gate'].includes(tab)) tab = 'workspaces';
   tfCurrentTab = tab;
   document.querySelectorAll('#tfTabs .tab').forEach(el => {
     const active = el.dataset.tab === tab;
@@ -25277,7 +25301,7 @@ async function loadTfTabData() {
   if (!tfStatus || !tfStatus.enabled) {
     const off = `<div class="empty-state"><div class="empty-state-desc">${tfE(tx('tfx_gate_off'))}</div></div>`;
     if (tfCurrentTab !== 'gate') {
-      const id = { workspaces: 'tfWsEmpty', varsets: 'tfVarsetsList', policies: 'tfPoliciesList', modules: 'tfModulesList' }[tfCurrentTab];
+      const id = { workspaces: 'tfWsEmpty', varsets: 'tfVarsetsList', cloud: 'tfCloudRoot', policies: 'tfPoliciesList', modules: 'tfModulesList' }[tfCurrentTab];
       const el = tfEl(id);
       if (el) { el.innerHTML = off; el.style.display = 'block'; }
       if (tfCurrentTab === 'workspaces') { tfEl('tfWsGrid').innerHTML = ''; tfEl('tfWsTableWrap').style.display = 'none'; }
@@ -25286,6 +25310,7 @@ async function loadTfTabData() {
   }
   if (tfCurrentTab === 'workspaces') await loadTfWorkspaces();
   else if (tfCurrentTab === 'varsets') { await loadTfWorkspaces(); await loadTfVarsets(); }
+  else if (tfCurrentTab === 'cloud') { if (typeof tfCloudRefresh === 'function') tfCloudRefresh(); }
   else if (tfCurrentTab === 'policies') { await loadTfWorkspaces(); await loadTfPolicies(); }
   else if (tfCurrentTab === 'modules') await loadTfModules();
 }
@@ -25397,7 +25422,7 @@ function renderTfWorkspaces() {
     <td>${tfBadge(w.status)}${w.drift_detected ? ` <span class="badge badge-drifted">${tfE(t('tf_status_drifted', 'Drifted'))}</span>` : ''}</td>
     <td>${tfE(w.environment || '—')}</td><td class="mono">${tfE(w.binary)}</td><td>${w.resource_count || 0}</td><td>${lastRun(w)}</td>
     <td style="text-align:right;white-space:nowrap;">
-      <button type="button" class="btn btn-icon btn-sm" onclick="event.stopPropagation();openTfWorkspaceModal(${w.id})" title="${tfE(t('edit', 'Edit'))}">${svgIcon('pencil', 'icon-xs')}</button>
+      <button type="button" class="btn btn-icon btn-sm" onclick="event.stopPropagation();openTfWorkspace(${w.id}, 'settings')" title="${tfE(t('edit', 'Edit'))}">${svgIcon('pencil', 'icon-xs')}</button>
       <button type="button" class="btn btn-icon btn-sm" onclick="event.stopPropagation();deleteTfWorkspace(${w.id})" title="${tfE(t('delete', 'Delete'))}">${svgIcon('trash-2', 'icon-xs')}</button>
     </td></tr>`;
 
@@ -25576,20 +25601,65 @@ async function deleteTfWorkspace(id) {
   await loadTfWorkspaces();
 }
 
-/* ---------- workspace detail modal ---------- */
+/* ---------- workspace detail drawer ----------
+   Registry-tab modules (/app/terraform.js) plug into tfTabRenderers and rely on these
+   top-level bindings of the inline script (bare names; const/let are not window props):
+   tfWs, tfWsTab, tfApi(method,url,body)->{ok,data,status}, tfEl, tfE, tfV, t, tx,
+   showToast, showConfirm, svgIcon, tfReloadWs, loadTfWorkspaces, tfErr, tfEmpty,
+   tfBadge, tfDlg, I18N, currentLang (let, 'en'|'id'), langRerenderHooks. */
+const tfTabRenderers = {};
+let tfDirtyGuard = null;
+function tfDrawerOpen() { return tfEl('tfDrawerRoot').classList.contains('open'); }
+async function tfConfirmLeave() {
+  if (!tfDirtyGuard) return true;
+  const ok = await tfDirtyGuard();
+  if (ok) tfDirtyGuard = null;
+  return ok;
+}
+async function tfSwitchTabGuarded(tab) { if (await tfConfirmLeave()) switchTfWsTab(tab); }
 async function openTfWorkspace(id, tab) {
+  if (tfDrawerOpen() && !(await tfConfirmLeave())) return;
   const r = await tfApi('GET', '/api/terraform/workspaces/' + id);
   if (!r.ok) { tfErr(r); return; }
   tfWs = r.data.workspace;
   tfRunId = 0;
-  openModal('tfWsModal');
+  tfShowDrawer();
   switchTfWsTab(tab || 'overview');
 }
-function closeTfWorkspace() {
+function tfShowDrawer() {
+  const root = tfEl('tfDrawerRoot');
+  tfApplyDrawerWide();
+  if (root.hidden) {
+    root.hidden = false;
+    // double rAF so the transition from the hidden state runs
+    requestAnimationFrame(() => requestAnimationFrame(() => root.classList.add('open')));
+  } else {
+    root.classList.add('open');
+  }
+}
+async function closeTfWorkspace() {
+  if (!(await tfConfirmLeave())) return;
   tfStopRunPoll();
-  closeModal('tfWsModal');
+  const root = tfEl('tfDrawerRoot');
+  root.classList.remove('open');
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) root.hidden = true;
+  else setTimeout(() => { if (!root.classList.contains('open')) root.hidden = true; }, 200);
   tfWs = null;
   loadTfWorkspaces();
+}
+function tfToggleDrawerWide() {
+  const drawer = tfEl('tfDrawer');
+  const wide = !drawer.classList.contains('wide');
+  drawer.classList.toggle('wide', wide);
+  localStorage.setItem('pantau_tf_drawer_wide', wide ? '1' : '0');
+  const btn = tfEl('tfDrawerWide');
+  const key = wide ? 'tf_drawer_collapse' : 'tf_drawer_expand';
+  btn.title = t(key, wide ? 'Collapse Drawer' : 'Expand Drawer');
+  btn.setAttribute('aria-label', btn.title);
+  btn.setAttribute('data-i18n-title', key);
+}
+function tfApplyDrawerWide() {
+  if (localStorage.getItem('pantau_tf_drawer_wide') === '1') tfEl('tfDrawer').classList.add('wide');
 }
 async function tfReloadWs() {
   if (!tfWs) return;
@@ -25606,7 +25676,7 @@ function tfRenderWsHead() {
     + (tfWs.environment ? ` <span class="badge">${tfE(tfWs.environment)}</span>` : '')
     + (tfWs.group_name ? ` <span class="badge" style="background:var(--surface-2);border:1px solid var(--card-border);">${svgIcon('folder', 'icon-xs')} ${tfE(tfWs.group_name)}</span>` : '');
 
-  tfEl('tfWsTabs').innerHTML = TF_WS_TABS.map(([k, key]) => `<button type="button" class="tab ${k === tfWsTab ? 'active' : ''}" role="tab" aria-selected="${k === tfWsTab}" onclick="switchTfWsTab('${k}')">${tfE(t(key, k))}</button>`).join('');
+  tfEl('tfWsTabs').innerHTML = TF_WS_TABS.map(([k, key]) => `<button type="button" class="tab ${k === tfWsTab ? 'active' : ''}" role="tab" aria-selected="${k === tfWsTab}" onclick="tfSwitchTabGuarded('${k}')">${tfE(t(key, k))}</button>`).join('');
 }
 function switchTfWsTab(tab) {
   tfStopRunPoll();
@@ -25614,14 +25684,15 @@ function switchTfWsTab(tab) {
   tfRenderWsHead();
   const body = tfEl('tfWsBody');
   body.innerHTML = '';
-  ({ overview: tfRenderOverview, runs: tfRenderRuns, state: tfRenderState, variables: tfRenderVariables, drift: tfRenderDrift, settings: tfRenderSettings })[tab](body);
+  const builtin = { overview: tfRenderOverview, runs: tfRenderRuns, state: tfRenderState, variables: tfRenderVariables, drift: tfRenderDrift };
+  (tfTabRenderers[tab] || builtin[tab] || (b => { b.innerHTML = tfEmpty(t('tf_tab_config_missing', 'Configuration editor unavailable')); }))(body);
 }
 
 /* ---------- overview ---------- */
 async function tfRenderOverview(body) {
   const w = tfWs;
-  body.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
-    <div class="card"><div class="card-title"><span>${tfE(t('tf_tab_overview', 'Overview'))}</span></div>
+  body.innerHTML = `<div class="tf-ov-grid">
+    <div class="card tf-ov-card"><div class="card-title"><span>${tfE(t('tf_tab_overview', 'Overview'))}</span></div>
       <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:var(--fs-xs);">
         <span style="color:var(--text-muted);">${tfE(tx('tfx_environment'))}</span><span>${tfE(w.environment || '—')}</span>
         <span style="color:var(--text-muted);">${tfE(tx('tfx_binary'))}</span><span class="mono">${tfE(w.binary)} ${tfE(w.tf_version || '')}</span>
@@ -25629,18 +25700,25 @@ async function tfRenderOverview(body) {
         <span style="color:var(--text-muted);">${tfE(t('tf_col_resources', 'Resources'))}</span><span>${w.resource_count || 0}</span>
         <span style="color:var(--text-muted);">${tfE(t('tf_col_last_run', 'Last Run'))}</span><span>${w.last_run ? tfBadge(w.last_run.status) + ' #' + w.last_run.id + ' · ' + tfE(tfTime(w.last_run.finished_at)) : '—'}</span>
         <span style="color:var(--text-muted);">${tfE(t('tf_tab_drift', 'Drift'))}</span><span>${w.drift_detected ? `<span class="badge badge-drifted">${tfE(t('tf_drift_detected_alert', 'Drift Detected'))}</span>` : tfE(t('tf_drift_none_alert', 'No drift'))}</span>
+        <span style="color:var(--text-muted);">${tfE(t('tf_ov_cloud', 'Cloud accounts'))}</span><span style="display:flex;gap:4px;flex-wrap:wrap;">${(w.cloud_accounts || []).map(a => `<span class="badge">${tfE(a.name)} (${tfE(a.provider)})</span>`).join('') || '<span style="color:var(--text-muted);">—</span>'}</span>
         ${w.locked ? `<span style="color:var(--text-muted);">${tfE(tx('tfx_lock_card'))}</span><span>${svgIcon('lock', 'icon-xs')} ${tfE(tx('tfx_locked_by', { by: w.locked_by || '' }))} ${tfE(w.lock_reason || '')}</span>` : ''}
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
+      <div class="tf-act-row" style="margin-top:6px;">
         <button type="button" class="btn btn-sm btn-primary" onclick="openTfRunDialog('plan')">${svgIcon('play', 'icon-xs')} ${tfE(t('tf_run_type_plan', 'Plan'))}</button>
         <button type="button" class="btn btn-sm" onclick="openTfRunDialog('refresh')">${svgIcon('refresh-cw', 'icon-xs')} ${tfE(t('tf_run_type_refresh', 'Refresh-only'))}</button>
         <button type="button" class="btn btn-sm btn-danger" onclick="openTfRunDialog('destroy')">${svgIcon('trash-2', 'icon-xs')} ${tfE(t('tf_run_type_destroy', 'Destroy'))}</button>
       </div></div>
-    <div class="card"><div class="card-title"><span>${tfE(tx('tfx_outputs'))}</span>
+    <div class="card tf-ov-card"><div class="card-title"><span>${tfE(tx('tfx_outputs'))}</span>
       <button type="button" class="btn btn-sm" id="tfOutRevealBtn" onclick="tfToggleReveal()">${svgIcon('eye', 'icon-xs')} ${tfE(t('tf_reveal_sensitive', 'Reveal Sensitive'))}</button></div>
-      <div id="tfOutputs"></div></div></div>`;
+      <div id="tfOutputs"></div></div>
+    <div class="card tf-ov-card"><div class="card-title"><span>${tfE(t('tf_drawer_recent_runs', 'Recent Runs'))}</span></div><div id="tfRecentRuns"></div></div></div>`;
   tfOutputsRevealed = false;
   await tfLoadOutputs();
+  const recent = tfEl('tfRecentRuns');
+  if (recent) {
+    const runs = await tfLoadRunList();
+    recent.innerHTML = runs.slice(0, 5).map(x => `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--card-border);font-size:var(--fs-xs);"><span><b>#${x.id}</b> ${tfE(x.type)}</span><span>${tfBadge(x.status)} <span style="color:var(--text-muted);">${tfE(tfTime(x.finished_at || x.created_at))}</span></span></div>`).join('') || tfEmpty(tx('tfx_no_runs'));
+  }
 }
 async function tfLoadOutputs() {
   const r = await tfApi('GET', `/api/terraform/workspaces/${tfWs.id}/outputs${tfOutputsRevealed ? '?reveal=1' : ''}`);
@@ -25705,13 +25783,23 @@ async function startTfRun() {
 }
 async function tfRenderRuns(body) {
   body.innerHTML = `<div style="display:flex;gap:16px;align-items:flex-start;">
-    <div style="width:290px;flex-shrink:0;display:flex;flex-direction:column;gap:8px;">
-      <button type="button" class="btn btn-sm btn-primary" onclick="openTfRunDialog('plan')">${svgIcon('play', 'icon-xs')} ${tfE(t('tf_btn_start_run', 'Start Run'))}</button>
+    <div style="flex:0 1 290px;min-width:220px;display:flex;flex-direction:column;gap:8px;">
+      <div id="tfRunStartBar" style="display:flex;justify-content:center;">
+        <button type="button" id="tfRunStartBtn" class="btn btn-sm btn-primary" onclick="openTfRunDialog('plan')">${svgIcon('play', 'icon-xs')} ${tfE(t('tf_btn_start_run', 'Start Run'))}</button>
+      </div>
       <div id="tfRunList" style="display:flex;flex-direction:column;gap:6px;"></div></div>
     <div id="tfRunDetail" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px;"></div></div>`;
   const runs = await tfLoadRunList();
+  if (!runs.length) {
+    tfRunId = 0;
+    body.innerHTML = `<div class="tf-runs-empty"><div class="tf-runs-empty-icon">${svgIcon('play', 'icon-lg')}</div>
+      <div class="tf-runs-empty-title">${tfE(tx('tfx_no_runs'))}</div>
+      <div class="tf-runs-empty-hint">${tfE(tx('tfx_no_runs_hint'))}</div>
+      <div id="tfRunStartBar"><button type="button" id="tfRunStartBtn" class="btn btn-sm btn-primary" onclick="openTfRunDialog('plan')">${svgIcon('play', 'icon-xs')} ${tfE(t('tf_btn_start_run', 'Start Run'))}</button></div></div>`;
+    return;
+  }
   if (tfRunId) await tfOpenRun(tfRunId);
-  else if (runs.length) await tfOpenRun(runs[0].id);
+  else await tfOpenRun(runs[0].id);
 }
 async function tfLoadRunList() {
   const r = await tfApi('GET', `/api/terraform/workspaces/${tfWs.id}/runs?limit=50`);
@@ -25738,7 +25826,7 @@ async function tfOpenRun(id) {
   if (TF_ACTIVE_RUN.includes(r.data.run.status)) {
     let tick = 0;
     tfRunTimer = setInterval(async () => {
-      if (!tfEl('tfWsModal').classList.contains('open') || tfRunId !== id) { tfStopRunPoll(); return; }
+      if (!tfDrawerOpen() || tfRunId !== id) { tfStopRunPoll(); return; }
       const done = await tfPollLog();
       if (++tick % 3 === 0) tfLoadRunList();
       if (done) { tfStopRunPoll(); await tfOpenRunFinal(id); }
@@ -25827,7 +25915,7 @@ function tfRenderRun(run) {
       <textarea id="tfApprComment" class="form-input" rows="2" style="width:100%;box-sizing:border-box;" placeholder="${tfE(t('tf_approval_comment_ph', ''))}"></textarea>
       ${warn ? tfCheck('tfApprOverride', t('tf_approval_override_policy', 'Override policy warnings'), false) : ''}
       <div id="tfApprErr" role="alert" style="display:none;color:var(--danger);font-size:var(--fs-xs);"></div>
-      <div style="display:flex;gap:8px;"><button type="button" class="btn btn-sm btn-primary" onclick="tfApplyRun(${run.id})">${svgIcon('check', 'icon-xs')} ${tfE(t('tf_btn_confirm_apply', 'Confirm & Apply'))}</button>
+      <div class="tf-act-row"><button type="button" class="btn btn-sm btn-primary" onclick="tfApplyRun(${run.id})">${svgIcon('check', 'icon-xs')} ${tfE(t('tf_btn_confirm_apply', 'Confirm & Apply'))}</button>
       <button type="button" class="btn btn-sm btn-danger" onclick="tfDiscardRun(${run.id})">${svgIcon('x', 'icon-xs')} ${tfE(t('tf_btn_discard_run', 'Discard Run'))}</button></div></div>` : '';
   const decided = run.decision ? `<div class="card" style="gap:4px;font-size:var(--fs-xs);"><b>${tfE(tx('tfx_decision'))}: ${tfE(run.decision)}</b><span>${tfE(run.decision_comment || '')}</span></div>` : '';
   box.innerHTML = `<div class="card" style="gap:8px;">
@@ -26103,26 +26191,6 @@ async function tfCheckDrift() {
 
 /* ---------- settings / VCS ---------- */
 function tfWebhookURL(w) { return w.webhook_url ? location.origin + w.webhook_url : ''; }
-function tfRenderSettings(body) {
-  const w = tfWs;
-  body.innerHTML = `<div style="display:flex;flex-direction:column;gap:16px;">
-    <div class="card"><div class="card-title"><span>${tfE(tx('tfx_vcs'))}</span><button type="button" class="btn btn-sm" onclick="openTfWorkspaceModal(${w.id})">${svgIcon('pencil', 'icon-xs')} ${tfE(tx('tfx_edit'))}</button></div>
-      <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:var(--fs-xs);">
-        <span style="color:var(--text-muted);">${tfE(tx('tfx_source'))}</span><span>${tfE(w.source === 'git' ? tx('tfx_source_git') : tx('tfx_source_inline'))}</span>
-        ${w.source === 'git' ? `<span style="color:var(--text-muted);">${tfE(tx('tfx_git_url'))}</span><span class="mono">${tfE(w.git_url)}</span>
-        <span style="color:var(--text-muted);">${tfE(tx('tfx_git_branch'))}</span><span class="mono">${tfE(w.git_branch || 'default')}</span>
-        <span style="color:var(--text-muted);">${tfE(tx('tfx_git_path'))}</span><span class="mono">${tfE(w.git_path || '/')}</span>
-        <span style="color:var(--text-muted);">${tfE(tx('tfx_git_auth'))}</span><span>${tfE(w.git_auth || 'none')}${w.git_token_set ? ' (' + tfE(tx('tfx_set')) + ')' : ''}</span>` : ''}</div>
-      ${w.source === 'git' ? `<div><button type="button" class="btn btn-sm" onclick="tfVcsTest()">${svgIcon('git-compare', 'icon-xs')} ${tfE(t('tf_vcs_test_btn', 'Test VCS Connection'))}</button> <span id="tfVcsResult" style="font-size:var(--fs-xs);"></span></div>` : ''}</div>
-    <div class="card"><div class="card-title"><span>${tfE(t('tf_webhook_url', 'Webhook URL'))}</span></div>
-      <div style="font-size:var(--fs-xs);color:var(--text-muted);">${tfE(tx('tfx_webhook_hint'))}</div>
-      <div style="display:flex;gap:8px;align-items:center;"><input type="text" id="tfWhUrl" class="form-input mono" readonly style="flex:1;" value="${tfE(tfWebhookURL(w))}" />
-        <button type="button" class="btn btn-icon btn-sm" onclick="tfCopy(tfV('tfWhUrl'))" title="${tfE(tx('tfx_copy'))}">${svgIcon('copy', 'icon-xs')}</button>
-        <button type="button" class="btn btn-sm" onclick="tfRotateWebhook()">${svgIcon('refresh-cw', 'icon-xs')} ${tfE(t('tf_webhook_rotate_btn', 'Rotate Secret'))}</button></div>
-      <div id="tfWhSecret"></div></div>
-    <div class="card" style="border-color:var(--danger-border);"><div class="card-title"><span style="color:var(--danger);">${tfE(tx('tfx_danger_zone'))}</span></div>
-      <div><button type="button" class="btn btn-sm btn-danger" onclick="deleteTfWorkspace(${w.id})">${svgIcon('trash-2', 'icon-xs')} ${tfE(tx('tfx_delete_ws'))}</button></div></div></div>`;
-}
 async function tfVcsTest() {
   const out = tfEl('tfVcsResult');
   out.textContent = '…';
@@ -26390,8 +26458,15 @@ async function deleteTfModule(id) {
 }
 
 // Re-render the grouped lists when the language changes; registered last so every `let` above is initialised.
-langRerenderHooks.push(renderTfWorkspaces, tfRenderWsHead);
+// Registry tabs with unsaved edits are skipped (labels refresh on the next navigation).
+langRerenderHooks.push(renderTfWorkspaces, tfRenderWsHead, () => {
+  if (!tfDrawerOpen()) return;
+  if (tfWsTab === 'config' && window.TfUI && window.TfUI.cfg && window.TfUI.cfg.isDirty && window.TfUI.cfg.isDirty()) return;
+  if (tfWsTab === 'settings' && typeof tfSetDirty === 'function' && tfSetDirty()) return;
+  switchTfWsTab(tfWsTab);
+});
 </script>
+<script src="/app/terraform.js"></script>
 <script src="/app/ansible.js"></script>
 </body>
 </html>

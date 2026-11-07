@@ -1,0 +1,53 @@
+/* Terraform workspace side drawer (docked below the 56px header / above the 36px footer, right side)
+   plus roomier Terraform list panels. Modal dialogs (.modal, z-index 50) must stack above this. */
+.tf-drawer-root { position: fixed; top: 56px; bottom: 36px; left: 0; right: 0; z-index: 42; pointer-events: none; }
+.tf-drawer-root[hidden] { display: none; }
+.tf-drawer-backdrop { position: absolute; inset: 0; background: var(--overlay); opacity: 0; transition: opacity .18s var(--ease); pointer-events: auto; }
+.tf-drawer-root.open .tf-drawer-backdrop { opacity: 1; }
+.tf-drawer { position: absolute; top: 0; bottom: 0; right: 0; width: min(1100px, 94vw); background: var(--card-bg); border-left: 1px solid var(--border-strong); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; transform: translateX(24px); opacity: 0; transition: transform .18s var(--ease), opacity .18s var(--ease), width .18s var(--ease); pointer-events: auto; outline: none; }
+.tf-drawer-root.open .tf-drawer { transform: none; opacity: 1; }
+.tf-drawer.wide { width: calc(100vw - 16px); }
+@media (max-width: 900px) { .tf-drawer, .tf-drawer.wide { width: 100vw; } .tf-drawer-wide { display: none; } }
+
+.tf-drawer-head { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--card-border); flex: none; min-width: 0; }
+.tf-drawer-head h3 { margin: 0; font-size: var(--fs-md); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.tf-drawer-head button { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 1px solid var(--card-border); border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); font: inherit; font-size: var(--fs-sm); cursor: pointer; flex: none; }
+.tf-drawer-head button:hover { color: var(--text); background: var(--hover); }
+
+.tf-drawer-tabs { position: sticky; top: 0; z-index: 1; display: flex; gap: 2px; padding: 0 16px; background: var(--card-bg); border-bottom: 1px solid var(--card-border); flex: none; overflow-x: auto; scrollbar-width: thin; }
+.tf-drawer-tabs button { background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--text-muted); font: inherit; font-size: var(--fs-sm); font-weight: 500; padding: 9px 12px; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+.tf-drawer-tabs button:hover { color: var(--text); }
+.tf-drawer-tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--primary); }
+
+.tf-drawer-body { flex: 1; min-height: 0; overflow: auto; padding: 16px 20px; container-type: inline-size; container-name: tfbody; }
+
+/* Overview tab: column count follows the drawer body width, not the viewport. */
+.tf-ov-grid { display: grid; gap: 14px; grid-template-columns: 1fr; }
+.tf-ov-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: var(--radius); padding: 14px; min-width: 0; }
+@container tfbody (min-width: 640px) { .tf-ov-grid { grid-template-columns: repeat(2, 1fr); } }
+@container tfbody (min-width: 900px) { .tf-ov-grid { grid-template-columns: repeat(3, 1fr); } }
+
+/* Centered action rows (runs tab Start Run, approval gate, overview quick actions). */
+.tf-act-row { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+#tfRunStartBtn { width: 100%; justify-content: center; padding: 8px 22px; }
+.tf-runs-empty { min-height: 60vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; }
+.tf-runs-empty-icon { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); color: var(--text-muted); }
+.tf-runs-empty-title { font-size: var(--fs-lg, 16px); font-weight: 600; }
+.tf-runs-empty-hint { max-width: 380px; font-size: var(--fs-xs); color: var(--text-muted); }
+.tf-runs-empty #tfRunStartBtn { width: auto; padding: 8px 26px; margin-top: 6px; }
+
+/* Roomier panels in the Terraform section; !important only where inline styles force the old layout. */
+#sectionTerraform .grid { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
+#tfVarsetsList, #tfPoliciesList { display: grid !important; grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); gap: 14px !important; }
+#tfPanelWorkspaces > div:first-child > div:first-child { max-width: none !important; }
+
+@media (prefers-reduced-motion: reduce) { .tf-drawer, .tf-drawer-backdrop { transition: none !important; } }
+
+/* Shared panel/table rules still used by the Terraform tabs (removed from index.html in the Ansible redesign). */
+.ans-sched-tbl th, .ans-sched-tbl td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--card-border); vertical-align: middle; }
+.ans-sched-tbl tbody tr:last-child td { border-bottom: 0; }
+.ans-section-panel { flex-direction: column; gap: 16px; min-width: 0; }
+
+/* Workspace list table: fill the width, scroll instead of clipping. */
+#tfWsTableWrap { overflow-x: auto; }
+#tfWsTableWrap table { min-width: 720px; }

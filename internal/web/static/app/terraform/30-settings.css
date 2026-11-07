@@ -1,0 +1,19 @@
+/* Settings tab layout — scoped under .tf-set-grid. */
+.tf-set-grid { display: flex; flex-direction: column; gap: 16px; width: 100%; }
+.tf-set-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.tf-set-card { display: flex; flex-direction: column; gap: 12px; }
+.tf-set-card .card-title { margin-bottom: 0; }
+.tf-set-grid2 { display: grid; grid-template-columns: 1fr; gap: 12px 16px; }
+.tf-set-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.tf-set-foot { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.tf-set-foot-btns { display: flex; gap: 8px; margin-left: auto; }
+.tf-set-dirty { font-size: var(--fs-xs); color: var(--accent); }
+.tf-set-error { font-size: var(--fs-xs); color: var(--danger); }
+.tf-set-danger { border-color: var(--danger-border); }
+
+@container tfbody (min-width: 900px) {
+  .tf-set-grid { display: grid; grid-template-columns: 1fr 1fr; align-items: start; }
+  .tf-set-foot { grid-column: 1 / -1; }
+  .tf-set-grid2 { grid-template-columns: 1fr 1fr; }
+  #tfSetTokenWrap, #tfSetKeyWrap { grid-column: 1 / -1; }
+}

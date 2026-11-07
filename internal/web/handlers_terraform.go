@@ -42,7 +42,7 @@ func decodeTerraformBody(w http.ResponseWriter, r *http.Request, v interface{}) 
 }
 
 // formatWorkspaceResponse formats store.TFWorkspace into the spec WS JSON shape.
-func formatWorkspaceResponse(ws *store.TFWorkspace, includeFiles bool) map[string]interface{} {
+func (s *Server) formatWorkspaceResponse(ws *store.TFWorkspace, includeFiles bool) map[string]interface{} {
 	var tags []string
 	if ws.Tags != "" && ws.Tags != "[]" {
 		_ = json.Unmarshal([]byte(ws.Tags), &tags)
@@ -86,6 +86,12 @@ func formatWorkspaceResponse(ws *store.TFWorkspace, includeFiles bool) map[strin
 		"created_at":             ws.CreatedAt,
 		"updated_at":             ws.UpdatedAt,
 	}
+	ids := ws.CloudAccountIDs
+	if ids == nil {
+		ids = []int64{}
+	}
+	res["cloud_account_ids"] = ids
+	res["cloud_accounts"] = s.cloudAccountRefs(ids)
 
 	if includeFiles {
 		var files map[string]string
@@ -288,7 +294,7 @@ func (s *Server) handleTerraformWorkspaces(w http.ResponseWriter, r *http.Reques
 
 		formatted := make([]map[string]interface{}, 0, len(workspaces))
 		for i := range workspaces {
-			formatted = append(formatted, formatWorkspaceResponse(&workspaces[i], false))
+			formatted = append(formatted, s.formatWorkspaceResponse(&workspaces[i], false))
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"workspaces": formatted,
@@ -311,8 +317,13 @@ func (s *Server) handleTerraformWorkspaces(w http.ResponseWriter, r *http.Reques
 			GitToken             string            `json:"git_token"`
 			GitKeyID             int64             `json:"git_key_id"`
 			DriftIntervalMinutes int               `json:"drift_interval_minutes"`
+			CloudAccountIDs      []int64           `json:"cloud_account_ids"`
 		}
 		if !decodeTerraformBody(w, r, &req) {
+			return
+		}
+		if err := s.checkCloudAccountIDs(req.CloudAccountIDs); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
 
@@ -380,6 +391,7 @@ func (s *Server) handleTerraformWorkspaces(w http.ResponseWriter, r *http.Reques
 			GitToken:             req.GitToken,
 			GitKeyID:             req.GitKeyID,
 			DriftIntervalMinutes: req.DriftIntervalMinutes,
+			CloudAccountIDs:      req.CloudAccountIDs,
 		}
 
 		id, err := s.db.CreateTFWorkspace(ws)
@@ -400,7 +412,7 @@ func (s *Server) handleTerraformWorkspaces(w http.ResponseWriter, r *http.Reques
 
 		logger.Info("terraform", created.Name, fmt.Sprintf("Created workspace %s (id %d)", created.Name, id))
 		writeJSON(w, http.StatusCreated, map[string]interface{}{
-			"workspace": formatWorkspaceResponse(created, true),
+			"workspace": s.formatWorkspaceResponse(created, true),
 		})
 
 	default:
@@ -507,7 +519,7 @@ func (s *Server) handleWorkspaceDetail(w http.ResponseWriter, r *http.Request, w
 	switch r.Method {
 	case http.MethodGet:
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"workspace": formatWorkspaceResponse(ws, true),
+			"workspace": s.formatWorkspaceResponse(ws, true),
 		})
 
 	case http.MethodPut:
@@ -527,9 +539,17 @@ func (s *Server) handleWorkspaceDetail(w http.ResponseWriter, r *http.Request, w
 			GitToken             string            `json:"git_token"`
 			GitKeyID             int64             `json:"git_key_id"`
 			DriftIntervalMinutes int               `json:"drift_interval_minutes"`
+			CloudAccountIDs      *[]int64          `json:"cloud_account_ids"` // nil keeps the stored links
 		}
 		if !decodeTerraformBody(w, r, &req) {
 			return
+		}
+		if req.CloudAccountIDs != nil {
+			if err := s.checkCloudAccountIDs(*req.CloudAccountIDs); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				return
+			}
+			ws.CloudAccountIDs = *req.CloudAccountIDs
 		}
 
 		if req.Name != "" {
@@ -607,7 +627,7 @@ func (s *Server) handleWorkspaceDetail(w http.ResponseWriter, r *http.Request, w
 		}
 		logger.Info("terraform", ws.Name, fmt.Sprintf("Updated workspace %s (id %d)", ws.Name, ws.ID))
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"workspace": formatWorkspaceResponse(updated, true),
+			"workspace": s.formatWorkspaceResponse(updated, true),
 		})
 
 	case http.MethodDelete:
@@ -885,14 +905,14 @@ func (s *Server) handleWorkspaceLock(w http.ResponseWriter, r *http.Request, ws 
 	updated, _ := s.db.GetTFWorkspace(ws.ID)
 	logger.Info("terraform", ws.Name, fmt.Sprintf("Locked workspace %s: %s", ws.Name, req.Reason))
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"workspace": formatWorkspaceResponse(updated, false),
+		"workspace": s.formatWorkspaceResponse(updated, false),
 	})
 }
 
 func (s *Server) handleWorkspaceUnlock(w http.ResponseWriter, r *http.Request, ws *store.TFWorkspace) {
 	if !ws.Locked {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"workspace": formatWorkspaceResponse(ws, false),
+			"workspace": s.formatWorkspaceResponse(ws, false),
 		})
 		return
 	}
@@ -910,7 +930,7 @@ func (s *Server) handleWorkspaceUnlock(w http.ResponseWriter, r *http.Request, w
 	updated, _ := s.db.GetTFWorkspace(ws.ID)
 	logger.Info("terraform", ws.Name, fmt.Sprintf("Unlocked workspace %s", ws.Name))
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"workspace": formatWorkspaceResponse(updated, false),
+		"workspace": s.formatWorkspaceResponse(updated, false),
 	})
 }
 
@@ -929,7 +949,7 @@ func (s *Server) handleWorkspaceForceUnlock(w http.ResponseWriter, r *http.Reque
 	updated, _ := s.db.GetTFWorkspace(ws.ID)
 	logger.Warn("terraform", ws.Name, fmt.Sprintf("Force-unlocked workspace %s: %s", ws.Name, req.Comment))
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"workspace": formatWorkspaceResponse(updated, false),
+		"workspace": s.formatWorkspaceResponse(updated, false),
 	})
 }
 

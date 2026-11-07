@@ -1,0 +1,36 @@
+/* Terraform workspace drawer: Configuration tab (.tf-cfg). Two-pane editor; container queries on .tf-drawer-body. */
+.tf-cfg { display: flex; flex-direction: column; min-height: 100%; }
+.tf-cfg-main { display: grid; grid-template-columns: 1fr; gap: 14px; min-height: 0; flex: 1; }
+@container tfbody (min-width: 700px) { .tf-cfg-main { grid-template-columns: 220px minmax(0, 1fr); } }
+
+.tf-cfg-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.tf-cfg-add { display: flex; gap: 6px; }
+.tf-cfg-add .form-input { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: var(--fs-xs); }
+.tf-cfg-list { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; max-height: 50vh; }
+.tf-cfg-frow { display: flex; align-items: center; gap: 2px; border-radius: var(--radius-sm); }
+.tf-cfg-frow:hover { background: var(--surface-2); }
+.tf-cfg-fbtn { flex: 1; display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 6px 8px; background: transparent; border: 0; border-radius: var(--radius-sm); color: var(--text); font: inherit; font-size: var(--fs-xs); font-family: var(--font-mono); cursor: pointer; text-align: left; }
+.tf-cfg-frow.active { background: var(--surface-3); }
+.tf-cfg-frow.active .tf-cfg-fbtn { font-weight: 600; }
+.tf-cfg-fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tf-cfg-fdel { display: none; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; background: transparent; border: 0; border-radius: var(--radius-sm); color: var(--text-muted); cursor: pointer; flex: none; }
+.tf-cfg-frow:hover .tf-cfg-fdel, .tf-cfg-frow.active .tf-cfg-fdel { display: inline-flex; }
+.tf-cfg-fdel:hover { color: var(--danger); background: var(--surface-2); }
+.tf-cfg-dot { width: 6px; height: 6px; border-radius: 50%; background: transparent; flex: none; }
+.tf-cfg-frow.dirty .tf-cfg-dot { background: var(--accent); }
+
+.tf-cfg-ed { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; }
+.tf-cfg-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tf-cfg-name { font-size: var(--fs-sm); font-weight: 600; }
+.tf-cfg-size { font-size: var(--fs-xs); color: var(--text-muted); }
+.tf-cfg-dirty { color: var(--accent); font-size: var(--fs-xs); }
+.tf-cfg-gap { flex: 1; }
+.tf-cfg-err { padding: 8px 12px; border: 1px solid var(--danger-border, var(--danger)); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--danger); font-size: var(--fs-xs); }
+.tf-cfg-hint { display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: var(--fs-xs); }
+.tf-cfg-edbox { flex: 1; min-height: 360px; border: 1px solid var(--card-border); border-radius: var(--radius); overflow: hidden; }
+.tf-cfg-edbox .CodeMirror { height: 100%; font-family: var(--font-mono); font-size: var(--fs-xs); }
+
+/* Git-source card */
+.tf-cfg-gitcard { display: flex; flex-direction: column; gap: 10px; }
+.tf-cfg-gk { color: var(--text-muted); }
+.tf-cfg-gitbtns { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

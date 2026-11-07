@@ -69,11 +69,12 @@ type TFWorkspace struct {
 	Name                 string              `json:"name"`
 	Description          string              `json:"description"`
 	Environment          string              `json:"environment"`
-	GroupName            string              `json:"group_name"`      // free-text label; "" = ungrouped (cosmetic)
-	Tags                 string              `json:"tags"`            // JSON array string
-	Binary               string              `json:"binary"`          // "terraform" | "tofu"
-	Source               string              `json:"source"`          // "inline" | "git"
-	Files                string              `json:"files,omitempty"` // JSON string
+	GroupName            string              `json:"group_name"`        // free-text label; "" = ungrouped (cosmetic)
+	CloudAccountIDs      []int64             `json:"cloud_account_ids"` // linked tf_cloud_accounts; credentials injected into every run, never nil
+	Tags                 string              `json:"tags"`              // JSON array string
+	Binary               string              `json:"binary"`            // "terraform" | "tofu"
+	Source               string              `json:"source"`            // "inline" | "git"
+	Files                string              `json:"files,omitempty"`   // JSON string
 	GitURL               string              `json:"git_url"`
 	GitBranch            string              `json:"git_branch"`
 	GitPath              string              `json:"git_path"`
@@ -131,18 +132,22 @@ func normalizeTFWorkspace(w *TFWorkspace) {
 func (d *DB) CreateTFWorkspace(w *TFWorkspace) (int64, error) {
 	normalizeTFWorkspace(w)
 	now := time.Now().UTC()
+	cloudIDs, err := marshalCloudAccountIDs(w.CloudAccountIDs)
+	if err != nil {
+		return 0, err
+	}
 	res, err := d.Exec(`
 		INSERT INTO tf_workspaces (
 			name, description, environment, tags, binary, source, files,
 			git_url, git_branch, git_path, git_auth, git_token, git_key_id,
-			webhook_token, webhook_secret, drift_interval_minutes, group_name,
+			webhook_token, webhook_secret, drift_interval_minutes, group_name, cloud_account_ids,
 			lock_reason, locked_by, locked_at, drift_detected, drift_checked_at,
 			tf_version, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		w.Name, w.Description, w.Environment, w.Tags, w.Binary, w.Source, w.Files,
 		w.GitURL, w.GitBranch, w.GitPath, w.GitAuth, w.GitToken, w.GitKeyID,
-		w.WebhookToken, w.WebhookSecret, w.DriftIntervalMinutes, w.GroupName,
+		w.WebhookToken, w.WebhookSecret, w.DriftIntervalMinutes, w.GroupName, cloudIDs,
 		w.LockReason, w.LockedBy, w.LockedAt, boolToInt(w.DriftDetected), w.DriftCheckedAt,
 		w.TFVersion, now, now,
 	)
@@ -167,31 +172,34 @@ func (d *DB) UpdateTFWorkspace(w *TFWorkspace) error {
 	normalizeTFWorkspace(w)
 	now := time.Now().UTC()
 	var res sql.Result
-	var err error
+	cloudIDs, err := marshalCloudAccountIDs(w.CloudAccountIDs)
+	if err != nil {
+		return err
+	}
 	if w.GitAuth == "token" && w.GitToken == "" {
 		// Preserve existing token if empty
 		res, err = d.Exec(`
 			UPDATE tf_workspaces SET
 				name = ?, description = ?, environment = ?, tags = ?, binary = ?, source = ?, files = ?,
 				git_url = ?, git_branch = ?, git_path = ?, git_auth = ?, git_key_id = ?,
-				drift_interval_minutes = ?, group_name = ?, updated_at = ?
+				drift_interval_minutes = ?, group_name = ?, cloud_account_ids = ?, updated_at = ?
 			WHERE id = ?
 		`,
 			w.Name, w.Description, w.Environment, w.Tags, w.Binary, w.Source, w.Files,
 			w.GitURL, w.GitBranch, w.GitPath, w.GitAuth, w.GitKeyID,
-			w.DriftIntervalMinutes, w.GroupName, now, w.ID,
+			w.DriftIntervalMinutes, w.GroupName, cloudIDs, now, w.ID,
 		)
 	} else {
 		res, err = d.Exec(`
 			UPDATE tf_workspaces SET
 				name = ?, description = ?, environment = ?, tags = ?, binary = ?, source = ?, files = ?,
 				git_url = ?, git_branch = ?, git_path = ?, git_auth = ?, git_token = ?, git_key_id = ?,
-				drift_interval_minutes = ?, group_name = ?, updated_at = ?
+				drift_interval_minutes = ?, group_name = ?, cloud_account_ids = ?, updated_at = ?
 			WHERE id = ?
 		`,
 			w.Name, w.Description, w.Environment, w.Tags, w.Binary, w.Source, w.Files,
 			w.GitURL, w.GitBranch, w.GitPath, w.GitAuth, w.GitToken, w.GitKeyID,
-			w.DriftIntervalMinutes, w.GroupName, now, w.ID,
+			w.DriftIntervalMinutes, w.GroupName, cloudIDs, now, w.ID,
 		)
 	}
 	if err != nil {
@@ -230,7 +238,7 @@ func (d *DB) DeleteTFWorkspace(id int64) error {
 const tfWorkspaceCols = `
 	w.id, w.name, w.description, w.environment, w.tags, w.binary, w.source, %s,
 	w.git_url, w.git_branch, w.git_path, w.git_auth, w.git_token, w.git_key_id,
-	w.webhook_token, w.webhook_secret, w.drift_interval_minutes, w.group_name,
+	w.webhook_token, w.webhook_secret, w.drift_interval_minutes, w.group_name, w.cloud_account_ids,
 	w.lock_reason, w.locked_by, w.locked_at, w.drift_detected, w.drift_checked_at,
 	w.tf_version, w.created_at, w.updated_at
 `
@@ -239,11 +247,11 @@ func scanTFWorkspace(sc rowScanner, withFiles bool) (*TFWorkspace, error) {
 	var w TFWorkspace
 	var lockedAt, driftCheckedAt sql.NullTime
 	var driftDetectedInt int
-	var files string
+	var files, cloudIDs string
 	dest := []any{
 		&w.ID, &w.Name, &w.Description, &w.Environment, &w.Tags, &w.Binary, &w.Source, &files,
 		&w.GitURL, &w.GitBranch, &w.GitPath, &w.GitAuth, &w.GitToken, &w.GitKeyID,
-		&w.WebhookToken, &w.WebhookSecret, &w.DriftIntervalMinutes, &w.GroupName,
+		&w.WebhookToken, &w.WebhookSecret, &w.DriftIntervalMinutes, &w.GroupName, &cloudIDs,
 		&w.LockReason, &w.LockedBy, &lockedAt, &driftDetectedInt, &driftCheckedAt,
 		&w.TFVersion, &w.CreatedAt, &w.UpdatedAt,
 	}
@@ -253,6 +261,7 @@ func scanTFWorkspace(sc rowScanner, withFiles bool) (*TFWorkspace, error) {
 	if withFiles {
 		w.Files = files
 	}
+	w.CloudAccountIDs = unmarshalCloudAccountIDs(cloudIDs)
 	w.GitTokenSet = w.GitToken != ""
 	w.WebhookEnabled = w.WebhookToken != ""
 	w.Locked = w.LockedBy != ""

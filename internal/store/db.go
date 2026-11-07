@@ -561,6 +561,18 @@ func (d *DB) migrate() error {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+	CREATE TABLE IF NOT EXISTS tf_cloud_accounts (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+		provider TEXT NOT NULL,
+		description TEXT NOT NULL DEFAULT '',
+		fields TEXT NOT NULL DEFAULT '{}',
+		verified_at DATETIME,
+		verify_ok INTEGER NOT NULL DEFAULT 0,
+		verify_msg TEXT NOT NULL DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
 	CREATE TABLE IF NOT EXISTS tf_varsets (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -670,6 +682,7 @@ func (d *DB) migrate() error {
 		_ = d.alterAddColumn("ansible_playbooks", col, typ)
 	}
 	_ = d.alterAddColumn("tf_workspaces", "group_name", "TEXT NOT NULL DEFAULT ''")
+	_ = d.alterAddColumn("tf_workspaces", "cloud_account_ids", "TEXT NOT NULL DEFAULT '[]'")
 	if err := d.migrateAnsibleBundles(); err != nil {
 		return fmt.Errorf("migrate ansible bundles: %w", err)
 	}
@@ -1570,8 +1583,23 @@ type SnapshotTFWorkspace struct {
 	WebhookSecret        string    `json:"webhook_secret"`
 	DriftIntervalMinutes int       `json:"drift_interval_minutes"`
 	GroupName            string    `json:"group_name,omitempty"`
+	CloudAccountIDs      []int64   `json:"cloud_account_ids,omitempty"`
 	CreatedAt            time.Time `json:"created_at"`
 	UpdatedAt            time.Time `json:"updated_at"`
+}
+
+// SnapshotTFCloudAccount stores a cloud account for backup and restore.
+type SnapshotTFCloudAccount struct {
+	ID          int64             `json:"id"`
+	Name        string            `json:"name"`
+	Provider    string            `json:"provider"`
+	Description string            `json:"description"`
+	Fields      map[string]string `json:"fields"` // plaintext in SQLite; included in encrypted snapshot
+	VerifiedAt  *time.Time        `json:"verified_at,omitempty"`
+	VerifyOK    bool              `json:"verify_ok"`
+	VerifyMsg   string            `json:"verify_message"`
+	CreatedAt   time.Time         `json:"created_at"`
+	UpdatedAt   time.Time         `json:"updated_at"`
 }
 
 // SnapshotTFVariable stores variable declarations for backup and restore.
@@ -1642,25 +1670,26 @@ type SnapshotTFState struct {
 
 // SnapshotPayload holds the sanitized system configuration for backup and restore.
 type SnapshotPayload struct {
-	Version             int                         `json:"version"`
-	CreatedAt           time.Time                   `json:"created_at"`
-	Settings            map[string]string           `json:"settings"`
-	Hosts               []Host                      `json:"hosts"`
-	DesiredRules        []DesiredRule               `json:"desired_rules"`
-	TerminalPresets     []TerminalPreset            `json:"terminal_presets,omitempty"`
-	SSHKeys             []SnapshotSSHKey            `json:"ssh_keys,omitempty"`
-	KubeClusters        []SnapshotKubeCluster       `json:"kube_clusters,omitempty"`
-	CloudflareAccounts  []SnapshotCloudflareAccount `json:"cloudflare_accounts,omitempty"`
-	AnsiblePlaybooks    []SnapshotAnsiblePlaybook   `json:"ansible_playbooks,omitempty"`
-	AnsibleProjects     []SnapshotAnsibleProject    `json:"ansible_projects,omitempty"` // read-only legacy, see SnapshotAnsibleProject
-	AnsibleSchedules    []AnsibleSchedule           `json:"ansible_schedules,omitempty"`
-	AnsibleAssets       []SnapshotAnsibleAsset      `json:"ansible_assets,omitempty"`
-	TerraformWorkspaces []SnapshotTFWorkspace       `json:"terraform_workspaces,omitempty"`
-	TerraformVariables  []SnapshotTFVariable        `json:"terraform_variables,omitempty"`
-	TerraformVarsets    []SnapshotTFVarset          `json:"terraform_varsets,omitempty"`
-	TerraformPolicies   []SnapshotTFPolicy          `json:"terraform_policies,omitempty"`
-	TerraformModules    []SnapshotTFModule          `json:"terraform_modules,omitempty"`
-	TerraformStates     []SnapshotTFState           `json:"terraform_states,omitempty"`
+	Version                int                         `json:"version"`
+	CreatedAt              time.Time                   `json:"created_at"`
+	Settings               map[string]string           `json:"settings"`
+	Hosts                  []Host                      `json:"hosts"`
+	DesiredRules           []DesiredRule               `json:"desired_rules"`
+	TerminalPresets        []TerminalPreset            `json:"terminal_presets,omitempty"`
+	SSHKeys                []SnapshotSSHKey            `json:"ssh_keys,omitempty"`
+	KubeClusters           []SnapshotKubeCluster       `json:"kube_clusters,omitempty"`
+	CloudflareAccounts     []SnapshotCloudflareAccount `json:"cloudflare_accounts,omitempty"`
+	AnsiblePlaybooks       []SnapshotAnsiblePlaybook   `json:"ansible_playbooks,omitempty"`
+	AnsibleProjects        []SnapshotAnsibleProject    `json:"ansible_projects,omitempty"` // read-only legacy, see SnapshotAnsibleProject
+	AnsibleSchedules       []AnsibleSchedule           `json:"ansible_schedules,omitempty"`
+	AnsibleAssets          []SnapshotAnsibleAsset      `json:"ansible_assets,omitempty"`
+	TerraformWorkspaces    []SnapshotTFWorkspace       `json:"terraform_workspaces,omitempty"`
+	TerraformCloudAccounts []SnapshotTFCloudAccount    `json:"terraform_cloud_accounts,omitempty"`
+	TerraformVariables     []SnapshotTFVariable        `json:"terraform_variables,omitempty"`
+	TerraformVarsets       []SnapshotTFVarset          `json:"terraform_varsets,omitempty"`
+	TerraformPolicies      []SnapshotTFPolicy          `json:"terraform_policies,omitempty"`
+	TerraformModules       []SnapshotTFModule          `json:"terraform_modules,omitempty"`
+	TerraformStates        []SnapshotTFState           `json:"terraform_states,omitempty"`
 }
 
 func (d *DB) IsFresh() (bool, error) {
@@ -1800,14 +1829,25 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 	}
 
 	var allTFWorkspaces []SnapshotTFWorkspace
-	wsRows, err := d.Query(`SELECT id, name, description, environment, tags, binary, source, files, git_url, git_branch, git_path, git_auth, git_token, git_key_id, webhook_token, webhook_secret, drift_interval_minutes, group_name, created_at, updated_at FROM tf_workspaces ORDER BY id ASC`)
+	wsRows, err := d.Query(`SELECT id, name, description, environment, tags, binary, source, files, git_url, git_branch, git_path, git_auth, git_token, git_key_id, webhook_token, webhook_secret, drift_interval_minutes, group_name, cloud_account_ids, created_at, updated_at FROM tf_workspaces ORDER BY id ASC`)
 	if err == nil {
 		defer wsRows.Close()
 		for wsRows.Next() {
 			var w SnapshotTFWorkspace
-			if err := wsRows.Scan(&w.ID, &w.Name, &w.Description, &w.Environment, &w.Tags, &w.Binary, &w.Source, &w.Files, &w.GitURL, &w.GitBranch, &w.GitPath, &w.GitAuth, &w.GitToken, &w.GitKeyID, &w.WebhookToken, &w.WebhookSecret, &w.DriftIntervalMinutes, &w.GroupName, &w.CreatedAt, &w.UpdatedAt); err == nil {
+			var cloudIDs string
+			if err := wsRows.Scan(&w.ID, &w.Name, &w.Description, &w.Environment, &w.Tags, &w.Binary, &w.Source, &w.Files, &w.GitURL, &w.GitBranch, &w.GitPath, &w.GitAuth, &w.GitToken, &w.GitKeyID, &w.WebhookToken, &w.WebhookSecret, &w.DriftIntervalMinutes, &w.GroupName, &cloudIDs, &w.CreatedAt, &w.UpdatedAt); err == nil {
+				w.CloudAccountIDs = unmarshalCloudAccountIDs(cloudIDs)
 				allTFWorkspaces = append(allTFWorkspaces, w)
 			}
+		}
+	}
+	var allTFCloudAccounts []SnapshotTFCloudAccount
+	if accts, err := d.ListTFCloudAccounts(); err == nil {
+		for _, a := range accts {
+			allTFCloudAccounts = append(allTFCloudAccounts, SnapshotTFCloudAccount{
+				ID: a.ID, Name: a.Name, Provider: a.Provider, Description: a.Description, Fields: a.Fields,
+				VerifiedAt: a.VerifiedAt, VerifyOK: a.VerifyOK, VerifyMsg: a.VerifyMsg, CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt,
+			})
 		}
 	}
 	var allTFVariables []SnapshotTFVariable
@@ -1897,24 +1937,25 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 	}
 
 	return &SnapshotPayload{
-		Version:             1,
-		CreatedAt:           time.Now().UTC(),
-		Settings:            settings,
-		Hosts:               hosts,
-		DesiredRules:        allRules,
-		TerminalPresets:     allPresets,
-		SSHKeys:             allSSHKeys,
-		KubeClusters:        allClusters,
-		CloudflareAccounts:  allCFAccounts,
-		AnsiblePlaybooks:    allPlaybooks,
-		AnsibleSchedules:    allSchedules,
-		AnsibleAssets:       allAssets,
-		TerraformWorkspaces: allTFWorkspaces,
-		TerraformVariables:  allTFVariables,
-		TerraformVarsets:    allTFVarsets,
-		TerraformPolicies:   allTFPolicies,
-		TerraformModules:    allTFModules,
-		TerraformStates:     allTFStates,
+		Version:                1,
+		CreatedAt:              time.Now().UTC(),
+		Settings:               settings,
+		Hosts:                  hosts,
+		DesiredRules:           allRules,
+		TerminalPresets:        allPresets,
+		SSHKeys:                allSSHKeys,
+		KubeClusters:           allClusters,
+		CloudflareAccounts:     allCFAccounts,
+		AnsiblePlaybooks:       allPlaybooks,
+		AnsibleSchedules:       allSchedules,
+		AnsibleAssets:          allAssets,
+		TerraformWorkspaces:    allTFWorkspaces,
+		TerraformCloudAccounts: allTFCloudAccounts,
+		TerraformVariables:     allTFVariables,
+		TerraformVarsets:       allTFVarsets,
+		TerraformPolicies:      allTFPolicies,
+		TerraformModules:       allTFModules,
+		TerraformStates:        allTFStates,
 	}, nil
 }
 
@@ -1933,7 +1974,7 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 		"alerts", "incidents", "actual_items", "desired_rules", "hosts", "terminal_presets",
 		"ssh_keys", "kube_clusters", "cloudflare_accounts",
 		"ansible_runs", "ansible_schedules", "ansible_playbooks", "ansible_assets",
-		"tf_runs", "tf_state_versions", "tf_variables", "tf_varset_workspaces", "tf_varsets", "tf_policies", "tf_module_versions", "tf_modules", "tf_workspaces",
+		"tf_runs", "tf_state_versions", "tf_variables", "tf_varset_workspaces", "tf_varsets", "tf_policies", "tf_module_versions", "tf_modules", "tf_workspaces", "tf_cloud_accounts",
 	}
 	for _, t := range tables {
 		if _, err := tx.Exec("DELETE FROM " + t); err != nil {
@@ -2063,17 +2104,32 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 			p.ID, hid, p.Name, p.Command, p.SortOrder, useTmuxInt)
 	}
 
+	for _, a := range payload.TerraformCloudAccounts {
+		fields, err := marshalCloudFields(a.Fields)
+		if err != nil {
+			return fmt.Errorf("encode tf cloud account %d: %w", a.ID, err)
+		}
+		_, err = tx.Exec(`INSERT INTO tf_cloud_accounts (id, name, provider, description, fields, verified_at, verify_ok, verify_msg, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			a.ID, a.Name, a.Provider, a.Description, fields, a.VerifiedAt, boolToInt(a.VerifyOK), a.VerifyMsg, a.CreatedAt, a.UpdatedAt)
+		if err != nil {
+			return fmt.Errorf("insert tf cloud account %d: %w", a.ID, err)
+		}
+	}
 	for _, w := range payload.TerraformWorkspaces {
-		_, err := tx.Exec(`
+		cloudIDs, err := marshalCloudAccountIDs(w.CloudAccountIDs)
+		if err != nil {
+			return fmt.Errorf("encode tf workspace %d cloud accounts: %w", w.ID, err)
+		}
+		_, err = tx.Exec(`
 			INSERT INTO tf_workspaces (
 				id, name, description, environment, tags, binary, source, files,
 				git_url, git_branch, git_path, git_auth, git_token, git_key_id,
-				webhook_token, webhook_secret, drift_interval_minutes, group_name, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				webhook_token, webhook_secret, drift_interval_minutes, group_name, cloud_account_ids, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`,
 			w.ID, w.Name, w.Description, w.Environment, w.Tags, w.Binary, w.Source, w.Files,
 			w.GitURL, w.GitBranch, w.GitPath, w.GitAuth, w.GitToken, w.GitKeyID,
-			w.WebhookToken, w.WebhookSecret, w.DriftIntervalMinutes, w.GroupName, w.CreatedAt, w.UpdatedAt,
+			w.WebhookToken, w.WebhookSecret, w.DriftIntervalMinutes, w.GroupName, cloudIDs, w.CreatedAt, w.UpdatedAt,
 		)
 		if err != nil {
 			return fmt.Errorf("insert tf workspace %d: %w", w.ID, err)

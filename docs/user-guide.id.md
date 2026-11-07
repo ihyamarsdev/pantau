@@ -821,6 +821,8 @@ Workspace merepresentasikan satu unit environment infrastruktur yang terisolasi 
      - **Repositori Git**: Masukkan URL repositori (`https://` atau `ssh://`), nama branch target, direktori kerja di dalam repositori (bawaan: root), serta kredensial (token atau kunci SSH dari Library).
 3. Workspace dialokasikan direktori kerja privat di server Pantau (`<DataRoot>/terraform/<workspaceID>`) dengan izin direktori ketat `0700`.
 
+Mengklik kartu atau baris workspace membuka workspace tersebut di **side drawer** yang menempel di sisi kanan (pola yang sama dengan drawer Ansible) dengan tab **Overview**, **Configuration**, **Runs**, **State**, **Variables**, **Drift**, dan **Settings**. Berkas dan pengaturan disunting langsung di tempat: tab **Configuration** menyunting berkas inline di editor kode (tambah/hapus berkas, `Ctrl+S`, Save & plan; workspace Git membuka Git editor) dan tab **Settings** menyunting nama, grup, environment, tag, biner, interval drift, dan koneksi Git secara langsung. Tombol perluas memperlebar drawer hingga hampir memenuhi layar (pilihannya diingat); **Esc**, latar belakang (backdrop), atau tombol tutup menutupnya.
+
 #### Pengelompokan & Organisasi Workspace
 
 Workspace dapat dikelompokkan ke dalam bagian visual yang dimodelkan mengikuti Host Group:
@@ -879,6 +881,25 @@ Kelola variabel konfigurasi secara teratur tanpa memasukkan nilai langsung ke da
 - **Nilai Sensitif**: Variabel yang ditandai sensitif bersifat *write-only*. Nilainya disensor sebagai string `(sensitive)` pada log eksekusi, tidak pernah dikembalikan ke respons API JSON (`json:"-"`), dan disembunyikan di antarmuka web.
 - **Variable Sets**: Kelompokkan variabel terkait (misal: *Kredensial Cloud Produksi*, *Konfigurasi DNS Global*) lalu kaitkan ke beberapa workspace sekaligus, atau jadikan **Global** agar berlaku otomatis ke seluruh workspace.
 - **Prioritas Resolusi**: Variabel level Workspace menimpa variabel dari Variable Set yang terhubung, yang mana menimpa Variable Set Global.
+
+#### Akun Cloud
+
+Daftarkan kredensial provider sekali, lalu setiap run workspace memakainya tanpa menyalin kunci ke variabel workspace.
+1. Buka **Terraform → Akun Cloud** dan klik **Akun baru**. Pilih provider (AWS, Google Cloud, Microsoft Azure, DigitalOcean, Hetzner), beri nama, lalu isi kolom kredensial.
+2. Klik **Test connection** pada akun. Pantau memverifikasi kredensial ke API provider: AWS `sts:GetCallerIdentity`, token service account Google Cloud + pengecekan project, token client-credentials Azure, DigitalOcean `/v2/account`, Hetzner `/v1/servers`. Hasil (dan identitas yang ditemukan) tampil pada akun.
+3. Buka drawer workspace → **Settings** → kartu **Cloud accounts** lalu centang akun yang ingin dihubungkan. Satu workspace dapat menghubungkan beberapa akun; menghapus akun otomatis melepas tautannya di semua workspace.
+4. Setiap run workspace yang terhubung (plan, apply, drift, webhook, operasi state, estimasi biaya) menerima kredensial sebagai variabel lingkungan:
+
+| Provider | Variabel lingkungan |
+|---|---|
+| AWS | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_DEFAULT_REGION` + `AWS_REGION` (default `us-east-1`) |
+| Google Cloud | `GOOGLE_PROJECT` + `GOOGLE_CLOUD_PROJECT`, `GOOGLE_REGION`, `GOOGLE_CREDENTIALS` (JSON service account) |
+| Microsoft Azure | `ARM_SUBSCRIPTION_ID`, `ARM_TENANT_ID`, `ARM_CLIENT_ID`, `ARM_CLIENT_SECRET` |
+| DigitalOcean | `DIGITALOCEAN_TOKEN` |
+| Hetzner | `HCLOUD_TOKEN` |
+
+- **Prioritas**: bila beberapa akun terhubung, akun dengan id lebih besar menang saat bentrok; variabel `env` milik workspace dan Variable Set menimpa nilai dari akun cloud.
+- **Keamanan**: kredensial disimpan di database Pantau, tidak pernah dikembalikan oleh API (kolom rahasia tampil "stored"; kosongkan kolom rahasia saat mengedit untuk mempertahankannya), ikut dalam backup snapshot terenkripsi, dan disensor di log run. Hanya kredensial statis yang didukung (tanpa OIDC / workload identity).
 
 #### Panel Outputs
 
