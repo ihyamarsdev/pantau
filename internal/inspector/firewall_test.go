@@ -198,6 +198,11 @@ func TestFirewallRuleValidation(t *testing.T) {
 		{Backend: "firewalld", Action: "add", Rule: &FirewallRule{Zone: "pub lic", Kind: "service", Value: "http"}},                                                                                 // bad zone
 		{Backend: "firewalld", Action: "add", Rule: &FirewallRule{Zone: "public", Kind: "rich", Value: "reject all"}},                                                                               // not a rule
 		{Backend: "firewalld", Action: "edit", Rule: &FirewallRule{Zone: "public", Kind: "service", Value: "http"}, Old: &FirewallRule{Zone: "public", Kind: "service", Value: "http", Raw: "http"}},
+		{Backend: "firewalld", Action: "add-zone"},                                                   // missing rule
+		{Backend: "firewalld", Action: "add-zone", Rule: &FirewallRule{Zone: "toolongzone12345678"}}, // 18 chars (>17)
+		{Backend: "firewalld", Action: "add-zone", Rule: &FirewallRule{Zone: "bad name!"}},           // bad chars
+		{Backend: "ufw", Action: "add-zone", Rule: &FirewallRule{Zone: "dmz"}},                       // wrong backend
+		{Backend: "iptables", Action: "add-zone", Rule: &FirewallRule{Zone: "dmz"}},                  // wrong backend
 		{Backend: "iptables", Action: "add", Rule: &FirewallRule{Chain: "DOCKER", Action: "ACCEPT", Proto: "tcp", Port: "80"}},
 		{Backend: "iptables", Action: "add", Rule: &FirewallRule{Chain: "INPUT", Action: "ACCEPT"}},              // matches everything
 		{Backend: "iptables", Action: "add", Rule: &FirewallRule{Chain: "INPUT", Action: "ACCEPT", Port: "80"}},  // port w/o proto
@@ -243,6 +248,14 @@ func TestFirewallSteps_Content(t *testing.T) {
 		Rule: &FirewallRule{Zone: "public", Kind: "rich", Value: `rule family="ipv4" source address="1.2.3.4" reject'; reboot; '`}}, 22)
 	if err != nil || !strings.Contains(steps[0], `'--add-rich-rule=rule family="ipv4" source address="1.2.3.4" reject'\''; reboot; '\'''`) {
 		t.Errorf("rich rule quoting: %v %q", err, steps)
+	}
+
+	// firewalld add-zone: check exists, create new-zone, reload.
+	steps, _, err = buildFirewallSteps(FirewallRequest{Backend: "firewalld", Action: "add-zone", Rule: &FirewallRule{Zone: "custom-dmz"}}, 22)
+	if err != nil || len(steps) != 3 ||
+		!strings.Contains(steps[0], "'--permanent' '--get-zones'") || !strings.Contains(steps[0], "grep -qxF -- 'custom-dmz'") ||
+		!strings.Contains(steps[1], "'--new-zone=custom-dmz'") || !strings.Contains(steps[2], "'--reload'") {
+		t.Errorf("firewalld add-zone: %v %q", err, steps)
 	}
 }
 
@@ -335,5 +348,38 @@ func TestFirewallScript_UfwGuardRunsAgainstRealShell(t *testing.T) {
 	calls, res = runFakeUfw(t, FirewallRequest{Backend: "ufw", Action: "edit", Old: &stale, Rule: &FirewallRule{Action: "allow", Port: "8080", Proto: "tcp"}})
 	if res.Succeeded() || calls != "" {
 		t.Fatalf("edit of a stale rule must not add anything: res=%+v calls=%q", res, calls)
+	}
+}
+
+// The duplicate-zone guard must match whole names: "dmz" is free when only "dmz-web" exists.
+func TestFirewallScript_AddZoneDuplicateCheckRunsAgainstRealShell(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "calls")
+	fake := "#!/bin/sh\n[ \"$1 $2\" = \"--permanent --get-zones\" ] && { echo 'public dmz-web trusted'; exit 0; }\necho \"$@\" >> " + log + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "firewall-cmd"), []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sudo"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run := func(zone string) (string, *FirewallActionResult) {
+		_ = os.Remove(log)
+		steps, _, err := buildFirewallSteps(FirewallRequest{Backend: "firewalld", Action: "add-zone", Rule: &FirewallRule{Zone: zone}}, 22)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("sh", "-c", firewallActionScript(steps))
+		cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"))
+		out, _ := cmd.Output()
+		res := &FirewallActionResult{}
+		parseFirewallActionOutput(string(out), res)
+		b, _ := os.ReadFile(log)
+		return string(b), res
+	}
+	if calls, res := run("dmz"); !res.Succeeded() || calls != "--permanent --new-zone=dmz\n--reload\n" {
+		t.Errorf("dmz is not a duplicate of dmz-web: res=%+v calls=%q", res, calls)
+	}
+	if calls, res := run("dmz-web"); res.ExitCode != 3 || calls != "" || !strings.Contains(res.Output, "already exists") {
+		t.Errorf("existing zone must be refused: res=%+v calls=%q", res, calls)
 	}
 }

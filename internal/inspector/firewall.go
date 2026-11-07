@@ -334,6 +334,7 @@ func ufwRuleArgs(r FirewallRule) ([]string, error) {
 
 var (
 	fwdNameRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
+	fwdZoneRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,17}$`)
 	fwdPortRe = regexp.MustCompile(`^(\d{1,5})(?:-(\d{1,5}))?/(tcp|udp|sctp|dccp)$`)
 )
 
@@ -795,6 +796,19 @@ func buildFirewallSteps(req FirewallRequest, ssh int) ([]string, time.Duration, 
 			steps = enable
 		case "disable":
 			steps = []string{sc("systemctl", "disable", "--now", "firewalld")}
+		case "add-zone":
+			if err := needRule(); err != nil {
+				return nil, 0, err
+			}
+			zone := req.Rule.Zone
+			if !fwdZoneRe.MatchString(zone) {
+				return nil, 0, fwInvalid("zone name is invalid (must be 1-17 alphanumeric, underscore, dot, or dash chars)")
+			}
+			steps = []string{
+				fc("--permanent", "--get-zones") + ` | tr ' ' '\n' | grep -qxF -- ` + shellQuote(zone) + ` && { echo "zone already exists"; exit 3; } || true`,
+				fc("--permanent", "--new-zone="+zone),
+				fc("--reload"),
+			}
 		case "add", "edit", "delete":
 			if req.Action != "delete" {
 				if err := needRule(); err != nil {

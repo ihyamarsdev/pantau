@@ -502,4 +502,23 @@ func TestSecurityAPI_Firewall(t *testing.T) {
 	if code != 200 || res["ok"] != true || len(scripts) != 1 || !strings.Contains(scripts[0], "8080") && strings.Contains(scripts[0], "ufw") {
 		t.Fatalf("add rule: %d %+v scripts=%q", code, res, scripts)
 	}
+
+	// Test add-zone action via API
+	scripts = nil
+	code, res = call(http.MethodPost, "/action", `{"backend":"firewalld","action":"add-zone","rule":{"zone":"custom-dmz"}}`)
+	if code != 200 || res["ok"] != true || len(scripts) != 1 || !strings.Contains(scripts[0], "new-zone=custom-dmz") {
+		t.Fatalf("add-zone: %d %+v scripts=%q", code, res, scripts)
+	}
+
+	// Invalid zone name (>17 chars) returns 400
+	code, _ = call(http.MethodPost, "/action", `{"backend":"firewalld","action":"add-zone","rule":{"zone":"zone-name-is-too-long"}}`)
+	if code != http.StatusBadRequest {
+		t.Errorf("too long zone name: want 400, got %d", code)
+	}
+
+	// Wrong backend returns 400
+	code, _ = call(http.MethodPost, "/action", `{"backend":"ufw","action":"add-zone","rule":{"zone":"custom-dmz"}}`)
+	if code != http.StatusBadRequest {
+		t.Errorf("add-zone on ufw: want 400, got %d", code)
+	}
 }
