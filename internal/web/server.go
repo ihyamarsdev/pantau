@@ -226,6 +226,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/app/ansible.css", serveAppBundle("ansible", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/terraform.css", serveAppBundle("terraform", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/terraform.js", serveAppBundle("terraform", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/firewall.js", serveAppBundle("firewall", ".js", "text/javascript; charset=utf-8"))
 
 	// Vendor static assets (airgapped / local cache)
 	vendorHandler := http.StripPrefix("/vendor/", http.FileServer(http.FS(vendorFS())))

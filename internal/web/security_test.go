@@ -446,3 +446,60 @@ func TestSecuritySettings(t *testing.T) {
 		t.Errorf("expected non-numeric to default to '24', got %q", got)
 	}
 }
+
+func TestSecurityAPI_Firewall(t *testing.T) {
+	srv, db, _, mock, authReq := setupSecurityTestServer(t)
+	hostID, err := db.CreateHost(&store.Host{Name: "fw", Host: "10.0.0.9", Port: 22, User: "root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var scripts []string
+	mock.DefaultExec = func(cmd string) (string, string, int, error) {
+		scripts = append(scripts, cmd)
+		if strings.Contains(cmd, "===UFW_NUM===") {
+			return "===MODE:root===\n===OS:Linux===\n===HAVE:ufw ===\n===UFW===\nStatus: active\nDefault: deny (incoming), allow (outgoing), disabled (routed)\n" +
+				"===UFW_NUM===\nStatus: active\n\n     To                         Action      From\n     --                         ------      ----\n[ 1] 80/tcp                     ALLOW IN    Anywhere\n", "", 0, nil
+		}
+		return "===MODE:root===\nRule added\n===EXIT:0===\n", "", 0, nil
+	}
+	call := func(method, path, body string) (int, map[string]interface{}) {
+		req := httptest.NewRequest(method, fmt.Sprintf("/api/hosts/%d/security/firewall%s", hostID, path), strings.NewReader(body))
+		authReq(req)
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+		var res map[string]interface{}
+		_ = json.NewDecoder(w.Body).Decode(&res)
+		return w.Code, res
+	}
+
+	code, res := call(http.MethodGet, "", "")
+	fw, _ := res["firewall"].(map[string]interface{})
+	backends, _ := fw["backends"].([]interface{})
+	if code != 200 || res["ok"] != true || len(backends) != 3 {
+		t.Fatalf("GET firewall: %d %+v", code, res)
+	}
+	ufw := backends[0].(map[string]interface{})
+	if ufw["active"] != true || len(ufw["rules"].([]interface{})) != 1 {
+		t.Fatalf("ufw state: %+v", ufw)
+	}
+
+	// Protected (SSH port allow), invalid (injection in port) and malformed bodies never reach the host.
+	scripts = nil
+	if code, _ = call(http.MethodPost, "/action", `{"backend":"ufw","action":"delete","old":{"index":1,"action":"allow","direction":"in","port":"22","proto":"tcp","raw":"22/tcp ALLOW IN Anywhere"}}`); code != http.StatusForbidden {
+		t.Errorf("deleting the SSH allow rule: want 403, got %d", code)
+	}
+	if code, _ = call(http.MethodPost, "/action", `{"backend":"ufw","action":"add","rule":{"action":"allow","port":"80; reboot"}}`); code != http.StatusBadRequest {
+		t.Errorf("injected port: want 400, got %d", code)
+	}
+	if code, _ = call(http.MethodPost, "/action", `{`); code != http.StatusBadRequest {
+		t.Errorf("malformed body: want 400, got %d", code)
+	}
+	if len(scripts) != 0 {
+		t.Fatalf("rejected requests must not run anything on the host, ran %d scripts", len(scripts))
+	}
+
+	code, res = call(http.MethodPost, "/action", `{"backend":"ufw","action":"add","rule":{"action":"allow","port":"8080","proto":"tcp"}}`)
+	if code != 200 || res["ok"] != true || len(scripts) != 1 || !strings.Contains(scripts[0], "8080") && strings.Contains(scripts[0], "ufw") {
+		t.Fatalf("add rule: %d %+v scripts=%q", code, res, scripts)
+	}
+}

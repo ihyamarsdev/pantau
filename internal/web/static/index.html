@@ -12785,7 +12785,7 @@ async function loadSecurityTab() {
         <div style="font-weight: 600; margin-bottom: 4px; display: inline-flex; align-items: center; gap: 6px;">${svgIcon('alert-triangle', 'icon-sm')} <span>${t('sec_scan_failed', 'Security scan failed')}</span></div>
         <div style="font-size: 0.82rem; font-family: var(--font-mono);">${escapeHtml(e.message)}</div>
       </div>`;
-    content.insertAdjacentHTML('beforeend', securityExposureHtml());
+    appendSecurityFooter(content);
     return;
   }
 
@@ -12804,7 +12804,7 @@ async function loadSecurityTab() {
         <div style="font-weight: 600; margin-bottom: 4px; display: inline-flex; align-items: center; gap: 6px;">${svgIcon('alert-triangle', 'icon-sm')} <span>${t('sec_scan_failed', 'Security scan failed')}</span></div>
         <div style="font-size: 0.82rem;">${escapeHtml(data?.error || res.statusText)}</div>
       </div>`;
-    content.insertAdjacentHTML('beforeend', securityExposureHtml());
+    appendSecurityFooter(content);
     if (cooldownRem > 0) updateSecCooldownUI(cooldownRem);
     return;
   }
@@ -12825,7 +12825,7 @@ async function loadSecurityTab() {
           </button>
         </div>
       </div>`;
-    content.insertAdjacentHTML('beforeend', securityExposureHtml());
+    appendSecurityFooter(content);
     if (cooldownRem > 0) updateSecCooldownUI(cooldownRem);
     return;
   }
@@ -13036,12 +13036,18 @@ function renderSecurityData(scan, hostID) {
       ${cardsHtml}
       ${findingsHtml}
       ${hardeningHtml}
-      ${securityExposureHtml()}
+      ${securityExposureHtml()}${window.Fw ? Fw.html() : ''}
       ${notesHtml}
     </div>
   `;
 
   filterSecurityFindings();
+  if (window.Fw) Fw.render();
+}
+
+function appendSecurityFooter(content) {
+  content.insertAdjacentHTML('beforeend', securityExposureHtml() + (window.Fw ? Fw.html() : ''));
+  if (window.Fw) Fw.render();
 }
 
 // Owning process of a listening socket. New inspections store the bare name; older records kept the raw
@@ -26572,5 +26578,6 @@ langRerenderHooks.push(renderTfWorkspaces, tfRenderWsHead, () => {
 </script>
 <script src="/app/terraform.js"></script>
 <script src="/app/ansible.js"></script>
+<script src="/app/firewall.js"></script>
 </body>
 </html>

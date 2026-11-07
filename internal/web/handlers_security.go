@@ -1,6 +1,7 @@
 package web
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -75,6 +76,48 @@ func (s *Server) handleHostSecurity(w http.ResponseWriter, r *http.Request, host
 			"scanned": true,
 			"scan":    scan,
 		})
+		return
+	}
+
+	// GET /api/hosts/{id}/security/firewall -> live ufw/firewalld/iptables state
+	if len(cleaned) == 1 && cleaned[0] == "firewall" {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		state, err := s.inspector.FirewallState(hostID)
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]interface{}{"ok": false, "error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "firewall": state})
+		return
+	}
+
+	// POST /api/hosts/{id}/security/firewall/action {backend, action, rule?, old?}
+	if len(cleaned) == 2 && cleaned[0] == "firewall" && cleaned[1] == "action" {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req inspector.FirewallRequest
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		res, err := s.inspector.FirewallApply(hostID, req)
+		if err != nil {
+			status := http.StatusInternalServerError
+			switch {
+			case errors.Is(err, inspector.ErrFirewallProtected):
+				status = http.StatusForbidden
+			case errors.Is(err, inspector.ErrFirewallInvalid):
+				status = http.StatusBadRequest
+			}
+			writeJSON(w, status, map[string]interface{}{"ok": false, "error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": res.Succeeded(), "result": res})
 		return
 	}
 
