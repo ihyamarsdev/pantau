@@ -1002,6 +1002,17 @@ Two settings in **Workspace Settings**:
 
 The **Audit** tab shows a persistent trail of Terraform events (table `tf_audit`, newest 5000 kept; `GET /api/terraform/audit`). Entries are written from Pantau's log stream. There is no RBAC because Pantau has a single admin password. A burst of more than ~64 lines within one write window may drop lines.
 
+#### Terraform Registry
+
+The top-level Terraform **Registry** tab browses and searches the public Terraform Registry (modules and providers) without leaving Pantau.
+- **Modules**: `GET /api/terraform/registry/modules` lists/searches modules. A module's detail view shows versions, inputs, outputs, and the README as plain text. Searching needs a non-empty query.
+- **Providers**: `GET /api/terraform/registry/providers` lists/searches providers. Provider search uses the registry's **undocumented v2 search endpoint**, which may change without notice.
+- **From the Configuration tab**: the **Registry** button opens the same browser with **Insert at cursor** or **Add as file**. Add as file creates `module-<name>.tf` or `provider-<type>.tf`, and can optionally append the module's required-input variables to `variables.tf`. Snippets are generated server-side, pin with a `~> MAJOR.MINOR` constraint, and use placeholders chosen by input type.
+- **Check versions** (inline workspaces only): `GET /api/terraform/workspaces/{id}/registry/check` reads the **saved** files (save before checking) and lists every module and provider with a status: `up_to_date`, `outdated` (exact pin below latest), `newer_outside_constraint`, `unpinned`, or `unknown` (non-registry source). **Apply** rewrites only the version literal in the editor; the change stays unsaved until you click **Save**.
+- **Registry base URL**: the **Registry** card on the Terraform **Gate** tab sets the base URL (setting `tf_registry_url`; `GET/PUT /api/terraform/registry/settings`, test with `POST /api/terraform/registry/settings/test`) for mirrors or air-gapped proxies. It must be `https`, except `http` on loopback, and must not contain credentials.
+- **Safety**: Pantau fetches server-side with a 15 s timeout, a 4 MiB response cap, a 5-minute in-memory cache, same-host redirects only, and validated path arguments. Registry text is untrusted and rendered escaped.
+- **Limits**: only the public Terraform Registry protocol (no private registry tokens, no OpenTofu-specific registry search); runs download modules/providers themselves during `terraform init` and need network access from the server; Git workspaces are not checked; prerelease versions are compared as plain semver.
+
 #### Honest Limitations and Non-Goals
 
 To maintain a compact, agentless, and maintainable architecture, several enterprise features are intentionally out of scope:

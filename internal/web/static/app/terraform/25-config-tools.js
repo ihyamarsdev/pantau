@@ -84,5 +84,6 @@
       C.cm.focus();
     });
     C.cm.addKeyMap({ 'Shift-Ctrl-F': doFormat, 'Shift-Cmd-F': doFormat });
+    if (C.regInit) C.regInit(); // 62-registry-check.js
   };
 })();

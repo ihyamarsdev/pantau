@@ -664,6 +664,10 @@ _Avoid_: Billing
 Saklar opt-in admin (`terraform_enabled`, default mati) sebelum Run dapat dijalankan.
 _Avoid_: Feature flag
 
+**Terraform Registry**:
+Penjelajah modul dan provider dari Terraform Registry publik (atau mirror lewat `tf_registry_url`) yang diambil Pantau di sisi server (cache 5 menit); dipakai untuk menyisipkan snippet ke konfigurasi dan memeriksa versi (`Check versions`) pada workspace inline. Bukan registry privat dan bukan endpoint untuk `terraform init`.
+_Avoid_: Module marketplace, Private Module Catalog
+
 **Git Editor**:
 Komponen antarmuka untuk menjelajah pohon berkas repositori, membuat berkas baru, menghapus berkas, menyunting konten dengan CodeMirror, serta melakukan commit dan push langsung ke repositori remote. Pada Playbook Ansible tampil sebagai bagian **Files** di tab Edit pada Side Drawer; pada Workspace Terraform tampil di Workspace Modal.
 _Avoid_: Web IDE, file manager, repo manager

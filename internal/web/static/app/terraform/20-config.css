@@ -25,6 +25,7 @@
 .tf-cfg-size { font-size: var(--fs-xs); color: var(--text-muted); }
 .tf-cfg-dirty { color: var(--accent); font-size: var(--fs-xs); }
 .tf-cfg-gap { flex: 1; }
+.tf-cfg-grp { display: inline-flex; gap: 8px; flex-wrap: nowrap; }
 .tf-cfg-err { padding: 8px 12px; border: 1px solid var(--danger-border, var(--danger)); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--danger); font-size: var(--fs-xs); }
 .tf-cfg-hint { display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: var(--fs-xs); }
 .tf-cfg-edbox { flex: 1; min-height: 360px; border: 1px solid var(--card-border); border-radius: var(--radius); overflow: hidden; }

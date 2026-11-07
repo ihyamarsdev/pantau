@@ -14,11 +14,13 @@
       <span id="tfCfgSize" class="tf-cfg-size">${tfE(C.kib(C.docs[C.cur] && C.docs[C.cur].getValue()))} / ${C.MAX_KIB} KiB</span>
       <span id="tfCfgDirty" class="tf-cfg-dirty" hidden title="${tfE(tx('tfcfg_unsaved_title'))}">●</span>
       <span class="tf-cfg-gap"></span>
-      <button type="button" id="tfCfgFmt" class="btn btn-sm" title="${tfE(tx('tfcfg_fmt_title'))}">${tfE(tx('tfcfg_fmt'))}</button>
-      <button type="button" id="tfCfgValidate" class="btn btn-sm" title="${tfE(tx('tfcfg_validate_title'))}">${svgIcon('list-checks', 'icon-xs')} ${tfE(tx('tfcfg_validate'))}</button>
-      <button type="button" id="tfCfgDiscard" class="btn btn-sm" ${C.isDirty() ? '' : 'disabled'}>${tfE(tx('tfcfg_discard'))}</button>
+      <span class="tf-cfg-grp"><button type="button" id="tfCfgFmt" class="btn btn-sm" title="${tfE(tx('tfcfg_fmt_title'))}">${tfE(tx('tfcfg_fmt'))}</button>
+      <button type="button" id="tfCfgRegistry" class="btn btn-sm" title="${tfE(tx('tfcfg_registry_title'))}">${svgIcon('package', 'icon-xs')} ${tfE(tx('tfcfg_registry'))}</button>
+      <button type="button" id="tfCfgRegCheck" class="btn btn-sm" title="${tfE(tx('tfcfg_regcheck_title'))}">${svgIcon('refresh-cw', 'icon-xs')} ${tfE(tx('tfcfg_regcheck'))}</button>
+      <button type="button" id="tfCfgValidate" class="btn btn-sm" title="${tfE(tx('tfcfg_validate_title'))}">${svgIcon('list-checks', 'icon-xs')} ${tfE(tx('tfcfg_validate'))}</button></span>
+      <span class="tf-cfg-grp"><button type="button" id="tfCfgDiscard" class="btn btn-sm" ${C.isDirty() ? '' : 'disabled'}>${tfE(tx('tfcfg_discard'))}</button>
       <button type="button" id="tfCfgSavePlan" class="btn btn-sm">${svgIcon('zap', 'icon-xs')} ${tfE(tx('tfcfg_save_plan'))}</button>
-      <button type="button" id="tfCfgSave" class="btn btn-sm btn-primary">${svgIcon('save', 'icon-xs')} ${tfE(tx('tfcfg_save'))}</button></div>`;
+      <button type="button" id="tfCfgSave" class="btn btn-sm btn-primary">${svgIcon('save', 'icon-xs')} ${tfE(tx('tfcfg_save'))}</button></span></div>`;
   }
   C.fileUI = function () {
     if (!C.root) return;
@@ -71,6 +73,7 @@
       <section class="tf-cfg-ed">${headerHTML()}
         <div id="tfCfgError" class="tf-cfg-err" role="alert" hidden></div>
         <div id="tfCfgDiag" class="tf-cfg-diag" role="region" aria-label="${tfE(tx('tfcfg_diag_title'))}" hidden></div>
+        <div id="tfCfgRegStatus" class="tf-regc" role="region" aria-label="${tfE(tx('tfcfg_regcheck'))}" hidden></div>
         <div id="tfCfgEditor" class="tf-cfg-edbox"></div></section></div></div>`;
     C.root = body.querySelector('.tf-cfg');
     C.cm = CodeMirror(tfEl('tfCfgEditor'), { lineNumbers: true, theme: 'vscode-dark', mode: null, indentUnit: 2, tabSize: 2, indentWithTabs: false, extraKeys: { Tab: cm => cm.replaceSelection('  ', 'end') } });

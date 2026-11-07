@@ -35,3 +35,21 @@ Menambahkan beberapa kemampuan Terraform di atas [ADR 0056](0056-terraform-manag
 - **Import belum diuji terhadap provider nyata**: operasi sudah diimplementasikan dan diuji dengan skrip biner tiruan (shim), bukan dengan provider cloud sungguhan.
 - **Template belum divalidasi `init`** selain Hello world: unduhan provider membutuhkan jaringan pada Run pertama, dan versi/atribut provider dapat berubah.
 - Tidak ada RBAC pada audit, state operation, maupun auto-apply (satu kata sandi admin).
+
+## Addendum: Terraform Registry
+
+Integrasi penelusuran Terraform Registry publik (modul dan provider) ditambahkan ke tab Registry, tombol Registry di tab Configuration, dan kartu Registry di tab Gate.
+
+### Keputusan
+
+1. **Proksi sisi server dengan cache, bukan panggilan dari browser**. Browser tidak memanggil registry langsung (`GET /api/terraform/registry/modules`, `/providers`): registry tidak menjamin CORS, semua egress terpusat di satu titik (Pantau), dan base URL dapat diganti (`tf_registry_url`, `GET/PUT /api/terraform/registry/settings`, uji lewat `POST .../settings/test`) untuk mirror atau proxy air-gapped. Hasil di-cache di memori selama 5 menit.
+2. **Snippet dibuat di sisi server**. Konstrain versi `~> MAJOR.MINOR` dan placeholder per tipe input dihitung di Go (diuji unit), sehingga UI hanya menyisipkan teks (di kursor, atau sebagai berkas `module-<name>.tf` / `provider-<type>.tf`, opsional dengan variabel input wajib ditambahkan ke `variables.tf`).
+3. **Check versions membaca berkas yang tersimpan**. `GET /api/terraform/workspaces/{id}/registry/check` hanya untuk workspace inline dan membaca berkas tersimpan, bukan isi editor yang belum disimpan, sehingga hasilnya konsisten dengan yang akan dijalankan Run. Status: `up_to_date`, `outdated` (pin eksak di bawah versi terbaru), `newer_outside_constraint`, `unpinned`, `unknown` (sumber bukan registry). Tombol Apply hanya menulis ulang literal versi di editor; belum tersimpan sampai pengguna menekan Save.
+4. **Kontrol SSRF**. Base URL harus `https` (kecuali `http` pada loopback) dan tanpa kredensial di URL; fetch memakai timeout 15 detik, batas respons 4 MiB, redirect hanya ke host yang sama, dan argumen path divalidasi. Teks dari registry dianggap tidak tepercaya dan ditampilkan dengan di-escape. Pencarian memerlukan kueri tidak kosong.
+
+### Konsekuensi dan Batasan
+
+- Pencarian provider memakai endpoint pencarian v2 registry yang tidak terdokumentasi dan dapat berubah.
+- Hanya protokol Terraform Registry publik: tanpa token registry privat dan tanpa pencarian registry khusus OpenTofu.
+- Run tetap mengunduh modul/provider sendiri saat `terraform init` dan membutuhkan akses jaringan dari server.
+- Workspace Git tidak diperiksa; versi prerelease dibandingkan sebagai semver biasa.

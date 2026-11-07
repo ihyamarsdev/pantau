@@ -4036,6 +4036,9 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <button type="button" class="tab" id="tabTfModules" data-tab="modules" role="tab" aria-selected="false" aria-controls="tfPanelModules" tabindex="-1" onclick="switchTfTab('modules')">
           <svg class="icon icon-sm"><use href="#i-package"/></svg> <span data-i18n="tf_tab_modules">Module Catalog</span>
         </button>
+        <button type="button" class="tab" id="tabTfRegistry" data-tab="registry" role="tab" aria-selected="false" aria-controls="tfPanelRegistry" tabindex="-1" onclick="switchTfTab('registry')">
+          <svg class="icon icon-sm"><use href="#i-globe"/></svg> <span data-i18n="tf_tab_registry">Registry</span>
+        </button>
         <button type="button" class="tab" id="tabTfAudit" data-tab="audit" role="tab" aria-selected="false" aria-controls="tfPanelAudit" tabindex="-1" onclick="switchTfTab('audit')">
           <svg class="icon icon-sm"><use href="#i-activity"/></svg> <span data-i18n="tf_tab_audit">Audit</span>
         </button>
@@ -4155,6 +4158,11 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
       <!-- Tab 6: Audit trail -->
       <div id="tfPanelAudit" class="ans-section-panel" role="tabpanel" aria-labelledby="tabTfAudit" tabindex="0" style="display:none;flex-direction:column;">
         <div id="tfAuditRoot"></div>
+      </div>
+
+      <!-- Tab 7: Terraform Registry browser -->
+      <div id="tfPanelRegistry" class="ans-section-panel" role="tabpanel" aria-labelledby="tabTfRegistry" tabindex="0" style="display:none;flex-direction:column;">
+        <div id="tfRegistryRoot"></div>
       </div>
     </div>
 
@@ -7800,6 +7808,7 @@ const I18N = {
     "tf_ov_cloud": "Cloud accounts",
     "tf_tab_policies": "Policies",
     "tf_tab_modules": "Module Catalog",
+    "tf_tab_registry": "Registry",
     "tf_tab_gate": "Terraform Gate",
     "tf_tab_audit": "Audit",
     "tf_search_ws_ph": "Search workspaces...",
@@ -9349,6 +9358,7 @@ const I18N = {
     "tf_ov_cloud": "Akun cloud",
     "tf_tab_policies": "Policy",
     "tf_tab_modules": "Katalog Modul",
+    "tf_tab_registry": "Registry",
     "tf_tab_gate": "Terraform Gate",
     "tf_tab_audit": "Audit",
     "tf_search_ws_ph": "Cari workspace...",
@@ -25293,7 +25303,7 @@ async function toggleTfGate(enable) {
   await refreshTfSection();
 }
 function switchTfTab(tab) {
-  if (!['workspaces', 'varsets', 'cloud', 'policies', 'modules', 'audit', 'gate'].includes(tab)) tab = 'workspaces';
+  if (!['workspaces', 'varsets', 'cloud', 'policies', 'modules', 'registry', 'audit', 'gate'].includes(tab)) tab = 'workspaces';
   tfCurrentTab = tab;
   document.querySelectorAll('#tfTabs .tab').forEach(el => {
     const active = el.dataset.tab === tab;
@@ -25323,7 +25333,7 @@ async function loadTfTabData() {
   if (!tfStatus || !tfStatus.enabled) {
     const off = `<div class="empty-state"><div class="empty-state-desc">${tfE(tx('tfx_gate_off'))}</div></div>`;
     if (tfCurrentTab !== 'gate') {
-      const id = { workspaces: 'tfWsEmpty', varsets: 'tfVarsetsList', cloud: 'tfCloudRoot', policies: 'tfPoliciesList', modules: 'tfModulesList', audit: 'tfAuditRoot' }[tfCurrentTab];
+      const id = { workspaces: 'tfWsEmpty', varsets: 'tfVarsetsList', cloud: 'tfCloudRoot', policies: 'tfPoliciesList', modules: 'tfModulesList', registry: 'tfRegistryRoot', audit: 'tfAuditRoot' }[tfCurrentTab];
       const el = tfEl(id);
       if (el) { el.innerHTML = off; el.style.display = 'block'; }
       if (tfCurrentTab === 'workspaces') { tfEl('tfWsGrid').innerHTML = ''; tfEl('tfWsTableWrap').style.display = 'none'; }
@@ -25335,6 +25345,7 @@ async function loadTfTabData() {
   else if (tfCurrentTab === 'cloud') { if (typeof tfCloudRefresh === 'function') tfCloudRefresh(); }
   else if (tfCurrentTab === 'policies') { await loadTfWorkspaces(); await loadTfPolicies(); }
   else if (tfCurrentTab === 'modules') await loadTfModules();
+  else if (tfCurrentTab === 'registry') { if (typeof tfRegistryRefresh === 'function') tfRegistryRefresh(); }
   else if (tfCurrentTab === 'audit') { if (typeof tfAuditRefresh === 'function') tfAuditRefresh(); }
 }
 async function refreshTfSection() {

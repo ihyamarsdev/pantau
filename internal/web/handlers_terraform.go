@@ -522,6 +522,9 @@ func (s *Server) handleTerraformWorkspaceRoute(w http.ResponseWriter, r *http.Re
 	case "tools":
 		s.handleWorkspaceTools(w, r, ws, rest[1:])
 		return
+	case "registry":
+		s.handleWorkspaceRegistry(w, r, ws, rest[1:])
+		return
 	case "git":
 		if len(rest) >= 2 {
 			switch rest[1] {

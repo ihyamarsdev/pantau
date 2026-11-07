@@ -105,7 +105,7 @@ func TestTerraformUIHooksAuditGateTemplates(t *testing.T) {
 	html := string(embeddedHTML)
 	for _, s := range []string{
 		`id="tabTfAudit"`, `aria-controls="tfPanelAudit"`, `id="tfPanelAudit"`, `id="tfAuditRoot"`,
-		`'policies', 'modules', 'audit', 'gate'`, `tfAuditRefresh`,
+		`'policies', 'modules', 'registry', 'audit', 'gate'`, `tfAuditRefresh`,
 		`"tf_tab_audit": "Audit"`,
 		`id="tfGateExtras"`, `tfGateExtras(document.getElementById('tfGateExtras'))`,
 		`if (!ws && typeof tfTplInject === 'function') tfTplInject();`,
@@ -128,6 +128,44 @@ func TestTerraformUIHooksAuditGateTemplates(t *testing.T) {
 	for _, s := range []string{`.tf-drawer-tabs { position: sticky; top: 0; z-index: 1; display: flex;`, `overflow-x: auto`, `@media (max-width: 900px)`} {
 		if !strings.Contains(string(css), s) {
 			t.Errorf("10-drawer.css missing %q", s)
+		}
+	}
+}
+
+// Registry tab hooks in index.html plus the ids/hooks the bundled registry modules must expose.
+func TestTerraformRegistryUIHooks(t *testing.T) {
+	html := string(embeddedHTML)
+	for _, s := range []string{
+		`id="tabTfRegistry"`, `data-tab="registry"`, `aria-controls="tfPanelRegistry"`, `id="tfPanelRegistry"`, `id="tfRegistryRoot"`,
+		`'policies', 'modules', 'registry', 'audit', 'gate'`, `tfRegistryRefresh`,
+		`"tf_tab_registry": "Registry"`,
+	} {
+		if !strings.Contains(html, s) {
+			t.Errorf("index.html missing %s", s)
+		}
+	}
+	if n := strings.Count(html, `"tf_tab_registry":`); n != 2 {
+		t.Errorf("tf_tab_registry must exist in EN and ID dictionaries, found %d", n)
+	}
+	if strings.Index(html, `id="tabTfRegistry"`) < strings.Index(html, `id="tabTfModules"`) || strings.Index(html, `id="tabTfRegistry"`) > strings.Index(html, `id="tabTfAudit"`) {
+		t.Error("Registry tab must sit between Module Catalog and Audit")
+	}
+	for file, ids := range map[string][]string{
+		"60-registry.js":          {`data-reg-kind`, `id="tfRegQuery"`, `id="tfRegProvider"`, `id="tfRegSearch"`, `id="tfRegResults"`, `data-reg-item`, `id="tfRegMore"`, `id="tfRegDetail"`},
+		"61-registry-detail.js":   {`id="tfRegVersion"`, `id="tfRegModName"`, `id="tfRegDeclareVars"`, `'tfRegInputs'`, `'tfRegOutputs'`, `id="tfRegReadme"`, `id="tfRegInsert"`, `id="tfRegAddFile"`, `id="tfRegCopy"`, `tfE(it.description`},
+		"62-registry-check.js":    {`data-regc="`, `data-regc-apply`, `regInit`, `registry/check`},
+		"63-registry-settings.js": {`id="tfRegSettingsCard"`, `id="tfRegUrl"`, `id="tfRegUrlSave"`, `id="tfRegUrlTest"`, `id="tfRegUrlStatus"`, `tfGateExtrasBase`, `function tfRegistryRefresh`},
+		"22-config-view.js":       {`id="tfCfgRegistry"`, `id="tfCfgRegCheck"`, `id="tfCfgRegStatus"`},
+		"25-config-tools.js":      {`C.regInit`},
+	} {
+		b, err := os.ReadFile("static/app/terraform/" + file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range ids {
+			if !strings.Contains(string(b), s) {
+				t.Errorf("%s missing %s", file, s)
+			}
 		}
 	}
 }

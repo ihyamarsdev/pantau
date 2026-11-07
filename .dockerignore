@@ -1,0 +1,15 @@
+# Live data is bind-mounted at runtime (./data:/app/data); it is owned by the container user
+# and must never be sent as build context.
+data
+*.db
+*.db-wal
+*.db-shm
+*.db.lock
+
+.git
+.omp
+.scratch
+e2e
+dist
+pantau
+*.tar.gz

@@ -1004,6 +1004,17 @@ Dua pengaturan di **Workspace Settings**:
 
 Tab **Audit** menampilkan jejak permanen event Terraform (tabel `tf_audit`, 5000 terbaru disimpan; `GET /api/terraform/audit`). Entri ditulis dari aliran log Pantau. Tidak ada RBAC karena Pantau hanya memiliki satu kata sandi admin. Lonjakan lebih dari ~64 baris dalam satu jendela penulisan dapat membuang baris.
 
+#### Terraform Registry
+
+Tab **Registry** tingkat atas di Terraform menjelajah dan mencari Terraform Registry publik (modul dan provider) tanpa meninggalkan Pantau.
+- **Modul**: `GET /api/terraform/registry/modules` menampilkan/mencari modul. Detail modul memuat versi, input, output, dan README sebagai teks biasa. Pencarian membutuhkan kueri yang tidak kosong.
+- **Provider**: `GET /api/terraform/registry/providers` menampilkan/mencari provider. Pencarian provider memakai **endpoint pencarian v2 registry yang tidak terdokumentasi**, yang dapat berubah sewaktu-waktu.
+- **Dari tab Configuration**: tombol **Registry** membuka penjelajah yang sama dengan **Insert at cursor** atau **Add as file**. Add as file membuat `module-<name>.tf` atau `provider-<type>.tf`, dan opsional menambahkan variabel input wajib modul ke `variables.tf`. Snippet dibuat di sisi server, memakai batasan versi `~> MAJOR.MINOR`, dan placeholder dipilih menurut tipe input.
+- **Check versions** (hanya workspace inline): `GET /api/terraform/workspaces/{id}/registry/check` membaca berkas yang **tersimpan** (simpan dulu sebelum memeriksa) dan mendaftar setiap modul dan provider beserta status: `up_to_date`, `outdated` (pin eksak di bawah versi terbaru), `newer_outside_constraint`, `unpinned`, atau `unknown` (sumber bukan registry). Tombol **Apply** hanya menulis ulang literal versi di editor; perubahan belum tersimpan sampai Anda menekan **Save**.
+- **Base URL registry**: kartu **Registry** di tab **Gate** Terraform mengatur base URL (setting `tf_registry_url`; `GET/PUT /api/terraform/registry/settings`, uji dengan `POST /api/terraform/registry/settings/test`) untuk mirror atau proxy air-gapped. Harus `https`, kecuali `http` pada loopback, dan tidak boleh memuat kredensial.
+- **Keamanan**: Pantau mengambil data di sisi server dengan batas waktu 15 detik, batas respons 4 MiB, cache memori 5 menit, hanya pengalihan ke host yang sama, dan argumen path yang divalidasi. Teks dari registry tidak tepercaya dan ditampilkan dengan di-escape.
+- **Batasan**: hanya protokol Terraform Registry publik (tanpa token registry privat, tanpa pencarian registry khusus OpenTofu); Run mengunduh modul/provider sendiri saat `terraform init` dan membutuhkan akses jaringan dari server; workspace Git tidak diperiksa; versi prerelease dibandingkan sebagai semver biasa.
+
 #### Batasan dan Non-Goals yang Transparan
 
 Demi mempertahankan arsitektur mandiri, ringan, dan mudah dirawat, sejumlah fitur sengaja tidak dimasukkan ke dalam ruang lingkup:

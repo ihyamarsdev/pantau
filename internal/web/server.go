@@ -350,6 +350,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/terraform/audit", s.authMiddleware(s.handleTerraformAudit))
 	s.mux.HandleFunc("/api/terraform/modules", s.authMiddleware(s.handleTerraformModules))
 	s.mux.HandleFunc("/api/terraform/modules/", s.authMiddleware(s.handleTerraformModuleRoute))
+	s.mux.HandleFunc("/api/terraform/registry/", s.authMiddleware(s.handleTerraformRegistry))
 	s.mux.HandleFunc("/api/terraform/notifications", s.authMiddleware(s.handleTerraformNotifications))
 	s.mux.HandleFunc("/api/terraform/notifications/test", s.authMiddleware(s.handleTerraformNotificationsTest))
 	s.mux.HandleFunc("/api/terraform/webhook/", s.handleTerraformWebhook) // public, bypasses authMiddleware
