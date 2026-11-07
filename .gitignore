@@ -6,3 +6,6 @@ data/
 *.db.lock
 *.tar.gz
 dist/
+e2e/node_modules/
+e2e/.e2e/
+e2e/.tmp/
