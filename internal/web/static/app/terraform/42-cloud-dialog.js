@@ -1,5 +1,6 @@
 /* Cloud Accounts dialog (tfDlg1): create/edit with provider-driven fields. */
 let tfCaEdit = null; // account being edited, null when creating
+let tfCaImpP = null; // importable-accounts request, fetched once per dialog
 
 function tfCaFieldsHTML(provider, vals) {
   const p = tfCaProvider(provider);
@@ -29,6 +30,32 @@ function tfCaVals() {
 function tfCaProviderChange() {
   const vals = tfCaVals();
   tfEl('tfCaFields').innerHTML = tfCaFieldsHTML(tfV('tfCaProvider'), vals);
+  tfCaImportUI();
+}
+
+// Import selector (create only, cloudflare/kubernetes): the server copies the credentials of an existing Pantau account.
+async function tfCaImportUI() {
+  const wrap = tfEl('tfCaImportWrap');
+  if (!wrap) return;
+  const prov = tfV('tfCaProvider');
+  wrap.innerHTML = '';
+  tfEl('tfCaFieldWrap').style.display = '';
+  if (tfCaEdit || (prov !== 'cloudflare' && prov !== 'kubernetes')) return;
+  if (!tfCaImpP) tfCaImpP = tfApi('GET', '/api/terraform/cloud-accounts/importable');
+  const r = await tfCaImpP;
+  const list = (r.ok && r.data[prov]) || [];
+  if (!list.length || tfV('tfCaProvider') !== prov || !wrap.isConnected) return;
+  const opts = [['', tx('tfca_import_manual')]].concat(list.map(a => [a.id, a.usable ? a.name : a.name + ' ' + tx('tfca_import_unusable')]));
+  const sel = tfSelect('tfCaImport', opts, '', 'tfCaImportChange()');
+  wrap.innerHTML = tfField(tx('tfca_import_' + prov), sel, '', true) + '<div id="tfCaImportNote" class="dk-hint" style="display:none;"></div>';
+  list.forEach((a, i) => { if (!a.usable) tfEl('tfCaImport').options[i + 1].disabled = true; });
+}
+function tfCaImportChange() {
+  const id = tfV('tfCaImport');
+  tfEl('tfCaFieldWrap').style.display = id ? 'none' : '';
+  const note = tfEl('tfCaImportNote');
+  note.style.display = id ? 'block' : 'none';
+  note.textContent = id ? tx('tfca_import_note') : '';
 }
 
 async function tfOpenCloudAccount(id) {
@@ -42,10 +69,13 @@ async function tfOpenCloudAccount(id) {
     ${tfField(tx('tfca_provider'), tfSelect('tfCaProvider', provs.map(p => [p.id, p.label]), cur, 'tfCaProviderChange()'))}
     ${tfField(tx('tfca_name') + ' *', tfInput('tfCaName', tfCaEdit ? tfCaEdit.name : '', 'maxlength="100" required'))}
     ${tfField(tx('tfca_desc'), tfInput('tfCaDesc', tfCaEdit ? tfCaEdit.description : '', 'maxlength="500"'), '', true)}
-    <div class="dk-full tf-ca-fieldwrap"><div class="dk-form-grid" id="tfCaFields">${tfCaFieldsHTML(cur, tfCaEdit ? tfCaEdit.fields || {} : {})}</div></div></div>`;
+    <div id="tfCaImportWrap" class="dk-full"></div>
+    <div id="tfCaFieldWrap" class="dk-full tf-ca-fieldwrap"><div class="dk-form-grid" id="tfCaFields">${tfCaFieldsHTML(cur, tfCaEdit ? tfCaEdit.fields || {} : {})}</div></div></div>`;
   const save = `<button type="button" id="tfCaSave" class="btn btn-sm btn-primary" onclick="tfCaSave()">${tfE(t('save', 'Save'))}</button>`;
+  tfCaImpP = null;
   tfDlg(1, tx(tfCaEdit ? 'tfca_edit_title' : 'tfca_new_title'), body, tfFoot(1, save), 620);
   if (tfCaEdit) tfEl('tfCaProvider').disabled = true;
+  tfCaImportUI();
   tfEl('tfCaName').focus();
 }
 
@@ -54,9 +84,10 @@ async function tfCaSave() {
   const p = tfCaProvider(provider);
   const name = tfV('tfCaName').trim();
   if (!name) { tfDlgErr(1, tx('tfca_name_required')); return; }
-  const fields = tfCaVals();
+  const imp = tfV('tfCaImport'); // '' / absent = manual entry
+  const fields = imp ? {} : tfCaVals();
   const secrets = (tfCaEdit && tfCaEdit.secrets_set) || {};
-  for (const f of p ? p.fields : []) {
+  for (const f of imp || !p ? [] : p.fields) {
     const keep = tfCaEdit && f.secret && secrets[f.key] && !fields[f.key];
     if (f.required && !keep && !String(fields[f.key] || '').trim()) { tfDlgErr(1, tx('tfca_field_required', { field: f.label })); return; }
   }
@@ -65,7 +96,9 @@ async function tfCaSave() {
   tfDlgErr(1, '');
   const edit = tfCaEdit;
   // Untouched secrets on edit stay '' so the server keeps the stored value.
-  const r = await tfApi(edit ? 'PUT' : 'POST', '/api/terraform/cloud-accounts' + (edit ? '/' + edit.id : ''), { name, provider, description: tfV('tfCaDesc'), fields });
+  const payload = { name, provider, description: tfV('tfCaDesc'), fields };
+  if (imp) payload.import_from = { type: provider, id: Number(imp) };
+  const r = await tfApi(edit ? 'PUT' : 'POST', '/api/terraform/cloud-accounts' + (edit ? '/' + edit.id : ''), payload);
   btn.disabled = false;
   if (!r.ok) { tfDlgErr(1, r.data.error || 'Error'); return; }
   tfDlgClose(1);

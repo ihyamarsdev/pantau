@@ -1,0 +1,7 @@
+/* Notifications card — scoped under .tf-nf-card. */
+.tf-nf-card { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+.tf-nf-card .card-title { margin-bottom: 0; }
+.tf-nf-hint, .tf-nf-msg { font-size: var(--fs-xs); color: var(--text-muted); }
+.tf-nf-list { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+.tf-nf-item { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); cursor: pointer; }
+.tf-nf-item input { width: auto; }

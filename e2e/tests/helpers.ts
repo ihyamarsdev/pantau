@@ -25,9 +25,9 @@ export async function initApp(screen: Screen, browser: BrowserHandle): Promise<v
     await screen.getByRole('button', 'Login').click();
   }
 
-  // A fresh DB opens the restore wizard right after login; wait briefly for it.
+  // A fresh DB opens the restore wizard right after login; wait for it (it can be slow on a loaded machine).
   const modal = browser.locator('#restoreModal');
-  const open = await modal.waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false);
+  const open = await modal.waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false);
   if (open) {
     await screen.getByText('Start Fresh').click();
     await screen.getByText('Start from Scratch (Fresh)').click();

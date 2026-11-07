@@ -39,8 +39,9 @@ type TerraformRunManager struct {
 	planner     PlannerFunc
 	applier     ApplierFunc
 	mu          sync.Mutex
-	activeRuns  map[int64]*activeTFRun // runID -> activeTFRun
-	byWorkspace map[int64]int64        // workspaceID -> runID
+	activeRuns  map[int64]*activeTFRun               // runID -> activeTFRun
+	byWorkspace map[int64]int64                      // workspaceID -> runID
+	events      func(source, summary, detail string) // notification sink (nil = off)
 }
 
 // NewTerraformRunManager creates a manager with default or injectable runner functions.
@@ -75,6 +76,9 @@ func (m *TerraformRunManager) CanStartRun(workspaceID int64) (status int, err er
 	}
 	return 0, nil
 }
+
+// resolveCloudEnv turns a cloud account into env vars (AssumeRole for AWS); tests replace it.
+var resolveCloudEnv = terraform.ResolveCloudEnv
 
 // BuildRunConfig constructs the terraform.Config for a workspace.
 func (m *TerraformRunManager) BuildRunConfig(ws *store.TFWorkspace) (terraform.Config, error) {
@@ -122,8 +126,11 @@ func (m *TerraformRunManager) BuildRunConfig(ws *store.TFWorkspace) (terraform.C
 	}
 
 	cfg.Env = make(map[string]string)
+	cfg.PlainEnv = make(map[string]bool)
+	cfg.EnvFiles = make(map[string]string)
 	// Cloud account env first so variable-set env vars with the same key override it.
-	// It goes through Config.Env, so plan/apply log redaction covers the credentials.
+	// It goes through Config.Env, so plan/apply log redaction covers the credentials;
+	// only the keys fed by non-secret fields are marked plain.
 	for _, id := range ws.CloudAccountIDs {
 		acct, err := m.db.GetTFCloudAccount(id)
 		if err != nil {
@@ -132,13 +139,30 @@ func (m *TerraformRunManager) BuildRunConfig(ws *store.TFWorkspace) (terraform.C
 		if acct == nil {
 			continue
 		}
-		for k, v := range terraform.CloudEnv(acct.Provider, acct.Fields) {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		env, err := resolveCloudEnv(ctx, acct.Provider, acct.Fields, nil)
+		cancel()
+		if err != nil {
+			return cfg, fmt.Errorf("cloud account %q: %w", acct.Name, err)
+		}
+		for k, v := range env {
 			cfg.Env[k] = v
+			delete(cfg.PlainEnv, k)
+		}
+		for _, k := range terraform.CloudPlainEnv(acct.Provider) {
+			if _, ok := env[k]; ok {
+				cfg.PlainEnv[k] = true
+			}
+		}
+		for k, v := range terraform.CloudEnvFiles(acct.Provider, acct.Fields) {
+			cfg.EnvFiles[k] = v
 		}
 	}
 	for _, v := range effVars {
 		if v.Category == "env" {
 			cfg.Env[v.Key] = v.Value
+			delete(cfg.PlainEnv, v.Key) // a user variable is always redacted
+			delete(cfg.EnvFiles, v.Key)
 		} else {
 			cfg.Vars = append(cfg.Vars, terraform.Var{
 				Key:       v.Key,
@@ -147,6 +171,10 @@ func (m *TerraformRunManager) BuildRunConfig(ws *store.TFWorkspace) (terraform.C
 				Sensitive: v.Sensitive,
 			})
 		}
+	}
+
+	if err := m.injectOutputLinks(ws, &cfg); err != nil {
+		return cfg, err
 	}
 
 	// Latest state
@@ -188,6 +216,12 @@ func (m *TerraformRunManager) StartPlan(ws *store.TFWorkspace, run *store.TFRun)
 }
 
 func (m *TerraformRunManager) executePlan(ctx context.Context, ar *activeTFRun, ws *store.TFWorkspace, run *store.TFRun) {
+	autoApply := false
+	defer func() { // registered first, so it runs last (after the active-run bookkeeping)
+		if autoApply {
+			m.tfStartAutoApply(ws.ID, run.ID)
+		}
+	}()
 	defer close(ar.done)
 
 	retainWorkspaceLock := false
@@ -205,6 +239,7 @@ func (m *TerraformRunManager) executePlan(ctx context.Context, ar *activeTFRun, 
 	cfg, err := m.BuildRunConfig(ws)
 	if err != nil {
 		_ = m.db.FinishTFRun(run.ID, "errored", nil, fmt.Sprintf("failed to build run config: %v", err))
+		m.tfEmit(ws, "errored", "Plan errored", tfEventDetail(run.ID, nil, err.Error(), nil))
 		return
 	}
 
@@ -255,6 +290,7 @@ func (m *TerraformRunManager) executePlan(ctx context.Context, ar *activeTFRun, 
 			_, _ = io.WriteString(ar.logBuf, msg)
 		}
 		_ = m.db.FinishTFRun(run.ID, "errored", &exitCode, ar.logBuf.String())
+		m.tfEmit(ws, "errored", "Plan errored", tfEventDetail(run.ID, nil, ar.logBuf.String(), tfSecrets(cfg)))
 		_ = m.db.PruneTFRuns(ws.ID, 100)
 		return
 	}
@@ -276,6 +312,9 @@ func (m *TerraformRunManager) executePlan(ctx context.Context, ar *activeTFRun, 
 		_ = m.db.UpdateTFRunPlan(run.ID, "planned", string(summaryJSON), string(driftJSON), "{}", "{}", planRes.Commit, planRes.HasChanges)
 		_ = m.db.FinishTFRun(run.ID, "planned", &exitCode, ar.logBuf.String())
 		_ = m.db.UpdateTFWorkspaceDrift(ws.ID, driftDetected)
+		if driftDetected && !ws.DriftDetected { // notify on the transition only, not on every scheduled check
+			m.tfEmit(ws, "drift", "Drift detected", tfEventDetail(run.ID, &planRes.Summary, "", nil))
+		}
 		_ = m.db.PruneTFRuns(ws.ID, 100)
 		return
 	}
@@ -341,6 +380,11 @@ func (m *TerraformRunManager) executePlan(ctx context.Context, ar *activeTFRun, 
 	retainWorkspaceLock = true
 	_ = m.db.UpdateTFRunPlan(run.ID, "awaiting_approval", string(summaryJSON), string(driftJSON), string(policyJSON), string(costJSON), planRes.Commit, true)
 	_ = m.db.UpdateTFRunStatus(run.ID, "awaiting_approval", nil, ar.logBuf.String())
+	if m.tfWantsAutoApply(ws, run, policyReport.Status) {
+		autoApply = true // started after the deferred cleanup below so the manager state is consistent
+		return
+	}
+	m.tfEmit(ws, "awaiting_approval", "Plan awaiting approval", tfEventDetail(run.ID, &planRes.Summary, "", nil))
 }
 
 // StartApply launches apply execution in background for an awaiting_approval run.
@@ -387,6 +431,7 @@ func (m *TerraformRunManager) executeApply(ctx context.Context, ar *activeTFRun,
 	cfg, err := m.BuildRunConfig(ws)
 	if err != nil {
 		_ = m.db.FinishTFRun(run.ID, "errored", nil, fmt.Sprintf("failed to build run config: %v", err))
+		m.tfEmit(ws, "errored", "Apply errored", tfEventDetail(run.ID, nil, err.Error(), nil))
 		return
 	}
 
@@ -420,6 +465,7 @@ func (m *TerraformRunManager) executeApply(ctx context.Context, ar *activeTFRun,
 		}
 		_ = m.db.FinishTFRun(run.ID, "errored", &exitCode, ar.logBuf.String())
 		_ = m.db.PruneTFRuns(ws.ID, 100)
+		m.tfEmit(ws, "errored", "Apply errored", tfEventDetail(run.ID, tfRunSummary(run), ar.logBuf.String(), tfSecrets(cfg)))
 		return
 	}
 
@@ -469,6 +515,7 @@ func (m *TerraformRunManager) executeApply(ctx context.Context, ar *activeTFRun,
 
 	_ = m.db.FinishTFRun(run.ID, "applied", &exitCode, ar.logBuf.String())
 	_ = m.db.PruneTFRuns(ws.ID, 100)
+	m.tfEmit(ws, "applied", "Apply succeeded", tfEventDetail(run.ID, tfRunSummary(run), "", nil))
 }
 
 // DiscardRun marks an awaiting_approval run as discarded and unlocks workspace.

@@ -60,7 +60,7 @@ func TestTFCloudAccounts_CreateListNoLeak(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &list); err != nil {
 		t.Fatal(err)
 	}
-	if len(list.Accounts) != 1 || len(list.Providers) != 5 {
+	if len(list.Accounts) != 1 || len(list.Providers) != 7 {
 		t.Fatalf("unexpected list: %s", raw)
 	}
 	a := list.Accounts[0]

@@ -2,10 +2,12 @@ package web
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"pantau/internal/logger"
 	"pantau/internal/store"
 )
 
@@ -64,6 +66,7 @@ func (s *Server) handleTerraformVarsets(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		vs.ID = id
+		logger.Info("terraform", vs.Name, fmt.Sprintf("Created varset %s (id %d, global=%v)", vs.Name, id, vs.Global))
 		writeJSON(w, http.StatusCreated, vs)
 
 	default:
@@ -141,6 +144,7 @@ func (s *Server) handleTerraformVarsetRoute(w http.ResponseWriter, r *http.Reque
 			if updated == nil {
 				updated = vs
 			}
+			logger.Info("terraform", updated.Name, fmt.Sprintf("Updated varset %s (id %d, global=%v)", updated.Name, id, updated.Global))
 			writeJSON(w, http.StatusOK, updated)
 
 		case http.MethodDelete:
@@ -148,6 +152,7 @@ func (s *Server) handleTerraformVarsetRoute(w http.ResponseWriter, r *http.Reque
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+			logger.Info("terraform", vs.Name, fmt.Sprintf("Deleted varset %s (id %d)", vs.Name, id))
 			writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 
 		default:
@@ -176,6 +181,7 @@ func (s *Server) handleTerraformVarsetRoute(w http.ResponseWriter, r *http.Reque
 		if updated == nil {
 			updated = vs
 		}
+		logger.Info("terraform", vs.Name, fmt.Sprintf("Updated workspace assignment of varset %s (%d workspaces)", vs.Name, len(req.WorkspaceIDs)))
 		writeJSON(w, http.StatusOK, updated)
 
 	case "variables":
@@ -235,6 +241,7 @@ func (s *Server) handleVarsetVariables(w http.ResponseWriter, r *http.Request, v
 				return
 			}
 			v.ID = id
+			logger.Info("terraform", vs.Name, fmt.Sprintf("Created variable %s in varset %s", v.Key, vs.Name))
 			writeJSON(w, http.StatusCreated, sanitizeVariable(*v))
 
 		default:
@@ -308,6 +315,7 @@ func (s *Server) handleVarsetVariables(w http.ResponseWriter, r *http.Request, v
 		if updated == nil {
 			updated = existing
 		}
+		logger.Info("terraform", vs.Name, fmt.Sprintf("Updated variable %s in varset %s", updated.Key, vs.Name))
 		writeJSON(w, http.StatusOK, sanitizeVariable(*updated))
 
 	case http.MethodDelete:
@@ -315,6 +323,7 @@ func (s *Server) handleVarsetVariables(w http.ResponseWriter, r *http.Request, v
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		logger.Info("terraform", vs.Name, fmt.Sprintf("Deleted variable %s from varset %s", existing.Key, vs.Name))
 		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 
 	default:

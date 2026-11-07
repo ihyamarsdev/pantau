@@ -1,0 +1,5 @@
+/* Template picker in the New Workspace modal */
+.tf-tpl-desc { font-size: var(--fs-xs); color: var(--text-muted); margin-top: 6px; overflow-wrap: anywhere; }
+.tf-tpl-desc:empty, .tf-tpl-hint:empty { display: none; }
+.tf-tpl-desc > div { margin-top: 2px; font-family: var(--font-mono); color: var(--text-faint); }
+.tf-tpl-hint { display: flex; gap: 6px; align-items: center; font-size: var(--fs-xs); color: var(--warning); margin-top: 6px; }

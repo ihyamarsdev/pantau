@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"pantau/internal/logger"
 	"pantau/internal/store"
 	"pantau/internal/terraform"
 )
@@ -225,6 +226,7 @@ func (s *Server) handleTerraformWorkspaceState(w http.ResponseWriter, r *http.Re
 			ws.TFVersion = info.TFVersion
 		}
 		_ = s.db.UpdateTFWorkspace(ws)
+		logger.Info("terraform", ws.Name, fmt.Sprintf("Imported state into workspace %s (version %d)", ws.Name, id))
 
 		writeJSON(w, http.StatusCreated, sv)
 
@@ -359,6 +361,7 @@ func (s *Server) handleTerraformWorkspaceState(w http.ResponseWriter, r *http.Re
 				freshWS.TFVersion = info.TFVersion
 			}
 			_ = s.db.UpdateTFWorkspace(freshWS)
+			logger.Info("terraform", ws.Name, fmt.Sprintf("Rolled back state of workspace %s (new version %d)", ws.Name, newID))
 
 			writeJSON(w, http.StatusOK, map[string]interface{}{
 				"version": newSV,
@@ -535,6 +538,7 @@ func (s *Server) handleTerraformWorkspaceVariables(w http.ResponseWriter, r *htt
 				return
 			}
 			v.ID = id
+			logger.Info("terraform", ws.Name, fmt.Sprintf("Created variable %s in workspace %s", v.Key, ws.Name))
 			writeJSON(w, http.StatusCreated, sanitizeVariable(*v))
 
 		default:
@@ -612,6 +616,7 @@ func (s *Server) handleTerraformWorkspaceVariables(w http.ResponseWriter, r *htt
 		if updated == nil {
 			updated = existing
 		}
+		logger.Info("terraform", ws.Name, fmt.Sprintf("Updated variable %s in workspace %s", updated.Key, ws.Name))
 		writeJSON(w, http.StatusOK, sanitizeVariable(*updated))
 
 	case http.MethodDelete:
@@ -619,6 +624,7 @@ func (s *Server) handleTerraformWorkspaceVariables(w http.ResponseWriter, r *htt
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		logger.Info("terraform", ws.Name, fmt.Sprintf("Deleted variable %s from workspace %s", existing.Key, ws.Name))
 		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 
 	default:

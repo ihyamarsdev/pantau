@@ -663,6 +663,15 @@ func (d *DB) migrate() error {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		UNIQUE (module_id, version)
 	);
+	CREATE TABLE IF NOT EXISTS tf_output_links (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		workspace_id INTEGER NOT NULL,
+		var_name TEXT NOT NULL,
+		source_workspace_id INTEGER NOT NULL,
+		output_name TEXT NOT NULL,
+		UNIQUE (workspace_id, var_name)
+	);
+	CREATE TABLE IF NOT EXISTS tf_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, ts DATETIME NOT NULL, level TEXT NOT NULL, host TEXT NOT NULL DEFAULT '', message TEXT NOT NULL);
 	`
 	_, err := d.Exec(schema)
 	if err != nil {
@@ -683,6 +692,8 @@ func (d *DB) migrate() error {
 	}
 	_ = d.alterAddColumn("tf_workspaces", "group_name", "TEXT NOT NULL DEFAULT ''")
 	_ = d.alterAddColumn("tf_workspaces", "cloud_account_ids", "TEXT NOT NULL DEFAULT '[]'")
+	_ = d.alterAddColumn("tf_workspaces", "plan_interval_minutes", "INTEGER NOT NULL DEFAULT 0")
+	_ = d.alterAddColumn("tf_workspaces", "auto_apply", "INTEGER NOT NULL DEFAULT 0")
 	if err := d.migrateAnsibleBundles(); err != nil {
 		return fmt.Errorf("migrate ansible bundles: %w", err)
 	}
@@ -1582,6 +1593,8 @@ type SnapshotTFWorkspace struct {
 	WebhookToken         string    `json:"webhook_token"`
 	WebhookSecret        string    `json:"webhook_secret"`
 	DriftIntervalMinutes int       `json:"drift_interval_minutes"`
+	PlanIntervalMinutes  int       `json:"plan_interval_minutes,omitempty"`
+	AutoApply            bool      `json:"auto_apply,omitempty"`
 	GroupName            string    `json:"group_name,omitempty"`
 	CloudAccountIDs      []int64   `json:"cloud_account_ids,omitempty"`
 	CreatedAt            time.Time `json:"created_at"`
@@ -1685,6 +1698,7 @@ type SnapshotPayload struct {
 	AnsibleAssets          []SnapshotAnsibleAsset      `json:"ansible_assets,omitempty"`
 	TerraformWorkspaces    []SnapshotTFWorkspace       `json:"terraform_workspaces,omitempty"`
 	TerraformCloudAccounts []SnapshotTFCloudAccount    `json:"terraform_cloud_accounts,omitempty"`
+	TerraformOutputLinks   []TFOutputLink              `json:"terraform_output_links,omitempty"`
 	TerraformVariables     []SnapshotTFVariable        `json:"terraform_variables,omitempty"`
 	TerraformVarsets       []SnapshotTFVarset          `json:"terraform_varsets,omitempty"`
 	TerraformPolicies      []SnapshotTFPolicy          `json:"terraform_policies,omitempty"`
@@ -1829,18 +1843,21 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 	}
 
 	var allTFWorkspaces []SnapshotTFWorkspace
-	wsRows, err := d.Query(`SELECT id, name, description, environment, tags, binary, source, files, git_url, git_branch, git_path, git_auth, git_token, git_key_id, webhook_token, webhook_secret, drift_interval_minutes, group_name, cloud_account_ids, created_at, updated_at FROM tf_workspaces ORDER BY id ASC`)
+	wsRows, err := d.Query(`SELECT id, name, description, environment, tags, binary, source, files, git_url, git_branch, git_path, git_auth, git_token, git_key_id, webhook_token, webhook_secret, drift_interval_minutes, plan_interval_minutes, auto_apply, group_name, cloud_account_ids, created_at, updated_at FROM tf_workspaces ORDER BY id ASC`)
 	if err == nil {
 		defer wsRows.Close()
 		for wsRows.Next() {
 			var w SnapshotTFWorkspace
 			var cloudIDs string
-			if err := wsRows.Scan(&w.ID, &w.Name, &w.Description, &w.Environment, &w.Tags, &w.Binary, &w.Source, &w.Files, &w.GitURL, &w.GitBranch, &w.GitPath, &w.GitAuth, &w.GitToken, &w.GitKeyID, &w.WebhookToken, &w.WebhookSecret, &w.DriftIntervalMinutes, &w.GroupName, &cloudIDs, &w.CreatedAt, &w.UpdatedAt); err == nil {
+			var autoApply int
+			if err := wsRows.Scan(&w.ID, &w.Name, &w.Description, &w.Environment, &w.Tags, &w.Binary, &w.Source, &w.Files, &w.GitURL, &w.GitBranch, &w.GitPath, &w.GitAuth, &w.GitToken, &w.GitKeyID, &w.WebhookToken, &w.WebhookSecret, &w.DriftIntervalMinutes, &w.PlanIntervalMinutes, &autoApply, &w.GroupName, &cloudIDs, &w.CreatedAt, &w.UpdatedAt); err == nil {
+				w.AutoApply = autoApply != 0
 				w.CloudAccountIDs = unmarshalCloudAccountIDs(cloudIDs)
 				allTFWorkspaces = append(allTFWorkspaces, w)
 			}
 		}
 	}
+	allTFLinks, _ := d.ListAllTFOutputLinks()
 	var allTFCloudAccounts []SnapshotTFCloudAccount
 	if accts, err := d.ListTFCloudAccounts(); err == nil {
 		for _, a := range accts {
@@ -1951,6 +1968,7 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 		AnsibleAssets:          allAssets,
 		TerraformWorkspaces:    allTFWorkspaces,
 		TerraformCloudAccounts: allTFCloudAccounts,
+		TerraformOutputLinks:   allTFLinks,
 		TerraformVariables:     allTFVariables,
 		TerraformVarsets:       allTFVarsets,
 		TerraformPolicies:      allTFPolicies,
@@ -1974,7 +1992,7 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 		"alerts", "incidents", "actual_items", "desired_rules", "hosts", "terminal_presets",
 		"ssh_keys", "kube_clusters", "cloudflare_accounts",
 		"ansible_runs", "ansible_schedules", "ansible_playbooks", "ansible_assets",
-		"tf_runs", "tf_state_versions", "tf_variables", "tf_varset_workspaces", "tf_varsets", "tf_policies", "tf_module_versions", "tf_modules", "tf_workspaces", "tf_cloud_accounts",
+		"tf_output_links", "tf_runs", "tf_state_versions", "tf_variables", "tf_varset_workspaces", "tf_varsets", "tf_policies", "tf_module_versions", "tf_modules", "tf_workspaces", "tf_cloud_accounts",
 	}
 	for _, t := range tables {
 		if _, err := tx.Exec("DELETE FROM " + t); err != nil {
@@ -2124,15 +2142,21 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 			INSERT INTO tf_workspaces (
 				id, name, description, environment, tags, binary, source, files,
 				git_url, git_branch, git_path, git_auth, git_token, git_key_id,
-				webhook_token, webhook_secret, drift_interval_minutes, group_name, cloud_account_ids, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				webhook_token, webhook_secret, drift_interval_minutes, plan_interval_minutes, auto_apply, group_name, cloud_account_ids, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`,
 			w.ID, w.Name, w.Description, w.Environment, w.Tags, w.Binary, w.Source, w.Files,
 			w.GitURL, w.GitBranch, w.GitPath, w.GitAuth, w.GitToken, w.GitKeyID,
-			w.WebhookToken, w.WebhookSecret, w.DriftIntervalMinutes, w.GroupName, cloudIDs, w.CreatedAt, w.UpdatedAt,
+			w.WebhookToken, w.WebhookSecret, w.DriftIntervalMinutes, w.PlanIntervalMinutes, boolToInt(w.AutoApply), w.GroupName, cloudIDs, w.CreatedAt, w.UpdatedAt,
 		)
 		if err != nil {
 			return fmt.Errorf("insert tf workspace %d: %w", w.ID, err)
+		}
+	}
+	for _, l := range payload.TerraformOutputLinks {
+		if _, err := tx.Exec(`INSERT INTO tf_output_links (id, workspace_id, var_name, source_workspace_id, output_name) VALUES (?, ?, ?, ?, ?)`,
+			l.ID, l.WorkspaceID, l.VarName, l.SourceWorkspaceID, l.OutputName); err != nil {
+			return fmt.Errorf("insert tf output link %d: %w", l.ID, err)
 		}
 	}
 	for _, vs := range payload.TerraformVarsets {

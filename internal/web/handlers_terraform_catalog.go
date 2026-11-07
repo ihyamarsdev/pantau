@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"pantau/internal/logger"
 	"pantau/internal/store"
 	"pantau/internal/terraform"
 )
@@ -133,6 +134,7 @@ func (s *Server) handleTerraformPolicies(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		policy.ID = id
+		logger.Info("terraform", policy.Name, fmt.Sprintf("Created policy %s (id %d)", policy.Name, id))
 		writeJSON(w, http.StatusCreated, policy)
 
 	default:
@@ -240,6 +242,7 @@ func (s *Server) handleTerraformPolicyRoute(w http.ResponseWriter, r *http.Reque
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
+		logger.Info("terraform", existing.Name, fmt.Sprintf("Updated policy %s (id %d)", existing.Name, id))
 		writeJSON(w, http.StatusOK, existing)
 
 	case http.MethodDelete:
@@ -247,6 +250,7 @@ func (s *Server) handleTerraformPolicyRoute(w http.ResponseWriter, r *http.Reque
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		logger.Info("terraform", existing.Name, fmt.Sprintf("Deleted policy %s (id %d)", existing.Name, id))
 		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 
 	default:
@@ -310,6 +314,7 @@ func (s *Server) handleTerraformModules(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		mod.ID = id
+		logger.Info("terraform", mod.Name, fmt.Sprintf("Created module %s (id %d)", mod.Name, id))
 		writeJSON(w, http.StatusCreated, mod)
 
 	default:
@@ -386,6 +391,7 @@ func (s *Server) handleTerraformModuleRoute(w http.ResponseWriter, r *http.Reque
 			if updated == nil {
 				updated = mod
 			}
+			logger.Info("terraform", updated.Name, fmt.Sprintf("Updated module %s (id %d)", updated.Name, id))
 			writeJSON(w, http.StatusOK, updated)
 
 		case http.MethodDelete:
@@ -393,6 +399,7 @@ func (s *Server) handleTerraformModuleRoute(w http.ResponseWriter, r *http.Reque
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+			logger.Info("terraform", mod.Name, fmt.Sprintf("Deleted module %s (id %d)", mod.Name, id))
 			writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 
 		default:
@@ -418,6 +425,7 @@ func (s *Server) handleTerraformModuleRoute(w http.ResponseWriter, r *http.Reque
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+			logger.Info("terraform", mod.Name, fmt.Sprintf("Deleted version %s of module %s", ver, mod.Name))
 			writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 			return
 		}
@@ -534,6 +542,7 @@ func (s *Server) handleCreateModuleVersion(w http.ResponseWriter, r *http.Reques
 
 	usage := buildModuleUsageSnippet(mod.Name, ver, doc.Inputs)
 
+	logger.Info("terraform", mod.Name, fmt.Sprintf("Published version %s of module %s", ver, mod.Name))
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"version":    mv,
 		"doc":        doc,

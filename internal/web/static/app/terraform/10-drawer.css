@@ -43,6 +43,16 @@
 
 @media (prefers-reduced-motion: reduce) { .tf-drawer, .tf-drawer-backdrop { transition: none !important; } }
 
+/* Narrow viewports: tab strips scroll sideways, grids never force overflow, dialogs fit (tfDlg also caps max-width at 96vw). */
+.tf-drawer-tabs button, #tfTabs .tab { flex: none; }
+#tfVarsetsList, #tfPoliciesList { grid-template-columns: repeat(auto-fill, minmax(min(460px, 100%), 1fr)); }
+#tfDlg1Content, #tfDlg2Content { max-height: 92vh; }
+@media (max-width: 900px) {
+  .tf-drawer-tabs { padding: 0 8px; -webkit-overflow-scrolling: touch; }
+  .tf-drawer-body { padding: 12px; }
+  #tfTabs { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}
+
 /* Shared panel/table rules still used by the Terraform tabs (removed from index.html in the Ansible redesign). */
 .ans-sched-tbl th, .ans-sched-tbl td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--card-border); vertical-align: middle; }
 .ans-sched-tbl tbody tr:last-child td { border-bottom: 0; }

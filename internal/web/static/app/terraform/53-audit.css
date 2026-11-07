@@ -1,0 +1,13 @@
+/* Audit tab — scoped under .tf-audit-*. */
+.tf-audit-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.tf-audit-bar label { font-size: var(--fs-xs); color: var(--text-muted); }
+.tf-audit-bar select { width: auto; min-width: 180px; max-width: 100%; }
+.tf-audit-list { padding: 0; }
+.tf-audit-row { display: flex; gap: 10px; align-items: baseline; padding: 8px 12px; border-bottom: 1px solid var(--card-border); font-size: var(--fs-xs); }
+.tf-audit-row:last-child { border-bottom: 0; }
+.tf-audit-time { color: var(--text-muted); font-family: var(--font-mono); white-space: nowrap; flex-shrink: 0; }
+.tf-audit-msg { min-width: 0; word-break: break-word; }
+@media (max-width: 700px) {
+  .tf-audit-row { flex-wrap: wrap; }
+  .tf-audit-msg { flex-basis: 100%; }
+}

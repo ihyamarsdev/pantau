@@ -29,6 +29,7 @@
   C.modeFor = function (name) {
     if (name.endsWith('.yaml') || name.endsWith('.yml')) return 'yaml';
     if (name.endsWith('.sh')) return 'shell';
+    if (/\.(tf|tfvars|hcl)$/.test(name)) return 'hcl';
     if (name.endsWith('.json')) return { name: 'javascript', json: true };
     return null;
   };

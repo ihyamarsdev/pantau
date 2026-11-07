@@ -1,6 +1,7 @@
 package web
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -80,5 +81,53 @@ func TestTerraformCloudTabHooks(t *testing.T) {
 	}
 	if strings.Contains(html, `id="tfRunStartBtn" class="btn btn-sm btn-primary" style="width:100%`) {
 		t.Error("Start Run button must not be full width")
+	}
+}
+
+// Variables tab: "Detect from configuration" button, dialog list, add button and i18n (EN+ID).
+func TestTerraformVariableDetectUI(t *testing.T) {
+	html := string(embeddedHTML)
+	for _, s := range []string{
+		`id="tfVarDetectBtn"`, `id="tfVarDetectList"`, `id="tfVarDetectAdd"`, `data-vd="`,
+		`/variables/detect`, `tfDetectVars()`, `tfDetectAdd()`,
+		`tfx_vd_btn: ['Detect from configuration', 'Deteksi dari konfigurasi']`,
+		`tfx_vd_title: [`, `tfx_vd_git: [`, `tfx_vd_empty: [`, `tfx_vd_exists: ['Already defined', 'Sudah ada']`,
+		`tfx_vd_add: [`, `tfx_vd_added: [`, `tfx_vd_none: [`,
+	} {
+		if !strings.Contains(html, s) {
+			t.Errorf("index.html missing %s", s)
+		}
+	}
+}
+
+// Audit tab, Gate extras / template-picker hooks, widened dialogs and narrow-viewport CSS.
+func TestTerraformUIHooksAuditGateTemplates(t *testing.T) {
+	html := string(embeddedHTML)
+	for _, s := range []string{
+		`id="tabTfAudit"`, `aria-controls="tfPanelAudit"`, `id="tfPanelAudit"`, `id="tfAuditRoot"`,
+		`'policies', 'modules', 'audit', 'gate'`, `tfAuditRefresh`,
+		`"tf_tab_audit": "Audit"`,
+		`id="tfGateExtras"`, `tfGateExtras(document.getElementById('tfGateExtras'))`,
+		`if (!ws && typeof tfTplInject === 'function') tfTplInject();`,
+		`'min(' + (width || 560) + 'px, 96vw)'`, `'startTfRun()')), 720)`,
+	} {
+		if !strings.Contains(html, s) {
+			t.Errorf("index.html missing %s", s)
+		}
+	}
+	if n := strings.Count(html, `"tf_tab_audit":`); n != 2 {
+		t.Errorf("tf_tab_audit must exist in EN and ID dictionaries, found %d", n)
+	}
+	if strings.Index(html, `id="tfGateExtras"`) < strings.Index(html, `id="tfPanelGate"`) || strings.Index(html, `id="tfGateExtras"`) > strings.Index(html, `id="tfPanelAudit"`) {
+		t.Error("tfGateExtras must live inside #tfPanelGate")
+	}
+	css, err := os.ReadFile("static/app/terraform/10-drawer.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{`.tf-drawer-tabs { position: sticky; top: 0; z-index: 1; display: flex;`, `overflow-x: auto`, `@media (max-width: 900px)`} {
+		if !strings.Contains(string(css), s) {
+			t.Errorf("10-drawer.css missing %q", s)
+		}
 	}
 }

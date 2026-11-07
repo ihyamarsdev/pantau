@@ -23,6 +23,11 @@ type cloudAccountReq struct {
 	Provider    string            `json:"provider"`
 	Description string            `json:"description"`
 	Fields      map[string]string `json:"fields"`
+	// ImportFrom copies credentials from an existing Pantau account (POST only).
+	ImportFrom *struct {
+		Type string `json:"type"`
+		ID   int64  `json:"id"`
+	} `json:"import_from"`
 }
 
 // cloudAccountJSON never exposes secret values: only non-secret fields plus a secrets_set map.
@@ -106,6 +111,12 @@ func (s *Server) handleTerraformCloudAccounts(w http.ResponseWriter, r *http.Req
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
+		if req.ImportFrom != nil {
+			if err := s.applyCloudImport(&req); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				return
+			}
+		}
 		if err := terraform.ValidateCloudFields(req.Provider, req.Fields); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
@@ -142,6 +153,10 @@ func (s *Server) handleTerraformCloudAccountRoute(w http.ResponseWriter, r *http
 		return
 	}
 
+	if strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/terraform/cloud-accounts/"), "/") == "importable" {
+		s.handleCloudImportable(w, r)
+		return
+	}
 	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/terraform/cloud-accounts/"), "/"), "/")
 	id, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil || id <= 0 {
@@ -246,6 +261,7 @@ func (s *Server) handleCloudAccountTest(w http.ResponseWriter, r *http.Request, 
 			http.Error(w, serr.Error(), http.StatusInternalServerError)
 			return
 		}
+		logger.Warn("terraform", a.Name, fmt.Sprintf("Tested cloud account %s (%s): failed", a.Name, a.Provider))
 		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": false, "error": msg})
 		return
 	}
@@ -253,6 +269,7 @@ func (s *Server) handleCloudAccountTest(w http.ResponseWriter, r *http.Request, 
 		http.Error(w, serr.Error(), http.StatusInternalServerError)
 		return
 	}
+	logger.Info("terraform", a.Name, fmt.Sprintf("Tested cloud account %s (%s): ok", a.Name, a.Provider))
 	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "identity": identity})
 }
 
@@ -279,4 +296,77 @@ func (s *Server) cloudAccountRefs(ids []int64) []map[string]interface{} {
 		}
 	}
 	return refs
+}
+
+// applyCloudImport copies credentials of an existing Pantau cloudflare account / kube cluster
+// into req.Fields (a non-empty request field wins). The copy is not a live reference.
+func (s *Server) applyCloudImport(req *cloudAccountReq) error {
+	imp := req.ImportFrom
+	var src map[string]string
+	switch imp.Type {
+	case "cloudflare":
+		a, err := s.db.GetCloudflareAccount(imp.ID)
+		if err != nil {
+			return err
+		}
+		if a == nil {
+			return errors.New("cloudflare account not found")
+		}
+		if a.APIToken == "" {
+			return errors.New("cloudflare account has no API token")
+		}
+		src = map[string]string{"api_token": a.APIToken, "account_id": a.AccountID}
+	case "kubernetes":
+		c, err := s.db.GetKubeCluster(imp.ID)
+		if err != nil {
+			return err
+		}
+		if c == nil {
+			return errors.New("kubernetes cluster not found")
+		}
+		if strings.TrimSpace(c.Kubeconfig) == "" {
+			return errors.New("kubernetes cluster has no kubeconfig")
+		}
+		src = map[string]string{"kubeconfig": c.Kubeconfig, "context": c.Context}
+	default:
+		return fmt.Errorf("cannot import from %q", imp.Type)
+	}
+	req.Provider = imp.Type
+	for k, v := range src {
+		if req.Fields[k] == "" {
+			req.Fields[k] = strings.TrimSpace(v)
+		}
+	}
+	return nil
+}
+
+// handleCloudImportable: GET /api/terraform/cloud-accounts/importable (names only, no secrets).
+func (s *Server) handleCloudImportable(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	type item struct {
+		ID     int64  `json:"id"`
+		Name   string `json:"name"`
+		Usable bool   `json:"usable"`
+	}
+	cf, kube := []item{}, []item{}
+	accts, err := s.db.ListCloudflareAccounts()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for _, a := range accts {
+		cf = append(cf, item{a.ID, a.Name, a.APIToken != ""})
+	}
+	clusters, err := s.db.ListKubeClusters()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for _, c := range clusters {
+		kube = append(kube, item{c.ID, c.Name, strings.TrimSpace(c.Kubeconfig) != ""})
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"cloudflare": cf, "kubernetes": kube})
 }

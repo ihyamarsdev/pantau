@@ -27,6 +27,7 @@ func (s *Server) StartTerraformDriftScheduler(ctx context.Context) {
 				return
 			case now := <-t.C:
 				s.terraformDriftSchedulerTick(now)
+				s.terraformPlanSchedulerTick(now)
 			}
 		}
 	}()
@@ -66,41 +67,70 @@ func (s *Server) terraformDriftSchedulerTick(now time.Time) {
 		}
 
 		// Overdue: trigger drift check run
-		locked, err := s.db.TryLockTFWorkspace(ws.ID, "run:pending", "drift check scheduled")
-		if err != nil || !locked {
-			continue
-		}
-
-		run := &store.TFRun{
+		s.launchScheduledRun(&ws, &store.TFRun{
 			WorkspaceID: ws.ID,
 			Type:        "drift",
 			Speculative: true,
-			Status:      "queued",
 			TriggerKind: "drift",
 			Message:     "scheduled drift detection",
-		}
-		runID, err := s.db.CreateTFRun(run)
-		if err != nil {
-			_ = s.db.UnlockTFWorkspace(ws.ID)
-			continue
-		}
-		run.ID = runID
-
-		// Update lock with actual run id
-		_ = s.db.SetTFWorkspaceLock(ws.ID, fmt.Sprintf("run:%d", runID), "drift check")
-
-		fullWS, err := s.db.GetTFWorkspace(ws.ID)
-		if err != nil {
-			_ = s.db.UnlockTFWorkspace(ws.ID)
-			continue
-		}
-
-		if err := s.tfMgr.StartPlan(fullWS, run); err != nil {
-			_ = s.db.FinishTFRun(runID, "errored", nil, err.Error())
-			_ = s.db.UnlockTFWorkspace(ws.ID)
-			continue
-		}
-
-		logger.Info("terraform", ws.Name, fmt.Sprintf("Triggered scheduled drift check run %d", runID))
+		}, "drift check")
 	}
+}
+
+// terraformPlanSchedulerTick creates a `schedule` plan run for workspaces whose plan_interval_minutes elapsed.
+func (s *Server) terraformPlanSchedulerTick(now time.Time) {
+	if s.tfMgr == nil || !s.db.GetTerraformEnabled() {
+		return
+	}
+	workspaces, err := s.db.ListTFWorkspaces("", "", "")
+	if err != nil {
+		logger.Warn("terraform", "", fmt.Sprintf("Plan scheduler failed to list workspaces: %v", err))
+		return
+	}
+	for _, ws := range workspaces {
+		if ws.PlanIntervalMinutes <= 0 || ws.Locked || s.tfMgr.HasActiveRunForWorkspace(ws.ID) {
+			continue
+		}
+		last, err := s.db.LastTFScheduledRunAt(ws.ID)
+		if err != nil || (last != nil && now.Before(last.Add(time.Duration(ws.PlanIntervalMinutes)*time.Minute))) {
+			continue
+		}
+		s.launchScheduledRun(&ws, &store.TFRun{
+			WorkspaceID: ws.ID,
+			Type:        "plan",
+			TriggerKind: "schedule",
+			Message:     "scheduled plan",
+		}, "plan")
+	}
+}
+
+// launchScheduledRun locks the workspace, records the run and starts its plan; false = skipped or failed.
+func (s *Server) launchScheduledRun(ws *store.TFWorkspace, run *store.TFRun, reason string) bool {
+	locked, err := s.db.TryLockTFWorkspace(ws.ID, "run:pending", reason+" scheduled")
+	if err != nil || !locked {
+		return false
+	}
+	run.Status = "queued"
+	runID, err := s.db.CreateTFRun(run)
+	if err != nil {
+		_ = s.db.UnlockTFWorkspace(ws.ID)
+		return false
+	}
+	run.ID = runID
+
+	// Update lock with actual run id
+	_ = s.db.SetTFWorkspaceLock(ws.ID, fmt.Sprintf("run:%d", runID), reason)
+
+	fullWS, err := s.db.GetTFWorkspace(ws.ID)
+	if err != nil {
+		_ = s.db.UnlockTFWorkspace(ws.ID)
+		return false
+	}
+	if err := s.tfMgr.StartPlan(fullWS, run); err != nil {
+		_ = s.db.FinishTFRun(runID, "errored", nil, err.Error())
+		_ = s.db.UnlockTFWorkspace(ws.ID)
+		return false
+	}
+	logger.Info("terraform", ws.Name, fmt.Sprintf("Triggered scheduled %s run %d", reason, runID))
+	return true
 }

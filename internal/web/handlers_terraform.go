@@ -74,6 +74,8 @@ func (s *Server) formatWorkspaceResponse(ws *store.TFWorkspace, includeFiles boo
 		"webhook_enabled":        ws.WebhookEnabled,
 		"webhook_url":            webhookURL,
 		"drift_interval_minutes": ws.DriftIntervalMinutes,
+		"plan_interval_minutes":  ws.PlanIntervalMinutes,
+		"auto_apply":             ws.AutoApply,
 		"status":                 ws.Status,
 		"locked":                 ws.Locked,
 		"lock_reason":            ws.LockReason,
@@ -317,6 +319,8 @@ func (s *Server) handleTerraformWorkspaces(w http.ResponseWriter, r *http.Reques
 			GitToken             string            `json:"git_token"`
 			GitKeyID             int64             `json:"git_key_id"`
 			DriftIntervalMinutes int               `json:"drift_interval_minutes"`
+			PlanIntervalMinutes  int               `json:"plan_interval_minutes"`
+			AutoApply            bool              `json:"auto_apply"`
 			CloudAccountIDs      []int64           `json:"cloud_account_ids"`
 		}
 		if !decodeTerraformBody(w, r, &req) {
@@ -375,6 +379,10 @@ func (s *Server) handleTerraformWorkspaces(w http.ResponseWriter, r *http.Reques
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": gerr.Error()})
 			return
 		}
+		if err := validateTFPlanAuto(req.PlanIntervalMinutes, req.AutoApply, req.Environment); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
 		ws := &store.TFWorkspace{
 			Name:                 req.Name,
 			Description:          req.Description,
@@ -391,6 +399,8 @@ func (s *Server) handleTerraformWorkspaces(w http.ResponseWriter, r *http.Reques
 			GitToken:             req.GitToken,
 			GitKeyID:             req.GitKeyID,
 			DriftIntervalMinutes: req.DriftIntervalMinutes,
+			PlanIntervalMinutes:  req.PlanIntervalMinutes,
+			AutoApply:            req.AutoApply,
 			CloudAccountIDs:      req.CloudAccountIDs,
 		}
 
@@ -456,6 +466,16 @@ func (s *Server) handleTerraformWorkspaceRoute(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	if len(rest) == 2 && rest[0] == "variables" && rest[1] == "detect" {
+		s.handleWorkspaceVarDetect(w, r, ws)
+		return
+	}
+
+	if len(rest) == 2 && rest[0] == "state" && rest[1] == "ops" {
+		s.handleWorkspaceStateOps(w, r, ws)
+		return
+	}
+
 	// Delegation to TfWebData for {state, outputs, variables}
 	switch rest[0] {
 	case "state", "outputs", "variables":
@@ -493,8 +513,14 @@ func (s *Server) handleTerraformWorkspaceRoute(w http.ResponseWriter, r *http.Re
 			s.handleWorkspaceForceUnlock(w, r, ws)
 			return
 		}
+	case "output-links":
+		s.handleTerraformOutputLinks(w, r, ws, rest[1:])
+		return
 	case "drift":
 		s.handleWorkspaceDrift(w, r, ws, rest[1:])
+		return
+	case "tools":
+		s.handleWorkspaceTools(w, r, ws, rest[1:])
 		return
 	case "git":
 		if len(rest) >= 2 {
@@ -539,7 +565,9 @@ func (s *Server) handleWorkspaceDetail(w http.ResponseWriter, r *http.Request, w
 			GitToken             string            `json:"git_token"`
 			GitKeyID             int64             `json:"git_key_id"`
 			DriftIntervalMinutes int               `json:"drift_interval_minutes"`
-			CloudAccountIDs      *[]int64          `json:"cloud_account_ids"` // nil keeps the stored links
+			PlanIntervalMinutes  *int              `json:"plan_interval_minutes"` // nil keeps the stored value
+			AutoApply            *bool             `json:"auto_apply"`            // nil keeps the stored value
+			CloudAccountIDs      *[]int64          `json:"cloud_account_ids"`     // nil keeps the stored links
 		}
 		if !decodeTerraformBody(w, r, &req) {
 			return
@@ -610,6 +638,17 @@ func (s *Server) handleWorkspaceDetail(w http.ResponseWriter, r *http.Request, w
 		}
 
 		ws.DriftIntervalMinutes = req.DriftIntervalMinutes
+		// Omitted fields keep the stored values (older clients never send them).
+		if req.PlanIntervalMinutes != nil {
+			ws.PlanIntervalMinutes = *req.PlanIntervalMinutes
+		}
+		if req.AutoApply != nil {
+			ws.AutoApply = *req.AutoApply
+		}
+		if err := validateTFPlanAuto(ws.PlanIntervalMinutes, req.AutoApply != nil && *req.AutoApply, ws.Environment); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
 
 		if err := s.db.UpdateTFWorkspace(ws); err != nil {
 			if errors.Is(err, store.ErrTFWorkspaceNameTaken) {

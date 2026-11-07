@@ -1,0 +1,11 @@
+/* Variables tab: linked outputs card */
+.tf-lk { margin-top: 16px; display: flex; flex-direction: column; gap: 10px; }
+.tf-lk-hint { font-size: var(--fs-xs); color: var(--text-muted); max-width: 80ch; }
+.tf-lk-rows { display: flex; flex-direction: column; gap: 8px; }
+.tf-lk-row { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) minmax(120px, 1fr) auto auto; gap: 8px; align-items: center; }
+.tf-lk-row .form-input { width: 100%; box-sizing: border-box; min-width: 0; }
+.tf-lk-row [data-lk-var] { font-family: var(--font-mono); font-size: var(--fs-xs); }
+.tf-lk-chip { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--warning); background: var(--warning-soft, rgba(245, 158, 11, .12)); border-radius: var(--radius-sm); padding: 2px 8px; white-space: nowrap; }
+.tf-lk-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.tf-lk-err { margin-right: auto; font-size: var(--fs-xs); color: var(--danger); overflow-wrap: anywhere; }
+@media (max-width: 768px) { .tf-lk-row { grid-template-columns: 1fr auto; } .tf-lk-row [data-lk-var], .tf-lk-row select { grid-column: 1 / -1; } }

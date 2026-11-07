@@ -110,19 +110,8 @@ func Plan(ctx context.Context, spec PlanSpec, log io.Writer) (*PlanResult, error
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	// Collect sensitive secrets to redact from log
-	var sensitiveSecrets []string
-	for _, v := range spec.Vars {
-		if v.Sensitive && v.Value != "" {
-			sensitiveSecrets = append(sensitiveSecrets, v.Value)
-		}
-	}
-	for _, v := range spec.Env {
-		if len(v) >= 4 { // Redact reasonable length secrets
-			sensitiveSecrets = append(sensitiveSecrets, v)
-		}
-	}
-	rLog := newRedactionWriter(log, sensitiveSecrets)
+	// Collect secrets to redact from log (computed before env file paths are added)
+	rLog := newRedactionWriter(log, spec.logSecrets())
 
 	// Ensure Root, home, data, plugin-cache exist with 0700
 	if err := os.MkdirAll(filepath.Join(spec.Root, "home"), 0700); err != nil {
@@ -193,11 +182,19 @@ func Plan(ctx context.Context, spec PlanSpec, log io.Writer) (*PlanResult, error
 	if err := writeVarFiles(workDir, spec.Vars); err != nil {
 		return nil, err
 	}
+	if err := writeBackendOverride(workDir, spec.Root); err != nil {
+		return nil, err
+	}
 
-	env := spec.prepareEnv()
+	envCfg, cleanupEnv, err := spec.Config.withEnvFiles()
+	if err != nil {
+		return nil, err
+	}
+	defer cleanupEnv()
+	env := envCfg.prepareEnv()
 
-	// 1. terraform init -input=false -no-color
-	initCmd := exec.Command(binPath, "init", "-input=false", "-no-color")
+	// 1. terraform init -input=false -no-color -reconfigure (TF_DATA_DIR persists across runs)
+	initCmd := exec.Command(binPath, "init", "-input=false", "-no-color", "-reconfigure")
 	initCmd.Dir = workDir
 	initCmd.Env = env
 	initCmd.Stdout = rLog
@@ -213,7 +210,7 @@ func Plan(ctx context.Context, spec PlanSpec, log io.Writer) (*PlanResult, error
 
 	// 2. terraform plan
 	planPath := filepath.Join(runDir, "tfplan")
-	planArgs := []string{"plan", "-input=false", "-no-color", "-detailed-exitcode", "-state=" + stateFilePath, "-out=" + planPath}
+	planArgs := []string{"plan", "-input=false", "-no-color", "-detailed-exitcode", "-out=" + planPath}
 
 	mode := spec.Mode
 	if mode == "destroy" {

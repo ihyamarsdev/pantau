@@ -509,7 +509,7 @@ Entri kredensial (nama, `account_id` opsional, API Token) yang terdaftar di Pant
 _Avoid_: CF profile, API key entry
 
 **Cloud Account**:
-Kredensial provider cloud (AWS, Google Cloud, Azure, DigitalOcean, Hetzner) yang terdaftar di Pantau dan dihubungkan ke Terraform Workspace; saat Run, nilainya disuntikkan sebagai variabel lingkungan (variabel `env` Workspace menimpanya).
+Kredensial provider cloud (AWS, Google Cloud, Azure, DigitalOcean, Hetzner, Cloudflare, Kubernetes) yang terdaftar di Pantau dan dihubungkan ke Terraform Workspace; saat Run, nilainya disuntikkan sebagai variabel lingkungan (variabel `env` Workspace menimpanya). Dapat dibuat dengan menyalin kredensial dari akun Cloudflare/cluster Kubernetes Pantau (salinan saat impor, bukan tautan langsung).
 _Avoid_: Cloud profile, credential set
 
 **Cloudflare Zone**:
@@ -631,6 +631,22 @@ _Avoid_: Mutex, state lock file
 **Variable Set**:
 Kumpulan variabel yang dibagikan ke banyak Workspace (atau global).
 _Avoid_: Shared vars, env group
+
+**Detect Variables**:
+Tombol di tab Variables Workspace inline yang memindai blok `variable` pada berkas `.tf` (bukan parser HCL penuh) dan menambahkan yang dipilih sebagai variabel `terraform`; tidak untuk Workspace Git.
+_Avoid_: Auto-import variables
+
+**Linked Output**:
+Tautan di tab Variables Workspace yang menyuntikkan sebuah output dari State Version terbaru Workspace lain ke variabel `terraform`; nilai diselesaikan saat Run dimulai (bukan `terraform_remote_state`), output sensitif tetap tersamarkan, variabel eksplisit bernama sama menang, siklus ditolak, dan output yang tidak tersedia menggagalkan awal Run.
+_Avoid_: Remote state, data source antar workspace
+
+**State Operation**:
+Aksi di tab State (`state rm`, `state mv`, import resource) yang berjalan di bawah Workspace Lock dan selalu menghasilkan State Version baru (versi lama tetap ada, sumber tercatat mis. `state rm x`); dikonfirmasi lewat dialog yang menampilkan perintah persisnya.
+_Avoid_: State edit, state surgery
+
+**Auto-apply**:
+Pengaturan opt-in per Workspace (`auto_apply`) yang meng-apply otomatis plan berstatus kebijakan `passed` dan memiliki perubahan, dengan komentar `auto-apply`. Tidak pernah untuk environment produksi; Run destroy/refresh dan Run dengan peringatan kebijakan tetap melalui Approval Gate manual.
+_Avoid_: Auto-deploy, continuous apply
 
 **Terraform Drift**:
 Perbedaan infrastruktur riil vs state yang terdeteksi plan `-refresh-only` (beda dari **Drift** inspeksi Host).

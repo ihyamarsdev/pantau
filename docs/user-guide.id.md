@@ -820,8 +820,13 @@ Workspace merepresentasikan satu unit environment infrastruktur yang terisolasi 
      - **Berkas Inline**: Simpan hingga 50 berkas (maksimal 256 KiB per berkas; `.tf`, `.tfvars`, `.json`, `.yaml`, dll.) langsung di basis data Pantau.
      - **Repositori Git**: Masukkan URL repositori (`https://` atau `ssh://`), nama branch target, direktori kerja di dalam repositori (bawaan: root), serta kredensial (token atau kunci SSH dari Library).
 3. Workspace dialokasikan direktori kerja privat di server Pantau (`<DataRoot>/terraform/<workspaceID>`) dengan izin direktori ketat `0700`.
+4. **Template**: modal Workspace Baru memiliki pemilih template (Hello world, AWS S3 bucket, AWS EC2 instance, GCP storage bucket, Azure resource group, DigitalOcean droplet, Hetzner server, Cloudflare DNS record, Kubernetes namespace; `GET /api/terraform/templates`). Template khusus provider membutuhkan **Akun Cloud** yang sesuai tertaut (diatur di Settings). Beberapa template punya variabel wajib tanpa default (`bucket_name`, `zone_id`, `name`, `content`), dan run pertama membutuhkan jaringan untuk mengunduh provider.
 
 Mengklik kartu atau baris workspace membuka workspace tersebut di **side drawer** yang menempel di sisi kanan (pola yang sama dengan drawer Ansible) dengan tab **Overview**, **Configuration**, **Runs**, **State**, **Variables**, **Drift**, dan **Settings**. Berkas dan pengaturan disunting langsung di tempat: tab **Configuration** menyunting berkas inline di editor kode (tambah/hapus berkas, `Ctrl+S`, Save & plan; workspace Git membuka Git editor) dan tab **Settings** menyunting nama, grup, environment, tag, biner, interval drift, dan koneksi Git secara langsung. Tombol perluas memperlebar drawer hingga hampir memenuhi layar (pilihannya diingat); **Esc**, latar belakang (backdrop), atau tombol tutup menutupnya.
+
+Editor tab **Configuration** memiliki penyorotan sintaks HCL dan dua alat untuk workspace inline (bekerja pada isi editor saat ini, termasuk yang belum disimpan):
+- **Format**: menjalankan `terraform fmt` / `tofu fmt` (`Ctrl+Shift+F`) pada berkas (`POST /api/terraform/workspaces/{id}/tools/fmt`).
+- **Validate**: menjalankan `init -backend=false` + `validate` (`POST /api/terraform/workspaces/{id}/tools/validate`), maksimal 2 menit dan 2 proses bersamaan. Diagnostik tampil di panel sebagai `file:line`. Saat offline, validasi hanya berfungsi dengan provider yang sudah ada di cache atau bawaan.
 
 #### Pengelompokan & Organisasi Workspace
 
@@ -871,6 +876,8 @@ Pantau menggunakan SQLite sebagai sumber kebenaran tunggal (*single source of tr
   - **Kunci Otomatis**: Workspace dikunci otomatis (`locked_by = "run:<id>"`) selama run berstatus antre, planning, menunggu approval, atau applying.
   - **Kunci Manual**: Administrator dapat mengunci workspace secara manual dengan alasan tertentu guna mencegah pemicuan otomatis selama pemeliharaan.
   - **Force Unlock**: Jika run terhenti atau bermasalah, administrator dapat memicu Force Unlock darurat untuk membatalkan run aktif, membuka kunci database, dan membersihkan berkas lock `.terraform.tfstate.lock.info` di disk.
+- **State Operations** (tab State): **Remove** (`state rm`), **Move** (`state mv`) dan **Import resource** (`POST /api/terraform/workspaces/{id}/state/ops`). Tiap operasi membuat versi state **baru** (versi sebelumnya disimpan; sumbernya dicatat, mis. `state rm x`). Workspace dikunci selama operasi (HTTP 423 jika sudah terkunci, 409 jika ada run aktif). Dialog konfirmasi menampilkan perintah persisnya. Import menjalankan `init` dan memakai kredensial Akun Cloud yang tertaut. Tombol aksi terlihat pada setiap baris resource.
+- **Backend run**: run tidak lagi memakai flag `-state` yang deprecated. Pantau menulis `pantau_backend_override.tf` (backend `local` dengan path di root run, menggantikan backend apa pun di kode Anda) dan menjalankan `init -reconfigure`. Jangan memakai nama berkas `pantau_backend_override.tf` pada berkas workspace Anda; berkas itu ditimpa.
 
 #### Variabel dan Variable Sets
 
@@ -881,12 +888,14 @@ Kelola variabel konfigurasi secara teratur tanpa memasukkan nilai langsung ke da
 - **Nilai Sensitif**: Variabel yang ditandai sensitif bersifat *write-only*. Nilainya disensor sebagai string `(sensitive)` pada log eksekusi, tidak pernah dikembalikan ke respons API JSON (`json:"-"`), dan disembunyikan di antarmuka web.
 - **Variable Sets**: Kelompokkan variabel terkait (misal: *Kredensial Cloud Produksi*, *Konfigurasi DNS Global*) lalu kaitkan ke beberapa workspace sekaligus, atau jadikan **Global** agar berlaku otomatis ke seluruh workspace.
 - **Prioritas Resolusi**: Variabel level Workspace menimpa variabel dari Variable Set yang terhubung, yang mana menimpa Variable Set Global.
+- **Deteksi dari konfigurasi**: pada workspace inline, tombol **Detect from configuration** di tab **Variables** (`GET /api/terraform/workspaces/{id}/variables/detect`) mem-parse blok `variable` pada berkas `.tf` lalu mendaftarkannya. Variabel ber-default tidak dicentang, yang wajib (tanpa default) dicentang, dan yang sudah ada ditampilkan nonaktif. Yang dipilih ditambahkan sebagai variabel `terraform`. Workspace Git tidak didukung; pemindai bukan parser HCL penuh dan hanya membaca berkas `.tf`.
+- **Linked outputs** (kartu tab Variables): menyuntikkan output dari **state terbaru** workspace lain ke variabel Terraform (`GET/PUT /api/terraform/workspaces/{id}/output-links`). Nilai diselesaikan saat run dimulai dan diteruskan sebagai HCL JSON; output sensitif tetap tersamarkan. Variabel workspace atau variable set eksplisit dengan nama yang sama menang atas tautan. Siklus antar workspace ditolak, dan output yang tidak tersedia (tanpa state, output tidak ada) menggagalkan awal run dengan pesan jelas. Tautan ikut dalam backup.
 
 #### Akun Cloud
 
 Daftarkan kredensial provider sekali, lalu setiap run workspace memakainya tanpa menyalin kunci ke variabel workspace.
-1. Buka **Terraform → Akun Cloud** dan klik **Akun baru**. Pilih provider (AWS, Google Cloud, Microsoft Azure, DigitalOcean, Hetzner), beri nama, lalu isi kolom kredensial.
-2. Klik **Test connection** pada akun. Pantau memverifikasi kredensial ke API provider: AWS `sts:GetCallerIdentity`, token service account Google Cloud + pengecekan project, token client-credentials Azure, DigitalOcean `/v2/account`, Hetzner `/v1/servers`. Hasil (dan identitas yang ditemukan) tampil pada akun.
+1. Buka **Terraform → Akun Cloud** dan klik **Akun baru**. Pilih provider (AWS, Google Cloud, Microsoft Azure, DigitalOcean, Hetzner, Cloudflare, Kubernetes), beri nama, lalu isi kolom kredensial. Cloudflare memakai `api_token` dan `account_id` opsional; Kubernetes memakai kubeconfig dan context opsional. Untuk Kubernetes, kubeconfig ditulis ke berkas sementara `0600` per run, dihapus setelah run selesai, dan isinya disensor dari log.
+2. Klik **Test connection** pada akun. Pantau memverifikasi kredensial ke API provider: AWS `sts:GetCallerIdentity` (dan `AssumeRole` bila role diisi), token service account Google Cloud + pengecekan project, token client-credentials Azure, DigitalOcean `/v2/account`, Hetzner `/v1/servers`, API verifikasi token Cloudflare. Kubernetes hanya mem-parse kubeconfig (tanpa panggilan jaringan). Hasil (dan identitas yang ditemukan) tampil pada akun.
 3. Buka drawer workspace → **Settings** → kartu **Cloud accounts** lalu centang akun yang ingin dihubungkan. Satu workspace dapat menghubungkan beberapa akun; menghapus akun otomatis melepas tautannya di semua workspace.
 4. Setiap run workspace yang terhubung (plan, apply, drift, webhook, operasi state, estimasi biaya) menerima kredensial sebagai variabel lingkungan:
 
@@ -897,9 +906,20 @@ Daftarkan kredensial provider sekali, lalu setiap run workspace memakainya tanpa
 | Microsoft Azure | `ARM_SUBSCRIPTION_ID`, `ARM_TENANT_ID`, `ARM_CLIENT_ID`, `ARM_CLIENT_SECRET` |
 | DigitalOcean | `DIGITALOCEAN_TOKEN` |
 | Hetzner | `HCLOUD_TOKEN` |
+| Cloudflare | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (opsional) |
+| Kubernetes | `KUBE_CONFIG_PATH` + `KUBECONFIG` (path kubeconfig sementara), `KUBE_CTX` (context opsional) |
 
 - **Prioritas**: bila beberapa akun terhubung, akun dengan id lebih besar menang saat bentrok; variabel `env` milik workspace dan Variable Set menimpa nilai dari akun cloud.
-- **Keamanan**: kredensial disimpan di database Pantau, tidak pernah dikembalikan oleh API (kolom rahasia tampil "stored"; kosongkan kolom rahasia saat mengedit untuk mempertahankannya), ikut dalam backup snapshot terenkripsi, dan disensor di log run. Hanya kredensial statis yang didukung (tanpa OIDC / workload identity).
+- **Keamanan**: kredensial disimpan di database Pantau, tidak pernah dikembalikan oleh API (kolom rahasia tampil "stored"; kosongkan kolom rahasia saat mengedit untuk mempertahankannya), dan ikut dalam backup snapshot terenkripsi. Hanya kredensial statis (atau AWS assume role, lihat di bawah) yang didukung (tanpa OIDC / workload identity). Kredensial tetap tersimpan sebagai nilai polos di SQLite (tanpa enkripsi at-rest).
+- **Penyensoran log**: log run hanya menyensor rahasia. Kolom cloud non-rahasia (region, access key id, tenant / subscription / client id, project id) tetap terlihat agar run lebih mudah di-debug; kolom rahasia (secret key, session token, API token, JSON service account, client secret, `external_id`, kubeconfig) dan variabel `env` milik pengguna tetap disensor.
+
+##### AWS Assume Role
+
+Akun AWS dapat opsional meng-assume IAM role alih-alih memakai kunci dasar secara langsung: isi **Role ARN** (`role_arn`), opsional **External ID** (`external_id`, rahasia) dan **Session name** (`session_name`, default `pantau`). Di awal setiap run Pantau memanggil STS `AssumeRole` (1 jam) dengan kunci dasar lalu menyuntikkan kredensial sementara (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`). Jika pemanggilan gagal, run gagal dengan pesan error yang jelas. **Test connection** juga meng-assume role tersebut.
+
+##### Impor dari Akun Pantau yang Ada
+
+Alih-alih mengetik kredensial lagi, **Akun baru** dapat mengimpor dari akun **Cloudflare** atau cluster **Kubernetes** Pantau yang sudah ada. Kredensial **disalin saat impor** (bukan tautan langsung): perubahan atau penghapusan sumbernya tidak memengaruhi Akun Cloud. Daftar pilihan berasal dari `GET /api/terraform/cloud-accounts/importable` yang hanya mengembalikan nama (tanpa kredensial); pembuatan memakai `import_from: {type, id}` pada `POST /api/terraform/cloud-accounts`.
 
 #### Panel Outputs
 
@@ -948,7 +968,7 @@ Otomatisasi tahap planning saat kode di-push ke repositori Git:
 3. Konfigurasikan pada penyedia Git Anda:
    - **GitHub**: Pada **Repository Settings → Webhooks**, isi Payload URL, pilih `application/json`, pilih event **Push**, dan tempelkan webhook secret (divalidasi melalui `X-Hub-Signature-256`).
    - **GitLab**: Pada **Settings → Webhooks**, isi URL, masukkan secret token pada kolom **Secret token** (divalidasi melalui `X-Gitlab-Token`), dan aktifkan **Push events**.
-4. **Jaminan Keamanan**: Webhook **hanya memicu proses Plan spekulatif atau standar** saat terjadi push ke branch yang dikonfigurasi. Webhook **tidak pernah mengeksekusi Apply secara otomatis**. Semua penerapan perubahan ke infrastruktur tetap wajib melalui persetujuan manual di Approval Gate.
+4. **Jaminan Keamanan**: Webhook **hanya memicu proses Plan spekulatif atau standar** saat terjadi push ke branch yang dikonfigurasi. Webhook **tidak pernah mengeksekusi Apply secara otomatis**, termasuk pada workspace yang mengaktifkan Auto-apply. Semua penerapan perubahan ke infrastruktur produksi tetap wajib melalui persetujuan manual di Approval Gate.
 
 #### Menyunting Repositori Workspace (Git Editor)
 
@@ -967,11 +987,31 @@ Workspace yang menggunakan repositori Git (`source = "git"`) memiliki tombol **E
 - **Efek Samping Webhook**: Melakukan commit dan push langsung ke branch yang dipantau workspace akan memicu webhook VCS Git (jika aktif), yang secara otomatis memulai antrean proses Plan spekulatif.
 - **Batas Operasional**: Maksimal 50 perubahan berkas per commit, 1 MiB per berkas, total 5 MiB payload, hanya berkas teks UTF-8 valid (berkas biner ditolak 415), dan sanitasi path ketat.
 
+#### Notifikasi
+
+Kartu **Notifications** di tab **Gate** Terraform memilih event Terraform yang dikirim. Pengiriman memakai kanal yang sudah dikonfigurasi di **Settings** Pantau (Telegram, webhook, ntfy, Slack, Discord, SMTP); tidak ada pengaturan kanal terpisah.
+- **Event**: menunggu approval, error, applied, drift. Bawaan: semua kecuali applied.
+- `GET/PUT /api/terraform/notifications` membaca dan mengubah pilihan; `POST /api/terraform/notifications/test` mengirim event contoh.
+- **Drift** hanya memberi notifikasi saat transisi tidak ada → ada (tidak berulang selama drift berlanjut).
+
+#### Plan Terjadwal dan Auto-apply
+
+Dua pengaturan di **Workspace Settings**:
+- **Scheduled plan interval (minutes)** (`plan_interval_minutes`): membuat run plan bertipe `schedule` pada interval tersebut (0 = nonaktif).
+- **Auto-apply** (`auto_apply`): meng-apply plan yang memiliki perubahan dan berstatus kebijakan `passed`, dengan komentar `auto-apply`. Hanya mencakup run plan **terjadwal** dan **yang dimulai manual** pada workspace non-produksi; **run yang dipicu webhook tidak pernah di-auto-apply** (pemegang secret webhook tidak boleh memicu apply tanpa pengawasan) dan selalu menunggu di Approval Gate. **Tidak pernah tersedia untuk environment produksi**: saat disimpan dijawab HTTP 400, dan workspace yang environment-nya kemudian menjadi produksi mengabaikan flag ini saat runtime. Run destroy dan refresh, serta run dengan peringatan kebijakan, tetap butuh persetujuan manual di Approval Gate. Jika apply otomatis gagal dimulai, run tetap di Approval Gate dan notifikasi dikirim.
+
+#### Tab Audit
+
+Tab **Audit** menampilkan jejak permanen event Terraform (tabel `tf_audit`, 5000 terbaru disimpan; `GET /api/terraform/audit`). Entri ditulis dari aliran log Pantau. Tidak ada RBAC karena Pantau hanya memiliki satu kata sandi admin. Lonjakan lebih dari ~64 baris dalam satu jendela penulisan dapat membuang baris.
+
 #### Batasan dan Non-Goals yang Transparan
 
 Demi mempertahankan arsitektur mandiri, ringan, dan mudah dirawat, sejumlah fitur sengaja tidak dimasukkan ke dalam ruang lingkup:
+- **Kredensial Masih Polos di Penyimpanan**: Kredensial Akun Cloud dan nilai variabel disimpan tanpa enkripsi di SQLite (perlindungan bergantung pada izin berkas DB dan enkripsi snapshot).
+- **Import Belum Diuji ke Provider Nyata**: Operasi state **import resource** sudah diimplementasikan tetapi belum diverifikasi terhadap provider cloud sungguhan.
+- **Template Provider Belum Divalidasi `init`**: Selain Hello world, template provider belum divalidasi dengan `init` terhadap registry provider sungguhan.
 - **Tanpa Remote State Backend / S3**: Pantau menggunakan basis data SQLite lokal. Konfigurasi remote backend (`backend "s3"` / `backend "remote"`) di kode workspace tidak digunakan.
-- **Tanpa Auto-Apply**: Perubahan infrastruktur tidak dapat diatur untuk apply otomatis saat push Git; review manusia melalui Approval Gate bersifat mutlak.
+- **Auto-Apply Hanya Opt-In dan Terbatas**: Auto-apply hanya ada sebagai pengaturan eksplisit per workspace (lihat [Plan Terjadwal dan Auto-apply](#plan-terjadwal-dan-auto-apply)); hanya mencakup plan terjadwal dan manual, tidak pernah run yang dipicu webhook, dan environment produksi tidak dapat memakainya. Run destroy, refresh, serta run dengan peringatan kebijakan selalu butuh persetujuan manual di Approval Gate.
 - **Tanpa OPA / Rego / Sentinel**: Kebijakan tata kelola dibatasi pada evaluator bawaan Go.
 - **Tanpa Kredensial Dinamis OIDC**: Kredensial cloud diteruskan melalui variabel sensitif berkategori `env`; pertukaran token dinamis STS/OIDC tidak dikelola otomatis oleh Pantau.
 - **Tanpa Protokol Registry Publik**: Katalog modul privat berfungsi sebagai penampil dokumentasi internal, bukan endpoint HTTP registry untuk `terraform init`.

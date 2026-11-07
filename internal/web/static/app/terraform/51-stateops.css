@@ -1,0 +1,8 @@
+/* State operations: toolbar, per-resource actions, result banner */
+.tf-st-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tf-st-hint { font-size: var(--fs-xs); color: var(--text-muted); }
+.tf-st-act { display: inline-flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+.tf-st-act .btn[disabled], .tf-st-bar .btn[disabled] { opacity: .5; cursor: not-allowed; }
+.tf-st-res { font-size: var(--fs-xs); font-weight: 600; padding: 8px 12px; border-radius: var(--radius-sm); overflow-wrap: anywhere; }
+.tf-st-res.ok { color: var(--success, #16a34a); background: var(--success-soft, rgba(22, 163, 74, .1)); }
+.tf-st-res.err { color: var(--danger); background: var(--danger-soft); }

@@ -3,8 +3,11 @@ package terraform
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 )
+
+var sessionNameRe = regexp.MustCompile(`^[\w+=,.@-]{2,64}$`)
 
 // maxCloudFieldBytes caps one credential value.
 const maxCloudFieldBytes = 16 << 10
@@ -19,6 +22,7 @@ type CloudField struct {
 	Required    bool     `json:"required"`
 	Multiline   bool     `json:"multiline"`
 	Env         []string `json:"-"` // env vars set from this field
+	FileEnv     []string `json:"-"` // env vars set to the path of a 0600 file holding the value
 }
 
 // CloudProvider is a cloud whose credentials can be injected into terraform runs.
@@ -35,6 +39,9 @@ func cloudProviders() []CloudProvider {
 			{Key: "secret_access_key", Label: "Secret access key", Secret: true, Required: true, Env: []string{"AWS_SECRET_ACCESS_KEY"}},
 			{Key: "session_token", Label: "Session token (optional)", Secret: true, Env: []string{"AWS_SESSION_TOKEN"}},
 			{Key: "region", Label: "Default region", Placeholder: "us-east-1", Default: "us-east-1", Env: []string{"AWS_DEFAULT_REGION", "AWS_REGION"}},
+			{Key: "role_arn", Label: "Assume role ARN (optional)", Placeholder: "arn:aws:iam::123456789012:role/terraform"},
+			{Key: "external_id", Label: "External ID (optional)", Secret: true},
+			{Key: "session_name", Label: "Role session name", Default: "pantau"},
 		}},
 		{ID: "gcp", Label: "Google Cloud", Fields: []CloudField{
 			{Key: "project_id", Label: "Project ID", Required: true, Env: []string{"GOOGLE_PROJECT", "GOOGLE_CLOUD_PROJECT"}},
@@ -52,6 +59,14 @@ func cloudProviders() []CloudProvider {
 		}},
 		{ID: "hetzner", Label: "Hetzner Cloud", Fields: []CloudField{
 			{Key: "token", Label: "API token", Secret: true, Required: true, Env: []string{"HCLOUD_TOKEN"}},
+		}},
+		{ID: "cloudflare", Label: "Cloudflare", Fields: []CloudField{
+			{Key: "api_token", Label: "API token", Secret: true, Required: true, Env: []string{"CLOUDFLARE_API_TOKEN"}},
+			{Key: "account_id", Label: "Account ID (optional)", Env: []string{"CLOUDFLARE_ACCOUNT_ID"}},
+		}},
+		{ID: "kubernetes", Label: "Kubernetes", Fields: []CloudField{
+			{Key: "kubeconfig", Label: "Kubeconfig", Secret: true, Required: true, Multiline: true, FileEnv: []string{"KUBE_CONFIG_PATH", "KUBECONFIG"}},
+			{Key: "context", Label: "Context (optional)", Env: []string{"KUBE_CTX"}},
 		}},
 	}
 }
@@ -104,6 +119,19 @@ func ValidateCloudFields(provider string, fields map[string]string) error {
 			}
 		}
 	}
+	switch provider {
+	case "aws":
+		if v := vals["role_arn"]; v != "" && !strings.HasPrefix(v, "arn:") {
+			return fmt.Errorf("role_arn must be an ARN")
+		}
+		if !sessionNameRe.MatchString(vals["session_name"]) {
+			return fmt.Errorf("session_name must be 2-64 characters of letters, digits and _+=,.@-")
+		}
+	case "kubernetes":
+		if _, err := kubeServerHost(vals["kubeconfig"], vals["context"]); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -145,4 +173,35 @@ func CloudEnv(provider string, fields map[string]string) map[string]string {
 		}
 	}
 	return env
+}
+
+// CloudEnvFiles maps env keys to file contents for fields delivered as files.
+func CloudEnvFiles(provider string, fields map[string]string) map[string]string {
+	out := map[string]string{}
+	p, ok := CloudProviderByID(provider)
+	if !ok {
+		return out
+	}
+	vals := cloudValues(p, fields)
+	for _, f := range p.Fields {
+		if v := vals[f.Key]; v != "" {
+			for _, e := range f.FileEnv {
+				out[e] = v
+			}
+		}
+	}
+	return out
+}
+
+// CloudPlainEnv returns the env keys fed by non-secret fields: their values may appear in logs.
+func CloudPlainEnv(provider string) []string {
+	var out []string
+	if p, ok := CloudProviderByID(provider); ok {
+		for _, f := range p.Fields {
+			if !f.Secret {
+				out = append(out, f.Env...)
+			}
+		}
+	}
+	return out
 }

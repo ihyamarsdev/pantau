@@ -7,7 +7,7 @@
     tfca_edit_title: ['Edit Cloud Account', 'Ubah Akun Cloud'],
     tfca_new_title: ['New Cloud Account', 'Akun Cloud Baru'],
     tfca_empty_title: ['No cloud accounts yet', 'Belum ada akun cloud'],
-    tfca_empty_desc: ['Add AWS, GCP, Azure, DigitalOcean or Hetzner credentials once, then link them to workspaces. Every plan, apply and drift check of a linked workspace receives them automatically.', 'Tambahkan kredensial AWS, GCP, Azure, DigitalOcean atau Hetzner sekali, lalu hubungkan ke workspace. Setiap plan, apply, dan drift check workspace yang terhubung otomatis menerimanya.'],
+    tfca_empty_desc: ['Add AWS, GCP, Azure, DigitalOcean, Hetzner, Cloudflare or Kubernetes credentials once, then link them to workspaces. Every plan, apply and drift check of a linked workspace receives them automatically.', 'Tambahkan kredensial AWS, GCP, Azure, DigitalOcean, Hetzner, Cloudflare atau Kubernetes sekali, lalu hubungkan ke workspace. Setiap plan, apply, dan drift check workspace yang terhubung otomatis menerimanya.'],
     tfca_add_first: ['Add your first account', 'Tambah akun pertama Anda'],
     tfca_verified: ['Verified {when}', 'Terverifikasi {when}'],
     tfca_failed: ['Verification failed', 'Verifikasi gagal'],
@@ -36,6 +36,11 @@
     tfca_link_hint: ['Credentials of the selected accounts are injected as environment variables into every run of this workspace. Workspace variables of category env override them.', 'Kredensial akun terpilih disuntikkan sebagai environment variable ke setiap run workspace ini. Variabel workspace kategori env menimpanya.'],
     tfca_link_empty: ['No cloud accounts have been created yet.', 'Belum ada akun cloud yang dibuat.'],
     tfca_link_manage: ['Manage cloud accounts', 'Kelola akun cloud'],
+    tfca_import_manual: ['Enter manually', 'Isi manual'],
+    tfca_import_cloudflare: ['Import from existing Cloudflare account', 'Impor dari akun Cloudflare yang ada'],
+    tfca_import_kubernetes: ['Import from existing Kubernetes cluster', 'Impor dari klaster Kubernetes yang ada'],
+    tfca_import_unusable: ['(no stored credential)', '(tidak ada kredensial tersimpan)'],
+    tfca_import_note: ['Credentials are copied from the selected account when you save; later changes to the source are not reflected here.', 'Kredensial disalin dari akun terpilih saat Anda menyimpan; perubahan berikutnya pada sumber tidak ikut berubah di sini.'],
     tfca_loading: ['Loading…', 'Memuat…'],
   };
   for (const [k, v] of Object.entries(D)) { I18N.en[k] = v[0]; I18N.id[k] = v[1]; }

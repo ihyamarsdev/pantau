@@ -77,23 +77,17 @@ func Apply(ctx context.Context, spec ApplySpec, log io.Writer) (*ApplyResult, er
 
 	stateFilePath := filepath.Join(spec.Root, "terraform.tfstate")
 
-	var sensitiveSecrets []string
-	for _, v := range spec.Vars {
-		if v.Sensitive && v.Value != "" {
-			sensitiveSecrets = append(sensitiveSecrets, v.Value)
-		}
-	}
-	for _, v := range spec.Env {
-		if len(v) >= 4 {
-			sensitiveSecrets = append(sensitiveSecrets, v)
-		}
-	}
-	rLog := newRedactionWriter(log, sensitiveSecrets)
+	rLog := newRedactionWriter(log, spec.logSecrets())
 
-	env := spec.prepareEnv()
+	envCfg, cleanupEnv, err := spec.Config.withEnvFiles()
+	if err != nil {
+		return nil, err
+	}
+	defer cleanupEnv()
+	env := envCfg.prepareEnv()
 
-	// terraform apply -input=false -no-color -state=<Root>/terraform.tfstate tfplan
-	cmd := exec.Command(binPath, "apply", "-input=false", "-no-color", "-state="+stateFilePath, planPath)
+	// terraform apply -input=false -no-color tfplan (backend path comes from the override file in workDir)
+	cmd := exec.Command(binPath, "apply", "-input=false", "-no-color", planPath)
 	cmd.Dir = workDir
 	cmd.Env = env
 	cmd.Stdout = rLog

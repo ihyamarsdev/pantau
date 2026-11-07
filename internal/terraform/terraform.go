@@ -68,6 +68,11 @@ type Config struct {
 	WorkDir  string            `json:"work_dir,omitempty"`
 	Vars     []Var             `json:"vars,omitempty"`
 	Env      map[string]string `json:"env,omitempty"`
+	// PlainEnv lists Env keys whose values are not secret and stay visible in logs.
+	PlainEnv map[string]bool `json:"plain_env,omitempty"`
+	// EnvFiles maps env key -> file content; the executor writes each to a 0600 file
+	// under Root/secrets for the duration of an invocation and sets the key to its path.
+	EnvFiles map[string]string `json:"-"`
 	State    []byte            `json:"state,omitempty"`
 }
 

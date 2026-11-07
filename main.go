@@ -337,6 +337,7 @@ func main() {
 		}
 	}
 	server.StartTerraformDriftScheduler(ctx)
+	server.StartTerraformAuditSink(ctx)
 	server.SetDocsFS(embeddedDocs)
 	listener, port, err := listenPort(port, portExplicit)
 	if err != nil {

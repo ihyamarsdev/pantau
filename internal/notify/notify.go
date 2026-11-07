@@ -176,11 +176,13 @@ func (d *Dispatcher) sendWebhook(url string, host *store.Host, rule *store.Desir
 	payload := map[string]interface{}{
 		"event":              "drift_alert",
 		"timestamp":          time.Now().UTC().Format(time.RFC3339),
-		"host_id":            host.ID,
-		"host_name":          host.Name,
-		"host_ip":            host.Host,
 		"summary":            summary,
 		"root_cause_excerpt": rootCause,
+	}
+	if host != nil {
+		payload["host_id"] = host.ID
+		payload["host_name"] = host.Name
+		payload["host_ip"] = host.Host
 	}
 	if rule != nil {
 		payload["rule_kind"] = rule.Kind

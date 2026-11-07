@@ -819,8 +819,13 @@ A Workspace represents an isolated infrastructure environment (configuration, va
      - **Inline Files**: Store up to 50 files (max 256 KiB per file; `.tf`, `.tfvars`, `.json`, `.yaml`, etc.) directly in Pantau's database.
      - **Git Repository**: Provide a repository URL (`https://` or `ssh://`), target branch, working directory within the repository (default root), and credentials (token or SSH Key from the Library).
 3. Workspaces are allocated a private working directory on the server (`<DataRoot>/terraform/<workspaceID>`) with `0700` filesystem permissions.
+4. **Templates**: the New Workspace modal has a template picker (Hello world, AWS S3 bucket, AWS EC2 instance, GCP storage bucket, Azure resource group, DigitalOcean droplet, Hetzner server, Cloudflare DNS record, Kubernetes namespace; `GET /api/terraform/templates`). Provider-specific templates need the matching **Cloud Account** linked (configured in Settings). Some templates have required variables without default (`bucket_name`, `zone_id`, `name`, `content`), and the first run needs network access to download the provider.
 
 Clicking a workspace card or row opens the workspace in a **side drawer** docked on the right (same pattern as the Ansible drawer) with the tabs **Overview**, **Configuration**, **Runs**, **State**, **Variables**, **Drift** and **Settings**. Files and settings are edited in place: the **Configuration** tab edits inline files in a code editor (add/delete files, `Ctrl+S`, Save & plan; Git workspaces open the Git editor) and the **Settings** tab edits name, group, environment, tags, binary, drift interval and Git connection directly. The expand button widens the drawer to nearly the full screen (the choice is remembered); **Esc**, the backdrop or the close button closes it.
+
+The **Configuration** tab editor has HCL syntax highlighting and two tools for inline workspaces (they work on the current, unsaved editor content):
+- **Format**: runs `terraform fmt` / `tofu fmt` (`Ctrl+Shift+F`) on the file (`POST /api/terraform/workspaces/{id}/tools/fmt`).
+- **Validate**: runs `init -backend=false` + `validate` (`POST /api/terraform/workspaces/{id}/tools/validate`), up to 2 minutes, max 2 concurrently. Diagnostics appear in a panel as `file:line`. Offline, validation only works with providers already cached or built in.
 
 #### Workspace Grouping & Organization
 
@@ -869,6 +874,8 @@ Pantau uses SQLite as the authoritative source of truth for Terraform state, eli
   - **Automatic Lock**: Workspaces are automatically locked (`locked_by = "run:<id>"`) while a run is queued, planning, awaiting approval, or applying.
   - **Manual Lock**: Administrators can lock a workspace with a custom reason to halt automated triggers during maintenance.
   - **Force Unlock**: If a run crashes or hangs, the administrator can perform an emergency Force Unlock, which cancels the active run, unlocks the database, and clears residual `.terraform.tfstate.lock.info` files on disk.
+- **State Operations** (State tab): **Remove** (`state rm`), **Move** (`state mv`) and **Import resource** (`POST /api/terraform/workspaces/{id}/state/ops`). Each operation creates a **new** state version (the previous one is kept; the source is recorded, e.g. `state rm x`). The workspace is locked during the operation (HTTP 423 if it is already locked, 409 if a run is active). A confirmation dialog shows the exact command. Import runs `init` and uses the linked Cloud Account credentials. Action buttons are visible in each resource row.
+- **Run backend**: runs no longer pass the deprecated `-state` flag. Pantau writes `pantau_backend_override.tf` (a `local` backend with its path in the run root, replacing any backend declared in your code) and runs `init -reconfigure`. Do not use the file name `pantau_backend_override.tf` in your own workspace files; it is overwritten.
 
 #### Variables and Variable Sets
 
@@ -879,12 +886,14 @@ Manage configuration variables cleanly without hardcoding values in `.tf` files:
 - **Sensitive Values**: Sensitive variables are strictly **write-only**. Their values are masked as `(sensitive)` in execution logs, never returned in API responses (`json:"-"`), and hidden in the UI.
 - **Variable Sets**: Group related variables together (e.g., *Production Cloud Credentials*, *Global DNS Configuration*) and attach them to multiple workspaces, or mark the set as **Global** to apply across all workspaces automatically.
 - **Resolution Precedence**: Workspace variables take precedence over attached Variable Sets, which take precedence over Global Variable Sets.
+- **Detect from configuration**: on inline workspaces, the **Variables** tab button **Detect from configuration** (`GET /api/terraform/workspaces/{id}/variables/detect`) parses the `variable` blocks of the `.tf` files and lists them. Variables with a default are unchecked, required ones (no default) are checked, and variables that already exist are shown disabled. The chosen ones are added as `terraform` variables. Git workspaces are not supported; the scanner is not a full HCL parser and reads only `.tf` files.
+- **Linked outputs** (Variables tab card): feed an output of another workspace's **latest state** into a Terraform variable (`GET/PUT /api/terraform/workspaces/{id}/output-links`). The value is resolved at run start and passed as HCL JSON; sensitive outputs stay masked. An explicit workspace or variable-set variable with the same name wins over the link. Cycles between workspaces are rejected, and an output that is unavailable (no state, missing output) fails the run start with a clear message. Links are included in backups.
 
 #### Cloud Accounts
 
 Register provider credentials once and let every run of a workspace use them, instead of copying keys into workspace variables.
-1. Open **Terraform → Cloud Accounts** and click **New account**. Pick a provider (AWS, Google Cloud, Microsoft Azure, DigitalOcean, Hetzner), name it, and fill in the credential fields.
-2. Click **Test connection** on the account. Pantau verifies the credentials against the provider API: AWS `sts:GetCallerIdentity`, Google Cloud service-account token + project lookup, Azure client-credentials token, DigitalOcean `/v2/account`, Hetzner `/v1/servers`. The result (and the identity found) is shown on the account.
+1. Open **Terraform → Cloud Accounts** and click **New account**. Pick a provider (AWS, Google Cloud, Microsoft Azure, DigitalOcean, Hetzner, Cloudflare, Kubernetes), name it, and fill in the credential fields. Cloudflare takes an `api_token` and an optional `account_id`; Kubernetes takes a kubeconfig and an optional context. For Kubernetes, the kubeconfig is written to a `0600` temporary file per run, removed after the run, and its content is redacted from logs.
+2. Click **Test connection** on the account. Pantau verifies the credentials against the provider API: AWS `sts:GetCallerIdentity` (and `AssumeRole` when a role is set), Google Cloud service-account token + project lookup, Azure client-credentials token, DigitalOcean `/v2/account`, Hetzner `/v1/servers`, Cloudflare token verify API. Kubernetes only parses the kubeconfig (no network call). The result (and the identity found) is shown on the account.
 3. Open a workspace drawer → **Settings** → **Cloud accounts** card and tick the accounts to link. A workspace can link several accounts; deleting an account unlinks it everywhere.
 4. Every run of a linked workspace (plan, apply, drift, webhook, state operations, cost estimate) receives the credentials as environment variables:
 
@@ -895,9 +904,20 @@ Register provider credentials once and let every run of a workspace use them, in
 | Microsoft Azure | `ARM_SUBSCRIPTION_ID`, `ARM_TENANT_ID`, `ARM_CLIENT_ID`, `ARM_CLIENT_SECRET` |
 | DigitalOcean | `DIGITALOCEAN_TOKEN` |
 | Hetzner | `HCLOUD_TOKEN` |
+| Cloudflare | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (optional) |
+| Kubernetes | `KUBE_CONFIG_PATH` + `KUBECONFIG` (path of a temporary kubeconfig), `KUBE_CTX` (optional context) |
 
 - **Precedence**: with several linked accounts, later accounts (by id) win on conflicts; workspace and Variable Set variables of category `env` override cloud-account values.
-- **Security**: credentials are stored in the Pantau database, are never returned by the API (secret fields show as "stored"; leave a secret field empty when editing to keep it), are included in the encrypted snapshot backups, and are redacted in run logs. Only static credentials are supported (no OIDC / workload identity).
+- **Security**: credentials are stored in the Pantau database, are never returned by the API (secret fields show as "stored"; leave a secret field empty when editing to keep it), and are included in the encrypted snapshot backups. Only static credentials (or AWS assume role, see below) are supported (no OIDC / workload identity). Credentials remain stored as plain values in SQLite (no at-rest encryption).
+- **Log redaction**: run logs mask only secrets. Non-secret cloud fields (region, access key id, tenant / subscription / client id, project id) stay visible so runs are easier to debug; secret fields (secret keys, session tokens, API tokens, service-account JSON, client secrets, `external_id`, kubeconfig) and user `env` variables stay masked.
+
+##### AWS Assume Role
+
+An AWS account can optionally assume an IAM role instead of using the base keys directly: set **Role ARN** (`role_arn`), optionally **External ID** (`external_id`, secret) and **Session name** (`session_name`, default `pantau`). At the start of every run Pantau calls STS `AssumeRole` (1 hour) with the base keys and injects the temporary credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`). If the call fails, the run fails with a clear error. **Test connection** also assumes the role.
+
+##### Importing from Existing Pantau Accounts
+
+Instead of typing credentials again, **New account** can import from an existing Pantau **Cloudflare** account or **Kubernetes** cluster. The credentials are **copied at import time** (not a live link): later changes or deletion of the source do not affect the Cloud Account. The picker is fed by `GET /api/terraform/cloud-accounts/importable`, which returns names only (never credentials); creation uses `import_from: {type, id}` on `POST /api/terraform/cloud-accounts`.
 
 #### Outputs
 
@@ -946,7 +966,7 @@ Automate planning when code is pushed to your version control system:
 3. Configure your Git repository:
    - **GitHub**: Under **Repository Settings → Webhooks**, set the Payload URL, choose `application/json`, select the **Push** event, and paste the webhook secret (validated via `X-Hub-Signature-256`).
    - **GitLab**: Under **Settings → Webhooks**, set the URL, paste the secret token into **Secret token** (validated via `X-Gitlab-Token`), and enable **Push events**.
-4. **Safety Guarantee**: Webhooks **only trigger speculative or standard Plan runs** when a commit is pushed to the configured workspace branch. Webhooks **never execute an Apply automatically**. All production changes remain guarded behind the Approval Gate.
+4. **Safety Guarantee**: Webhooks **only trigger speculative or standard Plan runs** when a commit is pushed to the configured workspace branch. Webhooks **never execute an Apply automatically**, not even on a workspace with Auto-apply enabled. All production changes remain guarded behind the Approval Gate.
 
 #### Editing Workspace Repositories (Git Editor)
 
@@ -965,11 +985,31 @@ Workspaces using a Git repository source (`source = "git"`) include an **Edit Re
 - **Webhook Integration Side Effect**: When committing and pushing directly to the workspace's monitored branch, the newly pushed commit will trigger the configured Git webhook (if enabled), initiating an automated speculative plan run.
 - **Limits**: Maximum 50 changed files per commit, 1 MiB per file, 5 MiB total payload, valid UTF-8 text files only (binaries return 415), and strict path sanitization.
 
+#### Notifications
+
+The **Notifications** card on the Terraform **Gate** tab selects which Terraform events are sent. Delivery uses the channels already configured in Pantau **Settings** (Telegram, webhook, ntfy, Slack, Discord, SMTP); there is no separate channel setup.
+- **Events**: awaiting approval, errored, applied, drift. Defaults: all except applied.
+- `GET/PUT /api/terraform/notifications` read and change the selection; `POST /api/terraform/notifications/test` sends a sample event.
+- **Drift** notifies only on the absent → present transition (no repeated message while drift persists).
+
+#### Scheduled Plans and Auto-apply
+
+Two settings in **Workspace Settings**:
+- **Scheduled plan interval (minutes)** (`plan_interval_minutes`): creates `schedule` plan runs at that interval (0 = off).
+- **Auto-apply** (`auto_apply`): applies a plan that has changes and whose policy status is `passed`, with the comment `auto-apply`. It covers only **scheduled** and **manually started** plan runs on non-production workspaces; **webhook-triggered runs are never auto-applied** (holders of the webhook secret must not cause unattended applies) and always wait at the Approval Gate. It is **never available for production environments**: saving returns HTTP 400, and a workspace whose environment later becomes production ignores the flag at runtime. Destroy and refresh runs, and runs with policy warnings, still need manual approval at the Approval Gate. If the automatic apply fails to start, the run stays at the Approval Gate and a notification is sent.
+
+#### Audit Tab
+
+The **Audit** tab shows a persistent trail of Terraform events (table `tf_audit`, newest 5000 kept; `GET /api/terraform/audit`). Entries are written from Pantau's log stream. There is no RBAC because Pantau has a single admin password. A burst of more than ~64 lines within one write window may drop lines.
+
 #### Honest Limitations and Non-Goals
 
 To maintain a compact, agentless, and maintainable architecture, several enterprise features are intentionally out of scope:
+- **Credentials Still Plain at Rest**: Cloud Account credentials and variable values are stored unencrypted in SQLite (protection relies on DB file permissions and snapshot encryption).
+- **Import Untested Against Real Providers**: The **import resource** state operation is implemented but has not been verified against real cloud providers.
+- **Provider Templates Not Init-Validated**: Besides Hello world, the provider templates have not been validated with `init` against the real provider registries.
 - **No Remote/S3 State Backend**: Pantau uses local SQLite storage. Remote backend configurations (`backend "s3"` / `backend "remote"`) in workspace code are not used.
-- **No Auto-Apply**: Production changes cannot be configured to auto-apply on push; human review via the Approval Gate is mandatory.
+- **Auto-Apply Is Opt-In and Limited**: Auto-apply exists only as an explicit per-workspace setting (see [Scheduled Plans and Auto-apply](#scheduled-plans-and-auto-apply)); it covers only scheduled and manual plans, never webhook-triggered runs, and production environments cannot use it. Destroy, refresh and policy-warning runs always need manual approval via the Approval Gate.
 - **No OPA / Rego / Sentinel**: Policies are restricted to built-in Go evaluators.
 - **No Dynamic OIDC Credentials**: Cloud credentials must be passed as sensitive `env` variables; dynamic STS/OIDC token exchanges are not natively managed.
 - **No Public Registry Protocol**: The module catalog is a documentation and exploration interface, not an HTTP `terraform init` registry endpoint.

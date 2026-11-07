@@ -185,11 +185,13 @@ func (s *Server) SetDocsFS(dfs fs.FS) {
 }
 func (s *Server) SetTerraformRunManager(mgr *TerraformRunManager) {
 	s.tfMgr = mgr
+	s.wireTFEvents()
 }
 
 func (s *Server) SetTerraformDataDir(dataDir string) {
 	if s.db != nil {
 		s.tfMgr = NewTerraformRunManager(s.db, dataDir, nil, nil)
+		s.wireTFEvents()
 	}
 }
 
@@ -335,6 +337,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/ansible/explorer", s.authMiddleware(s.handleAnsibleExplorer))
 	// Terraform Management
 	s.mux.HandleFunc("/api/terraform/status", s.authMiddleware(s.handleTerraformStatus))
+	s.mux.HandleFunc("/api/terraform/templates", s.authMiddleware(s.handleTerraformTemplates))
 	s.mux.HandleFunc("/api/terraform/workspaces", s.authMiddleware(s.handleTerraformWorkspaces))
 	s.mux.HandleFunc("/api/terraform/workspaces/", s.authMiddleware(s.handleTerraformWorkspaceRoute))
 	s.mux.HandleFunc("/api/terraform/runs/", s.authMiddleware(s.handleTerraformRunRoute))
@@ -344,8 +347,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/terraform/cloud-accounts/", s.authMiddleware(s.handleTerraformCloudAccountRoute))
 	s.mux.HandleFunc("/api/terraform/policies", s.authMiddleware(s.handleTerraformPolicies))
 	s.mux.HandleFunc("/api/terraform/policies/", s.authMiddleware(s.handleTerraformPolicyRoute))
+	s.mux.HandleFunc("/api/terraform/audit", s.authMiddleware(s.handleTerraformAudit))
 	s.mux.HandleFunc("/api/terraform/modules", s.authMiddleware(s.handleTerraformModules))
 	s.mux.HandleFunc("/api/terraform/modules/", s.authMiddleware(s.handleTerraformModuleRoute))
+	s.mux.HandleFunc("/api/terraform/notifications", s.authMiddleware(s.handleTerraformNotifications))
+	s.mux.HandleFunc("/api/terraform/notifications/test", s.authMiddleware(s.handleTerraformNotificationsTest))
 	s.mux.HandleFunc("/api/terraform/webhook/", s.handleTerraformWebhook) // public, bypasses authMiddleware
 	// SSH Direct-TCPIP Reverse Proxy Tunnel
 	s.mux.HandleFunc("/api/tunnel/", s.authMiddleware(s.handleTunnel))

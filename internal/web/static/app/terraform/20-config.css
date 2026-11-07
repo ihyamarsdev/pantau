@@ -34,3 +34,21 @@
 .tf-cfg-gitcard { display: flex; flex-direction: column; gap: 10px; }
 .tf-cfg-gk { color: var(--text-muted); }
 .tf-cfg-gitbtns { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* Format / Validate diagnostics panel */
+.tf-cfg-diag { position: relative; border: 1px solid var(--card-border); border-radius: var(--radius-sm); background: var(--surface-2); font-size: var(--fs-xs); }
+.tf-cfg-diag-x { position: absolute; top: 6px; right: 6px; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; background: transparent; border: 0; border-radius: var(--radius-sm); color: var(--text-muted); cursor: pointer; }
+.tf-cfg-diag-x:hover { color: var(--text); background: var(--surface-3); }
+.tf-cfg-diag-sum { padding: 8px 36px 8px 12px; font-weight: 600; cursor: pointer; }
+.tf-cfg-diag-sum.ok { color: var(--success, #34d399); }
+.tf-cfg-diag-sum.err { color: var(--danger); }
+.tf-cfg-dg-list { list-style: none; margin: 0; padding: 0 12px 8px; display: flex; flex-direction: column; gap: 8px; max-height: 240px; overflow-y: auto; }
+.tf-cfg-dg-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.tf-cfg-dg-sum { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.tf-cfg-sev { padding: 1px 8px; border-radius: var(--radius-full); font-size: var(--fs-xs); font-weight: 600; flex: none; }
+.tf-cfg-sev-error { background: var(--danger-soft); color: var(--danger); border: 1px solid var(--danger-border); }
+.tf-cfg-sev-warning { background: var(--warning-soft); color: var(--warning); border: 1px solid var(--warning-border); }
+.tf-cfg-loc { margin-left: auto; padding: 0; background: transparent; border: 0; color: var(--accent); font-size: var(--fs-xs); cursor: pointer; text-decoration: underline; }
+.tf-cfg-dg-detail { margin: 4px 0 0; padding: 6px 8px; background: var(--code-bg); border-radius: var(--radius-sm); white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); max-height: 200px; overflow-y: auto; }
+.tf-cfg-diag > .tf-cfg-dg-detail, .tf-cfg-diag details > .tf-cfg-dg-detail { margin: 0 12px 8px; }
+#tfCfgValidate .spinner { display: inline-flex; }

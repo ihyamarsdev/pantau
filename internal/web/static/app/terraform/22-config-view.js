@@ -14,6 +14,8 @@
       <span id="tfCfgSize" class="tf-cfg-size">${tfE(C.kib(C.docs[C.cur] && C.docs[C.cur].getValue()))} / ${C.MAX_KIB} KiB</span>
       <span id="tfCfgDirty" class="tf-cfg-dirty" hidden title="${tfE(tx('tfcfg_unsaved_title'))}">●</span>
       <span class="tf-cfg-gap"></span>
+      <button type="button" id="tfCfgFmt" class="btn btn-sm" title="${tfE(tx('tfcfg_fmt_title'))}">${tfE(tx('tfcfg_fmt'))}</button>
+      <button type="button" id="tfCfgValidate" class="btn btn-sm" title="${tfE(tx('tfcfg_validate_title'))}">${svgIcon('list-checks', 'icon-xs')} ${tfE(tx('tfcfg_validate'))}</button>
       <button type="button" id="tfCfgDiscard" class="btn btn-sm" ${C.isDirty() ? '' : 'disabled'}>${tfE(tx('tfcfg_discard'))}</button>
       <button type="button" id="tfCfgSavePlan" class="btn btn-sm">${svgIcon('zap', 'icon-xs')} ${tfE(tx('tfcfg_save_plan'))}</button>
       <button type="button" id="tfCfgSave" class="btn btn-sm btn-primary">${svgIcon('save', 'icon-xs')} ${tfE(tx('tfcfg_save'))}</button></div>`;
@@ -68,6 +70,7 @@
         ${tfWs.locked ? `<div class="tf-cfg-hint">${svgIcon('lock', 'icon-xs')} ${tfE(tx('tfcfg_locked_hint'))}</div>` : ''}</aside>
       <section class="tf-cfg-ed">${headerHTML()}
         <div id="tfCfgError" class="tf-cfg-err" role="alert" hidden></div>
+        <div id="tfCfgDiag" class="tf-cfg-diag" role="region" aria-label="${tfE(tx('tfcfg_diag_title'))}" hidden></div>
         <div id="tfCfgEditor" class="tf-cfg-edbox"></div></section></div></div>`;
     C.root = body.querySelector('.tf-cfg');
     C.cm = CodeMirror(tfEl('tfCfgEditor'), { lineNumbers: true, theme: 'vscode-dark', mode: null, indentUnit: 2, tabSize: 2, indentWithTabs: false, extraKeys: { Tab: cm => cm.replaceSelection('  ', 'end') } });
@@ -89,6 +92,7 @@
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); e.stopPropagation(); doSave(false); return; }
       if (e.key === 'Escape' && C.cm && C.cm.hasFocus() && C.isDirty()) e.stopPropagation(); // keep the drawer open while editing
     });
+    if (C.toolsInit) C.toolsInit();
     C.obs = new MutationObserver(() => { if (C.root && !C.root.isConnected) C.destroy(); });
     C.obs.observe(body, { childList: true });
     try {

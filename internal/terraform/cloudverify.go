@@ -26,14 +26,15 @@ import (
 // cloudEndpoints holds the provider API URLs; tests point them at httptest servers.
 // %s verbs: STS region, GCP project, Azure tenant.
 var cloudEndpoints = struct {
-	STS, GCPToken, GCPProject, AzureLogin, DOAccount, HetznerServers string
+	STS, GCPToken, GCPProject, AzureLogin, DOAccount, HetznerServers, CloudflareVerify string
 }{
-	STS:            "https://sts.%s.amazonaws.com/",
-	GCPToken:       "https://oauth2.googleapis.com/token",
-	GCPProject:     "https://cloudresourcemanager.googleapis.com/v1/projects/%s",
-	AzureLogin:     "https://login.microsoftonline.com/%s/oauth2/v2.0/token",
-	DOAccount:      "https://api.digitalocean.com/v2/account",
-	HetznerServers: "https://api.hetzner.cloud/v1/servers?per_page=1",
+	STS:              "https://sts.%s.amazonaws.com/",
+	GCPToken:         "https://oauth2.googleapis.com/token",
+	GCPProject:       "https://cloudresourcemanager.googleapis.com/v1/projects/%s",
+	AzureLogin:       "https://login.microsoftonline.com/%s/oauth2/v2.0/token",
+	DOAccount:        "https://api.digitalocean.com/v2/account",
+	HetznerServers:   "https://api.hetzner.cloud/v1/servers?per_page=1",
+	CloudflareVerify: "https://api.cloudflare.com/client/v4/user/tokens/verify",
 }
 
 // VerifyCloud checks the credentials against the provider API and returns a short identity.
@@ -62,15 +63,15 @@ func VerifyCloud(ctx context.Context, provider string, fields map[string]string,
 		id, err = verifyDO(ctx, hc, v)
 	case "hetzner":
 		id, err = verifyHetzner(ctx, hc, v)
+	case "cloudflare":
+		id, err = verifyCloudflare(ctx, hc, v)
+	case "kubernetes":
+		var host string
+		host, err = kubeServerHost(v["kubeconfig"], v["context"])
+		id = "server " + host
 	}
 	if err != nil {
-		msg := err.Error()
-		for _, f := range p.Fields {
-			if sv := v[f.Key]; f.Secret && sv != "" {
-				msg = strings.ReplaceAll(msg, sv, "***")
-			}
-		}
-		return "", errors.New(msg)
+		return "", scrubCloudErr(p, v, err)
 	}
 	return id, nil
 }
@@ -247,6 +248,17 @@ func parseRSAKey(pemStr string) (*rsa.PrivateKey, error) {
 }
 
 func verifyAWS(ctx context.Context, hc *http.Client, v map[string]string) (string, error) {
+	if v["role_arn"] != "" {
+		_, arn, err := assumeAWSRole(ctx, hc, v)
+		if err != nil {
+			return "", fmt.Errorf("assume role: %w", err)
+		}
+		acct := ""
+		if parts := strings.Split(arn, ":"); len(parts) > 4 {
+			acct = parts[4]
+		}
+		return acct + " (" + arn + ")", nil
+	}
 	region := v["region"]
 	body := "Action=GetCallerIdentity&Version=2011-06-15"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf(cloudEndpoints.STS, url.PathEscape(region)), strings.NewReader(body))
@@ -320,4 +332,28 @@ func signV4(req *http.Request, body []byte, ak, sk, token, region, service strin
 	k := mac(mac(mac(mac([]byte("AWS4"+sk), day), region), service), "aws4_request")
 	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential="+ak+"/"+scope+
 		", SignedHeaders="+signed+", Signature="+hex.EncodeToString(mac(k, toSign)))
+}
+
+func verifyCloudflare(ctx context.Context, hc *http.Client, v map[string]string) (string, error) {
+	code, body, err := bearerGet(ctx, hc, cloudEndpoints.CloudflareVerify, v["api_token"])
+	if err != nil {
+		return "", err
+	}
+	if code != 200 {
+		return "", statusErr(code, "")
+	}
+	var r struct {
+		Success bool `json:"success"`
+		Result  struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+		} `json:"result"`
+	}
+	if json.Unmarshal(body, &r) != nil || !r.Success {
+		return "", errors.New("unexpected response")
+	}
+	if r.Result.Status != "active" {
+		return "", fmt.Errorf("token status is %q", r.Result.Status)
+	}
+	return "token " + r.Result.ID + " (active)", nil
 }

@@ -12,7 +12,7 @@ func TestCloudProvidersOrder(t *testing.T) {
 	for _, p := range CloudProviders() {
 		ids = append(ids, p.ID)
 	}
-	if got := strings.Join(ids, ","); got != "aws,gcp,azure,digitalocean,hetzner" {
+	if got := strings.Join(ids, ","); got != "aws,gcp,azure,digitalocean,hetzner,cloudflare,kubernetes" {
 		t.Fatalf("order = %s", got)
 	}
 	if _, ok := CloudProviderByID("nope"); ok {

@@ -28,6 +28,8 @@
 .tf-ca-gcp { background: rgba(52, 168, 83, 0.14); color: #4cc16b; border-color: rgba(52, 168, 83, 0.35); }
 .tf-ca-azure { background: rgba(59, 130, 246, 0.14); color: #6aa3f8; border-color: rgba(59, 130, 246, 0.35); }
 .tf-ca-digitalocean { background: rgba(34, 184, 207, 0.14); color: #3ccbe0; border-color: rgba(34, 184, 207, 0.35); }
+.tf-ca-cloudflare { background: rgba(243, 128, 32, 0.14); color: #f6993f; border-color: rgba(243, 128, 32, 0.35); }
+.tf-ca-kubernetes { background: rgba(50, 109, 230, 0.14); color: #7a9cf0; border-color: rgba(50, 109, 230, 0.35); }
 .tf-ca-hetzner { background: var(--danger-soft); color: var(--danger); border-color: var(--danger-border); }
 
 /* dialog */

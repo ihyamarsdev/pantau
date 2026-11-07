@@ -15,9 +15,19 @@ tfTabRenderers.settings = function (body) {
       </span></div></div>`;
 
   const mark = () => { tfEl('tfSetDirty').hidden = !tfSetDirty(); };
-  const fields = ['tfSetName', 'tfSetGroup', 'tfSetEnv', 'tfSetDesc', 'tfSetTags', 'tfSetBinary', 'tfSetDrift'];
+  const fields = ['tfSetName', 'tfSetGroup', 'tfSetEnv', 'tfSetDesc', 'tfSetTags', 'tfSetBinary', 'tfSetDrift', 'tfSetPlanInterval', 'tfSetAutoApply'];
   if (git) fields.push('tfSetGitUrl', 'tfSetGitBranch', 'tfSetGitPath', 'tfSetGitAuth', 'tfSetGitToken', 'tfSetGitKey');
   fields.forEach(id => { const el = tfEl(id); if (el) el.addEventListener('input', mark); });
+  // Auto-apply is never allowed for production: follow the Environment field live.
+  const syncProd = () => {
+    const prod = tfIsProd(tfV('tfSetEnv')), cb = tfEl('tfSetAutoApply');
+    if (prod) cb.checked = false;
+    cb.disabled = prod;
+    const wrap = tfEl('tfSetAutoApplyWrap'), hint = wrap.querySelector('.dk-hint');
+    if (hint) hint.remove();
+    if (prod) wrap.insertAdjacentHTML('beforeend', `<div class="dk-hint">${tfE(tx('tfset_auto_apply_prod'))}</div>`);
+  };
+  tfEl('tfSetEnv').addEventListener('input', () => { syncProd(); mark(); });
 
   const cloud = tfEl('tfSetCloud');
   cloud.addEventListener('change', mark);

@@ -1,4 +1,6 @@
 /* Settings tab: General + Source cards, PUT body builder, dirty check. */
+const tfIsProd = env => String(env || '').trim().toLowerCase() === 'production';
+
 function tfSetBody(w) {
   const bins = (tfStatus && tfStatus.binaries) || [{ name: 'terraform' }, { name: 'tofu' }];
   const groups = Array.from(new Set(tfWorkspaces.map(x => (x.group_name || '').trim()).filter(Boolean))).sort();
@@ -16,6 +18,8 @@ function tfSetBody(w) {
       ${field(tx('tfx_tags'), inp('tfSetTags', (w.tags || []).join(', '), 'placeholder="a, b, c"'))}
       ${field(tx('tfx_binary'), sel('tfSetBinary', bins.map(b => [b.name, b.name + (b.err ? ' (' + tx('tfx_not_installed') + ')' : '')]), w.binary))}
       ${field(tx('tfx_drift_interval'), `<input type="number" id="tfSetDrift" class="form-input" min="0" value="${Number(w.drift_interval_minutes) || 0}" />`, tx('tfx_drift_off') + ': 0')}
+      ${field(tx('tfset_plan_interval'), `<input type="number" id="tfSetPlanInterval" class="form-input" min="0" value="${Number(w.plan_interval_minutes) || 0}" />`, tx('tfset_plan_interval_hint'))}
+      ${field(tx('tfset_auto_apply'), `<label class="tf-nf-item"><input type="checkbox" id="tfSetAutoApply" ${w.auto_apply && !tfIsProd(w.environment) ? 'checked' : ''} ${tfIsProd(w.environment) ? 'disabled' : ''} /> <span>${tfE(tx('tfset_auto_apply_hint'))}</span></label>`, tfIsProd(w.environment) ? tx('tfset_auto_apply_prod') : '', 'tfSetAutoApplyWrap')}
       ${field(tx('tfx_description'), `<textarea id="tfSetDesc" class="form-input" rows="2">${tfE(w.description || '')}</textarea>`, '', true)}
     </div></div>`;
 
@@ -48,6 +52,7 @@ function tfSetCollect() {
     name: tfV('tfSetName').trim(), description: tfV('tfSetDesc'), group_name: tfV('tfSetGroup').trim(),
     environment: tfV('tfSetEnv').trim(), tags: tfCsv(tfV('tfSetTags')), binary: tfV('tfSetBinary'),
     source: w.source, drift_interval_minutes: parseInt(tfV('tfSetDrift'), 10) || 0,
+    plan_interval_minutes: parseInt(tfV('tfSetPlanInterval'), 10) || 0, auto_apply: tfChk('tfSetAutoApply') && !tfIsProd(tfV('tfSetEnv')),
     cloud_account_ids: tfSetCloudIds(w),
   };
   if (w.source === 'inline') body.files = w.files || {};
@@ -63,6 +68,7 @@ function tfSetBase(w) {
   const base = {
     name: w.name, description: w.description || '', group_name: w.group_name || '', environment: w.environment || '',
     tags: (w.tags || []).slice(), binary: w.binary || '', source: w.source, drift_interval_minutes: Number(w.drift_interval_minutes) || 0,
+    plan_interval_minutes: Number(w.plan_interval_minutes) || 0, auto_apply: !!w.auto_apply && !tfIsProd(w.environment),
     cloud_account_ids: (w.cloud_account_ids || []).map(Number).sort((a, b) => a - b),
   };
   if (w.source === 'inline') base.files = w.files || {};

@@ -25,6 +25,7 @@ func setEndpoints(t *testing.T, srv *httptest.Server) {
 	cloudEndpoints.AzureLogin = srv.URL + "/azure/%s/token"
 	cloudEndpoints.DOAccount = srv.URL + "/do"
 	cloudEndpoints.HetznerServers = srv.URL + "/hz"
+	cloudEndpoints.CloudflareVerify = srv.URL + "/cf"
 }
 
 // Documented AWS SigV4 example (iam ListUsers, 2015-08-30).

@@ -19,6 +19,21 @@
     tfcfg_git_hint: ['Git workspaces take their files from the repository.', 'Workspace Git mengambil filenya dari repositori.'],
     tfcfg_git_edit: ['Edit Repository', 'Ubah Repositori'],
     tfcfg_del_confirm_t: ['Delete', 'Hapus'],
+    tfcfg_fmt: ['Format', 'Format'],
+    tfcfg_fmt_title: ['terraform fmt on all files (Ctrl+Shift+F)', 'terraform fmt pada semua file (Ctrl+Shift+F)'],
+    tfcfg_validate: ['Validate', 'Validasi'],
+    tfcfg_validate_title: ['terraform init + validate on the current (unsaved) files', 'terraform init + validate pada file saat ini (belum disimpan)'],
+    tfcfg_validating: ['Validating…', 'Memvalidasi…'],
+    tfcfg_formatted: ['Formatted {n} file(s)', '{n} file diformat'],
+    tfcfg_already_fmt: ['Already formatted', 'Sudah terformat'],
+    tfcfg_diag_title: ['Validation results', 'Hasil validasi'],
+    tfcfg_diag_close: ['Close', 'Tutup'],
+    tfcfg_valid_ok: ['Configuration is valid', 'Konfigurasi valid'],
+    tfcfg_diag_counts: ['{e} error(s), {w} warning(s)', '{e} error, {w} peringatan'],
+    tfcfg_init_err: ['Initialization failed', 'Inisialisasi gagal'],
+    tfcfg_fmt_errs: ['Format errors', 'Kesalahan format'],
+    tfcfg_sev_error: ['error', 'error'],
+    tfcfg_sev_warning: ['warning', 'peringatan'],
   };
   const I18Nd = window.I18N || (typeof I18N !== 'undefined' ? I18N : null);
   if (I18Nd) for (const [k, v] of Object.entries(TFCFG_TXT)) { I18Nd.en[k] = v[0]; I18Nd.id[k] = v[1]; }

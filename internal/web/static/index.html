@@ -4036,6 +4036,9 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <button type="button" class="tab" id="tabTfModules" data-tab="modules" role="tab" aria-selected="false" aria-controls="tfPanelModules" tabindex="-1" onclick="switchTfTab('modules')">
           <svg class="icon icon-sm"><use href="#i-package"/></svg> <span data-i18n="tf_tab_modules">Module Catalog</span>
         </button>
+        <button type="button" class="tab" id="tabTfAudit" data-tab="audit" role="tab" aria-selected="false" aria-controls="tfPanelAudit" tabindex="-1" onclick="switchTfTab('audit')">
+          <svg class="icon icon-sm"><use href="#i-activity"/></svg> <span data-i18n="tf_tab_audit">Audit</span>
+        </button>
         <button type="button" class="tab" id="tabTfGate" data-tab="gate" role="tab" aria-selected="false" aria-controls="tfPanelGate" tabindex="-1" onclick="switchTfTab('gate')">
           <svg class="icon icon-sm"><use href="#i-shield-alert"/></svg> <span data-i18n="tf_tab_gate">Terraform Gate</span>
         </button>
@@ -4136,7 +4139,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
       </div>
 
       <!-- Tab 5: Gate & Settings -->
-      <div id="tfPanelGate" class="ans-section-panel" role="tabpanel" aria-labelledby="tabTfGate" tabindex="0" style="display:none;">
+      <div id="tfPanelGate" class="ans-section-panel" role="tabpanel" aria-labelledby="tabTfGate" tabindex="0" style="display:none;flex-direction:column;gap:14px;">
         <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
           <h4 style="margin:0;font-size:var(--fs-md);font-weight:600;" data-i18n="tf_gate_panel_title">Terraform Gate &amp; CLI Detection</h4>
           <p style="margin:0;font-size:var(--fs-xs);color:var(--text-muted);" data-i18n="tf_gate_panel_desc">Terraform and OpenTofu binaries execute locally on the Pantau server with master process privileges. Infracost estimates plan monthly cost diff if installed.</p>
@@ -4146,6 +4149,12 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
             <button type="button" id="btnTfToggleGate" class="btn btn-sm btn-primary" onclick="toggleTfGate()"></button>
           </div>
         </div>
+        <div id="tfGateExtras"></div>
+      </div>
+
+      <!-- Tab 6: Audit trail -->
+      <div id="tfPanelAudit" class="ans-section-panel" role="tabpanel" aria-labelledby="tabTfAudit" tabindex="0" style="display:none;flex-direction:column;">
+        <div id="tfAuditRoot"></div>
       </div>
     </div>
 
@@ -7792,6 +7801,7 @@ const I18N = {
     "tf_tab_policies": "Policies",
     "tf_tab_modules": "Module Catalog",
     "tf_tab_gate": "Terraform Gate",
+    "tf_tab_audit": "Audit",
     "tf_search_ws_ph": "Search workspaces...",
     "tf_filter_all_env": "All Environments",
     "tf_filter_all_tags": "All Tags",
@@ -9340,6 +9350,7 @@ const I18N = {
     "tf_tab_policies": "Policy",
     "tf_tab_modules": "Katalog Modul",
     "tf_tab_gate": "Terraform Gate",
+    "tf_tab_audit": "Audit",
     "tf_search_ws_ph": "Cari workspace...",
     "tf_filter_all_env": "Semua Environment",
     "tf_filter_all_tags": "Semua Tag",
@@ -24971,10 +24982,20 @@ const TF_TXT = {
   tfx_var_saved: ['Variable saved', 'Variabel disimpan'],
   tfx_var_deleted: ['Variable deleted', 'Variabel dihapus'],
   tfx_var_delete_confirm: ['Delete variable "{k}"?', 'Hapus variabel "{k}"?'],
+  tfx_vd_btn: ['Detect from configuration', 'Deteksi dari konfigurasi'],
+  tfx_vd_title: ['Variables declared in configuration', 'Variabel yang dideklarasikan di konfigurasi'],
+  tfx_vd_git: ['Variables cannot be detected here: the configuration lives in the Git repository, not in Pantau.', 'Variabel tidak dapat dideteksi di sini: konfigurasi berada di repositori Git, bukan di Pantau.'],
+  tfx_vd_empty: ['No variable declarations found in the configuration.', 'Tidak ada deklarasi variabel di konfigurasi.'],
+  tfx_vd_hint: ['Select the variables to create as Terraform variables. Values are copied from the declared defaults.', 'Pilih variabel yang akan dibuat sebagai variabel Terraform. Nilai disalin dari default yang dideklarasikan.'],
+  tfx_vd_exists: ['Already defined', 'Sudah ada'],
+  tfx_vd_add: ['Add selected', 'Tambahkan terpilih'],
+  tfx_vd_none: ['Select at least one variable', 'Pilih minimal satu variabel'],
+  tfx_vd_added: ['{n} variable(s) added, {f} failed', '{n} variabel ditambahkan, {f} gagal'],
+  tfx_vd_no_default: ['no default', 'tanpa default'],
   tfx_var_desc: ['Description', 'Deskripsi'],
   tfx_set: ['set', 'terisi'],
   tfx_drift_checked: ['Last checked', 'Terakhir diperiksa'],
-  tfx_drift_interval: ['Interval (minutes)', 'Interval (menit)'],
+  tfx_drift_interval: ['Drift check interval (minutes)', 'Interval deteksi drift (menit)'],
   tfx_drift_off: ['Disabled', 'Nonaktif'],
   tfx_drift_started: ['Drift check started', 'Pemeriksaan drift dimulai'],
   tfx_vcs: ['VCS & Webhook', 'VCS & Webhook'],
@@ -25144,7 +25165,7 @@ function tfDlg(n, title, body, footer, width) {
   tfEl('tfDlg' + n + 'Title').textContent = title;
   tfEl('tfDlg' + n + 'Body').innerHTML = body;
   tfEl('tfDlg' + n + 'Footer').innerHTML = footer;
-  tfEl('tfDlg' + n + 'Content').style.maxWidth = (width || 560) + 'px';
+  tfEl('tfDlg' + n + 'Content').style.maxWidth = 'min(' + (width || 560) + 'px, 96vw)';
   tfDlgErr(n, '');
   openModal('tfDlg' + n);
 }
@@ -25252,6 +25273,7 @@ function renderTfGate() {
     tb.textContent = st.enabled ? t('tf_gate_btn_disable', 'Disable Gate') : t('tf_gate_btn_enable', 'Enable Terraform Gate');
     tb.disabled = !st.supported;
   }
+  if (typeof tfGateExtras === 'function') tfGateExtras(document.getElementById('tfGateExtras'));
 }
 async function toggleTfGate(enable) {
   if (enable === undefined) enable = !(tfStatus && tfStatus.enabled);
@@ -25271,7 +25293,7 @@ async function toggleTfGate(enable) {
   await refreshTfSection();
 }
 function switchTfTab(tab) {
-  if (!['workspaces', 'varsets', 'cloud', 'policies', 'modules', 'gate'].includes(tab)) tab = 'workspaces';
+  if (!['workspaces', 'varsets', 'cloud', 'policies', 'modules', 'audit', 'gate'].includes(tab)) tab = 'workspaces';
   tfCurrentTab = tab;
   document.querySelectorAll('#tfTabs .tab').forEach(el => {
     const active = el.dataset.tab === tab;
@@ -25301,7 +25323,7 @@ async function loadTfTabData() {
   if (!tfStatus || !tfStatus.enabled) {
     const off = `<div class="empty-state"><div class="empty-state-desc">${tfE(tx('tfx_gate_off'))}</div></div>`;
     if (tfCurrentTab !== 'gate') {
-      const id = { workspaces: 'tfWsEmpty', varsets: 'tfVarsetsList', cloud: 'tfCloudRoot', policies: 'tfPoliciesList', modules: 'tfModulesList' }[tfCurrentTab];
+      const id = { workspaces: 'tfWsEmpty', varsets: 'tfVarsetsList', cloud: 'tfCloudRoot', policies: 'tfPoliciesList', modules: 'tfModulesList', audit: 'tfAuditRoot' }[tfCurrentTab];
       const el = tfEl(id);
       if (el) { el.innerHTML = off; el.style.display = 'block'; }
       if (tfCurrentTab === 'workspaces') { tfEl('tfWsGrid').innerHTML = ''; tfEl('tfWsTableWrap').style.display = 'none'; }
@@ -25313,6 +25335,7 @@ async function loadTfTabData() {
   else if (tfCurrentTab === 'cloud') { if (typeof tfCloudRefresh === 'function') tfCloudRefresh(); }
   else if (tfCurrentTab === 'policies') { await loadTfWorkspaces(); await loadTfPolicies(); }
   else if (tfCurrentTab === 'modules') await loadTfModules();
+  else if (tfCurrentTab === 'audit') { if (typeof tfAuditRefresh === 'function') tfAuditRefresh(); }
 }
 async function refreshTfSection() {
   await loadTfStatus();
@@ -25552,6 +25575,7 @@ async function openTfWorkspaceModal(id) {
   const kr = await tfApi('GET', '/api/ssh-keys');
   const keys = kr.ok && Array.isArray(kr.data) ? kr.data : [];
   keySel.innerHTML = keys.map(k => `<option value="${Number(k.id)}" ${ws && Number(k.id) === Number(ws.git_key_id) ? 'selected' : ''}>${tfE(k.name)}</option>`).join('');
+  if (!ws && typeof tfTplInject === 'function') tfTplInject();
 }
 function tfWfSourceChanged() {
   const git = tfV('tfWfSource') === 'git';
@@ -25761,7 +25785,7 @@ function openTfRunDialog(type) {
     ${tfField(tx('tfx_message'), tfInput('tfRunMsg', '', `placeholder="${tfE(t('tf_run_message_ph', ''))}"`), '', true)}
     ${tfField(tx('tfx_targets'), tfInput('tfRunTargets', '', `placeholder="${tfE(t('tf_run_targets_ph', ''))}"`), '', true)}
     ${tfField(tx('tfx_replace'), tfInput('tfRunReplace', '', `placeholder="${tfE(t('tf_run_replace_ph', ''))}"`), '', true)}</div>`;
-  tfDlg(1, t('tf_run_start_title', 'Start Terraform Run'), body, tfFoot(1, tfPrimary(tx('tfx_start'), 'startTfRun()')), 560);
+  tfDlg(1, t('tf_run_start_title', 'Start Terraform Run'), body, tfFoot(1, tfPrimary(tx('tfx_start'), 'startTfRun()')), 720);
   tfRunTypeChanged();
 }
 function tfRunTypeChanged() {
@@ -26119,7 +26143,8 @@ async function tfRenderVariables(body, effective) {
   body.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
     <div style="display:flex;gap:6px;"><button type="button" class="btn btn-sm ${eff ? '' : 'btn-primary'}" onclick="tfRenderVariables(tfEl('tfWsBody'), false)">${tfE(t('tf_vars_tab_direct', 'Workspace Variables'))}</button>
     <button type="button" class="btn btn-sm ${eff ? 'btn-primary' : ''}" onclick="tfRenderVariables(tfEl('tfWsBody'), true)">${tfE(t('tf_vars_tab_effective', 'Effective View'))}</button></div>
-    <button type="button" class="btn btn-sm btn-primary" onclick="openTfVarDialog('ws', ${tfWs.id}, 0, 1)">${svgIcon('plus', 'icon-xs')} ${tfE(t('tf_btn_add_var', 'Add Variable'))}</button></div><div id="tfVarsBox"></div>`;
+    <div style="display:flex;gap:6px;flex-wrap:wrap;"><button type="button" id="tfVarDetectBtn" class="btn btn-sm" onclick="tfDetectVars()">${svgIcon('search', 'icon-xs')} ${tfE(tx('tfx_vd_btn'))}</button>
+    <button type="button" class="btn btn-sm btn-primary" onclick="openTfVarDialog('ws', ${tfWs.id}, 0, 1)">${svgIcon('plus', 'icon-xs')} ${tfE(t('tf_btn_add_var', 'Add Variable'))}</button></div></div><div id="tfVarsBox"></div>`;
   tfVarScope = { kind: 'ws', id: tfWs.id, lvl: 1, refresh: () => tfRenderVariables(tfEl('tfWsBody'), eff) };
   const r = await tfApi('GET', `/api/terraform/workspaces/${tfWs.id}/variables${eff ? '?effective=1' : ''}`);
   tfVars = r.ok ? (r.data.variables || []) : [];
@@ -26167,6 +26192,74 @@ async function deleteTfVar(kind, scopeId, vid, lvl) {
   if (!r.ok) { tfErr(r); return; }
   showToast(tx('tfx_var_deleted'), 'success');
   if (tfVarScope && tfVarScope.refresh) await tfVarScope.refresh();
+}
+
+/* ---------- detect variables from configuration ---------- */
+// Simple quoted strings lose their quotes; numbers/bools stay plain; anything else is kept as HCL text.
+function tfVdValue(v) {
+  const d = (v.default || '').trim();
+  if (!v.has_default) return { val: '', hcl: /^(list|set|map|object|tuple)\b/.test((v.type || '').trim()) };
+  const m = d.match(/^"([^"\\$%]*)"$/);
+  if (m) return { val: m[1], hcl: false };
+  if (/^(true|false|-?\d+(\.\d+)?)$/.test(d)) return { val: d, hcl: false };
+  return { val: d, hcl: true };
+}
+function tfVdRow(v) {
+  const x = tfVdValue(v);
+  const on = !v.exists && !v.has_default;
+  const dis = v.exists ? 'disabled' : '';
+  const sm = 'font-size:var(--fs-xs);';
+  return `<div data-vd="${tfE(v.name)}" style="display:grid;grid-template-columns:auto 1fr;gap:4px 10px;padding:10px 12px;border-bottom:1px solid var(--card-border);${v.exists ? 'opacity:.6;' : ''}">
+    <input type="checkbox" data-vd-on ${on ? 'checked' : ''} ${dis} style="margin-top:3px;" />
+    <div style="min-width:0;">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><b class="mono">${tfE(v.name)}</b>
+        ${v.type ? `<code class="mono" style="${sm}color:var(--text-muted);">${tfE(v.type)}</code>` : ''}
+        ${v.exists ? `<span class="badge">${tfE(tx('tfx_vd_exists'))}</span>` : ''}
+        ${v.has_default ? '' : `<span style="${sm}color:var(--text-muted);">${tfE(tx('tfx_vd_no_default'))}</span>`}</div>
+      ${v.description ? `<div style="${sm}color:var(--text-muted);margin:2px 0 6px;">${tfE(v.description)}</div>` : ''}
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <input type="text" data-vd-val class="form-input mono" style="flex:1;min-width:200px;box-sizing:border-box;${v.sensitive ? '-webkit-text-security:disc;' : ''}" spellcheck="false" value="${tfE(x.val)}" ${dis} />
+        <label style="${sm}display:flex;gap:4px;align-items:center;"><input type="checkbox" data-vd-hcl ${x.hcl ? 'checked' : ''} ${dis} /> ${tfE(t('tf_var_hcl', 'HCL'))}</label>
+        <label style="${sm}display:flex;gap:4px;align-items:center;"><input type="checkbox" data-vd-sens ${v.sensitive ? 'checked' : ''} ${dis} onchange="this.closest('[data-vd]').querySelector('[data-vd-val]').style.webkitTextSecurity = this.checked ? 'disc' : 'none'" /> ${tfE(t('tf_var_sensitive', 'Sensitive'))}</label></div>
+      <div data-vd-err style="display:none;${sm}color:var(--danger);margin-top:4px;"></div></div></div>`;
+}
+async function tfDetectVars() {
+  const r = await tfApi('GET', `/api/terraform/workspaces/${tfWs.id}/variables/detect`);
+  if (!r.ok) { tfErr(r); return; }
+  if (r.data.supported === false) { showToast(tx('tfx_vd_git'), 'info'); return; }
+  const vars = r.data.variables || [];
+  const body = vars.length
+    ? `<div class="dk-hint" style="margin-bottom:8px;">${tfE(tx('tfx_vd_hint'))}</div><div id="tfVarDetectList" style="border:1px solid var(--card-border);border-radius:var(--radius-md);max-height:60vh;overflow-y:auto;">${vars.map(tfVdRow).join('')}</div>`
+    : `<div id="tfVarDetectList">${tfEmpty(tx('tfx_vd_empty'))}</div>`;
+  tfDlg(1, tx('tfx_vd_title'), body, tfFoot(1, vars.length ? `<button type="button" id="tfVarDetectAdd" class="btn btn-sm btn-primary" onclick="tfDetectAdd()">${tfE(tx('tfx_vd_add'))}</button>` : ''), 720);
+}
+async function tfDetectAdd() {
+  const rows = [...document.querySelectorAll('#tfVarDetectList [data-vd]')].filter(el => el.querySelector('[data-vd-on]').checked);
+  if (!rows.length) { tfDlgErr(1, tx('tfx_vd_none')); return; }
+  tfDlgErr(1, '');
+  const btn = tfEl('tfVarDetectAdd');
+  btn.disabled = true;
+  let ok = 0, fail = 0;
+  for (const el of rows) {
+    const q = s => el.querySelector(s);
+    const err = q('[data-vd-err]');
+    err.style.display = 'none';
+    const r = await tfApi('POST', tfVarBase({ kind: 'ws', id: tfWs.id }), { key: el.getAttribute('data-vd'), value: q('[data-vd-val]').value, category: 'terraform', hcl: q('[data-vd-hcl]').checked, sensitive: q('[data-vd-sens]').checked, description: '' });
+    if (r.ok) {
+      ok++;
+      q('[data-vd-on]').checked = false;
+      for (const s of ['[data-vd-on]', '[data-vd-val]', '[data-vd-hcl]', '[data-vd-sens]']) q(s).disabled = true;
+      el.style.opacity = '.6';
+    } else {
+      fail++;
+      err.textContent = r.data.error || 'Error';
+      err.style.display = 'block';
+    }
+  }
+  btn.disabled = false;
+  showToast(tx('tfx_vd_added', { n: ok, f: fail }), fail ? 'error' : 'success');
+  if (ok && tfVarScope && tfVarScope.refresh) tfVarScope.refresh();
+  if (!fail) tfDlgClose(1);
 }
 
 /* ---------- drift ---------- */
