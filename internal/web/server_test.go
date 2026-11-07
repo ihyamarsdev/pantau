@@ -246,8 +246,8 @@ func TestShellStaticHTML(t *testing.T) {
 	// Validate JS syntax using node if available in PATH
 	if nodePath, err := exec.LookPath("node"); err == nil && nodePath != "" {
 		start := strings.Index(html, "<script>")
-		end := strings.LastIndex(html, "</script>")
-		if start != -1 && end != -1 && end > start {
+		end := strings.Index(html[start+1:], "</script>") + start + 1
+		if start != -1 && end > start {
 			jsCode := html[start+len("<script>") : end]
 			cmd := exec.Command(nodePath, "--check")
 			cmd.Stdin = strings.NewReader(jsCode)

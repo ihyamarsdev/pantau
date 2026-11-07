@@ -406,6 +406,18 @@ func (s *Server) handleAnsiblePlaybookRun(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusAccepted, map[string]interface{}{"run": run})
 }
 
+var ansibleRunStatuses = map[string]bool{"queued": true, "running": true, "success": true, "failed": true, "cancelled": true, "interrupted": true}
+
+// ansibleRunStatusFilter reads ?status= ("" = no filter) and answers 400 itself for an unknown value.
+func ansibleRunStatusFilter(w http.ResponseWriter, r *http.Request) (string, bool) {
+	status := r.URL.Query().Get("status")
+	if status != "" && !ansibleRunStatuses[status] {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid status filter"})
+		return "", false
+	}
+	return status, true
+}
+
 // handleAnsiblePlaybookRunsList: GET /api/ansible/playbooks/{id}/runs?limit=
 func (s *Server) handleAnsiblePlaybookRunsList(w http.ResponseWriter, r *http.Request, playbookID int64) {
 	limit := 50
@@ -414,8 +426,12 @@ func (s *Server) handleAnsiblePlaybookRunsList(w http.ResponseWriter, r *http.Re
 			limit = n
 		}
 	}
+	status, ok := ansibleRunStatusFilter(w, r)
+	if !ok {
+		return
+	}
 
-	runs, err := s.db.ListAnsibleRuns(playbookID, limit)
+	runs, err := s.db.ListAnsibleRuns(playbookID, status, limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -445,8 +461,21 @@ func (s *Server) handleAnsibleRuns(w http.ResponseWriter, r *http.Request) {
 			limit = n
 		}
 	}
+	status, ok := ansibleRunStatusFilter(w, r)
+	if !ok {
+		return
+	}
+	var playbookID int64
+	if v := r.URL.Query().Get("playbook_id"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n <= 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid playbook_id"})
+			return
+		}
+		playbookID = n
+	}
 
-	runs, err := s.db.ListAnsibleRuns(0, limit)
+	runs, err := s.db.ListAnsibleRuns(playbookID, status, limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -523,6 +552,16 @@ func runRecap(run *store.AnsibleRun) map[string]ansible.RecapHost {
 	return recap
 }
 
+// recapTotalsOf sums a stored recap into the {ok,changed,unreachable,failed,skipped} object the UI shows; nil if none.
+func recapTotalsOf(rawRecap string) map[string]int {
+	recap := runRecap(&store.AnsibleRun{Recap: rawRecap})
+	if len(recap) == 0 {
+		return nil
+	}
+	ok, changed, unreachable, failed, skipped := ansible.RecapTotals(recap)
+	return map[string]int{"ok": ok, "changed": changed, "unreachable": unreachable, "failed": failed, "skipped": skipped}
+}
+
 // runsWithRecapTotals adds a `recap_totals` field to every listed run that has a stored recap.
 func runsWithRecapTotals(runs []store.AnsibleRun) []map[string]any {
 	out := make([]map[string]any, 0, len(runs))
@@ -532,11 +571,8 @@ func runsWithRecapTotals(runs []store.AnsibleRun) []map[string]any {
 		if err != nil || json.Unmarshal(b, &item) != nil {
 			item = map[string]any{"id": runs[i].ID}
 		}
-		if recap := runRecap(&runs[i]); len(recap) > 0 {
-			ok, changed, unreachable, failed, skipped := ansible.RecapTotals(recap)
-			item["recap_totals"] = map[string]int{
-				"ok": ok, "changed": changed, "unreachable": unreachable, "failed": failed, "skipped": skipped,
-			}
+		if totals := recapTotalsOf(runs[i].Recap); totals != nil {
+			item["recap_totals"] = totals
 		}
 		out = append(out, item)
 	}

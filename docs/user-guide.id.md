@@ -531,7 +531,7 @@ Tab **Settings** menyajikan pengaturan terpilih dari daftar izin (*allowlist*):
 
 Pantau menyediakan subsistem otomatisasi Ansible terintegrasi yang terinspirasi dari Semaphore UI. Administrator dapat menyimpan Ansible Playbook langsung di basis data lokal SQLite Pantau, mengeksekusinya terhadap sekumpulan Host atau Host Group, memantau aliran log output tugas secara langsung, dan meninjau riwayat eksekusi—**tanpa memerlukan berkas inventori terpisah atau brankas kunci eksternal**.
 
-Bagian **Ansible** dibagi menjadi tab **Playbook** (daftar, pencarian, dan pembuatan playbook), **Hosts** (explorer Group > Host dengan Ping dan Facts), **Ad-Hoc** (jalankan satu modul tanpa playbook), **Jadwal** (otomatisasi cron), **Template**, **Berkas**, **Library**, dan **Pengaturan** (Ansible Gate dan peringatan keamanan). Status gate selalu terlihat di header; klik status untuk membuka Pengaturan. Keputusan terkait: [ADR 0049](adr/0049-ansible-playbooks-semaphore-style.md), [ADR 0050](adr/0050-ansible-git-playbooks-and-cron-schedules.md), dan lapisan operasional di [ADR 0057](adr/0057-ansible-ops-recap-tasktree-diff-survey-adhoc-facts-explorer.md).
+Bagian **Ansible** memiliki lima tab: **Playbook** (tabel padat dengan pencarian, filter, pengurutan, pengelompokan, dan menu per baris; playbook dibuka di side drawer dengan Overview, Edit, Runs, dan Schedule), **Runs** (History semua run dengan filter status, dan Scheduled), **Hosts** (explorer Group > Host dengan Ping dan Facts, plus Ad-hoc), **Sumber Daya** (Templates, Files, dan Library), dan **Pengaturan** (Ansible Gate, `ansible.cfg`). Status gate selalu terlihat di header; klik status untuk membuka Pengaturan. Keputusan terkait: [ADR 0049](adr/0049-ansible-playbooks-semaphore-style.md), [ADR 0050](adr/0050-ansible-git-playbooks-and-cron-schedules.md), [ADR 0057](adr/0057-ansible-ops-recap-tasktree-diff-survey-adhoc-facts-explorer.md), dan tata letak di [ADR 0059](adr/0059-ansible-ui-playbook-table-and-side-drawer.md).
 
 #### Ansible Gate (Keamanan & Aktivasi)
 
@@ -539,7 +539,7 @@ Ansible Playbook dijalankan **langsung pada server Pantau dengan hak akses prose
 
 Untuk mencegah eksekusi yang tidak diinginkan:
 1. **Ansible Gate** (`ansible_enabled`) berada dalam kondisi **nonaktif secara default**.
-2. Sebelum playbook apa pun dapat dieksekusi, administrator harus membuka **Ansible → Pengaturan** di Side Panel dan mengaktifkan saklar melalui banner antarmuka.
+2. Sebelum playbook apa pun dapat dieksekusi, administrator harus mengaktifkan gate dengan tombol **Aktifkan Gate** (tampil di setiap tab Ansible saat gate nonaktif, dan di **Ansible → Pengaturan**). Sampai saat itu hanya **Pengaturan** yang dapat dipakai.
 3. Pengaktifan gerbang mewajibkan konfirmasi dialog keamanan eksplisit yang menegaskan bahwa sesi admin Pantau dengan Ansible aktif setara dengan akses eksekusi di server master.
 4. Sistem juga memverifikasi keberadaan biner `ansible-playbook` di `PATH` server Pantau.
 
@@ -555,13 +555,13 @@ Untuk mencegah eksekusi yang tidak diinginkan:
 #### Pengelompokan & Organisasi Playbook
 
 Playbook dapat dikelompokkan ke dalam grup visual yang dimodelkan mengikuti Host Group:
-- **Mengatur Grup**: Masukkan nama grup (dipangkas, hingga 64 karakter) pada form playbook. Grup bersifat implisit—dibuat otomatis saat digunakan dan hilang jika tidak ada playbook yang memakainya.
-- **Bagian yang Dapat Dilipat (Collapsible Sections)**: Pada tampilan Playbook, kartu playbook dikelompokkan di bawah header grup yang dapat dilipat/dibuka lengkap dengan jumlah item. Status lipatan tersimpan di browser.
-- **Pemfilteran**: Gunakan dropdown filter Grup untuk menyaring playbook per grup tertentu, menampilkan semua grup, atau menampilkan hanya playbook **Tanpa Grup (Ungrouped)**.
+- **Mengatur Grup**: Masukkan nama grup (dipangkas, hingga 64 karakter) pada editor playbook. Grup bersifat implisit—dibuat otomatis saat digunakan dan hilang jika tidak ada playbook yang memakainya.
+- **Group by**: Pada tabel Playbook, saklar **Group by** menampilkan baris di bawah header grup yang dapat dilipat lengkap dengan jumlah playbook. Klik header untuk melipat/membuka; status lipatan tersimpan di browser.
+- **Pemfilteran**: Gunakan kotak pencarian (tekan `/` untuk fokus) dan chip **All / Failed / Never run / Scheduled / Git** untuk menyaring tabel; kolom dapat diurutkan dengan klik.
 - **Label Kosmetik Murni**: Grup hanyalah label pengorganisasian visual; grup tidak memengaruhi eksekusi run, pembentukan inventory, kredensial, maupun izin akses.
 #### Menjalankan Playbook
 
-Klik tombol **Run** pada baris playbook untuk membuka dialog eksekusi:
+Klik **Run** pada baris playbook, atau di drawer-nya, untuk membuka panel peluncuran. Panel mengingat target dan opsi terakhir per playbook, dan **Ctrl+Enter** memulai run:
 
 1. **Pemilihan Target**:
    - **Host Spesifik**: Pilih host individual dari daftar pencarian host.
@@ -637,7 +637,7 @@ Bagian yang diizinkan: `defaults`, `ssh_connection`, `privilege_escalation`; sat
 
 #### Library: Role dan Koleksi
 
-Tab **Ansible → Library** mengelola role dan koleksi yang tersimpan di server Pantau dan tersedia untuk **semua** playbook (inline, Git, atau folder impor), sehingga proyek tidak perlu lagi menyertakannya:
+Sub-tab **Library** di **Ansible → Resources** mengelola role dan koleksi yang tersimpan di server Pantau dan tersedia untuk **semua** playbook (inline, Git, atau folder impor), sehingga proyek tidak perlu lagi menyertakannya:
 
 - **Pasang dari Galaxy**: pilih Koleksi atau Role, isi `namespace.nama` (role: nama di Galaxy, mis. `geerlingguy.nginx`) dan versi opsional. Koleksi memasang dependensinya. Output instalasi mengalir langsung ke panel di bawah form selama berjalan (baris perintah lebih dulu, lalu baris `… still working (Ns)` tiap 5 detik saat `ansible-galaxy` diam); prosesnya bisa memakan beberapa menit. Instalasi tetap selesai di server walau tab ditutup.
 - **Pasang dari requirements.yml**: tempel `requirements.yml` (`collections:` dan/atau `roles:`). Hanya nama dan versi yang diterima; sumber Git/URL ditolak.
@@ -648,7 +648,7 @@ Library berada di `ansible-library/` di samping database Pantau (di Docker: simp
 
 #### Template dan Berkas (untuk `template:` dan `copy:`)
 
-Playbook inline hanyalah satu teks YAML, sehingga task seperti `template: src=site.conf.j2` atau `copy: src=ca.pem` tidak menemukan berkas untuk dibaca. Tab **Ansible → Templates** dan **Ansible → Files** menyimpan berkas pendukung itu di Pantau:
+Playbook inline hanyalah satu teks YAML, sehingga task seperti `template: src=site.conf.j2` atau `copy: src=ca.pem` tidak menemukan berkas untuk dibaca. Sub-tab **Templates** dan **Files** di **Ansible → Resources** menyimpan berkas pendukung itu di Pantau:
 
 - **Templates**: ketik nama (boleh bersubfolder, mis. `nginx/site.conf.j2`) dan isi Jinja, lalu **Simpan template**. Menyimpan nama yang sudah ada akan menggantinya; ikon pensil memuat template kembali ke editor. Template harus teks UTF-8, maksimal 256 KiB.
 - **Files**: pilih satu atau beberapa berkas (jenis apa pun, termasuk biner), opsional **Subfolder** seperti `certs/`, lalu **Unggah**. Mengunggah nama yang sudah ada akan menggantinya. Maksimal 5 MiB per berkas.
@@ -671,19 +671,22 @@ Playbook inline hanyalah satu teks YAML, sehingga task seperti `template: src=si
 
 #### Mengedit Playbook dan Variabel
 
-Ikon pensil pada kartu playbook membuka satu editor untuk mengedit sekaligus melihat:
+Klik baris playbook (atau pilih **Edit** di menu `⋯`-nya) untuk membuka side drawer. Tab-nya: **Overview**, **Edit**, **Runs**, dan **Schedule**; tab **Edit** berisi editor:
 
-- Tab **Playbook**: nama, deskripsi, sumber, dan editor YAML (playbook inline) atau pengaturan Git.
-- Tab **Variabel**: variabel yang dirujuk playbook, dideteksi dengan memindai YAML saat Anda mengetik (termasuk edit yang belum disimpan); isi role dan template di Library tidak dipindai. **Wajib** = dipakai tetapi tidak didefinisikan di mana pun (perlu nilai dari Anda atau dari inventory); **Opsional** = hanya dipakai dengan `default()`/`is defined`; **Terdefinisi** = punya nilai di YAML (`vars:`) atau di extra vars default playbook. Variabel yang dibuat saat run (`register`, `set_fact`, variabel loop) dan magic variable Ansible dilewati. Ini heuristik statis: nama yang dibangun dinamis dan variabel dari inventory Anda sendiri bisa terlewat.
+- Tab **Pre-tasks / Roles / Tasks / Post-tasks / Handlers / Raw** (playbook inline dengan tepat satu play): playbook yang sama dipecah menjadi bagian, sesuai urutan Ansible menjalankannya. **Pre-tasks**, **Tasks**, **Post-tasks**, dan **Handlers** berupa daftar YAML, **Roles** adalah pemilih dari role yang terpasang di Library (role Library, role dari koleksi Library sebagai `namespace.collection.role`, dan role sistem) dengan parameter per role (`vars`, `tags`, `when`) dan pengurutan, dan **Raw** adalah YAML lengkap. Name, hosts, become, vars, dan key play lainnya tidak punya tab: edit di Raw, bagian membawanya apa adanya. Bagian digabung ke teks raw saat Anda meninggalkan tab bagian ke tab non-bagian atau Simpan, dan teks raw dipecah lagi saat Anda membuka tab bagian setelah mengedit Raw. Komentar dan tanda kutip di dalam tiap bagian dipertahankan, tetapi penggabungan merapikan indentasi YAML, jadi edit bagian hanya bila Anda memang mau itu. Bagian yang bukan YAML valid (mis. Tasks yang bukan daftar) menahan Anda di tab itu beserta alasannya. Playbook dengan beberapa play, atau YAML yang tidak bisa di-parse, hanya menyediakan **Raw**; role yang belum terpasang ditandai *belum terpasang* dan run gagal kecuali role itu ada.
+- Tab **Variabel**: variabel yang dirujuk playbook, dideteksi dengan memindai YAML saat Anda mengetik (termasuk edit yang belum disimpan) beserta role yang dipakainya: role di repositori, serta role yang terpasang di **Resources → Library** atau path role sistem (`/usr/share/ansible/roles`, `/etc/ansible/roles`), termasuk role `namespace.collection.role` dari koleksi Library. `defaults/`, `vars/`, task, handler, template, dan dependensi `meta` role ikut dibaca, sehingga variabel yang didefinisikan role sendiri (`ansistrano_repo_dir`) atau diisi role saat berjalan (`set_fact`/`register`, mis. `ansistrano_release_path`) tidak perlu Anda isi. **Wajib** = dipakai tetapi tidak didefinisikan di mana pun (perlu nilai dari Anda atau dari inventory); **Opsional** = hanya dipakai dengan `default()`/`is defined`; **Terdefinisi** = punya nilai di YAML (`vars:`), di role, atau di extra vars default playbook. Variabel yang dibuat saat run dan magic variable Ansible dilewati. Ini heuristik statis: nama yang dibangun dinamis dan variabel dari inventory Anda sendiri bisa terlewat. File task yang di-include role lewat nama bertemplate (`include_tasks: "{{ mode }}.yml"`) hanya diambil fakta yang diset-nya; rujukannya diabaikan karena file yang berjalan tidak diketahui.
   - Kolom **Nilai** adalah **extra vars default** playbook: ketik nilai untuk menetapkan atau menimpa variabel, klik ikon tempat sampah untuk menghapusnya (variabel kembali ke apa yang didefinisikan YAML). **Tambah variabel** membuat variabel yang tidak terdeteksi pemindaian. Nilai di-parse sebagai JSON bila memungkinkan (`8080` angka, `true` boolean, `["a","b"]` daftar); bungkus dengan tanda kutip (`"8080"`) untuk memaksa string. Variabel wajib tanpa nilai disorot.
-  - Variabel yang didefinisikan di blok `vars:` YAML (belum ada override) juga punya ikon tempat sampah: ikon itu menghapus barisnya dari YAML di editor (batalkan dengan Cancel). Hanya blok `vars:` biasa yang dikenali; selain itu ubah langsung di tab Playbook. Variabel yang hanya dirujuk tanpa definisi tidak bisa dihapus (ikon nonaktif).
+  - Variabel yang didefinisikan di blok `vars:` YAML (belum ada override) juga punya ikon tempat sampah: ikon itu menghapus barisnya dari YAML di editor (batalkan dengan Cancel). Hanya blok `vars:` biasa yang dikenali; selain itu ubah langsung di tab Raw. Variabel yang hanya dirujuk tanpa definisi tidak bisa dihapus (ikon nonaktif).
   - Perubahan disimpan dengan **Simpan**, seperti bagian editor lainnya. Run masih dapat menimpa semuanya di dialog peluncuran.
-- Tab **Berkas** (hanya playbook Git): penjelajah read-only dari clone dangkal terbaru (dialog bisa butuh beberapa detik dan menampilkan commit). `.env`, kunci, berkas biner, `.ansible/`, dan `collections/` tidak pernah ditampilkan. Batas: 1.000 berkas, total 4 MiB, 256 KiB per berkas. Edit playbook Git di repositorinya.
+  - **Simpan mempertahankan posisi Anda**: tab drawer, tab editor, dan editor yang sama. Untuk playbook baru, Simpan pertama mengubah drawer menjadi tab Edit playbook itu, di tab editor yang sama.
+  - **Simpan memeriksa dan memformat YAML inline lebih dulu**: playbook harus berupa daftar play, tiap play punya `hosts` atau `import_playbook`, tanpa key ganda dalam satu mapping, lalu di-indentasi ulang menjadi 2 spasi (komentar dan tanda kutip dipertahankan; spasi sebelum komentar `#` di akhir baris dinormalkan menjadi satu spasi). Bila pemeriksaan gagal, tidak ada yang disimpan, editor pindah ke **Raw**, dan footer menampilkan alasannya beserta nomor baris. Pemeriksaan hanya untuk struktur YAML, tidak menjalankan `ansible-playbook --syntax-check`, jadi modul yang tidak dikenal atau role yang hilang baru terlihat saat run (pakai mode *syntax* di panel peluncuran untuk itu).
+  - Variabel ditampilkan di bawah **Variabel playbook** dan satu bagian per role yang bisa dilipat (klik header untuk melipat; default role itu sendiri dan variabel yang hanya dipakai berkas role tersebut). Kotak pencarian di atas tabel menyaring berdasarkan nama, nilai, sumber, role, atau berkas dan membuka semua grup selama aktif. Tabel memakai seluruh lebar drawer: perlebar drawer untuk melihat kolom Sumber dan Dipakai di berdampingan, drawer sempit menyembunyikannya.
+- Bagian **Files** (hanya playbook Git, setelah Simpan pertama): telusuri, edit, buat, dan hapus berkas dari clone dangkal terbaru lalu commit kembali, lihat *Git Repository Editor* di bawah. `.env`, kunci, berkas biner, `.ansible/`, dan `collections/` tidak pernah ditampilkan. Batas: 1.000 berkas, total 4 MiB, 256 KiB per berkas.
 
 
 #### Jadwal (Cron)
 
-Tab **Ansible → Jadwal** menampilkan tabel jadwal saat Ansible Gate aktif untuk menjalankan playbook tanpa pengawasan. Jika gate nonaktif atau biner Ansible tidak tersedia, tab ini menampilkan petunjuk untuk membuka **Pengaturan**:
+Jadwal ada di dua tempat: tab **Schedule** pada drawer playbook (buat, ubah, jeda, dan hapus jadwal playbook itu, lengkap dengan pratinjau kemunculan berikutnya) dan **Ansible → Runs → Scheduled** yang mendaftar semua jadwal. Keduanya membutuhkan Ansible Gate; saat gate nonaktif, setiap tab Ansible selain **Pengaturan** menampilkan penjelasan alih-alih memuat data:
 
 1. Klik **Jadwal Baru**, pilih playbook, nama opsional, dan **ekspresi cron** (5 field: menit, jam, hari-dalam-bulan, bulan, hari-dalam-minggu). Preset: tiap 5 menit (`*/5 * * * *`), tiap jam (`0 * * * *`), harian 03:00 (`0 3 * * *`), Minggu 03:00 (`0 3 * * 0`), bulanan (`0 3 1 * *`). Sintaks yang didukung: `*`, angka, rentang `a-b`, daftar `a,b`, langkah `*/n` dan `a-b/n`, serta `@hourly`, `@daily`, `@weekly`, `@monthly`, `@yearly`. Nama bulan/hari belum didukung. Bila hari-dalam-bulan dan hari-dalam-minggu sama-sama dibatasi, salah satunya cukup cocok (cron Vixie).
 2. Pilih target (**Host Group** dan/atau Host tertentu), mode (`run`, `check`, `diff`, `syntax`), tags, extra vars, **Limit**, verbosity (0–4), dan become. Target ditentukan saat jadwal berjalan, jadi Host yang ditambahkan ke grup belakangan ikut tercakup, sedangkan limit mempersempit himpunan hasil resolusi itu sama seperti pada run manual.
@@ -694,7 +697,7 @@ Aturan: run terjadwal memakai batas yang sama dengan run manual (1 run aktif per
 
 #### Pemantauan Log Real-Time & Pembatalan Run
 
-1. **Penampil Log Monospace Live**: Keluaran stdout dan stderr digabungkan dan dialirkan secara langsung ke penampil log Workspace Modal via polling setiap 1 detik (`GET /api/ansible/runs/{id}/log?offset=N`) dengan smart auto-scroll.
+1. **Penampil Log Monospace Live**: Keluaran stdout dan stderr digabungkan dan dialirkan secara langsung ke penampil run (side drawer) via polling setiap 1 detik (`GET /api/ansible/runs/{id}/log?offset=N`) dengan pencarian dan saklar **Follow** untuk auto-scroll.
 2. **Batas Ukuran Log**: Log run aktif disimpan di buffer memori hingga 2 MiB. Jika keluaran melebihi 2 MiB, bagian awal log akan dipotong (*head truncation*) dan diberi penanda `[pantau] log truncated`.
 3. **Pembatalan**: Klik tombol **Cancel** pada penampil log untuk membatalkan proses run yang sedang berjalan. Pantau mengirim sinyal SIGTERM ke grup proses, disusul SIGKILL setelah 5 detik jika proses belum berhenti.
 4. **Batas Waktu (Timeout)**: Eksekusi dibatasi waktu maksimal bawaan selama 1 jam.
@@ -711,7 +714,7 @@ Aturan: run terjadwal memakai batas yang sama dengan run manual (1 run aktif per
 
 #### Membaca Run: Log, Task Tree, Recap & Diff
 
-Buka run mana pun (dari riwayat playbook atau dari jadwal) untuk mendapatkan empat tampilan atas keluaran yang sama. Semuanya diturunkan dari log yang dicetak Ansible, sehingga run yang lognya terpotong di 2 MiB menampilkan pohon yang tidak lengkap; recap berbeda (lihat di bawah).
+Klik baris di **Ansible → Runs**, atau run di tab **Runs** playbook maupun riwayat jadwal, untuk membuka penampil run di side drawer. Run yang masih aktif diperbarui langsung dan punya tombol **Cancel**. Penampil menyediakan empat tampilan atas keluaran yang sama. Semuanya diturunkan dari log yang dicetak Ansible, sehingga run yang lognya terpotong di 2 MiB menampilkan pohon yang tidak lengkap; recap berbeda (lihat di bawah).
 
 - **Log**: aliran mentah dengan warna ANSI yang dirender dengan aman (teks di-escape HTML lebih dulu sebelum warna diterapkan, sehingga host target tidak dapat menyisipkan markup).
 - **Task Tree**: pohon **Play > Task > Host** yang dapat dilipat, setiap baris host membawa statusnya — `ok`, `changed`, `fatal`, `failed`, `skipping`, `unreachable`, `ignored`. Gunakan kotak pencarian untuk menemukan task berdasarkan nama dan pil filter status untuk menyembunyikan kebisingan (mis. hanya `failed` dan `unreachable`). Verbosity lebih tinggi memberi pohon lebih banyak bahan.
@@ -741,7 +744,7 @@ Definisi survey disimpan bersama playbook di SQLite, diikutsertakan dalam System
 
 #### Run Ad-Hoc (Satu Modul, Tanpa Playbook)
 
-**Ansible → Ad-Hoc** menjalankan satu modul Ansible terhadap satu atau beberapa Host atau Host Group. Gunakan untuk pemeriksaan cepat dan operasi sekali jalan yang tidak layak disimpan sebagai playbook: `ping`, `setup`, `shell: uptime`, `command: df -h`, `service: name=nginx state=restarted`, `apt: update_cache=yes`, dan seterusnya.
+**Ansible → Hosts → Ad-hoc** menjalankan satu modul Ansible terhadap satu atau beberapa Host atau Host Group. Gunakan untuk pemeriksaan cepat dan operasi sekali jalan yang tidak layak disimpan sebagai playbook: `ping`, `setup`, `shell: uptime`, `command: df -h`, `service: name=nginx state=restarted`, `apt: update_cache=yes`, dan seterusnya.
 
 1. Pilih **Modul** dari daftar umum atau ketik sendiri (`ansible.builtin.ping` dan `ping` sama-sama diterima) dan opsional **Argumen**-nya (satu string `-a`, hingga 4 KiB; kosongkan untuk modul tanpa argumen seperti `ping`).
 2. Pilih **target**: Host individual, satu Host Group, dan/atau **Pattern** tambahan (bawaan `all`, aturan sama dengan **Limit** run).
@@ -769,7 +772,8 @@ Sync **tidak** menyimpan isi repositori dan tidak mengubah playbook: setiap run 
 
 #### Git Repository Editor (Edit, Commit & Push)
 
-Untuk playbook dengan `source = "git"`, operator dapat menekan tombol **Edit Repository** pada blok konfigurasi Git (di sebelah tombol **Sync Now**) untuk membuka antarmuka **Git Editor** (Workspace Modal).
+Untuk playbook dengan `source = "git"`, tab **Edit** pada drawer playbook memiliki bagian **Files** (**Git Editor** di dalam peramban). Bagian ini memuat clone dangkal terbaru saat pertama kali dibuka (bisa butuh beberapa detik); bila clone gagal, galat git ditampilkan dengan tombol **Retry**. Simpan playbook lebih dulu: Files hanya tersedia untuk playbook yang sudah tersimpan.
+- **Commit & Push** ada di footer drawer pada bagian Files dan tetap nonaktif sampai ada berkas yang diubah.
 
 - **Penjelajahan & Pencarian Berkas**: Telusuri pohon berkas repositori dengan folder collapsible, pencarian berkas instan, serta penanda visual untuk berkas yang diubah (`M`), ditambah (`A`), atau dihapus (`D`).
 - **Penyuntingan Kode & Syntax Highlighting**: Sunting berkas dengan penyorotan sintaksis CodeMirror (YAML, shell, HCL/C-like, teks biasa).

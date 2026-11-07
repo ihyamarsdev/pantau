@@ -1,0 +1,35 @@
+/* Playbook editor */
+.ans-ed { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.ans-ed-head { padding: 12px 14px 8px; display: flex; flex-direction: column; gap: 10px; flex: none; }
+.ans-ed-nav { padding: 0 14px 8px; flex: none; border-bottom: 1px solid var(--card-border); }
+.ans-ed-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ans-ed-scroll { flex: 1; min-height: 0; overflow: auto; padding: 14px; }
+.ans-ed-form { display: flex; flex-direction: column; gap: 12px; max-width: 880px; }
+.ans-ed-cm { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ans-ed-cm .CodeMirror { flex: 1; height: auto; min-height: 240px; font-family: var(--font-mono); font-size: 12.5px; border-top: 0; background: var(--code-bg); }
+.ans-ed-empty { padding: 24px; text-align: center; font-size: var(--fs-sm); }
+.ans-ed-err { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ans-ed-dirty { font-size: var(--fs-xs); color: var(--warning); display: inline-flex; align-items: center; gap: 4px; }
+.ans-ed-dirty[hidden] { display: none; }
+.ans-ed .ans-drawer-foot .btn-primary { gap: 6px; }
+.ans-ed .ans-kbd { opacity: .75; }
+@media (max-width: 700px) { .ans-ed .ans-kbd { display: none; } }
+.ans-ed-addvar { align-items: stretch; }
+.ans-ed-sv { padding: 12px; }
+
+/* git files */
+.ans-ed-files { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(200px, 300px) minmax(0, 1fr); }
+@media (max-width: 700px) { .ans-ed-files { grid-template-columns: 1fr; grid-template-rows: 200px minmax(0, 1fr); } }
+.ans-ed-ftree { border-right: 1px solid var(--card-border); padding: 10px; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.ans-ed-flist { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 1px; }
+.ans-ed-fi { display: flex; align-items: center; gap: 6px; background: transparent; border: 0; color: var(--text-muted); font: inherit; font-family: var(--font-mono); font-size: 11.5px; padding: 4px 6px; border-radius: var(--radius-sm); cursor: pointer; text-align: left; min-width: 0; }
+.ans-ed-fi span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; direction: rtl; text-align: left; }
+.ans-ed-fi:hover { background: var(--hover); color: var(--text); }
+.ans-ed-fi.on { background: var(--accent-soft); color: var(--accent-text); }
+.ans-ed-fi.del span { text-decoration: line-through; opacity: .7; }
+.ans-ed-ft { font-style: normal; font-size: 9px; text-transform: uppercase; letter-spacing: .04em; padding: 0 5px; border-radius: var(--radius-full); border: 1px solid var(--card-border); flex: none; }
+.ans-ed-ft.new { color: var(--success); border-color: var(--success-border); } .ans-ed-ft.mod { color: var(--warning); border-color: var(--warning-border); } .ans-ed-ft.del { color: var(--danger); border-color: var(--danger-border); }
+.ans-ed-fview { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.ans-ed-fhead { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--card-border); flex: none; }
+.ans-ed-fpath { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ans-ed-fbar { flex: none; display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-top: 1px solid var(--card-border); }

@@ -531,7 +531,7 @@ Pantau exposes an allowlist of high-impact zone settings via the **Settings** ta
 
 Pantau includes an agentless Ansible automation subsystem inspired by Semaphore UI. Operators can write and store Ansible Playbooks in Pantau's local database, execute them against registered hosts, stream real-time task output, and review complete run histories—with **zero separate inventory files or external key vaults**.
 
-The **Ansible** section is split into **Playbooks** (list, search, and creation), **Hosts** (Group > Host explorer with Ping and Facts), **Ad-Hoc** (run a single module without a playbook), **Schedules** (cron automation), **Templates**, **Files**, **Library**, and **Settings** (Ansible Gate and security warnings). The gate status stays visible in the header; click it to open Settings. Related decisions: [ADR 0049](adr/0049-ansible-playbooks-semaphore-style.md), [ADR 0050](adr/0050-ansible-git-playbooks-and-cron-schedules.md), and the operational layer in [ADR 0057](adr/0057-ansible-ops-recap-tasktree-diff-survey-adhoc-facts-explorer.md).
+The **Ansible** section has five tabs: **Playbooks** (dense table with search, filters, sorting, grouping and a per-row menu; a playbook opens in a side drawer with Overview, Edit, Runs and Schedule), **Runs** (History of every run with status filters, and Scheduled), **Hosts** (Group > Host explorer with Ping and Facts, plus Ad-hoc), **Resources** (Templates, Files and Library) and **Settings** (Ansible Gate, `ansible.cfg`). The gate status stays visible in the header; click it to open Settings. Related decisions: [ADR 0049](adr/0049-ansible-playbooks-semaphore-style.md), [ADR 0050](adr/0050-ansible-git-playbooks-and-cron-schedules.md), [ADR 0057](adr/0057-ansible-ops-recap-tasktree-diff-survey-adhoc-facts-explorer.md) and the layout in [ADR 0059](adr/0059-ansible-ui-playbook-table-and-side-drawer.md).
 
 #### The Ansible Gate (Security & Enablement)
 
@@ -539,7 +539,7 @@ Ansible Playbooks run **directly on the Pantau server with the privileges of the
 
 To prevent unauthorized execution:
 1. The **Ansible Gate** (`ansible_enabled`) is **disabled by default**.
-2. Before any playbook can run, an administrator must navigate to **Ansible → Settings** in the Side Panel and explicitly enable the gate via the banner button.
+2. Before any playbook can run, an administrator must enable the gate with the **Enable Gate** button (shown on every Ansible tab while the gate is off, and in **Ansible → Settings**). Until then only **Settings** is usable.
 3. Enabling the gate requires confirming an explicit security prompt acknowledging that admin access in Pantau with Ansible enabled is equivalent to local process execution on the server host.
 4. The system also verifies that the `ansible-playbook` binary is installed and reachable in `PATH`.
 
@@ -555,13 +555,13 @@ To prevent unauthorized execution:
 #### Playbook Grouping & Organization
 
 Playbooks can be organized into visual groups modeled after Host Groups:
-- **Setting a Group**: Enter any group name (trimmed, up to 64 characters) in the playbook modal. Groups are implicit—created whenever a playbook uses them and removed when none do.
-- **Collapsible Sections**: In the Playbooks view, cards render under collapsible group headers with playbook counts. Click a section header to collapse or expand it; collapse state persists across reloads.
-- **Filtering**: Use the Group filter dropdown to narrow view to a specific group, all groups, or **Ungrouped** playbooks.
+- **Setting a Group**: Enter any group name (trimmed, up to 64 characters) in the playbook editor. Groups are implicit—created whenever a playbook uses them and removed when none do.
+- **Group by**: In the Playbooks table, the **Group by** toggle renders rows under collapsible group headers with playbook counts. Click a header to collapse or expand it; collapse state persists across reloads.
+- **Filtering**: Use the search box (press `/` to focus it) and the **All / Failed / Never run / Scheduled / Git** chips to narrow the table; columns sort on click.
 - **Cosmetic Labeling**: Groups are organizational labels only; they do not alter execution behavior, inventory generation, runner credentials, or permissions.
 #### Running a Playbook
 
-Click **Run** next to any playbook to open the Run Dialog:
+Click **Run** on a playbook row, or in its drawer, to open the launch panel. It remembers your last targets and options per playbook, and **Ctrl+Enter** starts the run:
 
 1. **Target Selection**:
    - **Specific Hosts**: Select individual target hosts from the searchable host picker.
@@ -637,7 +637,7 @@ Allowed sections: `defaults`, `ssh_connection`, `privilege_escalation`; one `key
 
 #### Library: Roles and Collections
 
-The **Ansible → Library** tab manages roles and collections stored on the Pantau server and available to **every** playbook (inline, Git, or imported folder), so projects no longer need to vendor them:
+The **Library** sub-tab of **Ansible → Resources** manages roles and collections stored on the Pantau server and available to **every** playbook (inline, Git, or imported folder), so projects no longer need to vendor them:
 
 - **Install from Galaxy**: choose Collection or Role, enter `namespace.name` (roles: the Galaxy name, e.g. `geerlingguy.nginx`) and an optional version. Collections install their dependencies. The installer output streams into the panel below the form while it runs (the command line first, then a `… still working (Ns)` line every 5 seconds while `ansible-galaxy` is silent); it can take a few minutes. The install finishes on the server even if you close the tab.
 - **Install from requirements.yml**: paste a `requirements.yml` (`collections:` and/or `roles:`). Only names and versions are accepted; Git/URL sources are rejected.
@@ -648,7 +648,7 @@ The library lives in `ansible-library/` next to the Pantau database (in Docker: 
 
 #### Templates and Files (for `template:` and `copy:`)
 
-An inline playbook is a single YAML text, so a task such as `template: src=site.conf.j2` or `copy: src=ca.pem` would otherwise find nothing to read. The **Ansible → Templates** and **Ansible → Files** tabs store those supporting files in Pantau:
+An inline playbook is a single YAML text, so a task such as `template: src=site.conf.j2` or `copy: src=ca.pem` would otherwise find nothing to read. The **Templates** and **Files** sub-tabs of **Ansible → Resources** store those supporting files in Pantau:
 
 - **Templates**: type a name (subfolders allowed, e.g. `nginx/site.conf.j2`) and the Jinja content, then **Save template**. Saving an existing name replaces it; the pencil icon loads a template back into the editor. Templates must be UTF-8 text, up to 256 KiB.
 - **Files**: choose one or more files (any type, binary included), optionally a **Subfolder** such as `certs/`, and **Upload**. Uploading an existing name replaces it. Up to 5 MiB per file.
@@ -671,19 +671,22 @@ An inline playbook is a single YAML text, so a task such as `template: src=site.
 
 #### Editing Playbooks and Variables
 
-The pencil on a playbook card opens one editor for editing and viewing:
+Click a playbook row (or choose **Edit** in its `⋯` menu) to open the side drawer. Its tabs are **Overview**, **Edit**, **Runs** and **Schedule**; the **Edit** tab holds the editor:
 
-- **Playbook** tab: name, description, source, and the YAML editor (inline playbooks) or the Git settings.
-- **Variables** tab: the variables the playbook references, found by scanning the YAML as you type (unsaved edits included); the contents of roles and templates in the Library are not scanned. **Required** = used but defined nowhere (it needs a value from you or from the inventory); **Optional** = only used with `default()`/`is defined`; **Defined** = has a value in the YAML (`vars:`) or in the playbook's default extra vars. Variables produced at run time (`register`, `set_fact`, loop variables) and Ansible magic variables are skipped. This is a static heuristic: dynamically built names and variables supplied by your own inventory can be missed.
+- **Pre-tasks / Roles / Tasks / Post-tasks / Handlers / Raw** tabs (inline playbooks with exactly one play): the same playbook cut into parts, in the order Ansible runs them. **Pre-tasks**, **Tasks**, **Post-tasks** and **Handlers** are YAML lists, **Roles** is a picker over the roles installed in the Library (Library roles, roles of Library collections as `namespace.collection.role`, and system roles) with per-role parameters (`vars`, `tags`, `when`) and ordering, and **Raw** is the full YAML. Name, hosts, become, vars and every other play key have no tab: edit them in Raw, parts carry them through unchanged. Parts are joined into the raw text when you leave a part tab for a non-part tab or Save, and the raw text is split again when you open a part tab after editing Raw. Comments and quoting inside each part are kept, but joining re-indents the YAML, so only edit parts when you want that. A part that is not valid YAML (for example Tasks that is not a list) keeps you on that tab with the reason. Playbooks with several plays, or YAML that does not parse, only offer **Raw**; a role that is not installed is flagged *not installed* and the run fails unless it exists.
+- **Variables** tab: the variables the playbook references, found by scanning the YAML as you type (unsaved edits included) together with the roles it uses: roles in the repository, and roles installed in **Resources → Library** or the system role paths (`/usr/share/ansible/roles`, `/etc/ansible/roles`), including `namespace.collection.role` roles of Library collections. A role's `defaults/`, `vars/`, tasks, handlers, templates and `meta` dependencies are read, so a variable the role defines itself (`ansistrano_repo_dir`) or sets while it runs (`set_fact`/`register`, e.g. `ansistrano_release_path`) is not something you have to supply. **Required** = used but defined nowhere (it needs a value from you or from the inventory); **Optional** = only used with `default()`/`is defined`; **Defined** = has a value in the YAML (`vars:`), a role or the playbook's default extra vars. Variables produced at run time and Ansible magic variables are skipped. This is a static heuristic: dynamically built names and variables supplied by your own inventory can be missed. Task files a role includes through a templated name (`include_tasks: "{{ mode }}.yml"`) are only mined for the facts they set; what they reference is ignored because the file that runs is not known.
   - The **Value** column is the playbook's **default extra vars**: type a value to set or override a variable, click the trash icon to delete it (the variable then falls back to what the YAML defines). **Add variable** creates one the scan cannot see. Values are parsed as JSON when possible (`8080` is a number, `true` a boolean, `["a","b"]` a list); wrap a value in quotes (`"8080"`) to force a string. Required variables without a value are highlighted.
-  - A variable defined in the YAML's `vars:` block (with no override) also has a trash icon: it removes that entry from the YAML in the editor (Cancel discards it). Only a plain `vars:` block is recognised; otherwise edit in the Playbook tab. A variable that is only referenced and defined nowhere cannot be deleted (the icon is disabled).
+  - A variable defined in the YAML's `vars:` block (with no override) also has a trash icon: it removes that entry from the YAML in the editor (Cancel discards it). Only a plain `vars:` block is recognised; otherwise edit in the Raw tab. A variable that is only referenced and defined nowhere cannot be deleted (the icon is disabled).
   - Changes are stored with **Save**, like the rest of the editor. A run can still override any of them in the launch dialog.
-- **Files** tab (Git playbooks only): a read-only browser of a fresh shallow clone (the dialog may take a few seconds and shows the commit). `.env`, keys, binaries, `.ansible/`, and `collections/` are never shown. Limits: 1,000 files, 4 MiB total, 256 KiB per file. Edit Git playbooks in their repository.
+  - **Save keeps you where you are**: same drawer tab, same editor tab, same editor. For a new playbook the first Save turns the drawer into that playbook's Edit tab, on the same editor tab.
+  - **Save checks and formats inline YAML first**: the playbook must be a list of plays, each with `hosts` or `import_playbook`, with no duplicate keys in a mapping, and it is re-indented to 2 spaces (comments and quoting are kept; spacing before a trailing `#` comment is normalised to one space). When the check fails nothing is saved, the editor switches to **Raw** and the footer shows the reason with its line number. The check is about YAML structure only; it does not run `ansible-playbook --syntax-check`, so unknown modules or missing roles still surface at run time (use the *syntax* mode of the launch panel for that).
+  - Variables are listed under **Playbook variables** and one collapsible section per role (click a header to fold it; a role's own defaults and the variables only its files use). The search box above the table filters by name, value, source, role or file and opens every group while active. The table uses the whole drawer: expand the drawer to see the Source and Used-in columns side by side, a narrow drawer hides them.
+- **Files** section (Git playbooks only, after the first Save): browse, edit, create and delete files of a fresh shallow clone and commit them back, see *Git Repository Editor* below. `.env`, keys, binaries, `.ansible/`, and `collections/` are never shown. Limits: 1,000 files, 4 MiB total, 256 KiB per file.
 
 
 #### Schedules (Cron)
 
-The **Ansible → Schedules** tab shows the schedules table while the Ansible Gate is active, to run playbooks unattended. If the gate is disabled or the Ansible binary is unavailable, the tab instead shows guidance to open **Settings**:
+Schedules live in two places: the **Schedule** tab of a playbook's drawer (create, edit, pause and delete that playbook's schedules, with a preview of the next occurrences) and **Ansible → Runs → Scheduled**, which lists every schedule. Both need the Ansible Gate; while it is off every Ansible tab except **Settings** explains that instead of loading data:
 
 1. Click **New Schedule**, pick the playbook, an optional name, and a **cron expression** (5 fields: minute, hour, day-of-month, month, day-of-week). Presets: every 5 minutes (`*/5 * * * *`), hourly (`0 * * * *`), daily 03:00 (`0 3 * * *`), Sunday 03:00 (`0 3 * * 0`), monthly (`0 3 1 * *`). Supported syntax: `*`, numbers, ranges `a-b`, lists `a,b`, steps `*/n` and `a-b/n`, and `@hourly`, `@daily`, `@weekly`, `@monthly`, `@yearly`. Month/day names are not supported. If both day-of-month and day-of-week are restricted, either may match (Vixie cron).
 2. Choose the targets (a **Host Group** and/or individual hosts), mode (`run`, `check`, `diff`, `syntax`), tags, extra vars, **Limit**, verbosity (0–4) and become. Targets are resolved when the schedule fires, so hosts added to the group later are included, while the limit narrows that resolved set the same way it does for a manual run.
@@ -694,7 +697,7 @@ Rules: scheduled runs use the same limits as manual runs (1 active run per playb
 
 #### Real-Time Log Streaming & Cancellation
 
-1. **Live Monospace Viewer**: Output from stdout and stderr is combined and streamed live into the Workspace Modal log viewer using 1-second polling (`GET /api/ansible/runs/{id}/log?offset=N`) with smart auto-scroll.
+1. **Live Monospace Viewer**: Output from stdout and stderr is combined and streamed live into the run viewer (side drawer) using 1-second polling (`GET /api/ansible/runs/{id}/log?offset=N`) with search and a **Follow** toggle for auto-scroll.
 2. **Log Limits**: Active run logs are buffered in memory up to 2 MiB. If output exceeds 2 MiB, the head of the log is truncated and marked with `[pantau] log truncated`.
 3. **Cancellation**: Click **Cancel** in the viewer to terminate an in-flight run. Pantau sends SIGTERM to the process group, followed by SIGKILL after 5 seconds if the process does not exit cleanly.
 4. **Timeout**: Runs are bounded by a default 1-hour timeout.
@@ -711,7 +714,7 @@ Rules: scheduled runs use the same limits as manual runs (1 active run per playb
 
 #### Reading a Run: Log, Task Tree, Recap & Diff
 
-Open any run (from the playbook's history or from a schedule) to get four views of the same output. They are all derived from the log that Ansible printed, so a run whose log was truncated at 2 MiB shows an incomplete tree; the recap is different (see below).
+Click a row in **Ansible → Runs**, or a run in a playbook's **Runs** tab or schedule history, to open the run viewer in the side drawer. A run that is still active updates live and has a **Cancel** button. The viewer offers four views of the same output. They are all derived from the log that Ansible printed, so a run whose log was truncated at 2 MiB shows an incomplete tree; the recap is different (see below).
 
 - **Log**: the raw stream, with ANSI colors rendered safely (the text is HTML-escaped before any color is applied, so nothing from the target host can inject markup).
 - **Task Tree**: a collapsible **Play > Task > Host** tree where each host line carries its status — `ok`, `changed`, `fatal`, `failed`, `skipping`, `unreachable`, `ignored`. Use the search box to find a task by name and the status filter pills to hide the noise (e.g. show only `failed` and `unreachable`). Raising verbosity gives the tree more to work with.
@@ -741,7 +744,7 @@ The survey definition is stored with the playbook in SQLite, included in encrypt
 
 #### Ad-Hoc Runs (One Module, No Playbook)
 
-**Ansible → Ad-Hoc** runs a single Ansible module against one or more Hosts or a Host Group. Use it for quick checks and one-off operations that do not deserve a stored playbook: `ping`, `setup`, `shell: uptime`, `command: df -h`, `service: name=nginx state=restarted`, `apt: update_cache=yes`, and so on.
+**Ansible → Hosts → Ad-hoc** runs a single Ansible module against one or more Hosts or a Host Group. Use it for quick checks and one-off operations that do not deserve a stored playbook: `ping`, `setup`, `shell: uptime`, `command: df -h`, `service: name=nginx state=restarted`, `apt: update_cache=yes`, and so on.
 
 1. Pick a **Module** from the common list or type one (`ansible.builtin.ping` and `ping` are both accepted) and optionally its **Arguments** (one `-a` string, up to 4 KiB; leave empty for modules without arguments, like `ping`).
 2. Choose the **targets**: individual Hosts, one Host Group, and/or an extra **Pattern** (default `all`, same rules as the run **Limit**).
@@ -769,7 +772,8 @@ Sync does **not** store the repository content and does not change the playbook:
 
 #### Git Repository Editor (Edit, Commit & Push)
 
-For playbooks with `source = "git"`, operators can click **Edit Repository** in the Git configuration block (next to **Sync Now**) to open the in-browser **Git Editor** (Workspace Modal).
+For playbooks with `source = "git"`, the playbook drawer's **Edit** tab has a **Files** section (the in-browser **Git Editor**). It loads a fresh shallow clone the first time you open it (this can take a few seconds); a clone failure shows the git error with a **Retry** button. Save the playbook first: Files is only available for stored playbooks.
+- **Commit & Push** is in the drawer footer of the Files section and stays disabled until a file is modified.
 
 - **Browse & Search**: Navigate the repository tree with collapsible folders, instant file search, and indicators for modified (`M`), added (`A`), or deleted (`D`) files.
 - **Edit & Syntax Highlighting**: Edit files with full syntax highlighting via CodeMirror (YAML, shell, HCL/C-like, plain text).

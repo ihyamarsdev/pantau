@@ -58,7 +58,7 @@ func (s *Server) handleAnsiblePlaybookContents(w http.ResponseWriter, r *http.Re
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"project": proj,
-		"vars":    ansible.AnalyzeVars(proj.Files, proj.Entry, pb.ExtraVars),
+		"vars":    ansible.AnalyzeVars(proj.Files, proj.Entry, pb.ExtraVars, s.ansibleLibDir),
 	})
 }
 
@@ -88,5 +88,5 @@ func (s *Server) handleAnsiblePlaybookAnalyze(w http.ResponseWriter, r *http.Req
 		return
 	}
 	files := []ansible.ProjectFile{{Path: "playbook.yml", Content: req.Content}}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"vars": ansible.AnalyzeVars(files, "playbook.yml", req.ExtraVars)})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"vars": ansible.AnalyzeVars(files, "playbook.yml", req.ExtraVars, s.ansibleLibDir)})
 }

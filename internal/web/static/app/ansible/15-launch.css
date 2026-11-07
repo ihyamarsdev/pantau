@@ -1,0 +1,15 @@
+/* Launch panel */
+.ans-ln-root { gap: 12px; }
+.ans-ln { border: 0; padding: 0; margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.ans-ln[disabled] { opacity: .55; }
+.ans-ln-req { color: var(--danger); font-weight: 700; }
+.ans-ln-wide { grid-column: 1 / -1; }
+.ans-ln-multi { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 6px 2px; }
+.ans-ln-opt { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); cursor: pointer; }
+.ans-ln-survey { margin-top: 2px; padding: 12px; border: 1px solid var(--card-border); border-radius: var(--radius); background: var(--surface-2); }
+.ans-ln-adv { padding-top: 6px; }
+.ans-ln-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-top: 4px; border-top: 1px solid var(--card-border); }
+.ans-ln-summary { font-size: var(--fs-xs); color: var(--text-muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ans-ln-bar .btn-primary { gap: 6px; }
+.ans-ln-bar .ans-kbd { opacity: .75; }
+@media (max-width: 700px) { .ans-ln-bar .ans-kbd { display: none; } }

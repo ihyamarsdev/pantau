@@ -32,6 +32,14 @@ type AnsiblePlaybook struct {
 	UpdatedAt  time.Time  `json:"updated_at"`
 	LastStatus string     `json:"last_status,omitempty"` // dihitung saat List/Get dari run terakhir
 	LastRunAt  *time.Time `json:"last_run_at,omitempty"`
+
+	// Ringkasan run terakhir dan jadwal untuk tabel playbook (dihitung saat List/Get, tidak disimpan).
+	LastRunID      int64      `json:"last_run_id,omitempty"`
+	LastDurationMs *int64     `json:"last_duration_ms,omitempty"`
+	LastTargets    *int       `json:"last_targets,omitempty"`
+	LastRecap      string     `json:"-"` // recap JSON mentah run terakhir; lapisan web mengubahnya menjadi total last_recap
+	ScheduleCount  int        `json:"schedule_count"`
+	NextRunAt      *time.Time `json:"next_run_at,omitempty"` // jadwal AKTIF terdekat
 }
 
 type AnsibleRun struct {
@@ -125,7 +133,7 @@ func normalizeAnsibleSource(p *AnsiblePlaybook) {
 const ansiblePlaybookSelect = `
 	SELECT p.id, p.name, p.description, %s, p.extra_vars, p.source, p.git_url, p.git_branch, p.git_path, p.git_auth,
 	       p.git_token, p.git_key_id, p.survey, p.last_sync_at, p.last_sync_commit, p.group_name, p.created_at, p.updated_at,
-	       r.status, r.created_at
+	       r.status, r.created_at, r.id, r.started_at, r.finished_at, r.targets, r.recap
 	FROM ansible_playbooks p
 	LEFT JOIN ansible_runs r ON r.id = (
 		SELECT r2.id FROM ansible_runs r2 WHERE r2.playbook_id = p.id ORDER BY r2.id DESC LIMIT 1
@@ -133,11 +141,12 @@ const ansiblePlaybookSelect = `
 
 func scanAnsiblePlaybook(sc rowScanner) (*AnsiblePlaybook, error) {
 	var p AnsiblePlaybook
-	var lastStatus sql.NullString
-	var lastRunAt, lastSyncAt sql.NullTime
+	var lastStatus, lastTargets, lastRecap sql.NullString
+	var lastRunAt, lastSyncAt, lastStarted, lastFinished sql.NullTime
+	var lastRunID sql.NullInt64
 	if err := sc.Scan(&p.ID, &p.Name, &p.Description, &p.Content, &p.ExtraVars, &p.Source, &p.GitURL, &p.GitBranch,
 		&p.GitPath, &p.GitAuth, &p.GitToken, &p.GitKeyID, &p.Survey, &lastSyncAt, &p.LastSyncCommit, &p.GroupName,
-		&p.CreatedAt, &p.UpdatedAt, &lastStatus, &lastRunAt); err != nil {
+		&p.CreatedAt, &p.UpdatedAt, &lastStatus, &lastRunAt, &lastRunID, &lastStarted, &lastFinished, &lastTargets, &lastRecap); err != nil {
 		return nil, err
 	}
 	if lastSyncAt.Valid {
@@ -150,19 +159,39 @@ func scanAnsiblePlaybook(sc rowScanner) (*AnsiblePlaybook, error) {
 	if lastRunAt.Valid {
 		p.LastRunAt = &lastRunAt.Time
 	}
+	if lastRunID.Valid {
+		p.LastRunID = lastRunID.Int64
+		if lastStarted.Valid && lastFinished.Valid {
+			ms := lastFinished.Time.Sub(lastStarted.Time).Milliseconds()
+			p.LastDurationMs = &ms
+		}
+		if n, ok := countRunTargets(lastTargets.String); ok {
+			p.LastTargets = &n
+		}
+		p.LastRecap = lastRecap.String
+	}
 	return &p, nil
 }
 
-// GetAnsiblePlaybook retrieves a playbook by ID including LastStatus and LastRunAt from its latest run.
+// GetAnsiblePlaybook retrieves a playbook by ID including the last-run and schedule summaries.
 func (d *DB) GetAnsiblePlaybook(id int64) (*AnsiblePlaybook, error) {
 	p, err := scanAnsiblePlaybook(d.QueryRow(fmt.Sprintf(ansiblePlaybookSelect, "p.content")+` WHERE p.id = ?`, id))
 	if err == sql.ErrNoRows {
 		return nil, ErrAnsiblePlaybookNotFound
 	}
-	return p, err
+	if err != nil {
+		return nil, err
+	}
+	sums, err := d.ansibleScheduleSummaries(id)
+	if err != nil {
+		return nil, err
+	}
+	p.applyScheduleSummary(sums[id])
+	return p, nil
 }
 
-// ListAnsiblePlaybooks lists all playbooks without Content, ordered by name COLLATE NOCASE, including LastStatus/LastRunAt.
+// ListAnsiblePlaybooks lists all playbooks without Content, ordered by name COLLATE NOCASE, including the
+// last-run summary and the schedule summary.
 func (d *DB) ListAnsiblePlaybooks() ([]AnsiblePlaybook, error) {
 	rows, err := d.Query(fmt.Sprintf(ansiblePlaybookSelect, "''") + ` ORDER BY p.name COLLATE NOCASE ASC`)
 	if err != nil {
@@ -178,7 +207,18 @@ func (d *DB) ListAnsiblePlaybooks() ([]AnsiblePlaybook, error) {
 		}
 		list = append(list, *p)
 	}
-	return list, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	sums, err := d.ansibleScheduleSummaries(0)
+	if err != nil {
+		return nil, err
+	}
+	for i := range list {
+		list[i].applyScheduleSummary(sums[list[i].ID])
+	}
+	return list, nil
 }
 
 // UpdateAnsiblePlaybook updates metadata and source data. The stored git token is kept unless p.GitToken is
@@ -405,17 +445,17 @@ func (d *DB) GetAnsibleRun(id int64) (*AnsibleRun, error) {
 	return r, err
 }
 
-// ListAnsibleRuns lists runs without Log, newest first. If playbookID > 0, filters by playbook.
-// Limit defaults to 50, capped at 200.
-func (d *DB) ListAnsibleRuns(playbookID int64, limit int) ([]AnsibleRun, error) {
+// ListAnsibleRuns lists runs without Log, newest first. If playbookID > 0 it filters by playbook and a non-empty
+// status filters by run status. Limit defaults to 50, capped at 200.
+func (d *DB) ListAnsibleRuns(playbookID int64, status string, limit int) ([]AnsibleRun, error) {
 	if limit <= 0 {
 		limit = 50
 	} else if limit > 200 {
 		limit = 200
 	}
 
-	rows, err := d.Query(`SELECT `+ansibleRunCols+` FROM ansible_runs WHERE (? = 0 OR playbook_id = ?) ORDER BY id DESC LIMIT ?`,
-		playbookID, playbookID, limit)
+	rows, err := d.Query(`SELECT `+ansibleRunCols+` FROM ansible_runs WHERE (? = 0 OR playbook_id = ?) AND (? = '' OR status = ?) ORDER BY id DESC LIMIT ?`,
+		playbookID, playbookID, status, status, limit)
 	if err != nil {
 		return nil, err
 	}

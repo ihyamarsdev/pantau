@@ -1,0 +1,42 @@
+/* Playbook parts (Play / Pre-tasks / Roles / Tasks / Raw), variable search and role groups */
+.ans-ed-nav { overflow-x: auto; }
+.ans-ed-nav .ans-seg { flex-wrap: nowrap; }
+.ans-ed-nav .ans-seg button { white-space: nowrap; }
+.ans-ed-hintbar { flex: none; padding: 7px 14px; border-bottom: 1px solid var(--card-border); display: flex; gap: 6px; align-items: center; }
+.ans-ed .search-box.ans-ed-search { position: relative; display: flex; align-items: center; flex: 1; min-width: 160px; max-width: 360px; margin: 0; }
+.ans-ed .search-box.ans-ed-search .icon { position: absolute; left: 9px; pointer-events: none; }
+.ans-ed .search-box.ans-ed-search input { height: 30px; padding-left: 30px; width: 100%; font-size: var(--fs-xs); }
+.ans-var-group th { text-align: left; background: var(--surface-2); color: var(--text); font-size: var(--fs-xs); font-weight: 600; padding: 6px 10px; border-bottom: 1px solid var(--card-border); }
+.ans-var-group th .icon { vertical-align: -2px; }
+
+.ans-pt-h { margin: 6px 0 0; font-size: var(--fs-sm); font-weight: 600; }
+.ans-pt-list, .ans-pt-pick { display: flex; flex-direction: column; gap: 6px; }
+.ans-pt-pick { max-height: 340px; overflow: auto; border: 1px solid var(--card-border); border-radius: var(--radius); padding: 6px; background: var(--surface-1, transparent); }
+.ans-pt-empty { padding: 10px 4px; font-size: var(--fs-xs); }
+.ans-pt-role { border: 1px solid var(--card-border); border-radius: var(--radius); background: var(--surface-2); }
+.ans-pt-rhead { display: flex; align-items: center; gap: 8px; padding: 6px 8px; min-width: 0; }
+.ans-pt-order { flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--surface-3); color: var(--text-muted); font-size: 11px; display: inline-flex; align-items: center; justify-content: center; }
+.ans-pt-rname { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ans-pt-rhead .ans-btn-icon { position: relative; }
+.ans-pt-rhead .ans-btn-icon[aria-pressed="true"] { background: var(--surface-3); }
+.ans-pt-dot { position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent, #6366f1); }
+.ans-pt-params { padding: 0 8px 8px; display: flex; flex-direction: column; gap: 4px; }
+.ans-pt-params textarea { width: 100%; font-size: var(--fs-xs); resize: vertical; }
+.ans-pt-item { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--radius-sm); }
+.ans-pt-item:hover { background: var(--surface-2); }
+.ans-pt-info { flex: 1; min-width: 0; }
+
+/* Variables: use the whole drawer (expanded or not); columns drop by the drawer's width, not the window's */
+.ans-ed-vars { container-type: inline-size; container-name: vars; }
+.ans-ed-form.ans-ed-wide { max-width: none; }
+.ans-vtable { width: 100%; }
+.ans-vtable td.ans-mono { white-space: normal; overflow-wrap: anywhere; }
+.ans-vtable td:nth-child(3) { min-width: 180px; }
+@container vars (max-width: 980px) { .ans-vc-src { display: none; } }
+@container vars (max-width: 780px) { .ans-vc-used { display: none; } }
+.ans-var-group th { padding: 0; }
+.ans-var-toggle { display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 10px; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+.ans-var-toggle:hover:not(:disabled) { background: var(--surface-3); }
+.ans-var-toggle:disabled { cursor: default; opacity: 1; }
+.ans-var-toggle:focus-visible { outline: 2px solid var(--accent, #6366f1); outline-offset: -2px; }
+.ans-vtable td:first-child { white-space: nowrap; overflow-wrap: normal; }

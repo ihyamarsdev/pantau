@@ -157,6 +157,9 @@ func playbookWithSurvey(p *store.AnsiblePlaybook) map[string]interface{} {
 	}
 	out["survey"] = fields
 	out["has_survey"] = len(fields) > 0
+	if totals := recapTotalsOf(p.LastRecap); totals != nil {
+		out["last_recap"] = totals
+	}
 	return out
 }
 

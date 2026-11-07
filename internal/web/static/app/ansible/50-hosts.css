@@ -1,0 +1,25 @@
+/* Hosts tab */
+.ans-hs-chk { width: 34px; text-align: center; }
+.ans-hs-chk input { cursor: pointer; }
+.ans-hs-adhoc { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 1100px) { .ans-hs-adhoc { grid-template-columns: 1fr; } }
+.ans-hs-form { gap: 12px; }
+.ans-hs-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.ans-hs-hist { display: flex; flex-direction: column; gap: 2px; }
+.ans-hs-hitem { display: flex; align-items: center; gap: 8px; background: transparent; border: 0; color: var(--text); font: inherit; font-size: var(--fs-xs); padding: 6px 8px; border-radius: var(--radius-sm); cursor: pointer; text-align: left; min-width: 0; }
+.ans-hs-hitem:hover { background: var(--hover); }
+.ans-hs-counts { gap: 14px; font-size: var(--fs-xs); font-family: var(--font-mono); }
+.ans-hs-c.ok { color: var(--success); } .ans-hs-c.changed { color: var(--warning); } .ans-hs-c.bad { color: var(--danger); }
+.ans-hs-rs { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.ans-hs-r-success .ans-hs-rs { color: var(--success); } .ans-hs-r-changed .ans-hs-rs { color: var(--warning); }
+.ans-hs-r-unreachable .ans-hs-rs, .ans-hs-r-failed .ans-hs-rs { color: var(--danger); }
+.ans-hs-r-unreachable td { background: rgba(255, 99, 105, .1); } .ans-hs-r-failed td { background: rgba(255, 99, 105, .06); }
+.ans-hs-sum { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ans-hs-log, .ans-hs-raw { margin: 6px 0 0; padding: 10px 12px; background: var(--code-bg); border: 1px solid var(--card-border); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 11.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; }
+.ans-hs-raw { max-height: none; flex: 1; }
+.ans-hs-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; align-items: start; }
+.ans-hs-kv { display: flex; justify-content: space-between; gap: 12px; font-size: var(--fs-xs); padding: 3px 0; border-bottom: 1px solid var(--card-border); }
+.ans-hs-kv:last-child { border-bottom: 0; }
+.ans-hs-kv .ans-mono { text-align: right; word-break: break-word; }
+.ans-hs-bar { display: inline-block; width: 70px; height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; vertical-align: middle; }
+.ans-hs-bar i { display: block; height: 100%; background: var(--success); } .ans-hs-bar i.warn { background: var(--warning); } .ans-hs-bar i.bad { background: var(--danger); }

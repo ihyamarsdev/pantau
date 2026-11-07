@@ -346,7 +346,7 @@ func TestAnsibleRun_LifecycleAndLogNeverInJSON(t *testing.T) {
 	}
 
 	// 4. ListAnsibleRuns omits Log
-	runsList, err := db.ListAnsibleRuns(pID, 10)
+	runsList, err := db.ListAnsibleRuns(pID, "", 10)
 	if err != nil {
 		t.Fatalf("ListAnsibleRuns: %v", err)
 	}
@@ -423,7 +423,7 @@ func TestAnsibleRun_PruningSemantic(t *testing.T) {
 	_ = db.StartAnsibleRun(rID)
 
 	// Total runs: 7 (5 finished, 1 queued, 1 running)
-	allRuns, err := db.ListAnsibleRuns(pID, 50)
+	allRuns, err := db.ListAnsibleRuns(pID, "", 50)
 	if err != nil || len(allRuns) != 7 {
 		t.Fatalf("expected 7 runs initially, got %d (err: %v)", len(allRuns), err)
 	}
@@ -434,7 +434,7 @@ func TestAnsibleRun_PruningSemantic(t *testing.T) {
 	}
 
 	// Remaining should be: 2 newest finished + 1 queued + 1 running = 4 runs
-	remaining, err := db.ListAnsibleRuns(pID, 50)
+	remaining, err := db.ListAnsibleRuns(pID, "", 50)
 	if err != nil {
 		t.Fatalf("ListAnsibleRuns after prune: %v", err)
 	}
@@ -618,7 +618,7 @@ func TestAnsiblePlaybooks_SnapshotRoundtripAndLegacy(t *testing.T) {
 	}
 
 	// Runs should NOT be restored (empty) and old dummy run wiped
-	restoredRuns, err := db2.ListAnsibleRuns(0, 100)
+	restoredRuns, err := db2.ListAnsibleRuns(0, "", 100)
 	if err != nil {
 		t.Fatalf("ListAnsibleRuns on restored db: %v", err)
 	}

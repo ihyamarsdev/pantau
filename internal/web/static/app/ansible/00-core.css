@@ -1,0 +1,136 @@
+/* Ansible UI core styles. Tokens come from index.html :root. All classes are ans-* prefixed. */
+#sectionAnsible { min-width: 0; }
+.ans-head { margin-bottom: 16px; position: relative; z-index: 20; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.ans-head h2 { margin: 0 0 4px 0; font-size: var(--fs-xl); font-weight: 600; }
+.ans-head p { margin: 0; color: var(--text-muted); font-size: var(--fs-sm); max-width: 640px; }
+.ans-head-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ans-head-actions .header-btn { height: 34px; display: inline-flex; align-items: center; gap: 6px; }
+
+.ans-tabs { border-bottom: 1px solid var(--card-border); margin-bottom: 16px; }
+.ans-tabs .tab { background: transparent; border: 0; border-bottom: 2px solid transparent; font-family: inherit; display: inline-flex; align-items: center; gap: 6px; }
+.ans-tabs .tab.active { border-bottom-color: var(--primary); color: var(--text); }
+.ans-panel { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.ans-panel[hidden] { display: none; }
+
+.ans-gate { border: 1px solid var(--card-border); border-radius: var(--radius-lg); padding: 12px 16px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.ans-gate-warn { background: var(--warning-soft); border-color: var(--warning-border); }
+.ans-gate-danger { background: var(--danger-soft); border-color: var(--danger-border); }
+.ans-gate-title { font-weight: 600; font-size: var(--fs-md); display: flex; align-items: center; gap: 8px; }
+.ans-gate-warn .ans-gate-title { color: var(--warning); }
+.ans-gate-danger .ans-gate-title { color: var(--danger); }
+.ans-gate-desc { font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.5; max-width: 820px; margin-top: 2px; }
+
+/* ---- generic building blocks ---- */
+.ans-muted { color: var(--text-faint); }
+.ans-mono { font-family: var(--font-mono); font-size: var(--fs-xs); }
+.ans-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ans-spacer { flex: 1; }
+.ans-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ans-toolbar .search-box { margin: 0; min-width: 200px; max-width: 320px; flex: 1; }
+.ans-toolbar select, .ans-toolbar .form-input { height: 32px; font-size: var(--fs-xs); width: auto; }
+.ans-btn-icon { width: 28px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.ans-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: var(--radius-full); font-size: var(--fs-xs); font-weight: 500; cursor: pointer; border: 1px solid var(--card-border); background: var(--surface-2); color: var(--text-muted); font-family: inherit; user-select: none; }
+.ans-chip:hover { border-color: var(--border-strong); color: var(--text); background: var(--surface-3); }
+.ans-chip.active, .ans-chip[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent-ring); font-weight: 600; }
+.ans-chip .count { opacity: .7; font-family: var(--font-mono); }
+.ans-seg { display: inline-flex; border: 1px solid var(--card-border); border-radius: var(--radius); background: var(--surface-2); padding: 2px; gap: 2px; }
+.ans-seg button { border: 0; background: transparent; color: var(--text-muted); font: inherit; font-size: var(--fs-xs); font-weight: 500; padding: 4px 12px; border-radius: var(--radius-sm); cursor: pointer; }
+.ans-seg button:hover { color: var(--text); }
+.ans-seg button[aria-pressed="true"], .ans-seg button.active { background: var(--surface-3); color: var(--text); box-shadow: var(--shadow-sm); }
+.ans-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ans-field > label, .ans-label { font-size: var(--fs-xs); font-weight: 600; color: var(--text-muted); }
+.ans-field .hint, .ans-hint { font-size: var(--fs-xs); color: var(--text-faint); line-height: 1.45; }
+.ans-field .err, .ans-err { font-size: var(--fs-xs); color: var(--danger); }
+.ans-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 700px) { .ans-grid-2 { grid-template-columns: 1fr; } }
+.ans-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: var(--radius-lg); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.ans-card-title { font-size: var(--fs-sm); font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.ans-details > summary { cursor: pointer; font-size: var(--fs-xs); font-weight: 600; color: var(--text-muted); padding: 4px 0; user-select: none; }
+.ans-details[open] > summary { color: var(--text); }
+kbd.ans-kbd { font-family: var(--font-mono); font-size: 10px; padding: 1px 5px; border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: 4px; color: var(--text-muted); background: var(--surface-2); }
+
+/* ---- status ---- */
+.ans-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); flex: none; }
+.ans-dot-success { background: var(--success); }
+.ans-dot-running { background: var(--info); animation: ansPulse 1.4s ease-in-out infinite; }
+.ans-dot-queued { background: var(--warning); }
+.ans-dot-failed { background: var(--danger); }
+.ans-dot-cancelled, .ans-dot-interrupted { background: var(--text-muted); }
+.ans-dot-never_run { background: transparent; border: 1.5px solid var(--text-faint); }
+@keyframes ansPulse { 50% { opacity: .35; } }
+.ans-pips { display: inline-flex; width: 72px; height: 6px; border-radius: 3px; overflow: hidden; background: var(--surface-3); vertical-align: middle; }
+.ans-pip { display: block; height: 100%; }
+.ans-pip.ok { background: var(--success); } .ans-pip.changed { background: var(--warning); } .ans-pip.bad { background: var(--danger); }
+
+/* ---- table ---- */
+.ans-table-wrap { border: 1px solid var(--card-border); border-radius: var(--radius-lg); overflow: auto; background: var(--card-bg); }
+.ans-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.ans-table th { position: sticky; top: 0; background: var(--surface-2); text-align: left; font-size: var(--fs-xs); font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: var(--text-muted); padding: 8px 12px; border-bottom: 1px solid var(--card-border); white-space: nowrap; z-index: 1; }
+.ans-table th[data-sort] { cursor: pointer; user-select: none; }
+.ans-table th[data-sort]:hover { color: var(--text); }
+.ans-table td { padding: 9px 12px; border-bottom: 1px solid var(--card-border); vertical-align: middle; }
+.ans-table tbody tr:last-child td { border-bottom: 0; }
+.ans-table tbody tr.ans-clickable { cursor: pointer; }
+.ans-table tbody tr.ans-clickable:hover, .ans-table tbody tr.ans-clickable:focus-visible { background: var(--hover); outline: none; }
+.ans-table tbody tr.ans-selected { background: var(--accent-soft); }
+.ans-table td.ans-actions, .ans-table th.ans-actions { text-align: right; white-space: nowrap; width: 1%; }
+.ans-table .ans-name { font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ans-table .ans-sub { font-size: var(--fs-xs); color: var(--text-muted); margin-top: 1px; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ans-table tr.ans-group-row td { background: var(--surface-2); font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); cursor: pointer; padding: 6px 12px; }
+@media (max-width: 900px) { .ans-hide-md { display: none; } }
+@media (max-width: 640px) { .ans-hide-sm { display: none; } }
+
+/* ---- menu popover ---- */
+.ans-menu { position: absolute; z-index: 60; min-width: 160px; background: var(--card-bg); border: 1px solid var(--border-strong); border-radius: var(--radius); box-shadow: var(--shadow-md); padding: 4px; display: flex; flex-direction: column; }
+.ans-menu button { display: flex; align-items: center; gap: 8px; background: transparent; border: 0; color: var(--text); font: inherit; font-size: var(--fs-sm); padding: 6px 10px; border-radius: var(--radius-sm); cursor: pointer; text-align: left; }
+.ans-menu button:hover, .ans-menu button:focus-visible { background: var(--hover); outline: none; }
+.ans-menu button.danger { color: var(--danger); }
+.ans-menu hr { border: 0; border-top: 1px solid var(--card-border); margin: 4px 0; }
+
+/* ---- states ---- */
+.ans-skel { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
+.ans-skel-row { height: 34px; border-radius: var(--radius); background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2)); background-size: 200% 100%; animation: ansShimmer 1.4s linear infinite; }
+@keyframes ansShimmer { to { background-position: -200% 0; } }
+.ans-error { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border: 1px solid var(--danger-border); background: var(--danger-soft); color: var(--danger); border-radius: var(--radius); font-size: var(--fs-sm); }
+.ans-empty { padding: 40px 20px; }
+@media (prefers-reduced-motion: reduce) { .ans-dot-running, .ans-skel-row, .ans-drawer { animation: none !important; transition: none !important; } }
+
+/* ---- drawer (docked below the header / above the footer, right side) ---- */
+.ans-drawer-root { position: fixed; top: 56px; bottom: 36px; left: 0; right: 0; z-index: 40; pointer-events: none; }
+.ans-drawer-root[hidden] { display: none; }
+.ans-drawer-backdrop { position: absolute; inset: 0; background: var(--overlay); opacity: 0; transition: opacity .18s var(--ease); pointer-events: auto; }
+.ans-drawer-root.open .ans-drawer-backdrop { opacity: 1; }
+.ans-drawer { position: absolute; top: 0; bottom: 0; right: 0; width: min(720px, 92vw); background: var(--card-bg); border-left: 1px solid var(--border-strong); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; transform: translateX(24px); opacity: 0; transition: transform .2s var(--ease), opacity .2s var(--ease), width .2s var(--ease); pointer-events: auto; outline: none; }
+.ans-drawer-root.open .ans-drawer { transform: none; opacity: 1; }
+.ans-drawer.wide { width: min(1180px, 96vw); }
+@media (max-width: 900px) { .ans-drawer, .ans-drawer.wide { width: 100vw; } .ans-drawer-wide { display: none; } }
+.ans-drawer-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--card-border); flex: none; }
+.ans-drawer-titles { min-width: 0; flex: 1; }
+.ans-drawer-titles h3 { margin: 0; font-size: var(--fs-md); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ans-drawer-sub { font-size: var(--fs-xs); color: var(--text-muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+.ans-drawer-actions { display: flex; align-items: center; gap: 6px; }
+.ans-drawer-body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+.ans-drawer-tabs { display: flex; gap: 2px; padding: 0 14px; border-bottom: 1px solid var(--card-border); flex: none; overflow-x: auto; }
+.ans-drawer-tabs button { background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--text-muted); font: inherit; font-size: var(--fs-sm); font-weight: 500; padding: 9px 12px; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+.ans-drawer-tabs button:hover { color: var(--text); }
+.ans-drawer-tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--primary); }
+.ans-drawer-pane { flex: 1; min-height: 0; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+.ans-drawer-foot { flex: none; border-top: 1px solid var(--card-border); padding: 10px 14px; display: flex; align-items: center; gap: 8px; justify-content: flex-end; background: var(--card-bg); }
+
+/* ---- host picker ---- */
+.ans-hp { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.ans-hp-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.ans-hp-list { max-height: 180px; overflow-y: auto; border: 1px solid var(--card-border); border-radius: var(--radius); padding: 6px; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 4px; background: var(--surface-2); }
+.ans-hp-item { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: var(--radius-sm); cursor: pointer; font-size: var(--fs-xs); min-width: 0; }
+.ans-hp-item:hover { background: var(--hover); }
+.ans-hp-item.on { background: var(--accent-soft); }
+.ans-hp-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* class selectors beat the UA [hidden] rule, so state that toggles `hidden` needs this */
+#sectionAnsible [hidden], #ansDrawerRoot [hidden], #ansibleImportModal [hidden] { display: none !important; }
+.ans-drawer:focus, .ans-drawer:focus-visible { outline: none; }
+
+/* tab content replaced while the Ansible Gate is off or ansible-playbook is missing */
+.ans-blocked { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding: 56px 20px; border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); color: var(--text-muted); }
+.ans-blocked .ans-gate-title { color: var(--text); justify-content: center; }
+.ans-blocked .ans-gate-desc { max-width: 520px; }

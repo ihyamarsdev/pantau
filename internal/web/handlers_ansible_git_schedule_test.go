@@ -329,7 +329,7 @@ func mustPlaybook(t *testing.T, srv *Server, id int64) *store.AnsiblePlaybook {
 
 func countRuns(t *testing.T, srv *Server) int {
 	t.Helper()
-	l, err := srv.db.ListAnsibleRuns(0, 200)
+	l, err := srv.db.ListAnsibleRuns(0, "", 200)
 	if err != nil {
 		t.Fatal(err)
 	}

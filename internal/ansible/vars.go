@@ -21,12 +21,14 @@ type Var struct {
 	Status  string   `json:"status"`
 	Default string   `json:"default,omitempty"`
 	Source  string   `json:"source,omitempty"`
+	Role    string   `json:"role,omitempty"` // the role the variable belongs to; empty = the playbook's own
 	UsedIn  []string `json:"used_in"`
 }
 
-// AnalyzeVars statically reads the playbook, the roles it uses, included task files and templates. It is a
-// heuristic: no inventory is evaluated and Jinja is scanned, not rendered, so dynamically built names are missed.
-func AnalyzeVars(files []ProjectFile, entry, extraVars string) []Var {
+// AnalyzeVars statically reads the playbook, the roles it uses (project roles and roles installed in libDir or the
+// system role paths), included task files and templates. It is a heuristic: no inventory is evaluated and Jinja is
+// scanned, not rendered, so dynamically built names are missed.
+func AnalyzeVars(files []ProjectFile, entry, extraVars, libDir string) []Var {
 	a := &analyzer{
 		files:    make(map[string]string, len(files)),
 		entryDir: path.Dir(entry),
@@ -34,6 +36,8 @@ func AnalyzeVars(files []ProjectFile, entry, extraVars string) []Var {
 		local:    map[string]bool{},
 		used:     map[string]*usage{},
 		seen:     map[string]bool{},
+		lib:      libDir,
+		ext:      map[string]string{},
 	}
 	for _, f := range files {
 		a.files[f.Path] = f.Content
@@ -72,6 +76,8 @@ type analyzer struct {
 	local    map[string]bool // register, set_fact, loop vars, {% set %}: produced at run time
 	used     map[string]*usage
 	seen     map[string]bool
+	lib      string            // shared library directory, "" = none
+	ext      map[string]string // role name -> virtual dir of roles loaded from outside the project
 }
 
 var (
@@ -361,6 +367,9 @@ func (a *analyzer) role(name, from string) {
 			break
 		}
 	}
+	if dir == "" {
+		dir = a.externalRole(name)
+	}
 	if dir == "" || a.seen["r:"+dir] {
 		return
 	}
@@ -375,6 +384,7 @@ func (a *analyzer) role(name, from string) {
 			a.tasks(p)
 		}
 	}
+	a.roleProducers(dir)
 	a.templatesIn(path.Join(dir, "templates"))
 	for _, p := range a.mainFiles(dir, "meta") {
 		if doc, ok := a.parse(p); ok {
@@ -484,12 +494,15 @@ func (a *analyzer) result() []Var {
 		default:
 			v.Status = "required"
 		}
+		v.Role = roleOf(v)
 		out = append(out, v)
 	}
 	// Variables that are defined but never referenced are still listed, so they can be edited or removed.
 	for name, d := range a.defined {
 		if _, used := a.used[name]; !used && !a.local[name] {
-			out = append(out, Var{Name: name, Status: "defined", Default: d.value, Source: d.source, UsedIn: []string{}})
+			v := Var{Name: name, Status: "defined", Default: d.value, Source: d.source, UsedIn: []string{}}
+			v.Role = roleOf(v)
+			out = append(out, v)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -499,4 +512,29 @@ func (a *analyzer) result() []Var {
 		return out[i].Name < out[j].Name
 	})
 	return out
+}
+
+var (
+	roleSourceRe = regexp.MustCompile(`^role (\S+) (?:defaults|vars)$`)
+	rolePathRe   = regexp.MustCompile(`(?:^|/)roles/([^/]+)/`)
+)
+
+// roleOf names the role a variable belongs to: the role that defines it, or else the single role whose files are
+// the only ones that reference it. Anything the playbook itself defines or uses stays the playbook's own.
+func roleOf(v Var) string {
+	if m := roleSourceRe.FindStringSubmatch(v.Source); m != nil {
+		return m[1]
+	}
+	if v.Source != "" || len(v.UsedIn) == 0 {
+		return ""
+	}
+	role := ""
+	for _, f := range v.UsedIn {
+		m := rolePathRe.FindStringSubmatch(f)
+		if m == nil || (role != "" && role != m[1]) {
+			return ""
+		}
+		role = m[1]
+	}
+	return role
 }

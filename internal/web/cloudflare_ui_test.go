@@ -170,7 +170,7 @@ func TestCloudflareUIInIndexHTML(t *testing.T) {
 	// 7. Extract inline JS and run node --check syntax verification if node is available
 	nodePath, err := exec.LookPath("node")
 	if err == nil && nodePath != "" {
-		re := regexp.MustCompile(`(?s)<script>(.*?)</script>\s*</body>`)
+		re := regexp.MustCompile(`(?s)<script>(.*?)</script>`)
 		match := re.FindStringSubmatch(html)
 		if len(match) < 2 {
 			t.Fatalf("could not extract inline <script> from index.html")

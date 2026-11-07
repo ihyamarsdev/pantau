@@ -219,6 +219,10 @@ func (s *Server) routes() {
 	// In-App Documentation (Public & Private)
 	s.mux.HandleFunc("/api/docs", s.handleDocs)
 
+	// App bundles: first-party UI modules, concatenated from embedded static/app/<dir>
+	s.mux.HandleFunc("/app/ansible.js", serveAppBundle("ansible", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/ansible.css", serveAppBundle("ansible", ".css", "text/css; charset=utf-8"))
+
 	// Vendor static assets (airgapped / local cache)
 	vendorHandler := http.StripPrefix("/vendor/", http.FileServer(http.FS(vendorFS())))
 	s.mux.HandleFunc("/vendor/", func(w http.ResponseWriter, r *http.Request) {
@@ -309,6 +313,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/ansible/playbooks", s.authMiddleware(s.handleAnsiblePlaybooks))
 	s.mux.HandleFunc("/api/ansible/playbooks/import", s.authMiddleware(s.handleAnsibleImport))
 	s.mux.HandleFunc("/api/ansible/playbooks/analyze", s.authMiddleware(s.handleAnsiblePlaybookAnalyze))
+	s.mux.HandleFunc("/api/ansible/playbooks/outline", s.authMiddleware(s.handleAnsiblePlaybookOutline))
+	s.mux.HandleFunc("/api/ansible/playbooks/compose", s.authMiddleware(s.handleAnsiblePlaybookCompose))
+	s.mux.HandleFunc("/api/ansible/playbooks/format", s.authMiddleware(s.handleAnsiblePlaybookFormat))
+	s.mux.HandleFunc("/api/ansible/roles", s.authMiddleware(s.handleAnsibleRoles))
 	s.mux.HandleFunc("/api/ansible/playbooks/", s.authMiddleware(s.handleAnsiblePlaybookRoute))
 	s.mux.HandleFunc("/api/ansible/runs", s.authMiddleware(s.handleAnsibleRuns))
 	s.mux.HandleFunc("/api/ansible/config", s.authMiddleware(s.handleAnsibleConfig))

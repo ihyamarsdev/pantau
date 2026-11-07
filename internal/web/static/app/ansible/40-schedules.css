@@ -1,0 +1,10 @@
+/* Schedules */
+.ans-sc { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.ans-sc-list { display: flex; flex-direction: column; gap: 10px; }
+.ans-sc-card.off { opacity: .75; }
+.ans-sc-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; font-size: var(--fs-xs); }
+.ans-sc-lerr { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ans-sc-form { display: flex; flex-direction: column; gap: 12px; }
+.ans-sc-prev { font-size: var(--fs-xs); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 18px; }
+.ans-sc-link { background: none; border: 0; padding: 0; color: var(--accent-text); font: inherit; font-weight: 600; cursor: pointer; text-align: left; }
+.ans-sc-link:hover { text-decoration: underline; }

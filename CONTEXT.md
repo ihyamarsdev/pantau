@@ -645,8 +645,16 @@ Saklar opt-in admin (`terraform_enabled`, default mati) sebelum Run dapat dijala
 _Avoid_: Feature flag
 
 **Git Editor**:
-Komponen antarmuka berbasis Workspace Modal untuk menjelajah pohon berkas repositori, membuat berkas baru, menghapus berkas, menyunting konten dengan CodeMirror, serta melakukan commit dan push langsung ke repositori remote pada Playbook Ansible dan Workspace Terraform.
+Komponen antarmuka untuk menjelajah pohon berkas repositori, membuat berkas baru, menghapus berkas, menyunting konten dengan CodeMirror, serta melakukan commit dan push langsung ke repositori remote. Pada Playbook Ansible tampil sebagai bagian **Files** di tab Edit pada Side Drawer; pada Workspace Terraform tampil di Workspace Modal.
 _Avoid_: Web IDE, file manager, repo manager
+
+**Side Drawer**:
+Panel yang menempel di tepi kanan area konten Ansible (di bawah header, di atas footer) untuk membuka satu Playbook atau satu Run tanpa meninggalkan tabel. Mendukung tumpukan (push/back), perlebar, dan penjagaan perubahan belum disimpan.
+_Avoid_: Modal, popup, flyout
+
+**Run Viewer**:
+Tampilan satu Run Ansible di dalam Side Drawer dengan empat sudut pandang atas keluaran yang sama: Log, Recap, Tasks, dan Diff; memperbarui diri selama Run aktif dan menyediakan Cancel.
+_Avoid_: Log modal, console
 
 **Repository Commit**:
 Aksi merekam perubahan berkas ke riwayat Git lokal hasil clone dangkal sementara dan mendorongnya (*push*) ke branch upstream pada remote repositori tanpa opsi force push.
