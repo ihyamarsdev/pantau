@@ -952,7 +952,7 @@ type DockerStack struct {
 	Services    []string `json:"services"`
 	Total       int      `json:"total"`
 	Running     int      `json:"running"`
-	Status      string   `json:"status"` // running | partial | stopped
+	Status      string   `json:"status"` // running | partial | stopped | down (no containers; remembered from an earlier listing)
 }
 
 const dockerStacksScript = `docker ps -a --format '{{.State}}|{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.service"}}|{{.Label "com.docker.compose.project.working_dir"}}|{{.Label "com.docker.compose.project.config_files"}}' 2>&1`
@@ -1011,7 +1011,8 @@ func parseDockerStacks(out string) []DockerStack {
 	return stacks
 }
 
-// DockerListStacks returns Compose projects found among the host's containers.
+// DockerListStacks returns Compose projects found among the host's containers, plus remembered ones whose
+// containers are gone (after `compose down`) with status "down".
 func (ins *Inspector) DockerListStacks(hostID int64) ([]DockerStack, error) {
 	stdout, stderr, exitCode, err := ins.dockerExec(hostID, dockerStacksScript, dockerScriptTimeout)
 	if err != nil {
@@ -1020,7 +1021,40 @@ func (ins *Inspector) DockerListStacks(hostID int64) ([]DockerStack, error) {
 	if exitCode != 0 {
 		return nil, dockerCommandError("docker ps", stdout, stderr, exitCode)
 	}
-	return parseDockerStacks(stdout), nil
+	return ins.mergeKnownStacks(hostID, parseDockerStacks(stdout)), nil
+}
+
+// mergeKnownStacks records every live stack that has a compose file and appends the remembered stacks that no
+// longer have containers. A store failure never hides the live stacks.
+func (ins *Inspector) mergeKnownStacks(hostID int64, live []DockerStack) []DockerStack {
+	known, err := ins.db.GetDockerStacks(hostID)
+	if err != nil {
+		logger.Warn("docker", "", fmt.Sprintf("read remembered stacks of host %d: %v", hostID, err))
+		return live
+	}
+	seen := make(map[string]bool, len(live))
+	for _, st := range live {
+		seen[st.Name] = true
+		if len(st.ConfigFiles) == 0 {
+			continue
+		}
+		rec, _ := json.Marshal(DockerStack{Name: st.Name, WorkingDir: st.WorkingDir, ConfigFiles: st.ConfigFiles, Services: st.Services})
+		if known[st.Name] != string(rec) {
+			if err := ins.db.SaveDockerStack(hostID, st.Name, string(rec)); err != nil {
+				logger.Warn("docker", "", fmt.Sprintf("remember stack %q of host %d: %v", st.Name, hostID, err))
+			}
+		}
+	}
+	for name, data := range known {
+		var st DockerStack
+		if seen[name] || json.Unmarshal([]byte(data), &st) != nil {
+			continue
+		}
+		st.Status = "down"
+		live = append(live, st)
+	}
+	sort.SliceStable(live, func(i, j int) bool { return live[i].Name < live[j].Name })
+	return live
 }
 
 func (ins *Inspector) dockerFindStack(hostID int64, name string) (*DockerStack, error) {
@@ -1114,6 +1148,12 @@ func (ins *Inspector) DockerStackOp(hostID int64, name, action string, live io.W
 	st, err := ins.dockerFindStack(hostID, name)
 	if err != nil {
 		return "", err
+	}
+	if action == "forget" {
+		if st.Status != "down" {
+			return "", dockerInvalid("stack %q still has containers; take it down first", name)
+		}
+		return "", ins.db.DeleteDockerStack(hostID, name)
 	}
 	script, err := composeStackScript(st, action)
 	if err != nil {

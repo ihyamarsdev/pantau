@@ -252,6 +252,26 @@ running|solo|only|/x|/x/c.yml
 	}
 }
 
+func TestStacksStayListedAfterDownUntilForgotten(t *testing.T) {
+	ins, hostID := setupKubeInspector(t)
+	live := func() []DockerStack {
+		return parseDockerStacks("running|shop|web|/srv/shop|/srv/shop/docker-compose.yml\nrunning|nofile|x||\n")
+	}
+	if got := ins.mergeKnownStacks(hostID, live()); len(got) != 2 {
+		t.Fatalf("expected 2 live stacks, got %+v", got)
+	}
+	got := ins.mergeKnownStacks(hostID, nil) // `compose down` removed every container
+	if len(got) != 1 || got[0].Name != "shop" || got[0].Status != "down" || got[0].ConfigFiles[0] != "/srv/shop/docker-compose.yml" || got[0].Services[0] != "web" {
+		t.Fatalf("shop must stay listed as down with its compose file (stacks without one are not remembered): %+v", got)
+	}
+	if err := ins.db.DeleteDockerStack(hostID, "shop"); err != nil {
+		t.Fatal(err)
+	}
+	if got := ins.mergeKnownStacks(hostID, nil); len(got) != 0 {
+		t.Fatalf("a forgotten stack must disappear: %+v", got)
+	}
+}
+
 func TestComposeStackScriptQuotesPathsAndChainsUpdate(t *testing.T) {
 	st := &DockerStack{Name: "shop", WorkingDir: "/srv/my shop", ConfigFiles: []string{"/srv/my shop/a.yml", "/srv/my shop/b.yaml"}}
 	script, err := composeStackScript(st, "update")

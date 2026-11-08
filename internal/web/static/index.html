@@ -7311,6 +7311,8 @@ const I18N = {
     "dk_confirm_network_remove_msg": "The network is deleted. Containers must be detached from it first.",
     "dk_confirm_stack_down_title": "Take down {name}?",
     "dk_confirm_stack_down_msg": "docker compose down stops and removes the stack's containers and networks. Named volumes are kept.",
+    "dk_confirm_stack_forget_title": "Forget {name}?",
+    "dk_confirm_stack_forget_msg": "The stack is removed from this list only. Its compose file on the host is not touched.",
     "dk_confirm_stack_recreate_title": "Recreate {name}?",
     "dk_confirm_stack_recreate_msg": "Every container of the stack is recreated, which restarts all of its services.",
     "dk_confirm_stack_update_title": "Update {name}?",
@@ -7371,6 +7373,7 @@ const I18N = {
     "dk_stack_up": "Up (create/start)",
     "dk_stack_recreate": "Recreate",
     "dk_stack_down": "Down",
+    "dk_stack_forget": "Forget",
     "dk_stack_start": "Start",
     "dk_stack_stop": "Stop",
     "dk_stack_restart": "Restart",
@@ -8861,6 +8864,8 @@ const I18N = {
     "dk_confirm_network_remove_msg": "Network dihapus. Container harus dilepas dari network ini terlebih dahulu.",
     "dk_confirm_stack_down_title": "Turunkan {name}?",
     "dk_confirm_stack_down_msg": "docker compose down menghentikan dan menghapus container serta network stack. Named volume tetap ada.",
+    "dk_confirm_stack_forget_title": "Lupakan {name}?",
+    "dk_confirm_stack_forget_msg": "Stack hanya dihapus dari daftar ini. Berkas compose di host tidak disentuh.",
     "dk_confirm_stack_recreate_title": "Buat ulang {name}?",
     "dk_confirm_stack_recreate_msg": "Semua container stack dibuat ulang sehingga seluruh layanannya restart.",
     "dk_confirm_stack_update_title": "Perbarui {name}?",
@@ -8921,6 +8926,7 @@ const I18N = {
     "dk_stack_up": "Up (buat/jalankan)",
     "dk_stack_recreate": "Buat ulang",
     "dk_stack_down": "Down",
+    "dk_stack_forget": "Lupakan",
     "dk_stack_start": "Start",
     "dk_stack_stop": "Stop",
     "dk_stack_restart": "Restart",
@@ -21625,7 +21631,7 @@ function renderDockerStacks(data) {
     return `
       <tr>
         <td><b style="color: var(--text);">${n}</b></td>
-        <td><span class="badge ${cls}">${t('dk_stack_' + s.status)} · ${s.running}/${s.total}</span></td>
+        <td><span class="badge ${cls}">${t('dk_stack_' + s.status)}${s.status === 'down' ? '' : ` · ${s.running}/${s.total}`}</span></td>
         <td>${dockerChips(s.services.map(x => [x]))}</td>
         <td class="dk-mono text-muted">${s.config_files.length ? s.config_files.map(escapeHtml).join('<br>') : '—'}</td>
         <td class="dk-actions">
@@ -21683,7 +21689,11 @@ function openDockerStackMenu(e, idx) {
   const s = (dockerStacksCache || [])[idx];
   if (!s) return;
   const n = s.name;
-  dockerFloatingMenu(e, 'stack' + idx, [
+  const items = s.status === 'down' ? [
+    { label: t('dk_stack_up'), run: () => dockerStackAction(n, 'up') },
+    null,
+    { label: t('dk_stack_forget'), danger: true, run: () => dockerStackAction(n, 'forget') }
+  ] : [
     { label: t('start'), run: () => dockerStackAction(n, 'start') },
     { label: t('restart'), run: () => dockerStackAction(n, 'restart') },
     { label: t('stop'), run: () => dockerStackAction(n, 'stop') },
@@ -21693,18 +21703,23 @@ function openDockerStackMenu(e, idx) {
     { label: t('dk_stack_recreate'), run: () => dockerStackAction(n, 'recreate') },
     null,
     { label: t('dk_stack_down'), danger: true, run: () => dockerStackAction(n, 'down') }
-  ]);
+  ];
+  dockerFloatingMenu(e, 'stack' + idx, items);
 }
 
 async function dockerStackAction(name, action) {
-  if (action === 'down' || action === 'recreate' || action === 'update') {
+  if (action === 'down' || action === 'recreate' || action === 'update' || action === 'forget') {
     const ok = await showConfirm({
       title: t('dk_confirm_stack_' + action + '_title').replace('{name}', name),
       message: t('dk_confirm_stack_' + action + '_msg'),
       confirmText: t('dk_stack_' + action),
-      danger: action === 'down'
+      danger: action === 'down' || action === 'forget'
     });
     if (!ok) return;
+  }
+  if (action === 'forget') {
+    await dockerExecute({ sub: 'stack', payload: { project: name, action } });
+    return;
   }
   await dockerExecute({ sub: 'stack', long: true, payload: { project: name, action }, outputTitle: t('dk_stack_' + action) + ': ' + name });
 }
