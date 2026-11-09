@@ -676,6 +676,52 @@ func (ins *Inspector) DockerListImages(hostID int64) ([]DockerImage, error) {
 	return parseDockerImages(stdout), nil
 }
 
+// DockerImageRefs is one local image with every repo:tag and the registry digests the engine recorded for it.
+type DockerImageRefs struct {
+	ID      string
+	Tags    []string
+	Digests []string
+}
+
+// A refused `docker images` must fail the script, not look like a host without images.
+const dockerImageRefsScript = `ids=$(docker images -q --no-trunc) || exit $?
+ids=$(printf '%s\n' "$ids" | sort -u)
+[ -z "$ids" ] || docker image inspect --format '{{.Id}}|{{join .RepoTags ","}}|{{join .RepoDigests ","}}' $ids
+`
+
+func parseDockerImageRefs(out string) []DockerImageRefs {
+	list := func(s, none string) []string {
+		var v []string
+		for _, x := range strings.Split(s, ",") {
+			if x = strings.TrimSpace(x); x != "" && x != none {
+				v = append(v, x)
+			}
+		}
+		return v
+	}
+	refs := []DockerImageRefs{}
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Split(strings.TrimSpace(line), "|")
+		if len(f) != 3 || !strings.HasPrefix(f[0], "sha256:") {
+			continue
+		}
+		refs = append(refs, DockerImageRefs{ID: f[0], Tags: list(f[1], "<none>:<none>"), Digests: list(f[2], "<none>@<none>")})
+	}
+	return refs
+}
+
+// DockerImageRefs returns the repo:tag names and registry digests of every local image (for the update check).
+func (ins *Inspector) DockerImageRefs(hostID int64) ([]DockerImageRefs, error) {
+	stdout, stderr, exitCode, err := ins.dockerExec(hostID, dockerImageRefsScript, dockerScriptTimeout)
+	if err != nil {
+		return nil, err
+	}
+	if exitCode != 0 {
+		return nil, dockerCommandError("docker image inspect", stdout, stderr, exitCode)
+	}
+	return parseDockerImageRefs(stdout), nil
+}
+
 // DockerImageOp pulls or removes an image, or prunes dangling (`prune`) / every unused (`prune_all`) images. A
 // non-nil live receives the output as it is produced (and the returned output is empty).
 func (ins *Inspector) DockerImageOp(hostID int64, action, image string, force bool, live io.Writer) (string, error) {

@@ -395,3 +395,25 @@ func TestDockerSudoPreludeFallsBackToSudoOnlyOnPermissionDenied(t *testing.T) {
 		t.Errorf("without sudo the real permission error must reach the user: %s", out)
 	}
 }
+
+// A Docker socket the SSH user may not use must fail the update check, not look like a host without images.
+func TestDockerImageRefsScriptFailsWhenDockerIsRefused(t *testing.T) {
+	body := DarwinPathPrelude + dockerSudoPrelude + "(\n" + dockerImageRefsScript + ")\necho \"rc=$?\"\n"
+	if out := runShimmed(t, body, "1000", false); !strings.Contains(out, "permission denied") || strings.Contains(out, "rc=0") {
+		t.Errorf("refused docker must exit non-zero with its error: %s", out)
+	}
+}
+
+func TestParseDockerImageRefs(t *testing.T) {
+	out := "sha256:aaa|nginx:1.28,docker.io/library/nginx:1.28|nginx@sha256:aaa\n" +
+		"sha256:bbb||\n" + // dangling: no names, no digests
+		"sha256:ccc|<none>:<none>|<none>@<none>\n" +
+		"Error: No such image: x\n"
+	refs := parseDockerImageRefs(out)
+	if len(refs) != 3 || len(refs[0].Tags) != 2 || refs[0].Digests[0] != "nginx@sha256:aaa" {
+		t.Fatalf("refs = %+v", refs)
+	}
+	if len(refs[1].Tags)+len(refs[1].Digests)+len(refs[2].Tags)+len(refs[2].Digests) != 0 {
+		t.Errorf("untagged images must have no names or digests: %+v %+v", refs[1], refs[2])
+	}
+}

@@ -33,6 +33,7 @@ import (
 
 	"pantau/internal/ansible"
 	"pantau/internal/cloudflare"
+	"pantau/internal/dockerhub"
 	"pantau/internal/inspector"
 	"pantau/internal/logger"
 	"pantau/internal/netdiag"
@@ -98,6 +99,7 @@ type Server struct {
 	inspectAllActive  bool
 	lastInspectAll    time.Time
 	cfClient          func(token string) *cloudflare.Client
+	hub               *dockerhub.Client
 	ansibleRun        func(ctx context.Context, spec ansible.RunSpec, log io.Writer) (int, error)
 	ansibleAvail      func() (string, string, error)
 	ansibleSync       func(ctx context.Context, g ansible.GitSource) (*ansible.GitSyncResult, error)
@@ -136,6 +138,7 @@ func NewServer(db *store.DB, ins *inspector.Inspector, disp *notify.Dispatcher) 
 		netdiagService: netdiag.NewService(db, ins),
 		mux:            http.NewServeMux(),
 		cfClient:       cloudflare.New,
+		hub:            dockerhub.New(dockerhub.DefaultHubURL, dockerhub.DefaultIndexURL),
 		ansibleRun:     ansible.Run,
 		ansibleAvail:   ansible.Available,
 		ansibleSync:    ansible.SyncGit,
@@ -227,6 +230,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/app/terraform.css", serveAppBundle("terraform", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/terraform.js", serveAppBundle("terraform", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/firewall.js", serveAppBundle("firewall", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/dockerhub.js", serveAppBundle("dockerhub", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/dockerhub.css", serveAppBundle("dockerhub", ".css", "text/css; charset=utf-8"))
 
 	// Vendor static assets (airgapped / local cache)
 	vendorHandler := http.StripPrefix("/vendor/", http.FileServer(http.FS(vendorFS())))
@@ -313,6 +318,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/kube/clusters/", s.authMiddleware(s.handleKubeClusterRoute))
 	s.mux.HandleFunc("/api/cloudflare/accounts", s.authMiddleware(s.handleCloudflareAccounts))
 	s.mux.HandleFunc("/api/cloudflare/accounts/", s.authMiddleware(s.handleCloudflareAccountRoute))
+	s.mux.HandleFunc("/api/dockerhub/", s.authMiddleware(s.handleDockerHub))
 	// Ansible Playbooks & Runs
 	s.mux.HandleFunc("/api/ansible/status", s.authMiddleware(s.handleAnsibleStatus))
 	s.mux.HandleFunc("/api/ansible/playbooks", s.authMiddleware(s.handleAnsiblePlaybooks))

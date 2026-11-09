@@ -410,6 +410,15 @@ Tab **Docker** pada sebuah host membaca engine Docker secara langsung lewat SSH 
 
 Tampilan diambil sesuai kebutuhan lewat `GET /api/hosts/{id}/docker/stats`, `/docker/volumes`, dan `/docker/networks`. Jika Docker tidak bisa dibaca (belum terpasang, izin ditolak), tab menampilkan pesan error dari Docker sendiri.
 
+#### Docker Hub: Jelajah, Pull & Cek Pembaruan Image
+
+Sub-tab **Images** punya dua tombol Docker Hub ([ADR-0063](adr/0063-docker-hub-integration.md)). Docker Hub dihubungi oleh **server Pantau** (data publik, tanpa login, cache 5 menit); pull berjalan di **host**, memakai jaringan host dan kuota pull Docker Hub milik host.
+
+- **Docker Hub** membuka pencarian repositori publik (image resmi tampil lebih dulu, beserta jumlah bintang, jumlah pull, dan deskripsi). **Detail** menampilkan repositori: **Tag** (push terbaru lebih dulu, dapat disaring, 50 per halaman dengan **Muat tag lainnya**; platform, ukuran terkompresi, dan usia push per tag) dan **Ringkasan** (README repositori, dirender dengan aman: HTML mentah dibuang, gambar tidak dimuat). Setiap tag punya **Pull** (mengalirkan `docker pull` ke log viewer) dan **Jalankan** (membuka **Add container** dengan image terisi). **Buka di Docker Hub** menaut ke hub.docker.com.
+- **Cek pembaruan** membandingkan setiap image lokal dari Docker Hub (`nginx:1.28`, `bitnami/redis:7`, `docker.io/…`) dengan digest yang kini disajikan Docker Hub untuk tag-nya, lalu menambahkan badge di kolom Status: **Ada pembaruan** (tag kini menunjuk image lain; arahkan kursor untuk tanggal push-nya, dan **Pull pembaruan** menariknya), **Terbaru**, **Tidak ada di Docker Hub** (tag tidak ada di sana, mis. hasil build lokal), **Tidak dapat dibandingkan** (engine tidak mencatat digest registry, mis. `docker load`), atau **Cek gagal** (beserta alasannya). Image dari registry lain (ghcr.io, registry privat) tidak diberi badge. Baris ringkasan menampilkan jumlah pembaruan yang tersedia. Cek ini tidak menarik apa pun dan tidak memotong kuota pull; cek berhenti pada penolakan pertama Docker Hub (batas laju, tak terjangkau) agar tidak menghabiskan batas API, dan menanyakan maksimal 100 tag per cek.
+- Pembaruan yang sudah di-pull tidak mengubah container yang berjalan: buat ulang container-nya (untuk proyek Compose: **Stacks → Update**).
+- Belum didukung: repositori privat dan `docker login`, registry lain, cek terjadwal atau notifikasi. Hasil build lokal yang memakai nama repositori Docker Hub (mis. `nginx:latest`) tampil **Ada pembaruan**, dan **Pull pembaruan** akan menimpa tag lokal itu.
+
 ### Side Panel Global, Manajemen Docker & Kubernetes
 
 Pantau menyediakan bilah navigasi kiri (**Side Panel**) permanen di antara header dan footer:

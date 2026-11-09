@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="/vendor/nord.min.css" />
 <link rel="stylesheet" href="/app/ansible.css" />
 <link rel="stylesheet" href="/app/terraform.css" />
+<link rel="stylesheet" href="/app/dockerhub.css" />
 <style>
 @font-face { font-family: 'Inter'; src: url('/vendor/fonts/inter-latin-var.woff2') format('woff2'); font-weight: 100 900; font-style: normal; font-display: swap; }
 @font-face { font-family: 'JetBrains Mono'; src: url('/vendor/fonts/jetbrains-mono-latin-var.woff2') format('woff2'); font-weight: 100 800; font-style: normal; font-display: swap; }
@@ -13531,6 +13532,7 @@ function dockerHeaderHtml() {
       </div>
       <div class="dk-toolbar">
         ${auto}
+        ${dockerSubTab === 'images' && window.Hub ? Hub.toolbar() : ''}
         ${prune ? `<button class="btn btn-sm btn-ghost" onclick="${prune[1]}">${svgIcon('trash-2', 'icon-sm')} <span>${t(prune[0])}</span></button>` : ''}
         ${primary ? `<button class="btn btn-sm btn-primary" onclick="${primary[1]}">${svgIcon(primary[2], 'icon-sm')} <span>${t(primary[0])}</span></button>` : ''}
         <button class="btn btn-sm btn-ghost" onclick="switchTab('docker')" style="display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs);">
@@ -21558,7 +21560,7 @@ function renderDockerImages(data) {
   if (images.length === 0) return dockerEmptyHtml(t('dk_no_images_title'), t('dk_no_images_desc'));
   const total = images.reduce((a, i) => a + i.size, 0);
   const unused = images.filter(i => !i.in_use).length;
-  return `<div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">${t('dk_img_summary').replace('{n}', images.length).replace('{u}', unused).replace('{size}', formatBytes(total))}</div>` +
+  return `<div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">${t('dk_img_summary').replace('{n}', images.length).replace('{u}', unused).replace('{size}', formatBytes(total))}${window.Hub ? Hub.summary() : ''}</div>` +
     dockerTableHtml([t('dk_f_image'), t('dk_col_tag'), 'ID', t('docker_col_size'), t('dk_col_created'), t('status'), ''], images.map(i => {
       const ref = i.dangling ? i.id : i.repository + ':' + i.tag;
       const status = i.in_use ? `<span class="badge badge-success">${t('dk_in_use')}</span>` : (i.dangling ? `<span class="badge badge-warning">${t('dk_dangling')}</span>` : `<span class="badge badge-unknown">${t('dk_unused')}</span>`);
@@ -21569,9 +21571,9 @@ function renderDockerImages(data) {
           <td class="dk-mono text-muted" title="${escapeHtml(i.full_id)}">${escapeHtml(i.id)}</td>
           <td style="white-space: nowrap;">${formatBytes(i.size)}</td>
           <td class="text-muted" style="white-space: nowrap;" title="${escapeHtml(i.created)}">${escapeHtml(i.age)}</td>
-          <td>${status}</td>
+          <td>${status}${!i.dangling && window.Hub ? Hub.imageBadge(ref) : ''}</td>
           <td class="dk-actions">
-            ${i.dangling ? '' : `<button class="btn btn-sm btn-ghost btn-icon" title="${t('dk_run_image')}" data-ref="${escapeHtml(ref)}" onclick="openDockerRunForm(this.dataset.ref)">${svgIcon('play', 'icon-sm')}</button>`}
+            ${i.dangling ? '' : `${window.Hub ? Hub.imageActions(ref) : ''}<button class="btn btn-sm btn-ghost btn-icon" title="${t('dk_run_image')}" data-ref="${escapeHtml(ref)}" onclick="openDockerRunForm(this.dataset.ref)">${svgIcon('play', 'icon-sm')}</button>`}
             <button class="btn btn-sm btn-danger btn-icon" ${i.in_use ? 'disabled' : ''} title="${escapeHtml(i.in_use ? t('dk_in_use_hint') : t('dk_remove'))}" data-ref="${escapeHtml(ref)}" onclick="dockerImageRemove(this.dataset.ref)">${svgIcon('trash-2', 'icon-sm')}</button>
           </td>
         </tr>`;
@@ -26639,5 +26641,6 @@ langRerenderHooks.push(renderTfWorkspaces, tfRenderWsHead, () => {
 <script src="/app/terraform.js"></script>
 <script src="/app/ansible.js"></script>
 <script src="/app/firewall.js"></script>
+<script src="/app/dockerhub.js"></script>
 </body>
 </html>

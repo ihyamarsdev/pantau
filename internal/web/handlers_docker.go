@@ -33,7 +33,7 @@ func decodeDockerBody(w http.ResponseWriter, r *http.Request, v interface{}) boo
 // handleDockerManage serves the Portainer-style Docker endpoints below /api/hosts/{id}/docker/. It returns
 // false when the sub-path is not one of them so the caller can fall through to the older read-only routes.
 //
-//	GET  images | system | stacks | inspect?name= | stack/file?project=
+//	GET  images | images/updates | system | stacks | inspect?name= | stack/file?project=
 //	POST action | run | image | volume | network | stack | stack/deploy | prune
 func (s *Server) handleDockerManage(w http.ResponseWriter, r *http.Request, hostID int64, parts []string) bool {
 	if len(parts) < 3 {
@@ -51,6 +51,9 @@ func (s *Server) handleDockerManage(w http.ResponseWriter, r *http.Request, host
 			return true
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "images": images})
+
+	case get && sub == "images/updates":
+		s.dockerImageUpdates(w, r, hostID)
 
 	case get && sub == "system":
 		info, err := s.inspector.DockerSystem(hostID)

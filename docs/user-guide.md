@@ -410,12 +410,21 @@ The **Docker** tab of a host reads the Docker engine live over SSH (read-only; t
 
 Views are fetched on demand through `GET /api/hosts/{id}/docker/stats`, `/docker/volumes` and `/docker/networks`. If Docker cannot be read (not installed, permission denied) the tab shows Docker's own error message.
 
+#### Docker Hub: Browse, Pull & Image Update Check
+
+The **Images** sub-tab has two Docker Hub buttons ([ADR-0063](adr/0063-docker-hub-integration.md)). Docker Hub is queried by the **Pantau server** (public data, no login, cached 5 minutes); pulls run on the **host**, with the host's network and Docker Hub pull quota.
+
+- **Docker Hub** opens a search over public repositories (official images listed first, with stars, pull counts and description). **Details** shows the repository: **Tags** (newest push first, filterable, 50 per page with **Load more**; platforms, compressed size and push age per tag) and **Overview** (the repository README, rendered safely: raw HTML dropped, images not loaded). Each tag has **Pull** (streams `docker pull` into the log viewer) and **Run** (opens **Add container** with the image filled in). **Open on Docker Hub** links to hub.docker.com.
+- **Check updates** compares every local Docker Hub image (`nginx:1.28`, `bitnami/redis:7`, `docker.io/…`) with the digest Docker Hub currently serves for its tag, and adds a badge to the Status column: **Update available** (the tag now points to a different image; hover for its push date, and **Pull update** pulls it), **Up to date**, **Not on Docker Hub** (the tag does not exist there, e.g. a local build), **Not comparable** (the engine recorded no registry digest, e.g. `docker load`), or **Check failed** (with the reason). Images from other registries (ghcr.io, a private registry) get no badge. The summary line shows how many updates are available. The check pulls nothing and does not count against the pull quota; it stops at the first Docker Hub refusal (rate limit, unreachable) instead of spending the API limit, and asks at most 100 tags per check.
+- A pulled update does not change running containers: recreate them (for Compose projects: **Stacks → Update**).
+- Not supported: private repositories and `docker login`, other registries, scheduled checks or notifications. A local build that reuses a Docker Hub name (e.g. `nginx:latest`) shows **Update available**, and **Pull update** replaces that local tag.
+
 ### Global Side Panel, Docker & Kubernetes Management
 
 Pantau provides a persistent left-hand **Side Panel** navigation bar positioned between the fixed header and footer:
 
 - **Navigation & Collapsible Icon Rail**: Switch between **Hosts** (default fleet dashboard), **Docker** (dedicated multi-host container overview), and **Kubernetes** (lightweight k3s/rke2 management). Collapse the panel into a compact icon rail via the collapse toggle at the bottom; the collapsed state is persisted in `localStorage`. On mobile screens (<768px), the panel becomes an off-canvas drawer toggled via the menu icon button in the header.
-- **Docker Section**: A fleet-wide host picker with live status and search filter. Selecting a host seamlessly launches the Portainer-style Docker management interface with container lifecycles, image pulling, volumes, networks, compose stacks, and terminal console access.
+- **Docker Section**: A fleet-wide host picker with live status and search filter. Selecting a host seamlessly launches the Portainer-style Docker management interface with container lifecycles, image pulling (including the Docker Hub browser and image update check), volumes, networks, compose stacks, and terminal console access.
 - **Kubernetes Section (k3s / rke2)**: Provides agentless cluster control plane inspection and operations for lightweight Kubernetes installations.
   - **Cluster-Grouped Host Picker**: Displays high-availability clusters as single entries grouped by cluster ID with member counts and aggregate health status; standalone nodes appear separately. A **Detect clusters** button scans fleet hosts with bounded concurrency (5).
   - **Gateway Host & Seamless Failover**: Cluster requests execute via a designated Gateway Host. If the primary host is unreachable, Pantau automatically fails over to a healthy server peer, displaying a non-blocking notification and Gateway badge (`Gateway: thor (failover from odin)`).

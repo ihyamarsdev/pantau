@@ -475,6 +475,14 @@ _Avoid_: Compose app, docker service, swarm stack
 Aturan bahwa perintah Docker dijalankan sebagai akun SSH biasa dan baru memakai `sudo -n docker` bila socket Docker menolak akses (*permission denied*) dan sudo tanpa kata sandi tersedia; kata sandi tidak pernah dipakai atau disimpan.
 _Avoid_: Sudo docker mode, root docker, privileged docker
 
+**Docker Hub Browser**:
+Modal pencarian repositori publik Docker Hub di tab Docker sebuah Host (hasil pencarian, ringkasan/README, dan daftar tag beserta platform, ukuran, dan waktu push) yang datanya diambil server Pantau tanpa kredensial; aksi Pull dan Run pada sebuah tag dijalankan di Host yang sedang dibuka.
+_Avoid_: Image marketplace, registry browser, Docker search
+
+**Image Update Check**:
+Pemeriksaan on-demand di sub-tab Images yang membandingkan digest registry image lokal setiap `repo:tag` dari Docker Hub dengan digest yang kini disajikan Docker Hub untuk tag yang sama, menghasilkan status `up_to_date`, `update_available`, `not_found`, `unknown`, atau `error`; tidak menarik image dan tidak memakai kuota pull.
+_Avoid_: Image scan, auto-update, Watchtower, vulnerability check
+
 **Side Panel**:
 Bilah navigasi tetap di sisi kiri antarmuka Pantau (di bawah header, di atas footer) dengan bagian Hosts, Docker, dan Kubernetes; dapat diciutkan menjadi rel ikon, dan menjadi off-canvas pada layar sempit.
 _Avoid_: Sidebar, menu samping, navigation drawer
