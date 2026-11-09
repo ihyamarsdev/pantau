@@ -319,7 +319,7 @@ Match User admin
     PasswordAuthentication yes
     PermitRootLogin yes
 `
-	permitRoot, passAuth, notes := parseSshdConfig(sshdConfig)
+	permitRoot, passAuth, notes := parseSshdConfig(sshdConfig, "debian")
 	if permitRoot.Status != "pass" {
 		t.Errorf("expected PermitRootLogin pass, got %s (%s)", permitRoot.Status, permitRoot.Detail)
 	}
@@ -335,7 +335,7 @@ Match User admin
 FILE:/etc/ssh/sshd_config
 PermitRootLogin yes
 `
-	permitBad, passBad, _ := parseSshdConfig(sshdBad)
+	permitBad, passBad, _ := parseSshdConfig(sshdBad, "debian")
 	if permitBad.Status != "fail" {
 		t.Errorf("expected PermitRootLogin fail for yes, got %s", permitBad.Status)
 	}
@@ -344,7 +344,7 @@ PermitRootLogin yes
 	}
 
 	// 3. Unreadable sshd_config
-	permitUnread, passUnread, unreadNotes := parseSshdConfig("SSHD_UNREADABLE")
+	permitUnread, passUnread, unreadNotes := parseSshdConfig("SSHD_UNREADABLE", "debian")
 	if permitUnread.Status != "unknown" || passUnread.Status != "unknown" {
 		t.Errorf("expected unknown for unreadable sshd, got %s/%s", permitUnread.Status, passUnread.Status)
 	}
@@ -353,17 +353,17 @@ PermitRootLogin yes
 	}
 
 	// 4. Auto updates tests
-	autoCheck1, _ := parseAutoUpdates("UNATTENDED_ACTIVE:active\nUNATTENDED_ENABLED:enabled")
+	autoCheck1, _ := parseAutoUpdates("APT_TIMER_ENABLED:enabled\n---APT_CONFIG---\nUU_INSTALLED\nAPT::Periodic::Update-Package-Lists \"1\";\nAPT::Periodic::Unattended-Upgrade \"1\";")
 	if autoCheck1.Status != "pass" {
 		t.Errorf("expected auto updates pass for unattended-upgrades, got %s", autoCheck1.Status)
 	}
 
-	autoCheck2, _ := parseAutoUpdates("DNF_TIMER_ACTIVE:active\n")
+	autoCheck2, _ := parseAutoUpdates("DNF_TIMER_ACTIVE:active\n/etc/dnf/automatic.conf:apply_updates = yes\n")
 	if autoCheck2.Status != "pass" {
 		t.Errorf("expected auto updates pass for dnf-automatic, got %s", autoCheck2.Status)
 	}
 
-	autoCheckNone, _ := parseAutoUpdates("UNATTENDED_ACTIVE:inactive\nDNF_TIMER_ACTIVE:inactive")
+	autoCheckNone, _ := parseAutoUpdates("DNF_TIMER_ACTIVE:inactive")
 	if autoCheckNone.Status != "warn" {
 		t.Errorf("expected auto updates warn when inactive, got %s", autoCheckNone.Status)
 	}
@@ -385,6 +385,82 @@ PermitRootLogin yes
 	}
 	if len(fwNotes) == 0 {
 		t.Error("expected note for permission denied firewall")
+	}
+}
+
+// Each case is a host that is not hardened (or cannot be judged) but used to be reported as pass, or the
+// boundary right next to it. A regression here shows a green check on an exposed host.
+func TestHardeningChecks_NoFalsePass(t *testing.T) {
+	sshd := func(content, osFamily string) (string, string) {
+		root, pw, _ := parseSshdConfig(content, osFamily)
+		return root.Status, pw.Status
+	}
+	sshdCases := []struct {
+		name, content, os, root, pw string
+	}{
+		{"drop-in included at the top overrides sshd_config (Ubuntu cloud-init)",
+			"FILE:/etc/ssh/sshd_config\nInclude /etc/ssh/sshd_config.d/*.conf\nPasswordAuthentication no\nFILE:/etc/ssh/sshd_config.d/50-cloud-init.conf\nPasswordAuthentication yes",
+			"ubuntu", "pass", "warn"},
+		{"drop-in without an Include is ignored by sshd",
+			"FILE:/etc/ssh/sshd_config\nPasswordAuthentication no\nFILE:/etc/ssh/sshd_config.d/50-x.conf\nPasswordAuthentication yes",
+			"ubuntu", "pass", "pass"},
+		{"Include inside a Match block is conditional",
+			"FILE:/etc/ssh/sshd_config\nPasswordAuthentication no\nMatch User deploy\nInclude /etc/ssh/sshd_config.d/*.conf\nFILE:/etc/ssh/sshd_config.d/a.conf\nPermitRootLogin yes",
+			"debian", "pass", "pass"},
+		{"unset PermitRootLogin on RHEL cannot be judged from files",
+			"FILE:/etc/ssh/sshd_config\n#PermitRootLogin yes\nPasswordAuthentication no", "rhel", "unknown", "pass"},
+		{"keyboard-interactive through PAM still takes passwords",
+			"FILE:/etc/ssh/sshd_config\nPasswordAuthentication no\nUsePAM yes", "debian", "pass", "warn"},
+		{"ChallengeResponseAuthentication no closes keyboard-interactive",
+			"FILE:/etc/ssh/sshd_config\nPasswordAuthentication=no\nChallengeResponseAuthentication no\nUsePAM yes", "debian", "pass", "pass"},
+		{"effective sshd -T output is authoritative",
+			"SSHD_EFFECTIVE\npermitrootlogin yes\npasswordauthentication no\nkbdinteractiveauthentication no\nusepam yes", "rhel", "fail", "pass"},
+		{"pre-8.7 sshd -T: challengeresponse yes enables keyboard-interactive",
+			"SSHD_EFFECTIVE\npermitrootlogin without-password\npasswordauthentication no\nkbdinteractiveauthentication no\nchallengeresponseauthentication yes\nusepam yes", "rhel", "pass", "warn"},
+		{"sshd -G mixed-case keys (OpenSSH 10.4+)",
+			"SSHD_EFFECTIVE\nPermitRootLogin no\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nUsePAM yes", "rhel", "pass", "pass"},
+	}
+	for _, c := range sshdCases {
+		if root, pw := sshd(c.content, c.os); root != c.root || pw != c.pw {
+			t.Errorf("%s: root/password = %s/%s, want %s/%s", c.name, root, pw, c.root, c.pw)
+		}
+	}
+
+	const dockerIpt = "-P INPUT ACCEPT\n-P FORWARD DROP\n-P OUTPUT ACCEPT\n-N DOCKER\n-A FORWARD -j DOCKER\n-A DOCKER -d 172.17.0.2/32 -p tcp -j ACCEPT"
+	const dockerNft = "table ip filter {\n\tchain INPUT {\n\t\ttype filter hook input priority filter; policy accept;\n\t}\n\tchain DOCKER {\n\t\tip daddr 172.17.0.2 tcp dport 80 accept\n\t}\n}"
+	fwCases := []struct {
+		name, content, want string
+	}{
+		{"Docker tables without a firewall", "---FIREWALLD---\ninactive\n---NFT---\n" + dockerNft + "\n---IPTABLES---\n" + dockerIpt, "warn"},
+		{"nft input policy drop", "---NFT---\ntable inet filter {\n\tchain input {\n\t\ttype filter hook input priority filter; policy drop;\n\t\ttcp dport 22 accept\n\t}\n}", "pass"},
+		{"nft accept policy ending in counted drop", "---NFT---\ntable inet filter {\n\tchain input {\n\t\ttype filter hook input priority 0; policy accept;\n\t\ttcp dport 22 accept\n\t\tcounter packets 3 bytes 180 drop\n\t}\n}", "pass"},
+		{"fail2ban chain only rejects banned addresses", "---NFT---\ntable inet f2b-table {\n\tchain f2b-chain {\n\t\ttype filter hook input priority filter - 1; policy accept;\n\t\ttcp dport 22 ip saddr @addr-set-sshd reject\n\t}\n}", "warn"},
+		{"iptables final REJECT (RHEL 6/7)", "---IPTABLES---\n-P INPUT ACCEPT\n-A INPUT -p tcp --dport 22 -j ACCEPT\n-A INPUT -j REJECT --reject-with icmp-host-prohibited", "pass"},
+		{"iptables blocking one address", "---IPTABLES---\n-P INPUT ACCEPT\n-A INPUT -s 203.0.113.9/32 -j DROP", "warn"},
+		{"firewalld active on a host without nft", "---FIREWALLD---\nactive\n---IPTABLES---\n-P INPUT ACCEPT", "pass"},
+		{"nft unreadable without root", "---NFT---\nnetlink: Error: cache initialization failed: Operation not permitted", "unknown"},
+	}
+	for _, c := range fwCases {
+		if got, _ := parseFirewall(c.content); got.Status != c.want {
+			t.Errorf("%s: firewall = %s (%s), want %s", c.name, got.Status, got.Detail, c.want)
+		}
+	}
+
+	autoCases := []struct {
+		name, content, want string
+	}{
+		{"APT refreshes lists but installs nothing", "APT_TIMER_ENABLED:enabled\n---APT_CONFIG---\nUU_INSTALLED\nAPT::Periodic::Update-Package-Lists \"1\";\nAPT::Periodic::Unattended-Upgrade \"0\";", "warn"},
+		{"unattended-upgrades package missing", "APT_TIMER_ENABLED:enabled\n---APT_CONFIG---\nAPT::Periodic::Unattended-Upgrade \"1\";", "warn"},
+		{"apt-daily-upgrade.timer masked", "APT_TIMER_ENABLED:masked\n---APT_CONFIG---\nUU_INSTALLED\nAPT::Periodic::Unattended-Upgrade \"1\";", "warn"},
+		{"APT without systemd runs from cron", "---APT_CONFIG---\nUU_INSTALLED\nAPT::Periodic::Unattended-Upgrade \"1\";", "pass"},
+		{"dnf-automatic default config only downloads", "DNF_TIMER_ENABLED:enabled\nDNF_TIMER_ACTIVE:active\n/etc/dnf/automatic.conf:apply_updates = no", "warn"},
+		{"dnf-automatic-install.timer applies updates", "DNF_TIMER_ACTIVE:inactive\nDNF_INSTALL_TIMER_ACTIVE:active", "pass"},
+		{"yum-cron applying updates", "YUM_CRON_ENABLED:enabled\n/etc/yum/yum-cron.conf:apply_updates = yes", "pass"},
+	}
+	for _, c := range autoCases {
+		if got, _ := parseAutoUpdates(c.content); got.Status != c.want {
+			t.Errorf("%s: auto updates = %s (%s), want %s", c.name, got.Status, got.Detail, c.want)
+		}
 	}
 }
 
@@ -987,7 +1063,7 @@ func TestParseHardeningChecks_MacOS_Fixtures(t *testing.T) {
 	fwSecA := "Firewall is disabled. (State = 0)\n"
 	sshdSecA := "FILE:/etc/ssh/sshd_config\nUsePAM yes\n"
 
-	checksA, _ := parseHardeningChecks(sshdSecA, autoSecA, fwSecA)
+	checksA, _ := parseHardeningChecks("macos", sshdSecA, autoSecA, fwSecA)
 	if len(checksA) != 4 {
 		t.Fatalf("expected 4 checks, got %d", len(checksA))
 	}
@@ -1016,7 +1092,7 @@ func TestParseHardeningChecks_MacOS_Fixtures(t *testing.T) {
 	fwSecB := "Firewall is enabled. (State = 1)\n"
 	sshdSecB := "FILE:/etc/ssh/sshd_config\nUsePAM yes\n"
 
-	checksB, _ := parseHardeningChecks(sshdSecB, autoSecB, fwSecB)
+	checksB, _ := parseHardeningChecks("macos", sshdSecB, autoSecB, fwSecB)
 	mB := make(map[string]store.HardeningCheck)
 	for _, c := range checksB {
 		mB[c.ID] = c

@@ -229,3 +229,48 @@ func (d *DB) ListSecurityScanTimes() (map[int64]time.Time, error) {
 	}
 	return res, rows.Err()
 }
+
+// SecuritySummary is the dashboard digest of a host's latest security scan.
+type SecuritySummary struct {
+	Status          string    `json:"status"`
+	ScannedAt       time.Time `json:"scanned_at"`
+	PendingSecurity int       `json:"pending_security"`
+	RebootRequired  bool      `json:"reboot_required"`
+	HardeningFail   int       `json:"hardening_fail"`
+	HardeningWarn   int       `json:"hardening_warn"`
+}
+
+// ListSecuritySummaries returns the latest scan digest per host_id for hosts that have been scanned.
+func (d *DB) ListSecuritySummaries() (map[int64]SecuritySummary, error) {
+	rows, err := d.Query(`SELECT host_id, scanned_at, status, pending_security, reboot_required, hardening_json FROM security_scans`)
+	if err != nil {
+		return nil, fmt.Errorf("list security summaries: %w", err)
+	}
+	defer rows.Close()
+
+	res := make(map[int64]SecuritySummary)
+	for rows.Next() {
+		var (
+			hostID        int64
+			s             SecuritySummary
+			rebootInt     int
+			hardeningJSON string
+			checks        []HardeningCheck
+		)
+		if err := rows.Scan(&hostID, &s.ScannedAt, &s.Status, &s.PendingSecurity, &rebootInt, &hardeningJSON); err != nil {
+			return nil, fmt.Errorf("scan security summary: %w", err)
+		}
+		s.RebootRequired = rebootInt == 1
+		_ = json.Unmarshal([]byte(hardeningJSON), &checks)
+		for _, c := range checks {
+			switch c.Status {
+			case "fail":
+				s.HardeningFail++
+			case "warn":
+				s.HardeningWarn++
+			}
+		}
+		res[hostID] = s
+	}
+	return res, rows.Err()
+}

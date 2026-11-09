@@ -7124,6 +7124,10 @@ const I18N = {
     "hardening_sshd_password_auth": "SSH Password Authentication",
     "hardening_auto_security_updates": "Automatic Security Updates",
     "hardening_firewall_active": "Firewall Active",
+    "sec_chip_pending": "{n} security update(s) pending",
+    "sec_chip_fail": "{n} hardening check(s) failed",
+    "sec_chip_warn": "{n} hardening warning(s)",
+    "sec_chip_scanned": "scanned {t}",
     // ===== SLICE-A:BEGIN i18n =====
     "kpi_total_hosts": "Total Hosts",
     "kpi_healthy": "Healthy",
@@ -8677,6 +8681,10 @@ const I18N = {
     "hardening_sshd_password_auth": "Autentikasi Password SSH",
     "hardening_auto_security_updates": "Pembaruan Keamanan Otomatis",
     "hardening_firewall_active": "Firewall Aktif",
+    "sec_chip_pending": "{n} pembaruan keamanan tertunda",
+    "sec_chip_fail": "{n} pemeriksaan hardening gagal",
+    "sec_chip_warn": "{n} peringatan hardening",
+    "sec_chip_scanned": "dipindai {t}",
     // ===== SLICE-A:BEGIN i18n =====
     "kpi_total_hosts": "Total Host",
     "kpi_healthy": "Sehat",
@@ -10444,9 +10452,12 @@ function renderGridView(grid, isManualSort) {
             <span>•</span>
             <span title="${recency.title}" style="${recency.isStale ? 'color: var(--warning);' : ''}">${recency.relative}</span>
           </div>
-          <span class="host-score-chip" onclick="openHostDetail(${h.id}, 'overview')" title="${t('lifecycle_score')}" style="color: ${scoreColor};">
-            <svg class="icon icon-sm"><use href="#i-gauge"/></svg>
-            <span class="num">${h.lifecycle_score}</span>
+          <span style="display: inline-flex; gap: 4px;">
+            ${hostSecurityChip(h)}
+            <span class="host-score-chip" onclick="openHostDetail(${h.id}, 'overview')" title="${t('lifecycle_score')}" style="color: ${scoreColor};">
+              <svg class="icon icon-sm"><use href="#i-gauge"/></svg>
+              <span class="num">${h.lifecycle_score}</span>
+            </span>
           </span>
         </div>
 
@@ -10521,6 +10532,7 @@ function renderListView(listContainer, isManualSort) {
         <th style="width: 110px;">${t('col_disk')}</th>
         <th style="width: 140px;">${t('col_traffic')}</th>
         <th style="width: 70px;">${t('col_score')}</th>
+        <th style="width: 70px;">${t('tab_security', 'Security')}</th>
         <th style="width: 70px;">${t('card_issues', 'Issues')}</th>
         <th style="width: 110px;">${t('col_last_inspected', 'Inspected')}</th>
         <th style="text-align: right; width: 140px;">${t('col_actions')}</th>
@@ -10538,7 +10550,7 @@ function renderListView(listContainer, isManualSort) {
       const headerRow = document.createElement('tr');
       headerRow.className = 'host-list-group-row';
       headerRow.innerHTML = `
-        <td colspan="${isManualSort ? 13 : 12}">
+        <td colspan="${isManualSort ? 14 : 13}">
           <div style="display: flex; align-items: center; gap: 8px;">
             <svg class="icon icon-sm"><use href="#i-folder"/></svg>
             <span>${escapeHtml(grp.name)}</span>
@@ -10668,6 +10680,9 @@ function renderListView(listContainer, isManualSort) {
         </td>
         <td>
           <span class="host-score-chip" style="color: ${scoreColor}; font-size: var(--fs-xs);">${h.lifecycle_score}</span>
+        </td>
+        <td>
+          ${hostSecurityChip(h) || '<span class="text-faint" style="font-size: var(--fs-xs);">-</span>'}
         </td>
         <td>
           ${hasIssues ? `<span class="card-issue-badge ${issues[0].level}" title="${escapeHtml(issues[0].text)}">${issues.length}</span>` : '<span class="text-faint" style="font-size: var(--fs-xs);">0</span>'}
@@ -20713,6 +20728,36 @@ function renderKpiStrip(hosts) {
       <div class="kpi-tile-sub">${t('kpi_max_disk', 'Peak Disk')}: ${maxDiskPct}%</div>
     </div>
   `;
+}
+
+// Dashboard digest of the latest security scan (h.security from GET /api/hosts); clicking opens the Security tab.
+function hostSecurityChip(h) {
+  const s = h.security;
+  if (!s) return '';
+  const notAssessed = s.status === 'unsupported' || s.status === 'error';
+  const parts = [];
+  if (notAssessed) parts.push(t('sec_not_assessed', 'Not assessed'));
+  else parts.push(t('sec_chip_pending', '{n} security update(s) pending').replace('{n}', s.pending_security));
+  if (s.status === 'partial') parts.push(t('sec_banner_partial', 'Partial Scan Coverage'));
+  if (s.reboot_required) parts.push(t('sec_reboot_yes', 'Reboot Required'));
+  if (s.hardening_fail > 0) parts.push(t('sec_chip_fail', '{n} hardening check(s) failed').replace('{n}', s.hardening_fail));
+  if (s.hardening_warn > 0) parts.push(t('sec_chip_warn', '{n} hardening warning(s)').replace('{n}', s.hardening_warn));
+  parts.push(t('sec_chip_scanned', 'scanned {t}').replace('{t}', formatRelativeTime(s.scanned_at).relative));
+
+  let color = 'var(--success)';
+  if (notAssessed) color = 'var(--text-muted)';
+  else if (s.pending_security > 0 || s.hardening_fail > 0) color = 'var(--danger)';
+  else if (s.status === 'partial' || s.reboot_required || s.hardening_warn > 0) color = 'var(--warning)';
+  const icon = color === 'var(--success)' ? 'shield-check' : (notAssessed ? 'shield' : 'shield-alert');
+  const title = t('tab_security', 'Security') + ': ' + parts.join(' · ');
+  const label = notAssessed ? 'N/A' : (s.pending_security > 0 ? String(s.pending_security) : '');
+  return `<span class="host-score-chip" onclick="event.stopPropagation(); openHostSecurity(${h.id})" title="${escapeHtml(title)}" style="color: ${color};">${svgIcon(icon, 'icon-sm')}${label ? `<span class="num">${label}</span>` : ''}</span>`;
+}
+
+async function openHostSecurity(id) {
+  setHostActiveTab(id, 'security');
+  await openHostDetail(id);
+  if (currentHost && currentHost.id === id && currentTab !== 'security') switchTab('security');
 }
 
 function getHostTopIssues(h) {

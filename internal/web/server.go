@@ -809,11 +809,25 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		sums, err := s.db.ListSecuritySummaries()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		type hostRow struct {
+			*store.Host
+			Security *store.SecuritySummary `json:"security,omitempty"`
+		}
+		rows := make([]hostRow, len(hosts))
 		for i := range hosts {
 			redactHost(&hosts[i])
+			rows[i].Host = &hosts[i]
+			if sum, ok := sums[hosts[i].ID]; ok {
+				rows[i].Security = &sum
+			}
 		}
 		// ponytail: ETag on identity bytes so gzip and non-gzip clients share it
-		body, err := json.Marshal(hosts)
+		body, err := json.Marshal(rows)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

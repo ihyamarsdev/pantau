@@ -15,7 +15,7 @@ Sebelum arsitektur ini diterapkan, Pantau belum memiliki visibilitas terpadu men
 
 1. **Prinsip Agentless, Read-Only, dan Airgapped (Zero-CVE Network Call)**:
    - Pemindaian dieksekusi murni melalui sesi SSH non-interaktif standar menggunakan user SSH terkonfigurasi.
-   - **Perintah Baca Saja (Read-Only)**: Seluruh perintah remote bersifat non-destruktif. Sistem **dilarang menggunakan `sudo`**, dilarang memasang paket baru, dan dilarang menjalankan perintah pembaruan repositori jaringan seperti `apt-get update` atau `dnf makecache`.
+   - **Perintah Baca Saja (Read-Only)**: Seluruh perintah remote bersifat non-destruktif. Sistem dilarang memasang paket baru dan dilarang menjalankan perintah pembaruan repositori jaringan seperti `apt-get update` atau `dnf makecache`. Pemindaian tidak *membutuhkan* `sudo`; bila pengguna SSH bukan root, `sudo -n` (tanpa kata sandi, backoff 24 jam bersama setelah penolakan) dicoba hanya untuk perintah baca yang butuh root: tabel firewall (`ufw status`, `nft list ruleset`, `iptables -S`) dan konfigurasi efektif sshd (`sshd -T`, serta pembacaan `sshd_config` yang berizin `0600` di RHEL).
    - **Mandiri & Offline (Airgapped)**: Evaluasi sepenuhnya bersandar pada metadata paket lokal yang telah tersedia di host target. Tidak ada pencarian API CVE eksternal atau koneksi internet publik. Pemetaan database kerentanan eksternal hanya dimungkinkan sebagai modul opsional di masa mendatang (*future opt-in*), bukan bagian dari rilis ini.
 
 2. **Deteksi Pembaruan Keamanan per Package Manager**:
@@ -40,11 +40,11 @@ Sebelum arsitektur ini diterapkan, Pantau belum memiliki visibilitas terpadu men
      - Jika usia cache lebih dari 168 jam (7 hari), sistem menambahkan catatan: `"package metadata is N days old; results may miss recent advisories"` dan menurunkan status keseluruhan pemindaian menjadi `partial`.
 
 4. **Empat Pemeriksaan Hardening Pasif (Read-Only)**:
-   - Evaluasi menghasilkan status `pass`, `warn`, `fail`, atau `unknown`:
-     1. `sshd_permit_root_login`: Membaca konfigurasi efektif OpenSSH dari `/etc/ssh/sshd_config` dan berkas drop-in `/etc/ssh/sshd_config.d/*.conf` (menerapkan aturan *first-match-wins* OpenSSH). Nilai default OpenSSH (`prohibit-password`) atau `no` menghasilkan `pass`; nilai eksplisit `yes` menghasilkan `fail`.
-     2. `sshd_password_auth`: Autentikasi sandi SSH. Nilai `no` menghasilkan `pass`; nilai `yes` atau default tidak terkonfigurasi menghasilkan `warn`.
-     3. `auto_security_updates`: Mendeteksi keaktifan pembaruan otomatis (paket `unattended-upgrades` aktif pada Debian/Ubuntu, atau systemd timer `dnf-automatic` / `yum-cron` aktif pada RHEL).
-     4. `firewall_active`: Memeriksa keaktifan `ufw`, daemon `firewalld`, atau aturan filter `nftables`/`iptables`. Jika izin akses non-root tidak memungkinkan pembacaan aturan firewall, status dilaporkan sebagai `unknown` disertai rincian detail.
+   - Evaluasi menghasilkan status `pass`, `warn`, `fail`, atau `unknown`. Sebuah check hanya boleh `pass` bila kondisi yang benar-benar berlaku terverifikasi; keberadaan berkas atau aturan saja tidak cukup.
+     1. `sshd_permit_root_login`: Sumber utama adalah konfigurasi efektif `sshd -G` (OpenSSH ≥ 9.3, tanpa root) atau `sshd -T` (root/sudo), yang sudah menerapkan `Include`, `Match`, dan default bawaan build distro. Bila keduanya gagal, berkas `/etc/ssh/sshd_config` dibaca dengan `Include` disisipkan di baris tempatnya berada (drop-in yang di-include di atas mengalahkan berkas utama; drop-in yang tidak di-include diabaikan), *first-match-wins*, dan blok `Match` dilewati. `no`/`prohibit-password`/`forced-commands-only` → `pass`, `yes` → `fail`. Bila tidak diatur, default upstream (`prohibit-password`) hanya dipakai untuk Debian/Ubuntu/Alpine/Arch/macOS; distro lain (RHEL/CentOS ≤ 8 ber-default `yes`) → `unknown`.
+     2. `sshd_password_auth`: `PasswordAuthentication no` → `pass`, kecuali `UsePAM yes` dengan `KbdInteractiveAuthentication` (alias lama `ChallengeResponseAuthentication`) yang tidak `no`, karena prompt PAM keyboard-interactive tetap menerima kata sandi → `warn`. Nilai `yes` atau tidak diatur → `warn`.
+     3. `auto_security_updates`: Debian/Ubuntu memakai nilai efektif `apt-config dump`: `pass` hanya bila `APT::Periodic::Unattended-Upgrade` bukan `0`, paket `unattended-upgrades` terpasang, dan `apt-daily-upgrade.timer` tidak `disabled`/`masked` (`Update-Package-Lists` saja tidak memasang apa pun → `warn`). RHEL: `dnf-automatic-install.timer` aktif → `pass`; `dnf-automatic.timer` / `yum-cron` aktif hanya `pass` bila `apply_updates = yes` di `/etc/dnf/automatic.conf` / `/etc/yum/yum-cron.conf` (default-nya hanya mengunduh → `warn`).
+     4. `firewall_active`: `pass` bila ufw aktif, firewalld aktif, atau rantai input benar-benar memfilter: chain nft ber-hook `input` dengan `policy drop` atau aturan `drop`/`reject` tanpa syarat, atau rantai iptables `INPUT` dengan kebijakan `DROP` atau aturan `-j DROP|REJECT` tanpa syarat. Tabel/aturan buatan Docker, kube-proxy, atau fail2ban (kebijakan `accept`) menghasilkan `warn`. Jika aturan tidak dapat dibaca tanpa root, status `unknown` disertai rincian.
 
 5. **Prinsip Kejujuran Cakupan (*Honesty Rule / Honest Coverage*)**:
    - Pantau pantang menampilkan status "aman / hijau" palsu jika pemeriksaan tidak memiliki cakupan penuh.
@@ -94,10 +94,11 @@ Sebelum arsitektur ini diterapkan, Pantau belum memiliki visibilitas terpadu men
 9. **REST API Endpoints**:
    - `GET /api/hosts/{id}/security`: Mengembalikan status pemindaian terakhir. Menghasilkan `{"scanned": false}` jika belum pernah dipindai, atau `{"scanned": true, "scan": <SecurityScan>}`. Menyertakan header `X-Scan-Cooldown-Remaining: <sec>` jika jeda cooldown masih aktif.
    - `POST /api/hosts/{id}/security/scan`: Memicu pemindaian sinkron dengan batas timeout 90 detik. Mengembalikan HTTP 429 jika dalam cooldown, HTTP 409 jika sedang berlangsung, atau HTTP 200 dengan data scan terbaru saat berhasil.
+   - `GET /api/hosts`: setiap host yang sudah dipindai menyertakan ringkasan `security` (`status`, `scanned_at`, `pending_security`, `reboot_required`, `hardening_fail`, `hardening_warn`) dari baris `security_scans` terbaru, dibaca dalam satu query tanpa SSH. Dashboard menampilkannya sebagai chip perisai di kartu host dan kolom Security di tampilan daftar; klik membuka tab Security.
 
 ## Konsekuensi
 
 - **Visibilitas Patch Tanpa Agen Tambahan**: Administrator dapat memantau postur patch keamanan dan urgensi reboot di seluruh kluster server Linux langsung dari antarmuka web Pantau tanpa beban daemon pihak ketiga.
 - **Transparansi Kepatuhan Penuh**: Menghilangkan false positive status "aman" berkat *honesty rule* yang secara eksplisit melaporkan keterbatasan izin baca, cache basi, atau distro yang tidak didukung.
 - **Aman untuk Lingkungan Tertutup (Airgapped)**: Tidak memerlukan pembukaan akses internet keluar menuju repositori atau database CVE eksternal.
-- **Beban Remote Minimal**: Seluruh operasi berlangsung read-only tanpa `sudo`, tidak mengubah berkas di host target, dan dibatasi waktu eksekusi ketat.
+- **Beban Remote Minimal**: Seluruh operasi berlangsung read-only (sudo hanya dicoba dengan `sudo -n` untuk pembacaan yang butuh root), tidak mengubah berkas di host target, dan dibatasi waktu eksekusi ketat.
