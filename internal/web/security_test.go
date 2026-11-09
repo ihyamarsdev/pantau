@@ -16,6 +16,7 @@ import (
 	"pantau/internal/inspector"
 	"pantau/internal/sshrunner"
 	"pantau/internal/store"
+	"pantau/internal/vulnintel"
 )
 
 func setupSecurityTestServer(t *testing.T) (*Server, *store.DB, *inspector.Inspector, *sshrunner.MockRunner, func(*http.Request)) {
@@ -53,6 +54,55 @@ func setupSecurityTestServer(t *testing.T) (*Server, *store.DB, *inspector.Inspe
 	}
 
 	return srv, db, ins, mockRunner, authReq
+}
+
+// Exploit intelligence leaves the Pantau server, so nothing is downloaded until the administrator opts in; once
+// enabled the Security tab response carries KEV/EPSS for the scan's CVEs.
+func TestSecurityIntelIsOptIn(t *testing.T) {
+	srv, db, _, _, authReq := setupSecurityTestServer(t)
+	var hits int
+	feeds := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if r.URL.Path == "/kev" {
+			_, _ = w.Write([]byte(`{"dateReleased":"2026-11-06","vulnerabilities":[{"cveID":"CVE-2023-4911","vulnerabilityName":"glibc","dateAdded":"2023-11-21","dueDate":"2023-12-12"}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":[{"cve":"CVE-2023-4911","epss":"0.6","percentile":"0.99","date":"2026-11-08"}]}`))
+	}))
+	defer feeds.Close()
+	srv.vuln = vulnintel.New(feeds.URL+"/kev", feeds.URL+"/epss")
+
+	hostID, err := db.CreateHost(&store.Host{Name: "rhel", Host: "10.0.0.9", Port: 22, User: "root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveSecurityScan(&store.SecurityScan{HostID: hostID, ScannedAt: time.Now(), Status: "ok", PackageManager: "dnf", RepoCacheAgeHours: 1,
+		Findings: []store.SecurityFinding{{Package: "glibc", FixedVersion: "2.34-1", Severity: "important", CVEs: []string{"CVE-2023-4911"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	intel := func() map[string]any {
+		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/hosts/%d/security", hostID), nil)
+		authReq(req)
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+		var body struct {
+			Intel map[string]any `json:"intel"`
+		}
+		_ = json.Unmarshal(w.Body.Bytes(), &body)
+		return body.Intel
+	}
+
+	if in := intel(); in["enabled"] != false || hits != 0 {
+		t.Fatalf("disabled intel = %v with %d feed requests, want enabled:false and none", in, hits)
+	}
+	if err := db.SetSetting(vulnIntelSetting, "1"); err != nil {
+		t.Fatal(err)
+	}
+	in := intel()
+	cve, _ := in["cves"].(map[string]any)["CVE-2023-4911"].(map[string]any)
+	if in["enabled"] != true || cve["kev"] == nil || cve["epss"] != 0.6 {
+		t.Errorf("enabled intel = %v", in)
+	}
 }
 
 func TestSecurityAPI_UnknownHost(t *testing.T) {

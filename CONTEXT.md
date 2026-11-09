@@ -483,6 +483,14 @@ _Avoid_: Image marketplace, registry browser, Docker search
 Pemeriksaan on-demand di sub-tab Images yang membandingkan digest registry image lokal setiap `repo:tag` dari Docker Hub dengan digest yang kini disajikan Docker Hub untuk tag yang sama, menghasilkan status `up_to_date`, `update_available`, `not_found`, `unknown`, atau `error`; tidak menarik image dan tidak memakai kuota pull.
 _Avoid_: Image scan, auto-update, Watchtower, vulnerability check
 
+**Exploit Intelligence**:
+Penanda opt-in (`vuln_intel_enabled`) pada Security Finding yang CVE-nya tercantum di katalog CISA Known Exploited Vulnerabilities (sedang dieksploitasi) beserta skor EPSS (peluang dieksploitasi dalam 30 hari), diambil server Pantau sekali sehari dari feed publik dan tidak disimpan; host yang tidak melaporkan ID CVE (saat ini selain dnf/yum) berstatus tidak dinilai.
+_Avoid_: Threat feed, CVE scan, vulnerability score, risk score
+
+**Vulnerability Database List**:
+Daftar referensi database dan feed kerentanan dunia (salinan tak diubah dari haxdoggy/vulnerability-databases, CC BY 4.0) yang disematkan di biner dan ditampilkan dari tab Security dengan atribusi serta penanda sumber yang dipakai Pantau.
+_Avoid_: CVE source list, intel catalog, feed directory
+
 **Side Panel**:
 Bilah navigasi tetap di sisi kiri antarmuka Pantau (di bawah header, di atas footer) dengan bagian Hosts, Docker, dan Kubernetes; dapat diciutkan menjadi rel ikon, dan menjadi off-canvas pada layar sempit.
 _Avoid_: Sidebar, menu samping, navigation drawer

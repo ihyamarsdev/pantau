@@ -16,7 +16,7 @@ Sebelum arsitektur ini diterapkan, Pantau belum memiliki visibilitas terpadu men
 1. **Prinsip Agentless, Read-Only, dan Airgapped (Zero-CVE Network Call)**:
    - Pemindaian dieksekusi murni melalui sesi SSH non-interaktif standar menggunakan user SSH terkonfigurasi.
    - **Perintah Baca Saja (Read-Only)**: Seluruh perintah remote bersifat non-destruktif. Sistem dilarang memasang paket baru dan dilarang menjalankan perintah pembaruan repositori jaringan seperti `apt-get update` atau `dnf makecache`. Pemindaian tidak *membutuhkan* `sudo`; bila pengguna SSH bukan root, `sudo -n` (tanpa kata sandi, backoff 24 jam bersama setelah penolakan) dicoba hanya untuk perintah baca yang butuh root: tabel firewall (`ufw status`, `nft list ruleset`, `iptables -S`) dan konfigurasi efektif sshd (`sshd -T`, serta pembacaan `sshd_config` yang berizin `0600` di RHEL).
-   - **Mandiri & Offline (Airgapped)**: Evaluasi sepenuhnya bersandar pada metadata paket lokal yang telah tersedia di host target. Tidak ada pencarian API CVE eksternal atau koneksi internet publik. Pemetaan database kerentanan eksternal hanya dimungkinkan sebagai modul opsional di masa mendatang (*future opt-in*), bukan bagian dari rilis ini.
+   - **Mandiri & Offline (Airgapped)**: Evaluasi sepenuhnya bersandar pada metadata paket lokal yang telah tersedia di host target. Pemindaian sendiri tidak melakukan pencarian API CVE eksternal atau koneksi internet publik. Pemetaan database kerentanan eksternal hanya tersedia sebagai modul opsional yang diaktifkan administrator: tahap pertamanya, intelijen eksploitasi CISA KEV + EPSS di sisi server Pantau, dijelaskan di [ADR 0064](0064-exploit-intelligence-kev-epss.md).
 
 2. **Deteksi Pembaruan Keamanan per Package Manager**:
    - **Debian / Ubuntu (`apt`)**:
@@ -26,7 +26,7 @@ Sebelum arsitektur ini diterapkan, Pantau belum memiliki visibilitas terpadu men
    - **RHEL / CentOS / Rocky / AlmaLinux / Fedora / Amazon Linux (`dnf` / `yum`)**:
      - Menggunakan utilitas native `dnf -q updateinfo list security`, `yum updateinfo list security`, atau `yum --security check-update`.
      - Tingkat keparahan diekstraksi langsung dari klasifikasi upstream vendor: `Critical`, `Important`, `Moderate`, dan `Low`.
-     - Identifier advisori (seperti `RHSA-*`, `ALAS-*`, atau ID CVE) diparsing dan disimpan pada field `advisory`.
+     - Identifier advisori (seperti `RHSA-*`, `ALAS-*`) diparsing dan disimpan pada field `advisory`; ID CVE advisori disimpan terpisah di `cves` (lihat [ADR 0064](0064-exploit-intelligence-kev-epss.md)).
    - **Alpine Linux / Arch Linux / Distro Lain**:
      - Ditetapkan sebagai `status: unsupported` dengan catatan informatif (*note*), namun pemeriksaan hardening tetap dieksekusi.
    - **Distro Legacy (CentOS 6/7, Debian 7+)**:

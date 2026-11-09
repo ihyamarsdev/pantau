@@ -1,0 +1,13 @@
+/* Vulnerability database list (00-vulnintel.js). Tokens come from index.html :root. */
+#vulnDbModal .modal-body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+.vi-bar { display: flex; gap: 8px; align-items: center; }
+.vi-bar input { flex: 1; min-width: 200px; }
+.vi-db-group { margin-top: 8px; font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.vi-db { padding: 10px 12px; border: 1px solid var(--card-border); border-radius: var(--radius); background: var(--card-bg); }
+.vi-db-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.vi-db-title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-weight: 600; }
+.vi-db-title a { color: var(--text); }
+.vi-db-desc { font-size: var(--fs-sm); color: var(--text-muted); overflow-wrap: anywhere; }
+.vi-db-meta { font-size: var(--fs-xs); color: var(--text-faint); overflow-wrap: anywhere; }
+.vi-db-source { margin-top: 8px; font-size: var(--fs-xs); color: var(--text-muted); }
+.vi-empty { padding: 24px; text-align: center; color: var(--text-muted); }

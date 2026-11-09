@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -127,6 +128,8 @@ elif command -v dnf >/dev/null 2>&1; then
     dnf check-update -q 2>&1
     echo "---RPM_QA---"
     rpm -qa --qf '%{NAME}\t%{VERSION}-%{RELEASE}\n' 2>/dev/null
+    echo "---CVE---"
+    dnf -q updateinfo list --security --with-cve 2>&1
 elif command -v yum >/dev/null 2>&1; then
     echo "MGR:yum"
     echo "---SEC---"
@@ -135,6 +138,8 @@ elif command -v yum >/dev/null 2>&1; then
     yum check-update -q 2>&1
     echo "---RPM_QA---"
     rpm -qa --qf '%{NAME}\t%{VERSION}-%{RELEASE}\n' 2>/dev/null
+    echo "---CVE---"
+    yum updateinfo list cves 2>&1
 elif [ -f /lib/apk/db/installed ] || command -v apk >/dev/null 2>&1; then
     echo "MGR:apk"
 elif command -v pacman >/dev/null 2>&1; then
@@ -361,8 +366,9 @@ func parseSecurityScanOutput(stdout string, hostID int64) *store.SecurityScan {
 	case "dnf", "yum":
 		secSub := extractSection(updatesSec, "---SEC---", "---TOTAL---")
 		totSub := extractSection(updatesSec, "---TOTAL---", "---RPM_QA---")
-		rpmQaSub := extractSection(updatesSec, "---RPM_QA---", "")
+		rpmQaSub := extractSection(updatesSec, "---RPM_QA---", "---CVE---")
 		findings, pendingSecurity, pendingTotal, updateNotes = parseRpmUpdates(secSub, totSub, rpmQaSub)
+		attachRpmCVEs(findings, extractSection(updatesSec, "---CVE---", ""))
 	case "softwareupdate":
 		var swReboot bool
 		findings, pendingSecurity, pendingTotal, swReboot, updateNotes = parseSoftwareUpdate(updatesSec, osProductVersion)
@@ -693,6 +699,30 @@ func splitRpmNEVRA(s string) (pkgName, fixedVer string) {
 		return s[:lastDash], s[lastDash+1:]
 	}
 	return s[:secondLastDash], s[secondLastDash+1:]
+}
+
+// attachRpmCVEs sets each finding's CVE IDs from `dnf updateinfo list --security --with-cve` (yum: `updateinfo
+// list cves`), whose rows are "CVE-2026-8932 Moderate/Sec. curl-minimal-7.76.1-40.el9_8.9.x86_64", matched on
+// the package name and fixed version of the finding.
+func attachRpmCVEs(findings []store.SecurityFinding, cveOut string) {
+	byPkg := map[string][]string{}
+	for _, line := range strings.Split(cveOut, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 3 || !strings.HasPrefix(f[0], "CVE-") {
+			continue
+		}
+		name, ver := splitRpmNEVRA(f[len(f)-1])
+		k := name + "\x00" + ver
+		if !slices.Contains(byPkg[k], f[0]) {
+			byPkg[k] = append(byPkg[k], f[0])
+		}
+	}
+	for i := range findings {
+		if ids := byPkg[findings[i].Package+"\x00"+findings[i].FixedVersion]; len(ids) > 0 {
+			slices.Sort(ids)
+			findings[i].CVEs = ids
+		}
+	}
 }
 
 // parseRebootRequired checks Debian reboot-required flag and RHEL needs-restarting exit code.

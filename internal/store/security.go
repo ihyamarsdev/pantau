@@ -17,11 +17,12 @@ type SecuritySeverity struct {
 }
 
 type SecurityFinding struct {
-	Package          string `json:"package"`
-	InstalledVersion string `json:"installed_version"`
-	FixedVersion     string `json:"fixed_version"`
-	Severity         string `json:"severity"` // critical|important|moderate|low|unknown
-	Advisory         string `json:"advisory"` // USN/DSA/RHSA/CVE ids when the package manager exposes them, else ""
+	Package          string   `json:"package"`
+	InstalledVersion string   `json:"installed_version"`
+	FixedVersion     string   `json:"fixed_version"`
+	Severity         string   `json:"severity"`       // critical|important|moderate|low|unknown
+	Advisory         string   `json:"advisory"`       // USN/DSA/RHSA/CVE ids when the package manager exposes them, else ""
+	CVEs             []string `json:"cves,omitempty"` // CVE IDs of the advisory (dnf/yum), sorted
 }
 
 type HardeningCheck struct {

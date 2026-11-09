@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,7 +12,43 @@ import (
 
 	"pantau/internal/inspector"
 	"pantau/internal/store"
+	"pantau/internal/vulnintel"
 )
+
+// vulnIntelSetting opts in to CISA KEV / EPSS lookups ("1"); off by default (they leave the Pantau server).
+const vulnIntelSetting = "vuln_intel_enabled"
+
+type securityIntel struct {
+	Enabled bool `json:"enabled"`
+	*vulnintel.Result
+}
+
+// scanIntel returns the exploit intelligence for the CVEs of a scan, or {enabled:false} when not opted in.
+func (s *Server) scanIntel(ctx context.Context, scan *store.SecurityScan) securityIntel {
+	if v, _ := s.db.GetSetting(vulnIntelSetting); v != "1" {
+		return securityIntel{}
+	}
+	var cves []string
+	for _, f := range scan.Findings {
+		cves = append(cves, f.CVEs...)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	res := s.vuln.Lookup(ctx, cves)
+	return securityIntel{Enabled: true, Result: &res}
+}
+
+// handleVulnDatabases serves GET /api/security/vuln-databases: the embedded list of vulnerability databases with
+// its attribution and the entries Pantau reads.
+func (s *Server) handleVulnDatabases(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"source": vulnintel.Source, "used_by_pantau": vulnintel.UsedByPantau, "databases": vulnintel.Databases(),
+	})
+}
 
 // handleHostSecurity handles GET /api/hosts/{id}/security and POST /api/hosts/{id}/security/scan
 func (s *Server) handleHostSecurity(w http.ResponseWriter, r *http.Request, hostID int64, parts []string) {
@@ -75,6 +112,7 @@ func (s *Server) handleHostSecurity(w http.ResponseWriter, r *http.Request, host
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"scanned": true,
 			"scan":    scan,
+			"intel":   s.scanIntel(r.Context(), scan),
 		})
 		return
 	}
@@ -193,6 +231,7 @@ func (s *Server) handleHostSecurity(w http.ResponseWriter, r *http.Request, host
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"scanned": true,
 			"scan":    updatedScan,
+			"intel":   s.scanIntel(r.Context(), updatedScan),
 		})
 		return
 	}

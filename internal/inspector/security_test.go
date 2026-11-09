@@ -230,6 +230,32 @@ vim-minimal.x86_64       8.2.2637-20.el9           baseos`
 	}
 }
 
+// CVE IDs come from `dnf updateinfo list --security --with-cve` (real AlmaLinux 9 output: advisory rows mixed with
+// CVE rows) and attach only to the finding with the same package and fixed version.
+func TestAttachRpmCVEs(t *testing.T) {
+	findings := []store.SecurityFinding{
+		{Package: "curl-minimal", FixedVersion: "7.76.1-40.el9_8.9", Advisory: "ALSA-2026:92907"},
+		{Package: "glibc", FixedVersion: "2.34-284.el9_8.4", Advisory: "ALSA-2026:95618"},
+		{Package: "glibc", FixedVersion: "2.34-100.el9", Advisory: "ALSA-2025:1"},
+	}
+	attachRpmCVEs(findings, `RHSA-2026:92907 Moderate/Sec. curl-minimal-7.76.1-40.el9_8.9.x86_64
+CVE-2026-8932   Moderate/Sec. curl-minimal-7.76.1-40.el9_8.9.x86_64
+ALSA-2026:92907 Moderate/Sec. curl-minimal-7.76.1-40.el9_8.9.x86_64
+RHSA-2026:95618 Moderate/Sec. glibc-2.34-284.el9_8.4.x86_64
+CVE-2026-95818  Moderate/Sec. glibc-2.34-284.el9_8.4.x86_64
+CVE-2026-8674   Moderate/Sec. glibc-2.34-284.el9_8.4.x86_64
+CVE-2026-8674   Moderate/Sec. glibc-2.34-284.el9_8.4.i686`)
+	if got := strings.Join(findings[0].CVEs, ","); got != "CVE-2026-8932" {
+		t.Errorf("curl CVEs = %q", got)
+	}
+	if got := strings.Join(findings[1].CVEs, ","); got != "CVE-2026-8674,CVE-2026-95818" {
+		t.Errorf("glibc CVEs = %q, want sorted and deduplicated across arches", got)
+	}
+	if findings[2].CVEs != nil {
+		t.Errorf("another fixed version must not inherit CVEs: %v", findings[2].CVEs)
+	}
+}
+
 func TestParseRpmUpdates_LegacyCentOS7(t *testing.T) {
 	// Legacy yum --security check-update format
 	secOut := `Loaded plugins: fastestmirror, security

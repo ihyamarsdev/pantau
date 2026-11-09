@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="/app/ansible.css" />
 <link rel="stylesheet" href="/app/terraform.css" />
 <link rel="stylesheet" href="/app/dockerhub.css" />
+<link rel="stylesheet" href="/app/vulnintel.css" />
 <style>
 @font-face { font-family: 'Inter'; src: url('/vendor/fonts/inter-latin-var.woff2') format('woff2'); font-weight: 100 900; font-style: normal; font-display: swap; }
 @font-face { font-family: 'JetBrains Mono'; src: url('/vendor/fonts/jetbrains-mono-latin-var.woff2') format('woff2'); font-weight: 100 800; font-style: normal; font-display: swap; }
@@ -5377,6 +5378,10 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
               </div>
               <button class="btn btn-primary btn-sm" onclick="saveSecurityScanInterval()" style="margin-left: auto;" data-i18n="save_interval">Save Interval</button>
             </div>
+            <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; font-size: var(--fs-sm); margin-top: 12px;">
+              <input type="checkbox" id="settingVulnIntel" style="width: auto; margin-top: 3px;" onchange="saveVulnIntelSetting(this.checked)" />
+              <span><b data-i18n="vuln_intel_label">CISA KEV and EPSS</b>: <span data-i18n="vuln_intel_desc">mark security findings whose CVEs are exploited in the wild and show their probability of exploitation. The Pantau server downloads these public feeds once a day (needs internet; dnf/yum hosts report CVE IDs).</span></span>
+            </label>
           </div>
         </div>
 
@@ -7125,6 +7130,8 @@ const I18N = {
     "hardening_sshd_password_auth": "SSH Password Authentication",
     "hardening_auto_security_updates": "Automatic Security Updates",
     "hardening_firewall_active": "Firewall Active",
+    "vuln_intel_label": "CISA KEV and EPSS",
+    "vuln_intel_desc": "mark security findings whose CVEs are exploited in the wild and show their probability of exploitation. The Pantau server downloads these public feeds once a day (needs internet; dnf/yum hosts report CVE IDs).",
     "sec_chip_pending": "{n} security update(s) pending",
     "sec_chip_fail": "{n} hardening check(s) failed",
     "sec_chip_warn": "{n} hardening warning(s)",
@@ -8682,6 +8689,8 @@ const I18N = {
     "hardening_sshd_password_auth": "Autentikasi Password SSH",
     "hardening_auto_security_updates": "Pembaruan Keamanan Otomatis",
     "hardening_firewall_active": "Firewall Aktif",
+    "vuln_intel_label": "CISA KEV dan EPSS",
+    "vuln_intel_desc": "tandai temuan keamanan yang CVE-nya sedang dieksploitasi dan tampilkan peluang eksploitasinya. Server Pantau mengunduh feed publik ini sekali sehari (butuh internet; host dnf/yum melaporkan ID CVE).",
     "sec_chip_pending": "{n} pembaruan keamanan tertunda",
     "sec_chip_fail": "{n} pemeriksaan hardening gagal",
     "sec_chip_warn": "{n} peringatan hardening",
@@ -10198,6 +10207,19 @@ async function saveSecurityScanInterval() {
     } else {
       showToast(t('save_failed', 'Failed to save settings'), 'error');
     }
+  } catch (e) {
+    showToast(t('save_failed', 'Failed to save settings') + ': ' + e.message, 'error');
+  }
+}
+
+async function saveVulnIntelSetting(on) {
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vuln_intel_enabled: on ? '1' : '0' })
+    });
+    showToast(res.ok ? t('settings_saved', 'Settings saved successfully') : t('save_failed', 'Failed to save settings'), res.ok ? 'success' : 'error');
   } catch (e) {
     showToast(t('save_failed', 'Failed to save settings') + ': ' + e.message, 'error');
   }
@@ -12755,6 +12777,7 @@ function displayPackagesTable(hostID) {
 }
 
 let currentSecurityScan = null;
+let currentSecurityIntel = null;
 let secCooldownTimer = null;
 
 function updateSecCooldownUI(seconds) {
@@ -12853,14 +12876,15 @@ async function loadSecurityTab() {
   }
 
   currentSecurityScan = data.scan;
-  renderSecurityData(data.scan, host.id);
+  renderSecurityData(data.scan, host.id, data.intel);
   if (cooldownRem > 0) updateSecCooldownUI(cooldownRem);
 }
 
-function renderSecurityData(scan, hostID) {
+function renderSecurityData(scan, hostID, intel) {
   const content = document.getElementById('tabContent');
   if (!content) return;
   currentSecurityScan = scan;
+  currentSecurityIntel = intel || null;
 
   const isStaleCache = scan.repo_cache_age_hours > 168;
 
@@ -12976,6 +13000,7 @@ function renderSecurityData(scan, hostID) {
             <option value="sev_desc">${t('sort_sev_desc', 'Severity: High to Low')}</option>
             <option value="sev_asc">${t('sort_sev_asc', 'Severity: Low to High')}</option>
             <option value="pkg_asc">${t('sort_pkg_asc', 'Package Name (A-Z)')}</option>
+            ${window.VI ? `<option value="exploit">${t('vi_sort', 'Exploitation: KEV, then EPSS')}</option>` : ''}
           </select>
         </div>
       </div>
@@ -13056,7 +13081,7 @@ function renderSecurityData(scan, hostID) {
     <div style="overflow-y: auto; flex: 1;">
       ${bannerHtml}
       ${cardsHtml}
-      ${findingsHtml}
+      ${findingsHtml}${window.VI ? VI.cardHtml(scan, currentSecurityIntel) : ''}
       ${hardeningHtml}
       ${securityExposureHtml()}${window.Fw ? Fw.html() : ''}
       ${notesHtml}
@@ -13068,7 +13093,7 @@ function renderSecurityData(scan, hostID) {
 }
 
 function appendSecurityFooter(content) {
-  content.insertAdjacentHTML('beforeend', securityExposureHtml() + (window.Fw ? Fw.html() : ''));
+  content.insertAdjacentHTML('beforeend', securityExposureHtml() + (window.Fw ? Fw.html() : '') + (window.VI ? VI.cardHtml(null, undefined) : ''));
   if (window.Fw) Fw.render();
 }
 
@@ -13206,6 +13231,7 @@ function filterSecurityFindings() {
     list = list.filter(f => 
       (f.package && f.package.toLowerCase().includes(q)) ||
       (f.advisory && f.advisory.toLowerCase().includes(q)) ||
+      (f.cves || []).some(c => c.toLowerCase().includes(q)) ||
       (f.severity && f.severity.toLowerCase().includes(q))
     );
   }
@@ -13217,6 +13243,9 @@ function filterSecurityFindings() {
     } else if (sort === 'sev_asc') {
       const diff = (sevWeight[String(a.severity).toLowerCase()] || 0) - (sevWeight[String(b.severity).toLowerCase()] || 0);
       return diff !== 0 ? diff : (a.package || '').localeCompare(b.package || '');
+    } else if (sort === 'exploit' && window.VI) {
+      const d = VI.score(b, currentSecurityIntel) - VI.score(a, currentSecurityIntel);
+      return d !== 0 ? d : (sevWeight[String(b.severity).toLowerCase()] || 0) - (sevWeight[String(a.severity).toLowerCase()] || 0);
     } else {
       return (a.package || '').localeCompare(b.package || '');
     }
@@ -13240,6 +13269,7 @@ function filterSecurityFindings() {
             <th style="padding: 8px 12px;">${t('sec_th_fixed', 'Fixed Version')}</th>
             <th style="padding: 8px 12px; width: 110px;">${t('sec_th_severity', 'Severity')}</th>
             <th style="padding: 8px 12px;">${t('sec_th_advisory', 'Advisory')}</th>
+            ${window.VI ? `<th style="padding: 8px 12px;">${t('vi_th', 'CVE / Exploitation')}</th>` : ''}
           </tr>
         </thead>
         <tbody>
@@ -13250,6 +13280,7 @@ function filterSecurityFindings() {
               <td style="padding: 8px 12px; font-family: var(--font-mono); color: var(--success); font-size: 0.8rem;">${escapeHtml(f.fixed_version || '-')}</td>
               <td style="padding: 8px 12px;">${getSecuritySeverityBadge(f.severity)}</td>
               <td style="padding: 8px 12px; font-family: var(--font-mono); font-size: 0.8rem; color: var(--accent-text);">${escapeHtml(f.advisory || '-')}</td>
+              ${window.VI ? `<td style="padding: 8px 12px;">${VI.findingCell(f, currentSecurityIntel)}</td>` : ''}
             </tr>
           `).join('')}
         </tbody>
@@ -13271,7 +13302,7 @@ async function runHostSecurityScan(hostID) {
       showToast(t('sec_scan_complete', 'Security scan complete'), 'success');
       updateSecCooldownUI(60);
       if (currentTab === 'security' && currentHost && currentHost.id === hostID) {
-        renderSecurityData(data.scan, hostID);
+        renderSecurityData(data.scan, hostID, data.intel);
       }
     } else if (res.status === 429) {
       const errData = await res.json().catch(() => ({}));
@@ -17772,6 +17803,8 @@ async function openSettingsModal(tab) {
   if (pollEl) pollEl.value = (data.poll_interval_sec !== undefined && data.poll_interval_sec !== '') ? data.poll_interval_sec : '300';
   const secScanEl = document.getElementById('settingSecurityScanInterval');
   if (secScanEl) secScanEl.value = (data.security_scan_interval_hours !== undefined && data.security_scan_interval_hours !== '') ? data.security_scan_interval_hours : '24';
+  const vulnIntelEl = document.getElementById('settingVulnIntel');
+  if (vulnIntelEl) vulnIntelEl.checked = data.vuln_intel_enabled === '1';
 
   document.getElementById('settingGhEnabled').checked = data.github_backup_enabled === '1';
   document.getElementById('settingGhRepo').value = data.github_repo || '';
@@ -26642,5 +26675,6 @@ langRerenderHooks.push(renderTfWorkspaces, tfRenderWsHead, () => {
 <script src="/app/ansible.js"></script>
 <script src="/app/firewall.js"></script>
 <script src="/app/dockerhub.js"></script>
+<script src="/app/vulnintel.js"></script>
 </body>
 </html>

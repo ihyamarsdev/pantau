@@ -43,6 +43,7 @@ import (
 	"pantau/internal/store"
 	"pantau/internal/transfer"
 	"pantau/internal/updater"
+	"pantau/internal/vulnintel"
 )
 
 var validContainerNameRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]+$`)
@@ -100,6 +101,7 @@ type Server struct {
 	lastInspectAll    time.Time
 	cfClient          func(token string) *cloudflare.Client
 	hub               *dockerhub.Client
+	vuln              *vulnintel.Client
 	ansibleRun        func(ctx context.Context, spec ansible.RunSpec, log io.Writer) (int, error)
 	ansibleAvail      func() (string, string, error)
 	ansibleSync       func(ctx context.Context, g ansible.GitSource) (*ansible.GitSyncResult, error)
@@ -139,6 +141,7 @@ func NewServer(db *store.DB, ins *inspector.Inspector, disp *notify.Dispatcher) 
 		mux:            http.NewServeMux(),
 		cfClient:       cloudflare.New,
 		hub:            dockerhub.New(dockerhub.DefaultHubURL, dockerhub.DefaultIndexURL),
+		vuln:           vulnintel.New(vulnintel.DefaultKEVURL, vulnintel.DefaultEPSSURL),
 		ansibleRun:     ansible.Run,
 		ansibleAvail:   ansible.Available,
 		ansibleSync:    ansible.SyncGit,
@@ -232,6 +235,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/app/firewall.js", serveAppBundle("firewall", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/dockerhub.js", serveAppBundle("dockerhub", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/dockerhub.css", serveAppBundle("dockerhub", ".css", "text/css; charset=utf-8"))
+	s.mux.HandleFunc("/app/vulnintel.js", serveAppBundle("vulnintel", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/vulnintel.css", serveAppBundle("vulnintel", ".css", "text/css; charset=utf-8"))
 
 	// Vendor static assets (airgapped / local cache)
 	vendorHandler := http.StripPrefix("/vendor/", http.FileServer(http.FS(vendorFS())))
@@ -319,6 +324,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/cloudflare/accounts", s.authMiddleware(s.handleCloudflareAccounts))
 	s.mux.HandleFunc("/api/cloudflare/accounts/", s.authMiddleware(s.handleCloudflareAccountRoute))
 	s.mux.HandleFunc("/api/dockerhub/", s.authMiddleware(s.handleDockerHub))
+	s.mux.HandleFunc("/api/security/vuln-databases", s.authMiddleware(s.handleVulnDatabases))
 	// Ansible Playbooks & Runs
 	s.mux.HandleFunc("/api/ansible/status", s.authMiddleware(s.handleAnsibleStatus))
 	s.mux.HandleFunc("/api/ansible/playbooks", s.authMiddleware(s.handleAnsiblePlaybooks))
@@ -2220,6 +2226,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 
 		debounceRuns, _ := s.db.GetSetting("alert_debounce_runs")
+		vulnIntel, _ := s.db.GetSetting(vulnIntelSetting)
 		if debounceRuns == "" {
 			debounceRuns = "1"
 		}
@@ -2252,6 +2259,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			"smtp_to":                      smtpTo,
 			"smtp_security":                smtpSecurity,
 			"alert_debounce_runs":          debounceRuns,
+			vulnIntelSetting:               vulnIntel,
 		})
 	case http.MethodPost:
 		var req map[string]interface{}
@@ -2298,6 +2306,13 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 					v = "720"
 				} else {
 					v = strconv.Itoa(val)
+				}
+			}
+			if k == vulnIntelSetting {
+				if v == "1" || v == "true" {
+					v = "1"
+				} else {
+					v = "0"
 				}
 			}
 			if k == "alert_debounce_runs" {
