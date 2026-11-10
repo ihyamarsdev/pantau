@@ -5104,6 +5104,32 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
   </div>
 </div>
 
+<!-- Bulk Change Group Modal (host multi-select) -->
+<div id="bulkGroupModal" class="modal">
+  <div class="modal-content modal-dialog" style="max-width: 480px;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <svg class="icon"><use href="#i-folder"/></svg>
+        <h3 data-i18n="host_select_group_title" style="margin: 0; font-size: var(--fs-md); font-weight: 600;">Change group</h3>
+      </div>
+      <button class="btn btn-sm btn-ghost btn-icon" onclick="closeModal('bulkGroupModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <p id="bulkGroupDesc" style="font-size: var(--fs-sm); color: var(--text-muted); margin-bottom: 12px; line-height: 1.5;"></p>
+      <div class="form-group">
+        <label data-i18n="host_group">Host Group</label>
+        <input type="text" id="bulkGroupInput" class="input" list="bulkGroupSuggestions" placeholder="e.g. Server Utama, Testing, DB Cluster" data-i18n-placeholder="host_group_ph" onkeydown="if (event.key === 'Enter') submitBulkGroup()" />
+        <datalist id="bulkGroupSuggestions"></datalist>
+        <div class="hint" data-i18n="host_select_group_hint">Leave empty to remove the selected hosts from their group.</div>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+        <button class="btn" onclick="closeModal('bulkGroupModal')" data-i18n="cancel">Cancel</button>
+        <button class="btn btn-primary" id="bulkGroupSaveBtn" onclick="submitBulkGroup()" data-i18n="save">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Global Notes Modal -->
 <div id="globalNotesModal" class="modal">
   <div class="modal-content modal-dialog-md" style="max-width: 600px;">
@@ -6652,6 +6678,11 @@ const I18N = {
     "host_select_done": "Done",
     "host_select_delete": "Delete selected",
     "host_select_deleting": "Deleting {done}/{n}…",
+    "host_select_group": "Change group",
+    "host_select_group_title": "Change group",
+    "host_select_group_desc": "Set the group of {n} selected hosts.",
+    "host_select_group_hint": "Leave empty to remove the selected hosts from their group.",
+    "hosts_group_changed": "Group updated for {n} hosts",
     "confirm_delete_hosts_title": "Delete {n} hosts?",
     "confirm_delete_hosts": "These hosts and their desired state rules, inspection history, alerts and stored scan data will be removed from Pantau. Nothing is changed on the servers. This cannot be undone.",
     "and_n_more": "and {n} more",
@@ -8231,6 +8262,11 @@ const I18N = {
     "host_select_done": "Selesai",
     "host_select_delete": "Hapus yang dipilih",
     "host_select_deleting": "Menghapus {done}/{n}…",
+    "host_select_group": "Ganti grup",
+    "host_select_group_title": "Ganti grup",
+    "host_select_group_desc": "Atur grup untuk {n} host yang dipilih.",
+    "host_select_group_hint": "Kosongkan untuk mengeluarkan host terpilih dari grupnya.",
+    "hosts_group_changed": "Grup diperbarui untuk {n} host",
     "confirm_delete_hosts_title": "Hapus {n} host?",
     "confirm_delete_hosts": "Host ini beserta aturan desired state, riwayat inspeksi, alert, dan data scan yang tersimpan akan dihapus dari Pantau. Tidak ada yang diubah di server. Tindakan ini tidak bisa dibatalkan.",
     "and_n_more": "dan {n} lainnya",
@@ -11586,8 +11622,48 @@ function renderHostSelectBar() {
       : escapeHtml(t('host_select_count', '{n} selected').replace('{n}', n))}</span>
     <button class="btn btn-sm btn-ghost" onclick="selectAllShownHosts()" ${busy ? 'disabled' : ''}>${svgIcon('list-checks', 'icon-sm')} <span>${t('host_select_all', 'Select all shown')}</span></button>
     <button class="btn btn-sm btn-ghost" onclick="selectedHostIds.clear(); renderHosts();" ${busy || !n ? 'disabled' : ''}>${t('host_select_clear', 'Clear')}</button>
+    <button class="btn btn-sm" onclick="openBulkGroupModal()" ${busy || !n ? 'disabled' : ''}>${svgIcon('folder', 'icon-sm')} <span>${t('host_select_group', 'Change group')}</span></button>
     <button class="btn btn-sm btn-danger" onclick="deleteSelectedHosts()" ${busy || !n ? 'disabled' : ''}>${svgIcon('trash-2', 'icon-sm')} <span>${t('host_select_delete', 'Delete selected')}</span></button>
     <button class="btn btn-sm" onclick="toggleHostSelectMode(false)" ${busy ? 'disabled' : ''}>${t('host_select_done', 'Done')}</button>`;
+}
+
+function openBulkGroupModal() {
+  const n = selectedHostIds.size;
+  if (!n || hostBulkDeleting) return;
+  const groups = Array.from(new Set(allRawHosts.map(h => (h.group_name || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  document.getElementById('bulkGroupSuggestions').innerHTML = groups.map(g => `<option value="${escapeHtml(g)}"></option>`).join('');
+  document.getElementById('bulkGroupDesc').textContent = t('host_select_group_desc', 'Set the group of {n} selected hosts.').replace('{n}', n);
+  document.getElementById('bulkGroupInput').value = '';
+  openModal('bulkGroupModal');
+  document.getElementById('bulkGroupInput').focus();
+}
+
+async function submitBulkGroup() {
+  const group = document.getElementById('bulkGroupInput').value.trim();
+  const assignments = Array.from(selectedHostIds).map(id => ({ id, group_name: group }));
+  if (!assignments.length) return;
+  const btn = document.getElementById('bulkGroupSaveBtn');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/hosts/groups', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assignments })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(t('save_host_failed', 'Failed to save host: ') + (data.error || res.status), 'error');
+      return;
+    }
+    showToast(t('hosts_group_changed', 'Group updated for {n} hosts').replace('{n}', assignments.length), 'success');
+    closeModal('bulkGroupModal');
+    toggleHostSelectMode(false);
+    loadHosts();
+  } catch (e) {
+    showToast(t('save_host_failed', 'Failed to save host: ') + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function deleteSelectedHosts() {
