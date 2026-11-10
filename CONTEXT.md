@@ -723,3 +723,7 @@ _Avoid_: Global grep, inventory query, live search
 **Disk Usage Explorer**:
 Penelusuran pemakaian disk per folder (satu tingkat, satu filesystem, seperti `ncdu`) yang dijalankan on-demand dari File Manager untuk menemukan folder penyebab disk penuh.
 _Avoid_: du scan, storage audit, disk report
+
+**Domain Inventory**:
+Daftar domain yang dilayani reverse proxy di sebuah Host (nginx, Caddy, Traefik, termasuk yang berjalan di container Docker), lengkap dengan TLS, port listen, upstream tujuan, dan lokasi konfigurasinya; dikumpulkan on-demand lewat SSH lalu disimpan agar bisa dilihat per Host dan lintas Host tanpa koneksi ulang.
+_Avoid_: DNS records, vhost list, site map

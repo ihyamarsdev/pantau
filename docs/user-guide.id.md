@@ -122,6 +122,7 @@ Ketika jumlah server bertambah banyak:
 - **Host Group**: Kelompokkan host berdasarkan fungsi sistem atau lingkungan (contoh: `Database Cluster`, `Edge Proxies`, `Testing Environment`). Grup akan dipisahkan secara visual baik pada **View Mode** Grid maupun List.
 - **Manual Host Order**: Atur urutan prioritas server utama agar selalu tampil di posisi teratas dashboard melalui pengurutan manual.
 - **Host Note & Global Note**: Gunakan **Host Note** untuk mencatat catatan operasional spesifik per server (misal: `"Master PostgreSQL; node replikasi ada di db-02"`). Gunakan **Global Note** untuk pengumuman sistem bersama atau catatan serah-terima giliran tugas antar-administrator.
+- **Hapus beberapa host sekaligus**: klik **Pilih** di toolbar dashboard, centang host (checkbox, area kosong kartu, atau baris list) atau pakai **Pilih semua yang tampil** (mengikuti pencarian, grup, dan filter status yang aktif), lalu **Hapus yang dipilih**. Pantau meminta konfirmasi sekali dengan daftar nama host, lalu menghapus host beserta aturan, riwayat, dan data scan yang tersimpan; tidak ada yang diubah di server. Host yang gagal dihapus tetap terpilih agar bisa dicoba lagi. **Selesai** keluar dari mode pilih.
 
 ### Host macOS — Prasyarat dan Metrik yang Diukur
 
@@ -415,6 +416,15 @@ Saat menangani kendala konektivitas antar-server, pemblokiran firewall, atau ano
   - Buka melalui tab **Network Diagnostics** di Workspace Modal (dengan host sumber terkunci).
   - Buka secara global via tombol **`⚡ NetDiag`** di header navbar atas (dengan pemilih host sumber aktif).
 - **Proteksi Konkurensi & Keamanan**: Menggunakan kunci singleflight in-memory per host untuk mencegah kehabisan sesi SSH. Host yang sedang offline secara otomatis dinonaktifkan dari daftar target antar-host.
+
+### Tab Domain: Inventaris Domain nginx, Caddy & Traefik
+
+Tab **Domain** pada sebuah host menampilkan semua domain yang dilayani reverse proxy-nya, lengkap dengan TLS, port listen, upstream tujuan, dan lokasi konfigurasinya. Saat tab pertama kali dibuka Pantau langsung memindai host; **Scan again** memperbaruinya. Hasil disimpan, sehingga tampilan lintas host dan Fleet Search berjalan tanpa koneksi ulang.
+- **nginx** (host dan container): `nginx -T` (jika gagal `sudo -n nginx -T`, lalu file yang bisa dibaca di `/etc/nginx`); satu baris per `server_name`, blok `upstream` diterjemahkan ke server tujuannya, server catch-all `_` dilewati, dan sumbernya ditampilkan sebagai `file:baris` dengan tombol **Open** untuk menyunting.
+- **Caddy** (host dan container): konfigurasi yang sedang berjalan dari admin API (`localhost:2019`), jika tidak ada `caddy adapt` dari `/etc/caddy/Caddyfile`, jika tidak ada alamat site di Caddyfile.
+- **Traefik**: aturan router dari label Docker (`Host(...)`, `HostRegexp(...)`, v1 `Host:`) dan API Traefik di `127.0.0.1:8080` jika bisa diakses; juga label **caddy-docker-proxy** dan container **nginx-proxy** dengan `VIRTUAL_HOST`.
+- Docker membutuhkan user SSH yang boleh menjalankan `docker` (atau `sudo docker` tanpa password); maksimal 10 container proxy dibaca per scan. Masalah (tidak ada izin, admin API mati) ditampilkan sebagai badge proxy merah dan peringatan, bukan menggagalkan scan. Ingress Kubernetes tidak termasuk.
+- **Domain di semua host** (Command Palette, atau **All hosts** di tab) menampilkan semua domain yang tersimpan beserta host-nya, bisa disaring, dan **Scan all hosts** memperbarui seluruh host (3 host sekaligus). Fleet Search juga bisa mencari domain (filter **Domains**).
 
 ### Tab Docker: Container, Statistik, Volume & Jaringan
 

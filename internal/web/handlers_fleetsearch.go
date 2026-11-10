@@ -34,9 +34,9 @@ func (s *Server) handleFleetSearch(w http.ResponseWriter, r *http.Request) {
 	if kind == "" {
 		kind = store.FleetSearchAll
 	}
-	if kind != store.FleetSearchAll && kind != store.FleetSearchPackage && kind != store.FleetSearchContainer {
+	if kind != store.FleetSearchAll && kind != store.FleetSearchPackage && kind != store.FleetSearchContainer && kind != store.FleetSearchDomain {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
-			"ok": false, "error": "kind must be all, package or container",
+			"ok": false, "error": "kind must be all, package, container or domain",
 		})
 		return
 	}
@@ -71,5 +71,6 @@ func (s *Server) handleFleetSearch(w http.ResponseWriter, r *http.Request) {
 		"total_hosts":            res.TotalHosts,
 		"hosts_without_packages": res.HostsWithoutPackages,
 		"hosts_without_docker":   res.HostsWithoutDocker,
+		"hosts_without_domains":  res.HostsWithoutDomains,
 	})
 }

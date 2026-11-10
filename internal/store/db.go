@@ -438,6 +438,27 @@ func (d *DB) migrate() error {
 		PRIMARY KEY (host_id, name)
 	);
 
+	-- Domains served by the reverse proxies of a host (nginx, Caddy, Traefik), stored on
+	-- demand so the fleet view and the fleet search answer without SSH. Both tables are
+	-- re-derivable by a fresh scan and stay out of the System Snapshot.
+	CREATE TABLE IF NOT EXISTS web_scans (
+		host_id INTEGER PRIMARY KEY REFERENCES hosts(id) ON DELETE CASCADE,
+		scanned_at DATETIME NOT NULL,
+		proxies TEXT NOT NULL DEFAULT '[]',
+		warnings TEXT NOT NULL DEFAULT '[]'
+	);
+	CREATE TABLE IF NOT EXISTS host_domains (
+		host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+		domain TEXT NOT NULL,
+		proxy TEXT NOT NULL DEFAULT '',
+		location TEXT NOT NULL DEFAULT '',
+		container TEXT NOT NULL DEFAULT '',
+		tls INTEGER NOT NULL DEFAULT 0,
+		data TEXT NOT NULL DEFAULT '{}'
+	);
+	CREATE INDEX IF NOT EXISTS idx_host_domains_host ON host_domains(host_id);
+	CREATE INDEX IF NOT EXISTS idx_host_domains_domain ON host_domains(domain);
+
 	CREATE TABLE IF NOT EXISTS ssh_keys (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL UNIQUE,

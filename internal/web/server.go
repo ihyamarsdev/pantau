@@ -247,6 +247,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/app/fleetsearch.css", serveAppBundle("fleetsearch", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/diskusage.js", serveAppBundle("diskusage", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/diskusage.css", serveAppBundle("diskusage", ".css", "text/css; charset=utf-8"))
+	s.mux.HandleFunc("/app/domains.js", serveAppBundle("domains", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/domains.css", serveAppBundle("domains", ".css", "text/css; charset=utf-8"))
 
 	// Vendor static assets (airgapped / local cache)
 	vendorHandler := http.StripPrefix("/vendor/", http.FileServer(http.FS(vendorFS())))
@@ -403,6 +405,7 @@ func (s *Server) routes() {
 	s.registerPortForwardRoutes()
 	s.registerFleetSearchRoutes()
 	s.registerDiskUsageRoutes()
+	s.registerDomainRoutes()
 }
 
 func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {

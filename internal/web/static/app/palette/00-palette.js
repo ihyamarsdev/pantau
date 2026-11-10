@@ -44,6 +44,8 @@
       pal_act_docker: 'Docker',
       pal_act_security: 'Security',
       pal_act_packages: 'Packages',
+      pal_act_domains: 'Domains',
+      pal_cmd_domains: 'Domains across hosts',
       pal_act_inspect: 'Inspect now',
       pal_act_portfwd: 'Port forward',
       pal_act_edit: 'Edit host',
@@ -77,6 +79,8 @@
       pal_act_docker: 'Docker',
       pal_act_security: 'Keamanan',
       pal_act_packages: 'Paket',
+      pal_act_domains: 'Domain',
+      pal_cmd_domains: 'Domain di semua host',
       pal_act_inspect: 'Periksa sekarang',
       pal_act_portfwd: 'Port forward',
       pal_act_edit: 'Ubah host',
@@ -186,6 +190,7 @@
     const sec = g('openHostSecurity');
     if (sec) acts.push({ kind: 'action', group: 'actions', title: t('pal_act_security', 'Security'), sub: h.name, icon: 'shield', run: () => sec(h.id) });
     tabAction(t('pal_act_packages', 'Packages'), 'package', 'packages');
+    tabAction(t('pal_act_domains', 'Domains'), 'globe', 'domains');
     const insp = g('inspectHost');
     if (insp) acts.push({ kind: 'action', group: 'actions', title: t('pal_act_inspect', 'Inspect now'), sub: h.name, icon: 'radar', run: () => insp(h.id) });
     if (window.PortFwd && typeof window.PortFwd.open === 'function') {
@@ -216,6 +221,9 @@
     }
     if (window.PortFwd && typeof window.PortFwd.open === 'function') {
       add(t('pal_cmd_portfwd', 'Port forwards'), 'plug', () => window.PortFwd.open());
+    }
+    if (window.Domains && typeof window.Domains.openAll === 'function') {
+      add(t('pal_cmd_domains', 'Domains across hosts'), 'globe', () => window.Domains.openAll());
     }
     return cmds;
   }
@@ -250,19 +258,19 @@
       items.push(hostItem(s.h, 'hosts'));
     });
 
-    const cmds = globalCommands();
+    globalCommands().forEach((c) => {
+      if (!tk.length) { items.push(c); return; }
+      const sc = scoreFields(tk, [c.title]);
+      if (sc >= 0) items.push(c);
+    });
+    // Fleet search is the catch-all, so it goes after every command that really matched.
     if (q.length >= 2 && window.FleetSearch && typeof window.FleetSearch.open === 'function') {
-      cmds.unshift({
+      items.push({
         kind: 'command', group: 'commands',
         title: t('pal_cmd_fleet', "Search packages & containers across hosts for '{q}'").replace('{q}', q),
         sub: '', icon: 'search', run: () => window.FleetSearch.open(q)
       });
     }
-    cmds.forEach((c) => {
-      if (!tk.length) { items.push(c); return; }
-      const sc = scoreFields(tk, [c.title]);
-      if (sc >= 0) items.push(c);
-    });
     return items.slice(0, MAX_ITEMS);
   }
 

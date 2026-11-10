@@ -16,6 +16,7 @@
 <link rel="stylesheet" href="/app/portfwd.css" />
 <link rel="stylesheet" href="/app/fleetsearch.css" />
 <link rel="stylesheet" href="/app/diskusage.css" />
+<link rel="stylesheet" href="/app/domains.css" />
 <style>
 @font-face { font-family: 'Inter'; src: url('/vendor/fonts/inter-latin-var.woff2') format('woff2'); font-weight: 100 900; font-style: normal; font-display: swap; }
 @font-face { font-family: 'JetBrains Mono'; src: url('/vendor/fonts/jetbrains-mono-latin-var.woff2') format('woff2'); font-weight: 100 800; font-style: normal; font-display: swap; }
@@ -553,6 +554,12 @@ pre { background: var(--code-bg); padding: 12px; border-radius: 6px; font-family
 .view-mode-toggle .view-btn { background: transparent; border: none; border-radius: 4px; padding: 0 10px; height: 100%; display: inline-flex; align-items: center; justify-content: center; color: var(--text-muted); cursor: pointer; font-size: 0.85rem; }
 .view-mode-toggle .view-btn.active { background: var(--card-border); color: var(--text); }
 .file-filter-toolbar { display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; }
+.host-select-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; position: fixed; left: 50%; bottom: 56px; transform: translateX(-50%); z-index: 900; max-width: calc(100vw - 32px); padding: 8px 12px; border: 1px solid var(--accent-ring); background: var(--card-bg); box-shadow: var(--shadow-lg); border-radius: var(--radius-lg); font-size: var(--fs-sm); }
+.host-select-bar .hsb-count { font-weight: 600; color: var(--text); margin-right: 8px; }
+body.host-select-on #hostGrid, body.host-select-on #hostList { padding-bottom: 72px; }
+.host-select-cb { width: 16px; height: 16px; margin: 0; cursor: pointer; accent-color: var(--primary); flex-shrink: 0; }
+.host-card.host-selected { outline: 2px solid var(--primary); outline-offset: -2px; }
+.host-list-table tr.host-selected td { background: var(--accent-soft); }
 .file-search-box { display: flex; align-items: center; gap: 8px; background: var(--surface-2); border: 1px solid var(--card-border); border-radius: var(--radius-sm); padding: 0 10px; height: 32px; box-sizing: border-box; flex: 1; max-width: 320px; min-width: 180px; transition: border-color var(--dur); }
 .file-search-box:focus-within { border-color: var(--border-strong); }
 .file-search-box input { border: none; background: transparent; padding: 0 4px; outline: none; height: 100%; box-sizing: border-box; font-size: var(--fs-sm); color: var(--text); width: 100%; font-family: inherit; }
@@ -1802,6 +1809,16 @@ header {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.host-ip-copy {
+  cursor: copy;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.host-ip-copy:hover { color: var(--accent-text); text-decoration: underline dotted; }
+.host-ip-copy .icon { opacity: 0; transition: opacity var(--dur); }
+.host-ip-copy:hover .icon, .host-ip-copy:focus-visible .icon { opacity: 1; }
 .host-card-header-actions {
   display: inline-flex;
   align-items: center;
@@ -3834,12 +3851,14 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
           <option value="score_asc" data-i18n="sort_score_asc">Score: Lowest</option>
           <option value="status" data-i18n="sort_status">Status</option>
         </select>
+        <button class="btn btn-sm" id="hostSelectBtn" onclick="toggleHostSelectMode()" title="Select hosts" data-i18n-title="host_select_title" style="height: 36px; display: inline-flex; align-items: center; gap: 4px;"><svg class="icon icon-sm"><use href="#i-list-checks"/></svg> <span data-i18n="host_select_btn">Select</span></button>
         <div class="view-mode-toggle">
           <button class="btn btn-sm view-btn active" id="viewGridBtn" onclick="setViewMode('grid')" title="Grid View"><svg class="icon icon-sm"><use href="#i-layout-grid"/></svg></button>
           <button class="btn btn-sm view-btn" id="viewListBtn" onclick="setViewMode('list')" title="List View"><svg class="icon icon-sm"><use href="#i-list"/></svg></button>
         </div>
       </div>
     </div>
+    <div id="hostSelectBar" class="host-select-bar" style="display: none;" role="region" aria-live="polite"></div>
 
     <div id="hostGrid" class="grid"></div>
     <div id="hostList" class="host-list-view" style="display: none;"></div>
@@ -5234,6 +5253,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <div class="tab" data-tab="desired" onclick="switchTab('desired')"><svg class="icon icon-sm"><use href="#i-list-checks"/></svg><span data-i18n="tab_desired">Desired State (Drift)</span></div>
         <div class="tab" data-tab="docker" onclick="switchTab('docker')"><svg class="icon icon-sm"><use href="#i-container"/></svg><span data-i18n="tab_docker">Docker</span></div>
         <div class="tab" data-tab="systemd" onclick="switchTab('systemd')"><svg class="icon icon-sm"><use href="#i-cog"/></svg><span data-i18n="tab_systemd">Services</span></div>
+        <div class="tab" data-tab="domains" onclick="switchTab('domains')"><svg class="icon icon-sm"><use href="#i-globe"/></svg><span data-i18n="tab_domains">Domains</span></div>
         <div class="tab" data-tab="timeline" onclick="switchTab('timeline')"><svg class="icon icon-sm"><use href="#i-history"/></svg><span data-i18n="tab_timeline">Incident Timeline</span></div>
         <div class="tab" data-tab="runs" onclick="switchTab('runs')"><svg class="icon icon-sm"><use href="#i-clock"/></svg><span data-i18n="tab_runs">Inspection Runs</span></div>
         <div class="tab" data-tab="files" onclick="switchTab('files')"><svg class="icon icon-sm"><use href="#i-folder"/></svg><span data-i18n="tab_files">File Manager</span></div>
@@ -6384,6 +6404,10 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 
 <script>
 function svgIcon(name, cls) { return '<svg class="icon' + (cls ? ' ' + cls : '') + '" aria-hidden="true"><use href="#i-' + name + '"/></svg>'; }
+// Host multi-select state; declared first because renderHosts can run before the bulk-delete code below.
+let hostSelectMode = false;
+const selectedHostIds = new Set();
+let hostBulkDeleting = null; // { done, total } while a bulk delete runs
 const I18N = {
   en: {
     "brand_subtitle": "Agentless Server Management",
@@ -6620,6 +6644,20 @@ const I18N = {
     "edit_host": "Edit Host",
     "edit_host_title": "Edit Host",
     "confirm_delete_host": "Delete this host?",
+    "host_select_btn": "Select",
+    "host_select_title": "Select several hosts (e.g. to delete them)",
+    "host_select_count": "{n} selected",
+    "host_select_all": "Select all shown",
+    "host_select_clear": "Clear",
+    "host_select_done": "Done",
+    "host_select_delete": "Delete selected",
+    "host_select_deleting": "Deleting {done}/{n}…",
+    "confirm_delete_hosts_title": "Delete {n} hosts?",
+    "confirm_delete_hosts": "These hosts and their desired state rules, inspection history, alerts and stored scan data will be removed from Pantau. Nothing is changed on the servers. This cannot be undone.",
+    "and_n_more": "and {n} more",
+    "delete_n_hosts": "Delete {n} hosts",
+    "hosts_deleted": "{n} hosts deleted",
+    "hosts_delete_failed": "Could not delete: {names}",
     "ssh_test_success": "SSH Connection Successful!",
     "ssh_test_failed": "SSH Connection FAILED:\n",
     "inspect_failed": "Inspection failed: ",
@@ -6845,6 +6883,8 @@ const I18N = {
     "global_pub_key_desc": "This public key is placed into <code>~/.ssh/authorized_keys</code> on target servers for agentless SSH authentication.",
     "copy_key": "Copy Key",
     "copied": "Copied!",
+    "copy_ip": "Click to copy IP",
+    "ip_copied": "IP copied",
     "change_admin_pass": "Change Admin Password",
     "current_password": "Current Password",
     "new_password": "New Password",
@@ -7178,6 +7218,7 @@ const I18N = {
     "service_process": "Service",
     "service_unknown_hint": "Owner process not visible. Pantau tries passwordless sudo automatically; otherwise the SSH user must be root (or able to run sudo without a password).",
     "tab_systemd": "Services",
+    "tab_domains": "Domains",
     "systemd_title": "systemd Services",
     "systemd_loading": "Reading services...",
     "systemd_unavailable": "Could not read services",
@@ -8182,6 +8223,20 @@ const I18N = {
     "edit_host": "Ubah Host",
     "edit_host_title": "Ubah Host",
     "confirm_delete_host": "Hapus host ini?",
+    "host_select_btn": "Pilih",
+    "host_select_title": "Pilih beberapa host (misalnya untuk dihapus)",
+    "host_select_count": "{n} dipilih",
+    "host_select_all": "Pilih semua yang tampil",
+    "host_select_clear": "Kosongkan",
+    "host_select_done": "Selesai",
+    "host_select_delete": "Hapus yang dipilih",
+    "host_select_deleting": "Menghapus {done}/{n}…",
+    "confirm_delete_hosts_title": "Hapus {n} host?",
+    "confirm_delete_hosts": "Host ini beserta aturan desired state, riwayat inspeksi, alert, dan data scan yang tersimpan akan dihapus dari Pantau. Tidak ada yang diubah di server. Tindakan ini tidak bisa dibatalkan.",
+    "and_n_more": "dan {n} lainnya",
+    "delete_n_hosts": "Hapus {n} host",
+    "hosts_deleted": "{n} host dihapus",
+    "hosts_delete_failed": "Gagal dihapus: {names}",
     "ssh_test_success": "Koneksi SSH Berhasil!",
     "ssh_test_failed": "Koneksi SSH GAGAL:\n",
     "inspect_failed": "Inspeksi gagal: ",
@@ -8407,6 +8462,8 @@ const I18N = {
     "global_pub_key_desc": "Kunci publik ini ditempelkan ke file <code>~/.ssh/authorized_keys</code> di server target untuk otentikasi SSH agentless.",
     "copy_key": "Salin Kunci",
     "copied": "Tersalin!",
+    "copy_ip": "Klik untuk menyalin IP",
+    "ip_copied": "IP disalin",
     "change_admin_pass": "Ubah Password Admin",
     "current_password": "Password Saat Ini",
     "new_password": "Password Baru",
@@ -8740,6 +8797,7 @@ const I18N = {
     "service_process": "Layanan",
     "service_unknown_hint": "Proses pemilik tidak terlihat. Pantau mencoba sudo tanpa password secara otomatis; jika tidak bisa, user SSH harus root (atau boleh menjalankan sudo tanpa password).",
     "tab_systemd": "Layanan",
+    "tab_domains": "Domain",
     "systemd_title": "Layanan systemd",
     "systemd_loading": "Membaca layanan...",
     "systemd_unavailable": "Tidak dapat membaca layanan",
@@ -10239,6 +10297,10 @@ async function saveVulnIntelSetting(on) {
 }
 
 function renderHosts() {
+  // Drop selections of hosts that no longer exist (deleted elsewhere or filtered by reload).
+  for (const id of selectedHostIds) {
+    if (!allRawHosts.some(h => h.id === id)) selectedHostIds.delete(id);
+  }
   const prefs = getUIPrefs();
   const viewMode = prefs.viewMode || 'grid';
   const sortVal = document.getElementById('sortSelect')?.value || 'manual';
@@ -10258,6 +10320,7 @@ function renderHosts() {
     grid.style.display = 'grid';
     renderGridView(grid, isManualSort);
   }
+  renderHostSelectBar();
 }
 
 function groupHosts(hosts) {
@@ -10367,7 +10430,7 @@ function renderGridView(grid, isManualSort) {
       else if (h.status === 'healthy' && (ramPct > 90 || diskPct > 85)) problemClass = 'problem-critical';
       else if (isStale) problemClass = 'problem-stale';
 
-      card.className = `card host-card ${problemClass}`;
+      card.className = `card host-card ${problemClass}${hostSelectMode && selectedHostIds.has(h.id) ? ' host-selected' : ''}`;
 
       if (isManualSort) {
         card.draggable = true;
@@ -10416,12 +10479,13 @@ function renderGridView(grid, isManualSort) {
         <div class="host-card-header">
           <div class="host-card-identity">
             <div class="host-card-title-row">
+              ${hostSelectMode ? `<input type="checkbox" class="host-select-cb" data-host-id="${h.id}" ${selectedHostIds.has(h.id) ? 'checked' : ''} aria-label="${escapeHtml(h.name)}" />` : ''}
               ${isManualSort ? `<span class="drag-handle" title="${t('drag_handle_title')}">${svgIcon('grip-vertical', 'icon-sm')}</span>` : ''}
               <span class="status-dot ${h.status === 'healthy' ? 'online' : (h.status === 'down' ? 'offline' : 'warn')}"></span>
               <span class="host-card-name">${escapeHtml(h.name)}</span>
               ${h.group_name ? `<span class="badge" style="font-size: var(--fs-xs); background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--card-border);">${escapeHtml(h.group_name)}</span>` : ''}
             </div>
-            <div class="host-card-sub">${escapeHtml(h.host)}:${h.port} <span style="opacity: 0.7;">(${escapeHtml(h.user)})</span></div>
+            <div class="host-card-sub">${hostIpCopyHtml(h.host)}:${h.port} <span style="opacity: 0.7;">(${escapeHtml(h.user)})</span></div>
           </div>
           <div class="host-card-header-actions">
             <span class="badge badge-${h.status}">${h.status}</span>
@@ -10633,7 +10697,7 @@ function renderListView(listContainer, isManualSort) {
       else if (h.status === 'down') problemClass = 'problem-down';
       else if (isStale) problemClass = 'problem-stale';
 
-      tr.className = problemClass;
+      tr.className = problemClass + (hostSelectMode && selectedHostIds.has(h.id) ? ' host-selected' : '');
 
       if (isManualSort) {
         tr.draggable = true;
@@ -10671,15 +10735,16 @@ function renderListView(listContainer, isManualSort) {
       const hasActiveSession = workspaceSessions.some(s => s.hostId === h.id);
 
       tr.onclick = (e) => {
-        if (!e.target.closest('button, .dropdown, a, input, .dropdown-menu')) {
-          openHostDetail(h.id);
-        }
+        if (e.target.closest('button, .dropdown, a, input, .dropdown-menu, [data-copy-ip]')) return;
+        if (hostSelectMode) toggleHostSelected(h.id, !selectedHostIds.has(h.id));
+        else openHostDetail(h.id);
       };
 
       tr.innerHTML = `
         ${isManualSort ? `<td style="text-align: center;"><span class="drag-handle" title="${t('drag_handle_title')}">${svgIcon('grip-vertical', 'icon-sm')}</span></td>` : ''}
         <td>
           <div style="display: inline-flex; align-items: center; gap: 6px;">
+            ${hostSelectMode ? `<input type="checkbox" class="host-select-cb" data-host-id="${h.id}" ${selectedHostIds.has(h.id) ? 'checked' : ''} aria-label="${escapeHtml(h.name)}" />` : ''}
             <span class="status-dot ${h.status === 'healthy' ? 'online' : (h.status === 'down' ? 'offline' : 'warn')}"></span>
             <span class="badge badge-${h.status}">${h.status}</span>
           </div>
@@ -10687,7 +10752,7 @@ function renderListView(listContainer, isManualSort) {
         <td>
           <div style="display: flex; flex-direction: column; gap: 2px;">
             <b style="color: var(--text);">${escapeHtml(h.name)}</b>
-            <span class="mono text-muted" style="font-size: var(--fs-xs);">${escapeHtml(h.host)}:${h.port}</span>
+            <span class="mono text-muted" style="font-size: var(--fs-xs);">${hostIpCopyHtml(h.host)}:${h.port}</span>
           </div>
         </td>
         <td>
@@ -11483,6 +11548,103 @@ async function deleteHost(id) {
   loadHosts();
 }
 
+// ===== Host multi-select & bulk delete =====
+function toggleHostSelectMode(on) {
+  hostSelectMode = on === undefined ? !hostSelectMode : !!on;
+  if (!hostSelectMode) selectedHostIds.clear();
+  const btn = document.getElementById('hostSelectBtn');
+  if (btn) btn.classList.toggle('btn-primary', hostSelectMode);
+  renderHosts();
+}
+
+function toggleHostSelected(id, on) {
+  if (on) selectedHostIds.add(id); else selectedHostIds.delete(id);
+  // Update in place instead of re-rendering every card.
+  document.querySelectorAll(`[data-host-id="${id}"]`).forEach(el => {
+    if (el.classList.contains('host-select-cb')) el.checked = on;
+    else if (el.matches('.host-card, tr')) el.classList.toggle('host-selected', on);
+  });
+  renderHostSelectBar();
+}
+
+function selectAllShownHosts() {
+  getFilteredAndSortedHosts().forEach(h => selectedHostIds.add(h.id));
+  renderHosts();
+}
+
+function renderHostSelectBar() {
+  const bar = document.getElementById('hostSelectBar');
+  if (!bar) return;
+  document.body.classList.toggle('host-select-on', hostSelectMode);
+  if (!hostSelectMode) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+  const n = selectedHostIds.size;
+  const busy = !!hostBulkDeleting;
+  bar.style.display = 'flex';
+  bar.innerHTML = `
+    <span class="hsb-count">${busy
+      ? escapeHtml(t('host_select_deleting', 'Deleting {done}/{n}…').replace('{done}', hostBulkDeleting.done).replace('{n}', hostBulkDeleting.total))
+      : escapeHtml(t('host_select_count', '{n} selected').replace('{n}', n))}</span>
+    <button class="btn btn-sm btn-ghost" onclick="selectAllShownHosts()" ${busy ? 'disabled' : ''}>${svgIcon('list-checks', 'icon-sm')} <span>${t('host_select_all', 'Select all shown')}</span></button>
+    <button class="btn btn-sm btn-ghost" onclick="selectedHostIds.clear(); renderHosts();" ${busy || !n ? 'disabled' : ''}>${t('host_select_clear', 'Clear')}</button>
+    <button class="btn btn-sm btn-danger" onclick="deleteSelectedHosts()" ${busy || !n ? 'disabled' : ''}>${svgIcon('trash-2', 'icon-sm')} <span>${t('host_select_delete', 'Delete selected')}</span></button>
+    <button class="btn btn-sm" onclick="toggleHostSelectMode(false)" ${busy ? 'disabled' : ''}>${t('host_select_done', 'Done')}</button>`;
+}
+
+async function deleteSelectedHosts() {
+  const hosts = allRawHosts.filter(h => selectedHostIds.has(h.id));
+  if (!hosts.length || hostBulkDeleting) return;
+  const names = hosts.map(h => h.name);
+  const shown = names.slice(0, 10).join(', ') + (names.length > 10 ? ' ' + t('and_n_more', 'and {n} more').replace('{n}', names.length - 10) : '');
+  const ok = await showConfirm({
+    title: t('confirm_delete_hosts_title', 'Delete {n} hosts?').replace('{n}', hosts.length),
+    message: t('confirm_delete_hosts', 'These hosts will be removed from Pantau.') + '\n\n' + shown,
+    confirmText: t('delete_n_hosts', 'Delete {n} hosts').replace('{n}', hosts.length)
+  });
+  if (!ok) return;
+
+  hostBulkDeleting = { done: 0, total: hosts.length };
+  renderHostSelectBar();
+  const failed = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < hosts.length) {
+      const h = hosts[next++];
+      try {
+        const res = await fetch('/api/hosts/' + h.id, { method: 'DELETE' });
+        if (res.ok) selectedHostIds.delete(h.id); else failed.push(h.name);
+      } catch (e) {
+        failed.push(h.name);
+      }
+      hostBulkDeleting.done++;
+      renderHostSelectBar();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, hosts.length) }, worker));
+  hostBulkDeleting = null;
+
+  const deleted = hosts.length - failed.length;
+  if (deleted) showToast(t('hosts_deleted', '{n} hosts deleted').replace('{n}', deleted), 'success');
+  if (failed.length) showToast(t('hosts_delete_failed', 'Could not delete: {names}').replace('{names}', failed.join(', ')), 'error', 8000);
+  if (!failed.length) hostSelectMode = false; // failed hosts stay selected for a retry
+  const btn = document.getElementById('hostSelectBtn');
+  if (btn) btn.classList.toggle('btn-primary', hostSelectMode);
+  await loadHosts();
+  renderHostSelectBar();
+}
+
+document.addEventListener('change', (e) => {
+  const cb = e.target.closest && e.target.closest('.host-select-cb');
+  if (cb) toggleHostSelected(Number(cb.dataset.hostId), cb.checked);
+});
+// In select mode a click on a card's empty area toggles it (buttons, links and the IP keep their own action).
+document.addEventListener('click', (e) => {
+  if (!hostSelectMode || !e.target.closest) return;
+  const card = e.target.closest('#hostGrid .host-card[data-host-id]');
+  if (!card || e.target.closest('button, a, input, .dropdown, .dropdown-menu, [data-copy-ip], .host-card-note')) return;
+  const id = Number(card.dataset.hostId);
+  toggleHostSelected(id, !selectedHostIds.has(id));
+});
+
 async function testHostSSH(id) {
   closeAllDropdowns();
   showToast(t('testing_ssh', 'Testing SSH connection...'), 'info', 2000);
@@ -11628,9 +11790,8 @@ async function openHostDetail(id) {
   document.getElementById('detailHostName').innerText = currentHost.name;
   const sub = document.getElementById('detailHostSubtitle');
   if (sub) {
-    const parts = [currentHost.host];
-    if (currentHost.os_info) parts.push(currentHost.os_info);
-    sub.innerText = parts.join(' • ');
+    const extra = currentHost.os_info ? ' • ' + escapeHtml(currentHost.os_info) : '';
+    sub.innerHTML = hostIpCopyHtml(currentHost.host) + extra;
   }
   const badge = document.getElementById('detailHostBadge');
   badge.className = 'badge badge-' + currentHost.status;
@@ -12316,6 +12477,8 @@ function switchTab(tab, presetID) {
   } else if (tab === 'docker') {
     content.innerHTML = `<div class="empty-state"><div class="empty-state-icon">${svgIcon('container', 'icon-xl')}</div><div class="empty-state-desc">${t('docker_loading')}</div></div>`;
     loadDockerTab();
+  } else if (tab === 'domains') {
+    if (window.Domains) Domains.renderTab(d.host);
   } else if (tab === 'systemd') {
     content.innerHTML = `<div class="empty-state"><div class="empty-state-icon">${svgIcon('cog', 'icon-xl')}</div><div class="empty-state-desc">${t('systemd_loading', 'Reading services...')}</div></div>`;
     loadSystemdTab();
@@ -15709,6 +15872,21 @@ async function copyTextToClipboard(text) {
   } catch (e) {}
   document.body.removeChild(ta);
 }
+
+// Host address that copies itself on click; a capture-phase listener keeps the click from also opening the card/row.
+function hostIpCopyHtml(ip) {
+  return `<span class="host-ip-copy" role="button" tabindex="0" data-copy-ip="${escapeHtml(ip)}" title="${escapeHtml(t('copy_ip', 'Click to copy IP'))}">${escapeHtml(ip)}${svgIcon('copy', 'icon-xs')}</span>`;
+}
+function onHostIpCopy(e) {
+  const el = e.target.closest && e.target.closest('[data-copy-ip]');
+  if (!el || (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ')) return;
+  e.preventDefault();
+  e.stopPropagation();
+  copyTextToClipboard(el.dataset.copyIp);
+  showToast(t('ip_copied', 'IP copied') + ': ' + el.dataset.copyIp, 'success', 1500);
+}
+document.addEventListener('click', onHostIpCopy, true);
+document.addEventListener('keydown', onHostIpCopy, true);
 
 function flattenToSingleLine(text) {
   if (!text) return '';
@@ -26720,5 +26898,6 @@ langRerenderHooks.push(renderTfWorkspaces, tfRenderWsHead, () => {
 <script src="/app/portfwd.js"></script>
 <script src="/app/fleetsearch.js"></script>
 <script src="/app/diskusage.js"></script>
+<script src="/app/domains.js"></script>
 </body>
 </html>

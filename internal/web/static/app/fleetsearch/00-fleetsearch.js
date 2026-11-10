@@ -17,8 +17,8 @@
   const I = {
     en: {
       fs_title: 'Fleet Search',
-      fs_intro: 'Search packages and containers across every host, using the data Pantau already stored. Nothing is scanned while you search.',
-      fs_ph: 'Search a package or container name (2+ characters)',
+      fs_intro: 'Search packages, containers and domains across every host, using the data Pantau already stored. Nothing is scanned while you search.',
+      fs_ph: 'Search a package, container or domain name (2+ characters)',
       fs_all: 'All',
       fs_packages: 'Packages',
       fs_containers: 'Containers',
@@ -31,13 +31,15 @@
       fs_truncated: 'More results were found. Narrow the search to see the rest.',
       fs_no_pkg_data: '{n} of {total} hosts have no package data yet. Open a host and use "Rescan Packages" to refresh it.',
       fs_no_docker_data: "{n} of {total} hosts have no container data yet. Container data refreshes on every inspection.",
+      fs_domains: 'Domains',
+      fs_no_domain_data: '{n} of {total} hosts have not been scanned for domains — open All domains → Scan all hosts.',
       fs_data_age: 'data from {age}',
       fs_never: 'no data age'
     },
     id: {
       fs_title: 'Pencarian Fleet',
-      fs_intro: 'Cari paket dan container di seluruh host, memakai data yang sudah disimpan Pantau. Tidak ada pemindaian saat mencari.',
-      fs_ph: 'Cari nama paket atau container (minimal 2 karakter)',
+      fs_intro: 'Cari paket, container, dan domain di seluruh host, memakai data yang sudah disimpan Pantau. Tidak ada pemindaian saat mencari.',
+      fs_ph: 'Cari nama paket, container, atau domain (minimal 2 karakter)',
       fs_all: 'Semua',
       fs_packages: 'Paket',
       fs_containers: 'Container',
@@ -50,6 +52,8 @@
       fs_truncated: 'Ada hasil lain. Persempit pencarian untuk melihat sisanya.',
       fs_no_pkg_data: '{n} dari {total} host belum punya data paket. Buka sebuah host lalu pakai "Pindai Ulang Paket" untuk memperbaruinya.',
       fs_no_docker_data: '{n} dari {total} host belum punya data container. Data container diperbarui pada setiap inspeksi.',
+      fs_domains: 'Domain',
+      fs_no_domain_data: '{n} dari {total} host belum dipindai domain — buka Semua domain → Pindai semua host.',
       fs_data_age: 'data dari {age}',
       fs_never: 'tanpa usia data'
     }
@@ -59,7 +63,8 @@
   const KINDS = [
     { id: 'all', key: 'fs_all' },
     { id: 'package', key: 'fs_packages' },
-    { id: 'container', key: 'fs_containers' }
+    { id: 'container', key: 'fs_containers' },
+    { id: 'domain', key: 'fs_domains' }
   ];
 
   function modalHtml() {
@@ -122,16 +127,17 @@
   }
 
   function hostRow(h, kind) {
-    const tab = kind === 'container' ? 'docker' : 'packages';
+    const tab = kind === 'container' ? 'docker' : (kind === 'domain' ? 'domains' : 'packages');
     const group = h.group ? ` · ${esc(h.group)}` : '';
     const version = h.version ? ` · ${esc(h.version)}` : '';
     const containers = (h.containers || []).length
       ? ' · ' + h.containers.map((c) => `${esc(c.name)}${c.state ? ' (' + esc(c.state) + ')' : ''}`).join(', ')
       : '';
+    const detail = h.detail ? `<span class="fs-host-detail">${esc(h.detail)}</span>` : '';
     return `
       <button class="fs-host" data-host-id="${esc(h.host_id)}" data-tab="${tab}">
         <span class="fs-host-name">${icon('server')} ${esc(h.name)}</span>
-        <span class="fs-host-meta">${group}${version}${containers}</span>
+        <span class="fs-host-meta">${group}${version}${containers}${detail}</span>
         <span class="fs-host-age" title="${esc(h.data_age || '')}">${icon('clock')} ${esc(ageLabel(h.data_age))}</span>
       </button>`;
   }
@@ -148,7 +154,7 @@
     const parts = groups.map((g) => {
       const count = g.host_count || (g.hosts || []).length;
       const countLabel = count === 1 ? t('fs_host', '{n} host') : t('fs_hosts', '{n} hosts');
-      const kindIcon = g.kind === 'container' ? 'container' : 'package';
+      const kindIcon = g.kind === 'container' ? 'container' : (g.kind === 'domain' ? 'globe' : 'package');
       const version = g.version ? ' <span class="fs-group-version">' + esc(g.version) + '</span>' : '';
       return `
         <div class="fs-group">
@@ -187,6 +193,9 @@
     }
     if (d.hosts_without_docker > 0) {
       notes.push(`<div class="fs-note-line">${icon('info')} <span>${esc(fill(t('fs_no_docker_data'), { n: d.hosts_without_docker, total: d.total_hosts }))}</span></div>`);
+    }
+    if (d.hosts_without_domains > 0) {
+      notes.push(`<div class="fs-note-line">${icon('info')} <span>${esc(fill(t('fs_no_domain_data'), { n: d.hosts_without_domains, total: d.total_hosts }))}</span></div>`);
     }
     box.innerHTML = renderResults(d) + notes.join('');
   }
@@ -230,6 +239,8 @@
   async function openHost(hostID, tab) {
     try {
       closeModal('fleetSearchModal');
+      // openHostDetail restores the remembered tab, so set it first.
+      if (typeof setHostActiveTab === 'function') setHostActiveTab(hostID, tab);
       if (typeof openHostDetail === 'function') await openHostDetail(hostID);
       if (typeof switchTab === 'function') switchTab(tab);
     } catch (e) {

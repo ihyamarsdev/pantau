@@ -1,0 +1,36 @@
+/* Domains tab + fleet dialog (00-domains.js). Tokens come from index.html :root. */
+.dm-loading { display: flex; align-items: center; gap: 8px; padding: 32px; justify-content: center; color: var(--text-muted); font-size: var(--fs-sm); }
+.dm-loading .spinner { display: inline-flex; }
+.dm-err { display: flex; align-items: center; gap: 6px; background: var(--danger-soft); border: 1px solid var(--danger-border); border-radius: var(--radius); padding: 10px 12px; color: var(--danger); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.dm-head { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 10px; }
+.dm-head-left { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+.dm-banner { margin-bottom: 8px; }
+.dm-head-right { display: flex; gap: 8px; align-items: center; }
+.dm-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+.dm-age { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--text-muted); white-space: nowrap; }
+.dm-filter { margin: 8px 0; }
+.dm-filter input { width: 100%; }
+.dm-warnings { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.dm-warn { display: flex; align-items: center; gap: 6px; background: var(--warning-soft); border: 1px solid var(--warning-border); border-radius: var(--radius); padding: 8px 10px; color: var(--warning); font-size: var(--fs-xs); }
+.dm-fail { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--danger); padding: 2px 0; }
+.dm-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.dm-table th { text-align: left; font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--card-border); white-space: nowrap; }
+.dm-table td { padding: 6px 8px; border-bottom: 1px solid var(--card-border); vertical-align: top; }
+.dm-table tbody tr:hover { background: var(--surface-2); }
+.dm-domain-cell .dm-domain-wrap { display: flex; align-items: center; gap: 6px; }
+.dm-domain { font-family: var(--font-mono); color: var(--accent-text); text-decoration: none; overflow-wrap: anywhere; }
+.dm-domain:hover { text-decoration: underline; }
+.dm-domain-plain { color: var(--text-muted); }
+.dm-container { font-size: var(--fs-xs); color: var(--text-muted); font-family: var(--font-mono); }
+.dm-group { font-size: var(--fs-xs); color: var(--text-muted); }
+.dm-upstreams { font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.dm-source { font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.dm-source .mono { color: var(--text-muted); }
+.dm-all-head { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.dm-all-counts { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: var(--fs-sm); color: var(--text-muted); }
+.dm-count { display: inline-flex; align-items: center; gap: 5px; }
+.dm-count-warn { color: var(--warning); }
+.dm-all-filters { display: flex; gap: 8px; margin: 10px 0; flex-wrap: wrap; }
+.dm-all-filters input { flex: 1; min-width: 180px; }
+.dm-progress { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-muted); padding: 4px 0; }
+.dm-hostlink { padding: 0; font-size: var(--fs-sm); }

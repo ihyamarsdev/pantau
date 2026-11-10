@@ -102,6 +102,12 @@
   word-break: break-word;
 }
 
+.fs-host-detail {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+
 .fs-host-age {
   margin-left: auto;
   display: inline-flex;

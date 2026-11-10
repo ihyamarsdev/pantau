@@ -20,6 +20,7 @@ const (
 	FleetSearchAll       = "all"
 	FleetSearchPackage   = "package"
 	FleetSearchContainer = "container"
+	FleetSearchDomain    = "domain"
 )
 
 // FleetSearchHost is one host that carries the matched item.
@@ -29,6 +30,8 @@ type FleetSearchHost struct {
 	Group   string     `json:"group"`
 	Version string     `json:"version,omitempty"`
 	DataAge *time.Time `json:"data_age,omitempty"` // when this host's data was collected
+	// Detail is a short line describing the match (domains only).
+	Detail string `json:"detail,omitempty"`
 	// Containers of this host inside an image group (one entry per container).
 	Containers []FleetContainer `json:"containers,omitempty"`
 }
@@ -57,6 +60,7 @@ type FleetSearchResult struct {
 	TotalHosts           int                `json:"total_hosts"`
 	HostsWithoutPackages int                `json:"hosts_without_packages"`
 	HostsWithoutDocker   int                `json:"hosts_without_docker"`
+	HostsWithoutDomains  int                `json:"hosts_without_domains"`
 }
 
 // likePattern escapes the LIKE wildcards so a query matches them literally.
@@ -124,8 +128,9 @@ func (b *fleetGroupBuilder) list() []FleetSearchGroup {
 	return out
 }
 
-// SearchFleet searches the stored inventory. kind is one of all|package|container,
-// limit caps the number of returned groups (truncated reports that more matched).
+// SearchFleet searches the stored inventory. kind is one of
+// all|package|container|domain, limit caps the number of returned groups
+// (truncated reports that more matched).
 func (d *DB) SearchFleet(query, kind string, limit int) (*FleetSearchResult, error) {
 	if limit <= 0 {
 		limit = 200
@@ -146,11 +151,18 @@ func (d *DB) SearchFleet(query, kind string, limit int) (*FleetSearchResult, err
 		if err := d.fleetSearchContainers(b, tokens); err != nil {
 			return nil, err
 		}
+	case FleetSearchDomain:
+		if err := d.fleetSearchDomains(b, tokens); err != nil {
+			return nil, err
+		}
 	default:
 		if err := d.fleetSearchPackages(b, tokens); err != nil {
 			return nil, err
 		}
 		if err := d.fleetSearchContainers(b, tokens); err != nil {
+			return nil, err
+		}
+		if err := d.fleetSearchDomains(b, tokens); err != nil {
 			return nil, err
 		}
 	}
@@ -174,6 +186,10 @@ func (d *DB) SearchFleet(query, kind string, limit int) (*FleetSearchResult, err
 	res.HostsWithoutDocker, err = d.countHostsWithout(`(SELECT 1 FROM host_containers c WHERE c.host_id = h.id)
 		OR (SELECT 1 FROM docker_stacks s WHERE s.host_id = h.id)
 		OR (SELECT 1 FROM actual_items a WHERE a.host_id = h.id AND a.kind = 'container')`)
+	if err != nil {
+		return nil, err
+	}
+	res.HostsWithoutDomains, err = d.countHostsWithout(`(SELECT 1 FROM host_domains d WHERE d.host_id = h.id)`)
 	if err != nil {
 		return nil, err
 	}

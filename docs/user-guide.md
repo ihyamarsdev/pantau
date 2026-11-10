@@ -122,6 +122,7 @@ As your fleet grows:
 - **Host Group**: Categorize hosts by functional tiers or environments (e.g., `Database Cluster`, `Edge Proxies`, `Staging`). Groups render as distinct visual partitions in both Grid and List **View Mode**.
 - **Manual Host Order**: Click and drag or prioritize mission-critical hosts to the top of the dashboard.
 - **Host Note & Global Note**: Use **Host Note** for server-specific maintenance checklists (e.g., `"Primary PostgreSQL; failover standby is db-02"`). Use **Global Note** for cluster-wide operational announcements and shift handovers.
+- **Delete several hosts at once**: click **Select** in the dashboard toolbar, tick hosts (checkbox, a card's empty area, or a list row) or use **Select all shown** (it follows the current search, group and status filters), then **Delete selected**. Pantau asks once, listing the names, and removes the hosts with their rules, history and stored scan data; nothing changes on the servers. Hosts that could not be deleted stay selected so you can retry. **Done** leaves selection mode.
 
 ### macOS Hosts — Prerequisites and What is Measured
 
@@ -415,6 +416,15 @@ When troubleshooting server connectivity issues, firewall blocking, or cross-dat
   - Open from the **Network Diagnostics** tab in any Host Workspace Modal (with source host locked).
   - Open globally via the **`⚡ NetDiag`** button in the top navigation header cluster (with host picker).
 - **Concurrency & Safety Guards**: Employs an in-memory singleflight lock per host to prevent SSH session saturation. Offline hosts are automatically disabled in inter-host target dropdowns.
+
+### Domains Tab: nginx, Caddy & Traefik Domain Inventory
+
+The **Domains** tab of a host lists every domain its reverse proxies serve, with TLS, listen ports, upstream targets and where each one is configured. The first time the tab is opened Pantau scans the host; **Scan again** refreshes it. Results are stored, so the fleet view and Fleet Search work without connecting again.
+- **nginx** (host and containers): `nginx -T` (falling back to `sudo -n nginx -T`, then to the readable files in `/etc/nginx`); one row per `server_name`, `upstream` blocks are resolved to their servers, `_` catch-all servers are skipped, and the source is shown as `file:line` with **Open** to edit it.
+- **Caddy** (host and containers): the running config from the admin API (`localhost:2019`), else `caddy adapt` of `/etc/caddy/Caddyfile`, else the Caddyfile site addresses.
+- **Traefik**: router rules from Docker labels (`Host(...)`, `HostRegexp(...)`, v1 `Host:`) and the Traefik API on `127.0.0.1:8080` when it is reachable; also **caddy-docker-proxy** labels and **nginx-proxy** `VIRTUAL_HOST` containers.
+- Docker needs the SSH user to run `docker` (or passwordless `sudo docker`); at most 10 proxy containers are read per scan. Problems (no permission, admin API off) are shown as red proxy badges and warnings instead of failing the scan. Kubernetes ingresses are not included.
+- **Domains across hosts** (Command Palette, or **All hosts** in the tab) lists every stored domain with its host, filterable, and **Scan all hosts** refreshes the whole fleet (3 hosts at a time). Fleet Search also finds domains (filter **Domains**).
 
 ### Docker Tab: Containers, Stats, Volumes & Networks
 
