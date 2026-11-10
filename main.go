@@ -154,6 +154,31 @@ func resolveListen(flagListen string, flagSet bool) (cfg string, bind string, er
 	return cfg, cfg, nil
 }
 
+// resolveForwardPorts parses the -forward-ports range (min-max). An empty
+// value or "0" disables port forwarding.
+func resolveForwardPorts(spec string) (min, max int, err error) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" || spec == "0" {
+		return 0, 0, nil
+	}
+	parts := strings.SplitN(spec, "-", 2)
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("invalid -forward-ports %q: expected a range like 15000-15019", spec)
+	}
+	min, err = strconv.Atoi(strings.TrimSpace(parts[0]))
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid -forward-ports %q: %w", spec, err)
+	}
+	max, err = strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid -forward-ports %q: %w", spec, err)
+	}
+	if min < 1 || max > 65535 || max < min {
+		return 0, 0, fmt.Errorf("invalid -forward-ports %q: ports must be 1-65535 and max must not be below min", spec)
+	}
+	return min, max, nil
+}
+
 // isLoopbackAddr reports whether the configured bind address stays on the local machine.
 func isLoopbackAddr(cfg string) bool {
 	if cfg == "localhost" {
@@ -218,6 +243,8 @@ func main() {
 	portFlag := flag.Int("port", 8080, "HTTP server port")
 	listenFlag := flag.String("listen", "127.0.0.1", "HTTP server bind address (IP address or localhost) [env: PANTAU_LISTEN]")
 	tunnelPortFlag := flag.Int("tunnel-port", 0, "Remote Web Port Tunnel port, a separate origin from the UI (default: first free port after -port)")
+	forwardPortsFlag := flag.String("forward-ports", "15000-15019", "Local port range for SSH port forwarding to this computer (e.g. 15000-15019); empty or 0 disables [env: PANTAU_FORWARD_PORTS]")
+
 	dbFlag := flag.String("db", "pantau.db", "SQLite database file path")
 	openBrowserFlag := flag.Bool("open", runtime.GOOS == "windows", "Open default browser on start")
 	disable2FAFlag := flag.Bool("disable-2fa", false, "Emergency bypass flag to disable 2FA")
@@ -231,6 +258,17 @@ func main() {
 			listenFlagSet = true
 		}
 	})
+	forwardPortsSet := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "forward-ports" {
+			forwardPortsSet = true
+		}
+	})
+	if !forwardPortsSet {
+		if env := strings.TrimSpace(os.Getenv("PANTAU_FORWARD_PORTS")); env != "" {
+			*forwardPortsFlag = env
+		}
+	}
 
 	ver := resolveVersion()
 	if *versionFlag {
@@ -289,6 +327,11 @@ func main() {
 	listenCfg, listenBind, err := resolveListen(*listenFlag, listenFlagSet)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ %v\n", err)
+		os.Exit(1)
+	}
+	fwdMin, fwdMax, fwdErr := resolveForwardPorts(*forwardPortsFlag)
+	if fwdErr != nil {
+		fmt.Fprintf(os.Stderr, "❌ %v\n", fwdErr)
 		os.Exit(1)
 	}
 
@@ -385,6 +428,10 @@ func main() {
 	}
 	server.StartTerraformDriftScheduler(ctx)
 	server.StartTerraformAuditSink(ctx)
+	if fwdMax > 0 {
+		server.SetPortForwardRange(listenBind, fwdMin, fwdMax)
+	}
+
 	server.SetDocsFS(embeddedDocs)
 	listener, port, err := listenPort(listenBind, port, portExplicit)
 	if err != nil {
@@ -455,6 +502,10 @@ func main() {
 				}
 			}()
 		}
+		if fwdMax > 0 {
+			fmt.Printf("🔌 Port forwarding on %s (local ports %d-%d)\n", displayHost, fwdMin, fwdMax)
+		}
+
 		fmt.Println()
 		if err := httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {
 			logger.Error("system", "", "HTTP server error: "+err.Error())

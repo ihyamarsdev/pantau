@@ -216,6 +216,7 @@ Pantau inspects remote hosts via non-interactive SSH commands, continuously vali
 - **Interactive Terminal Links**: Native link detection in `xterm.js` via `term.registerLinkProvider` without third-party vendor bloat. Supports `Ctrl+Click` (Linux/Windows) and `Cmd+Click` (macOS) to open public URLs directly in new browser tabs without interfering with terminal text selection.
 - **Remote Web Port Tunneling**: Agentless HTTP and WebSocket reverse proxy (`/api/tunnel/:hostId/:port/*`) streaming over OpenSSH RFC 4254 `direct-tcpip` channels (`golang.org/x/crypto/ssh` `DialContext`). Access remote private web applications (`localhost:port` or `127.0.0.1:port`) securely from your desktop browser without exposing public firewall ports. Tunnels are served on their own port (`-tunnel-port`, default: first free port after `-port`), a separate browser origin, so a tunneled web app cannot call Pantau's API; the session cookie is stripped before it reaches the remote app.
 - **Zero-Handshake Connection Pooling**: Caches SSH tunnel transports per host with transparent auto-reconnect fallback, eliminating 100–300ms connection latency across sequential web assets (CSS, JS, images).
+- **Port Forward to This Computer** (like `ssh -L`): open a non-HTTP service of a host (Postgres, Redis, MySQL, …) on a local port from the `-forward-ports` range (default `15000-15019`) and point DBeaver, `psql` or `redis-cli` at `127.0.0.1:<port>`. Created from the host menu, the terminal **Ports** dropdown or the Command Palette; forwards live in memory and end when Pantau stops.
 - **Native WebSocket Hijacking**: Full-duplex bidirectional streaming supporting HTTP status `101 Switching Protocols` out of the box for modern development servers (Vite HMR, Next.js, Jupyter).
 - **Zero-Configuration Remote Browser Bridge**: Automated OSC 1337 (`OpenURL`) and OSC 777 escape sequence receiver routing CLI tool browser requests (`gh auth login`, `xdg-open`, Python `webbrowser`, AWS SSO, `npm login`) directly to the client's desktop browser without headless text-browser (`w3m`/`lynx`) traps. Requests for a remote loopback URL ask for confirmation before a tunnel is opened.
 - **Silent Shell Environment Auto-Provisioning**: Non-intrusive provisioning of `/tmp/pantau-browser` and silent environment injection (`BROWSER`, `GH_BROWSER`) across login shells with zero console echo.
@@ -324,6 +325,7 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
       - "127.0.0.1:8081:8081"
+      - "127.0.0.1:15000-15019:15000-15019"
     volumes:
       - pantau-data:/data
     environment:
@@ -379,6 +381,7 @@ systemctl enable --now pantau
 | `-port` | `PANTAU_PORT` (or `PORT`) | `8080` | HTTP listening port (auto-scans `8080`–`8099` on default) |
 | `-listen` | `PANTAU_LISTEN` | `127.0.0.1` | Bind address (IP address or `localhost`). Use `0.0.0.0` to reach Pantau from other machines; the UI must still be opened via `localhost` or an IP address (other host names are rejected with HTTP 403) |
 | `-tunnel-port` | - | first free port after `-port` | Port of the Remote Web Port Tunnel (separate origin from the UI, same bind address) |
+| `-forward-ports` | `PANTAU_FORWARD_PORTS` | `15000-15019` | Local port range for Port Forward to This Computer (same bind address as `-listen`); empty or `0` disables it |
 | `-db` | `PANTAU_DB` (or `DB_PATH`) | `pantau.db` | Path to SQLite database file |
 | `-open` | - | `true` (Windows) / `false` | Automatically open default web browser on launch |
 | `-disable-2fa` | - | `false` | Emergency bypass flag to disable TOTP 2FA directly from host terminal |

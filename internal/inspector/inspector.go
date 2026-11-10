@@ -203,6 +203,12 @@ func (ins *Inspector) InspectHostWithTimeout(hostID int64, timeout time.Duration
 		return err
 	}
 
+	// 3. Refresh the stored container listing for the fleet search. Cheap and
+	// best-effort: a docker error leaves the stored rows untouched.
+	if deadline, ok := ctx.Deadline(); ok {
+		ins.collectHostContainers(host, runner, min(time.Until(deadline), dockerProbeTimeout))
+	}
+
 	duration := time.Since(startTime).Milliseconds()
 	host.LastDurationMs = duration
 
@@ -1803,7 +1809,7 @@ func (ins *Inspector) ListDockerContainers(hostID int64) ([]DockerContainer, err
 	}
 	defer runner.Close()
 
-	stdout, stderr, exitCode, err := runner.Exec(dockerShell(`docker ps -a --no-trunc --format '{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}'`))
+	stdout, stderr, exitCode, err := runner.Exec(dockerShell(dockerPSCommand))
 	if err != nil {
 		return nil, err
 	}
@@ -1814,8 +1820,58 @@ func (ins *Inspector) ListDockerContainers(hostID int64) ([]DockerContainer, err
 		}
 		return nil, fmt.Errorf("%s", msg)
 	}
-	return parseDockerPS(stdout), nil
+	containers := parseDockerPS(stdout)
+	ins.saveHostContainers(host, containers)
+	return containers, nil
 }
+
+// dockerPSCommand lists every container (running or not) with its image and status.
+const dockerPSCommand = `docker ps -a --no-trunc --format '{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}'`
+
+// dockerNotInstalled is printed by the inspection probe when docker is absent.
+const dockerNotInstalled = "__PANTAU_NO_DOCKER__"
+
+// dockerProbeCommand lists the containers and reports a missing docker instead
+// of failing, so the inspection can tell "no docker" from "docker is broken".
+const dockerProbeCommand = `command -v docker >/dev/null 2>&1 || { echo ` + dockerNotInstalled + `; exit 0; }
+` + dockerPSCommand
+
+// saveHostContainers stores the container listing of a host for the fleet search.
+func (ins *Inspector) saveHostContainers(host *store.Host, cs []DockerContainer) {
+	rows := make([]store.HostContainer, 0, len(cs))
+	now := time.Now()
+	for _, c := range cs {
+		rows = append(rows, store.HostContainer{HostID: host.ID, Name: c.Name, Image: c.Image, State: c.State, SeenAt: now})
+	}
+	if err := ins.db.ReplaceHostContainers(host.ID, rows); err != nil {
+		logger.Warn("inspect", host.Name, "store containers failed: "+err.Error())
+	}
+}
+
+// collectHostContainers refreshes the stored container listing of a host.
+// It never fails the inspection: on a docker error the stored rows stay untouched.
+func (ins *Inspector) collectHostContainers(host *store.Host, runner sshrunner.Runner, timeout time.Duration) {
+	if timeout <= 0 {
+		return
+	}
+	stdout, stderr, exitCode, err := runner.ExecTimeout(dockerShell(dockerProbeCommand), timeout)
+	if err != nil {
+		logger.Debug("inspect", host.Name, "container listing skipped: "+err.Error())
+		return
+	}
+	if exitCode != 0 {
+		logger.Debug("inspect", host.Name, "docker ps failed, keeping stored containers: "+strings.TrimSpace(stderr))
+		return
+	}
+	if strings.Contains(stdout, dockerNotInstalled) {
+		ins.saveHostContainers(host, nil)
+		return
+	}
+	ins.saveHostContainers(host, parseDockerPS(stdout))
+}
+
+// dockerProbeTimeout caps the container listing of one inspection.
+const dockerProbeTimeout = 20 * time.Second
 
 func parseDockerPS(out string) []DockerContainer {
 	containers := []DockerContainer{}

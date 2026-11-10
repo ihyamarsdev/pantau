@@ -268,6 +268,13 @@ Pantau provides agentless software inventory visibility across multiple Linux di
   - **Non-Destructive Philosophy**: Pantau avoids destructive web-based package uninstalls that could trigger cascading dependency failures. Operators are encouraged to use the built-in Terminal Dock or establish Desired State rules for compliance.
 
 
+### Fleet Search (Packages & Containers Across Hosts)
+
+Answer questions like "which hosts still have `openssl` 1.1?" or "who runs `postgres:13`?" without logging in anywhere: open the Command Palette (`Ctrl+K`), type at least 2 characters and pick **Search packages & containers across hosts**.
+- Results are grouped per package version or container image, each with the hosts that have it (group, version or container name and state) and how old that host's data is. Click a host to open it on its Packages or Docker tab. Filter with **All / Packages / Containers**.
+- Nothing is scanned while you search: packages come from the last package scan of each host (run **Rescan Packages** to refresh), containers from the last inspection (running containers and their images are recorded on every inspection, and when the Docker tab is opened) plus `container` desired rules and remembered Compose projects. Hosts without data are counted in a note.
+- Up to 500 results per search (`GET /api/search?q=&kind=all|package|container&limit=`).
+
 ### Host Security Scan & Hardening Checks
 
 Pantau provides agentless, read-only security visibility across remote hosts, discovering pending security updates, reboot requirements, repository cache freshness, and 4 essential system hardening checks—operating 100% airgapped without third-party agents, without root/sudo privileges, and without outbound CVE database queries.
@@ -367,6 +374,7 @@ When a drift or alert requires hands-on investigation:
 - **Toolbar Ports Dropdown (`🌐 Ports`)**: Access private web applications running on the target host by opening the `🌐 Ports` dropdown on the terminal toolbar. Enter any remote port number (1-65535) and click **Buka** to launch a reverse proxy tunnel session. Frequently accessed ports are saved automatically to local storage for quick access. Tunnels open on Pantau's separate tunnel port (`-tunnel-port`, default: the first free port after the UI port, printed at startup), a different browser origin from the UI, so a remote web app cannot call Pantau's API; Pantau's session cookie is not forwarded to the remote app.
 - **Zero-Configuration Remote Browser Bridge**: CLI utilities running on remote servers (`gh auth login`, `xdg-open`, Python `webbrowser`, AWS SSO, `npm login`) automatically launch real desktop browser tabs on your client computer via terminal escape protocols (OSC 1337 / OSC 777), completely eliminating unwanted console text-browsers (`w3m`/`lynx`). When the requested URL is a loopback address on the remote host (`localhost`, `127.x`, `::1`), Pantau first asks for confirmation (host and port shown) before opening it through the tunnel.
 - **Working Directory Synchronization**: Synchronizes active working directory via shell window titles and OSC 7 ANSI escape sequences.
+- **Port Forward to This Computer** (like `ssh -L`): for non-HTTP services (Postgres, Redis, MySQL, …) open **Port Forward** from the host card menu, **Forward port to this computer…** in the `🌐 Ports` dropdown, or the Command Palette. Pick the remote port (and optionally a remote host as seen from that server, default `127.0.0.1`); Pantau listens on the first free local port of the `-forward-ports` range (default `15000-15019`) and shows the address to use, e.g. `psql -h 127.0.0.1 -p 15000`. The dialog lists all active forwards with connections, traffic and last error, and **Stop** ends one. Forwards bind on the same address as the UI (`-listen`), live in memory only (they end when Pantau stops), and are stopped when their host is deleted. Docker: the compose file publishes the range on `127.0.0.1` only.
 - **Modal Stacking & Escape Key**: Child action dialogs (preset forms, rule modals, notes) dynamically stack above parent modals and maximized terminal docks. Pressing `Escape` hierarchically dismisses the top-most active dialog before passing keyboard input to lower layers.
 
 ### In-App Activity Console & Live Telemetry Stream
@@ -427,6 +435,14 @@ The **Images** sub-tab has two Docker Hub buttons ([ADR-0063](adr/0063-docker-hu
 - **Check updates** compares every local Docker Hub image (`nginx:1.28`, `bitnami/redis:7`, `docker.io/…`) with the digest Docker Hub currently serves for its tag, and adds a badge to the Status column: **Update available** (the tag now points to a different image; hover for its push date, and **Pull update** pulls it), **Up to date**, **Not on Docker Hub** (the tag does not exist there, e.g. a local build), **Not comparable** (the engine recorded no registry digest, e.g. `docker load`), or **Check failed** (with the reason). Images from other registries (ghcr.io, a private registry) get no badge. The summary line shows how many updates are available. The check pulls nothing and does not count against the pull quota; it stops at the first Docker Hub refusal (rate limit, unreachable) instead of spending the API limit, and asks at most 100 tags per check.
 - A pulled update does not change running containers: recreate them (for Compose projects: **Stacks → Update**).
 - Not supported: private repositories and `docker login`, other registries, scheduled checks or notifications. A local build that reuses a Docker Hub name (e.g. `nginx:latest`) shows **Update available**, and **Pull update** replaces that local tag.
+
+### Command Palette (Ctrl+K)
+
+Press `Ctrl+K` (`Cmd+K` on macOS) or click the search icon in the header to jump anywhere without scrolling the dashboard:
+- **Hosts**: type part of a host name, address or group (fuzzy, all words must match) and press `Enter` to open it. The last 5 opened hosts are listed first when the query is empty (stored in the browser).
+- **Host actions**: the chevron on a host row (or `→`) opens Overview, Terminal, Files, Docker, Security, Packages, Inspect now, Port forward and Edit host for that host. `Esc` or `Backspace` on an empty query goes back.
+- **Commands**: Inspect all hosts, Bulk exec, Add host, Import hosts, Settings, Documentation, switch section (Hosts, Docker, Kubernetes, Cloudflare, Ansible, Terraform), Port forwards, and with 2+ characters **Search packages & containers across hosts** (Fleet Search).
+- `Ctrl+K` is not intercepted inside the terminal (where it is bash kill-line) or the code editor.
 
 ### Global Side Panel, Docker & Kubernetes Management
 
@@ -1138,6 +1154,13 @@ The SFTP File Manager includes enhanced navigation and visual ergonomics:
 - **Interactive Breadcrumb Bar**: Click any folder segment in the breadcrumb path (e.g., `📁 /` &rarr; `var` &rarr; `www` &rarr; `html`) to jump directly to any parent directory without pressing "Up" repeatedly.
 - **Contextual File Icons**: File rows display type-aware icons based on extension (🐚 scripts, ⚙️ configs/json/yaml, 📝 logs/text, 🗜️ archives, 🖼️ media, 💻 source code).
 - **Sticky Table Header**: Column headers and sort controls remain visible while scrolling through long directories.
+
+### Disk Usage Explorer
+
+Click **Disk usage** in the File Manager toolbar to see which folders take space in the current directory (like `ncdu`):
+- Runs `du -x -k` one level deep on that host, on demand only (nothing is scheduled or cached), stays on the same filesystem, and uses the File Manager's current access user (run as another user via `sudo -n -u`).
+- Folders are sorted largest first with a proportional bar and share of the total; click a row to drill down, use the up button to go back, and **Open in file manager** for a row or the current path.
+- Limits: one scan per host at a time (a second one is refused until the first finishes), at most 500 entries per level, and a 55 s time limit. Unreadable folders (permission denied), a scan that hit the time limit and a truncated list are flagged with a warning; their sizes may be incomplete.
 
 ### Code Editor Maximize & VS Code Dark+ Theme
 

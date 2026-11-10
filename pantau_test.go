@@ -195,19 +195,19 @@ func TestTicket12_TransparentLifecycleAssessmentBreakdown(t *testing.T) {
 
 	env.mockRunner.Handlers[inspector.SystemMetricsBatchCmd] = func() (string, string, int, error) {
 		sections := []string{
-			"6.1.0-21-amd64",                                                        // 0: uname -r
-			"PRETTY_NAME=\"Ubuntu 22.04.4 LTS\"\nVERSION=\"22.04.4 LTS\"",           // 1: os-release (supported)
-			" 10:00:00 up 20 days, load average: 3.20, 2.50, 2.00",                 // 2: uptime (load 3.20 on 4 cores = 0.80 <= 2.0)
-			"Mem: 16777216000 4194304000 12582912000",                               // 3: free (25% RAM used)
-			"/dev/sda1 104857600 31457280 73400320 30% /",                           // 4: df (30% disk used)
-			"0",                                                                      // 5: dmesg errors
-			"1000 2000",                                                             // 6: net dev
-			"10.0",                                                                  // 7: ping
-			"1.2.3.4",                                                               // 8: ip
-			"",                                                                      // 9: established
-			"",                                                                      // 10: listening
-			"0",                                                                      // 11: failed logins
-			"4",                                                                      // 12: nproc (4 vCPUs)
+			"6.1.0-21-amd64", // 0: uname -r
+			"PRETTY_NAME=\"Ubuntu 22.04.4 LTS\"\nVERSION=\"22.04.4 LTS\"", // 1: os-release (supported)
+			" 10:00:00 up 20 days, load average: 3.20, 2.50, 2.00",        // 2: uptime (load 3.20 on 4 cores = 0.80 <= 2.0)
+			"Mem: 16777216000 4194304000 12582912000",                     // 3: free (25% RAM used)
+			"/dev/sda1 104857600 31457280 73400320 30% /",                 // 4: df (30% disk used)
+			"0",         // 5: dmesg errors
+			"1000 2000", // 6: net dev
+			"10.0",      // 7: ping
+			"1.2.3.4",   // 8: ip
+			"",          // 9: established
+			"",          // 10: listening
+			"0",         // 11: failed logins
+			"4",         // 12: nproc (4 vCPUs)
 		}
 		return strings.Join(sections, "\n---\n"), "", 0, nil
 	}
@@ -250,17 +250,17 @@ func TestTicket12_TransparentLifecycleAssessmentBreakdown(t *testing.T) {
 			"5.15.0",
 			"PRETTY_NAME=\"Ubuntu 22.04.4 LTS\"",
 			" 12:00:00 up 100 days, load average: 5.00, 4.80, 4.50",
-			"Mem: 10000000000 9500000000 500000000",   // 95% RAM (-20)
+			"Mem: 10000000000 9500000000 500000000",      // 95% RAM (-20)
 			"/dev/sda1 100000000 96000000 4000000 96% /", // 96% Disk (-20)
-			"3",                                          // 3 disk I/O errors (-40)
+			"3", // 3 disk I/O errors (-40)
 			"1000 2000",
 			"10.0",
 			"1.2.3.4",
 			"",
 			"",
 			"0",
-			"2", // 2 vCPUs -> 5.0 / 2 = 2.5 > 2.0 (-20)
-			"07/18/2011", // BIOS date (~15 yrs old, exceeds 8-yr critical lifespan -> -25)
+			"2",                     // 2 vCPUs -> 5.0 / 2 = 2.5 > 2.0 (-20)
+			"07/18/2011",            // BIOS date (~15 yrs old, exceeds 8-yr critical lifespan -> -25)
 			"ASUSTeK COMPUTER INC.", // Physical motherboard vendor
 			"1732515091",
 		}
@@ -307,8 +307,8 @@ func TestTicket12_TransparentLifecycleAssessmentBreakdown(t *testing.T) {
 			"",
 			"0",
 			"2",
-			"04/01/2014", // Hypervisor firmware date (would be 12 yrs if physical)
-			"QEMU / KVM Virtual Machine", // Virtual vendor
+			"04/01/2014",                  // Hypervisor firmware date (would be 12 yrs if physical)
+			"QEMU / KVM Virtual Machine",  // Virtual vendor
 			fmt.Sprintf("%d", oneYearAgo), // Instance deployed 1 year ago
 		}
 		return strings.Join(sections, "\n---\n"), "", 0, nil
@@ -839,10 +839,10 @@ func TestTicket11_CrossHostTransfer(t *testing.T) {
 
 	transferReq, _ := json.Marshal(map[string]interface{}{
 		"source_host_id": h1.ID,
-		"source_path":   "/var/bigdata",
+		"source_path":    "/var/bigdata",
 		"dest_host_id":   h2.ID,
-		"dest_path":     "/mnt/backup",
-		"mode":          "fast",
+		"dest_path":      "/mnt/backup",
+		"mode":           "fast",
 	})
 	startResp, err := client.Post(env.httpServer.URL+"/api/transfers", "application/json", bytes.NewReader(transferReq))
 	if err != nil || startResp.StatusCode != http.StatusAccepted {
@@ -895,10 +895,10 @@ func TestTicket11_CrossHostTransfer(t *testing.T) {
 
 	verifiedReq, _ := json.Marshal(map[string]interface{}{
 		"source_host_id": h1.ID,
-		"source_path":   "/etc/pantau.conf",
+		"source_path":    "/etc/pantau.conf",
 		"dest_host_id":   h2.ID,
-		"dest_path":     "/tmp/pantau.conf",
-		"mode":          "verified",
+		"dest_path":      "/tmp/pantau.conf",
+		"mode":           "verified",
 	})
 	vResp, err := client.Post(env.httpServer.URL+"/api/transfers", "application/json", bytes.NewReader(verifiedReq))
 	if err != nil || vResp.StatusCode != http.StatusAccepted {
@@ -946,22 +946,22 @@ func TestTicket12_NetworkAndSecurityObservability(t *testing.T) {
 	// Mock batch metrics output with all 12 sections
 	env.mockRunner.Handlers[inspector.SystemMetricsBatchCmd] = func() (string, string, int, error) {
 		sections := []string{
-			"6.1.0-21-amd64",                                                        // 0: uname -r
-			"PRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"\nVERSION=\"12\"",          // 1: os-release
-			" 16:30:00 up 10 days, 2:00, load average: 0.25, 0.35, 0.40",            // 2: uptime
-			"Mem: 8388608000 4194304000 4194304000",                                  // 3: free
-			"/dev/sda1 52428800 20971520 31457280 40% /",                             // 4: df
-			"0",                                                                      // 5: dmesg errors
-			"10485760 20971520",                                                      // 6: /proc/net/dev (rx tx bytes)
-			"12.8",                                                                   // 7: ping 1.1.1.1 time=12.8ms
-			"103.145.22.8\n",                                                         // 8: public IP
-			"192.168.1.100:80 203.0.113.1:54321\n192.168.1.100:80 203.0.113.1:54322\n192.168.1.100:443 198.51.100.5:41234", // 9: established sockets
+			"6.1.0-21-amd64", // 0: uname -r
+			"PRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"\nVERSION=\"12\"", // 1: os-release
+			" 16:30:00 up 10 days, 2:00, load average: 0.25, 0.35, 0.40",     // 2: uptime
+			"Mem: 8388608000 4194304000 4194304000",                          // 3: free
+			"/dev/sda1 52428800 20971520 31457280 40% /",                     // 4: df
+			"0",                 // 5: dmesg errors
+			"10485760 20971520", // 6: /proc/net/dev (rx tx bytes)
+			"12.8",              // 7: ping 1.1.1.1 time=12.8ms
+			"103.145.22.8\n",    // 8: public IP
+			"192.168.1.100:80 203.0.113.1:54321\n192.168.1.100:80 203.0.113.1:54322\n192.168.1.100:443 198.51.100.5:41234",                                                             // 9: established sockets
 			"LISTEN 0.0.0.0:80 users:((\"nginx\",pid=100,fd=3))\nLISTEN 127.0.0.1:3306 users:((\"mysqld\",pid=101,fd=4))\nLISTEN 0.0.0.0:6379 users:((\"redis-server\",pid=102,fd=5))", // 10: listening ports
-			"14\n", // 11: failed logins
-			"4\n",  // 12: nproc
-			"2023-01-01\n", // 13: bios_date
-			"Dell Inc.\n",  // 14: hardware_model
-			"1672531199\n", // 15: os_install_epoch
+			"14\n",                   // 11: failed logins
+			"4\n",                    // 12: nproc
+			"2023-01-01\n",           // 13: bios_date
+			"Dell Inc.\n",            // 14: hardware_model
+			"1672531199\n",           // 15: os_install_epoch
 			"524288000 1048576000\n", // 16: diskstats (read write bytes)
 		}
 		return strings.Join(sections, "\n---\n"), "", 0, nil
@@ -1922,9 +1922,6 @@ func TestUIPackageTabAndProcessTelemetryPresence(t *testing.T) {
 	}
 }
 
-
-
-
 func TestFileManagerElevatedAccessUsesSudoSFTPAndExecWrapping(t *testing.T) {
 	env := setupTestEnv(t)
 	client := loginClient(t, env)
@@ -2014,5 +2011,28 @@ func TestFileManagerElevatedAccessUsesSudoSFTPAndExecWrapping(t *testing.T) {
 	}
 	if elevatedCmds != 1 || plainCmds != 1 {
 		t.Fatalf("expected one sudo-wrapped and one plain du command, got elevated=%d plain=%d history=%v", elevatedCmds, plainCmds, env.mockRunner.ExecHistory)
+	}
+}
+
+func TestResolveForwardPorts(t *testing.T) {
+	// Valid range
+	min, max, err := resolveForwardPorts("15000-15019")
+	if err != nil || min != 15000 || max != 15019 {
+		t.Fatalf("expected 15000-15019, got (%d, %d, %v)", min, max, err)
+	}
+
+	// Disabled
+	for _, spec := range []string{"", "0"} {
+		min, max, err = resolveForwardPorts(spec)
+		if err != nil || min != 0 || max != 0 {
+			t.Fatalf("expected %q to disable forwarding, got (%d, %d, %v)", spec, min, max, err)
+		}
+	}
+
+	// Invalid values are rejected
+	for _, spec := range []string{"15000", "abc-def", "0-100", "100-50", "15000-70000"} {
+		if _, _, err = resolveForwardPorts(spec); err == nil {
+			t.Fatalf("expected %q to be rejected", spec)
+		}
 	}
 }

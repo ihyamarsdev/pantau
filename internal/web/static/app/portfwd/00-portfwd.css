@@ -1,0 +1,112 @@
+/* Port Forward to This Computer dialog */
+.pf-note {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.pf-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pf-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pf-field label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.pf-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.pf-list-head {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 18px 0 8px;
+
+  padding-top: 12px;
+  border-top: 1px solid var(--card-border);
+}
+
+.pf-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm, 6px);
+  margin-bottom: 8px;
+  background: var(--surface-2);
+}
+
+.pf-item-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.pf-item-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pf-addr {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.pf-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 4px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.pf-item-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pf-item-err {
+  margin-top: 6px;
+  font-size: var(--fs-xs);
+  color: var(--danger);
+  word-break: break-word;
+}
+
+.pf-empty {
+  padding: 16px;
+  text-align: center;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+@media (max-width: 640px) {
+  .pf-form {
+    grid-template-columns: 1fr;
+  }
+  .pf-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

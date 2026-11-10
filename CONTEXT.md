@@ -707,3 +707,19 @@ _Avoid_: Save file, repo patch, sync commit
 **Base Commit**:
 Pengenal SHA commit repositori yang sedang dilihat pengguna saat membuka atau memuat ulang Git Editor; digunakan untuk validasi *optimistic concurrency* agar perubahan ditolak jika commit remote telah berganti (409 Conflict).
 _Avoid_: Parent commit, last commit, head commit
+
+**Local Port Forward**:
+Penerusan port TCP dari Host ke komputer operator (setara `ssh -L`): Pantau mendengarkan di port lokal dari rentang `-forward-ports` dan meneruskan setiap koneksi lewat channel SSH `direct-tcpip` ke `remote_host:remote_port` dilihat dari Host. Untuk klien non-browser (DBeaver, `psql`, `redis-cli`); hanya di memori, hilang saat Pantau restart.
+_Avoid_: Tunnel, Remote Web Port Tunnel, SSH proxy
+
+**Command Palette**:
+Kotak pencarian global (`Ctrl+K` / `Cmd+K`, kecuali di dalam terminal atau editor) untuk melompat ke Host dan aksinya (terminal, file, Docker, inspeksi, Local Port Forward) atau menjalankan perintah global dashboard.
+_Avoid_: Quick switcher, spotlight, omnibox
+
+**Fleet Search**:
+Pencarian paket dan container lintas seluruh Host dari data yang sudah tersimpan hasil scan terakhir (tanpa koneksi SSH saat mencari), lengkap dengan umur data per Host.
+_Avoid_: Global grep, inventory query, live search
+
+**Disk Usage Explorer**:
+Penelusuran pemakaian disk per folder (satu tingkat, satu filesystem, seperti `ncdu`) yang dijalankan on-demand dari File Manager untuk menemukan folder penyebab disk penuh.
+_Avoid_: du scan, storage audit, disk report

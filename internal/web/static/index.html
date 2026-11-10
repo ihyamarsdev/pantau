@@ -12,6 +12,10 @@
 <link rel="stylesheet" href="/app/terraform.css" />
 <link rel="stylesheet" href="/app/dockerhub.css" />
 <link rel="stylesheet" href="/app/vulnintel.css" />
+<link rel="stylesheet" href="/app/palette.css" />
+<link rel="stylesheet" href="/app/portfwd.css" />
+<link rel="stylesheet" href="/app/fleetsearch.css" />
+<link rel="stylesheet" href="/app/diskusage.css" />
 <style>
 @font-face { font-family: 'Inter'; src: url('/vendor/fonts/inter-latin-var.woff2') format('woff2'); font-weight: 100 900; font-style: normal; font-display: swap; }
 @font-face { font-family: 'JetBrains Mono'; src: url('/vendor/fonts/jetbrains-mono-latin-var.woff2') format('woff2'); font-weight: 100 800; font-style: normal; font-display: swap; }
@@ -3728,6 +3732,9 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
       <div class="header-divider"></div>
       <div class="header-cluster">
         <span id="activeAlertBadge" style="display: none;" onclick="toggleAlertOverlay(event)" title="Click to view alerts">0 ALERTS</span>
+        <button class="btn btn-icon header-btn" id="btnOpenPalette" onclick="window.Palette && Palette.open()" title="Search (Ctrl+K)" aria-label="Search (Ctrl+K)">
+          <svg class="icon"><use href="#i-search"/></svg>
+        </button>
         <button class="btn btn-icon header-btn" id="btnInspectAll" onclick="inspectAllHosts()" title="Inspect All Hosts" data-i18n-title="btn_inspect_all_title" aria-label="Inspect All Hosts">
           <svg id="inspectAllIcon" class="icon"><use href="#i-rotate-ccw"/></svg>
         </button>
@@ -10506,6 +10513,7 @@ function renderGridView(grid, isManualSort) {
               <button class="dropdown-item" onclick="openEditHostModal(${h.id})"><svg class="icon icon-sm"><use href="#i-pencil"/></svg> <span>${t('edit_host', 'Edit Host')}</span></button>
               <button class="dropdown-item" onclick="testHostSSH(${h.id})"><svg class="icon icon-sm"><use href="#i-zap"/></svg> <span>${t('test_connection', 'Test Connection')}</span></button>
               <button class="dropdown-item" onclick="openInjectKeyModal(${h.id}, ${jsArg(h.name)})"><svg class="icon icon-sm"><use href="#i-key-round"/></svg> <span>${t('btn_inject_key', 'Inject Key')}</span></button>
+              <button class="dropdown-item" onclick="window.PortFwd && PortFwd.open(${h.id})"><svg class="icon icon-sm"><use href="#i-plug"/></svg> <span>${t('pf_menu', 'Port Forward')}</span></button>
               ${!h.notes ? `<button class="dropdown-item" onclick="openEditNoteModal(${h.id}, '', ${jsArg(h.name || '')})"><svg class="icon icon-sm"><use href="#i-sticky-note"/></svg> <span>${t('add_note', 'Add Note')}</span></button>` : ''}
               <div class="dropdown-divider"></div>
               <button class="dropdown-item danger" onclick="deleteHost(${h.id})"><svg class="icon icon-sm"><use href="#i-trash-2"/></svg> <span>${t('delete_host', 'Delete Host')}</span></button>
@@ -10739,6 +10747,7 @@ function renderListView(listContainer, isManualSort) {
                 <button class="dropdown-item" onclick="openEditHostModal(${h.id})"><svg class="icon icon-sm"><use href="#i-pencil"/></svg> <span>${t('edit_host', 'Edit Host')}</span></button>
                 <button class="dropdown-item" onclick="testHostSSH(${h.id})"><svg class="icon icon-sm"><use href="#i-zap"/></svg> <span>${t('test_connection', 'Test Connection')}</span></button>
                 <button class="dropdown-item" onclick="openInjectKeyModal(${h.id}, ${jsArg(h.name)})"><svg class="icon icon-sm"><use href="#i-key-round"/></svg> <span>${t('btn_inject_key', 'Inject Key')}</span></button>
+                <button class="dropdown-item" onclick="window.PortFwd && PortFwd.open(${h.id})"><svg class="icon icon-sm"><use href="#i-plug"/></svg> <span>${t('pf_menu', 'Port Forward')}</span></button>
                 <div class="dropdown-divider"></div>
                 <button class="dropdown-item danger" onclick="deleteHost(${h.id})"><svg class="icon icon-sm"><use href="#i-trash-2"/></svg> <span>${t('delete_host', 'Delete Host')}</span></button>
               </div>
@@ -14160,6 +14169,7 @@ function renderFilesView() {
         <button class="btn btn-sm" onclick="openTerminalForPath(${jsArg(data.path)})" title="${t('open_terminal_here', 'Open Terminal Here')}">
           ${svgIcon('terminal', 'icon-sm')} <span>${t('open_terminal_here', 'Open Terminal Here')}</span>
         </button>
+        ${window.DiskUsage ? DiskUsage.toolbarButton(currentHost.id, data.path) : ''}
         <button class="btn btn-sm btn-icon" onclick="loadFiles(${jsArg(parent)})" title="${t('up_dir')}">${svgIcon('corner-up-left', 'icon-sm')}</button>
         <button class="btn btn-sm btn-icon" onclick="loadFiles(${jsArg(data.path)})" title="${t('refresh')}">${svgIcon('refresh-cw', 'icon-sm')}</button>
         <button class="btn btn-sm" onclick="openNewEditor(${jsArg(data.path)})" title="${t('new_file', 'New File')}">
@@ -15576,6 +15586,7 @@ function createTabWorkspaceDOM(tab) {
                 <div style="color: var(--text-muted); margin-bottom: 6px; font-size: 0.7rem;">${t('recent_ports', 'Quick / Recent Ports:')}</div>
                 <div id="recentPortsList_${tab.id}" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
               </div>
+              ${window.PortFwd ? `<div style="border-top: 1px solid var(--card-border); padding: 8px 12px;"><button class="btn btn-sm" style="width: 100%; font-size: var(--fs-xs); display: inline-flex; align-items: center; justify-content: center; gap: 4px;" onclick="event.stopPropagation(); PortFwd.open(${tab.hostID}, document.getElementById('portInput_${tab.id}').value)">${svgIcon('plug', 'icon-xs')} <span>${t('pf_dropdown_btn', 'Forward port to this computer…')}</span></button></div>` : ''}
             </div>
           </div>
         </div>
@@ -26705,5 +26716,9 @@ langRerenderHooks.push(renderTfWorkspaces, tfRenderWsHead, () => {
 <script src="/app/firewall.js"></script>
 <script src="/app/dockerhub.js"></script>
 <script src="/app/vulnintel.js"></script>
+<script src="/app/palette.js"></script>
+<script src="/app/portfwd.js"></script>
+<script src="/app/fleetsearch.js"></script>
+<script src="/app/diskusage.js"></script>
 </body>
 </html>

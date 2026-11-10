@@ -6,6 +6,7 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
       - "127.0.0.1:8081:8081"
+      - "127.0.0.1:15000-15019:15000-15019"
     volumes:
       - ./data:/app/data
       - ${HOME}/.ssh/config:/root/.ssh/config:ro

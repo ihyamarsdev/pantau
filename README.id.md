@@ -216,6 +216,7 @@ Pantau menginspeksi Host remote melalui perintah SSH non-interaktif, memvalidasi
 - **Deteksi Link Terminal Interaktif**: Menggunakan API bawaan `xterm.js` via `term.registerLinkProvider` tanpa dependensi eksternal. Mendukung interaksi **`Ctrl+Click`** (Linux/Windows) dan **`Cmd+Click`** (macOS) untuk membuka URL publik langsung ke tab browser baru tanpa mengganggu seleksi teks atau copy-paste log terminal.
 - **Remote Web Port Tunneling**: Reverse proxy HTTP dan WebSocket on-demand (`/api/tunnel/:hostId/:port/*`) yang dialirkan secara *agentless* melalui channel OpenSSH RFC 4254 `direct-tcpip` (`golang.org/x/crypto/ssh` `DialContext`). Akses layanan web internal remote (`localhost:port` atau `127.0.0.1:port`) secara aman dari peramban desktop Anda tanpa membuka port firewall ke publik. Tunnel dilayani di port tersendiri (`-tunnel-port`, default: port kosong pertama setelah `-port`) sebagai origin peramban terpisah, sehingga aplikasi web yang di-tunnel tidak bisa memanggil API Pantau; cookie sesi dibuang sebelum sampai ke aplikasi remote.
 - **Connection Pooling Cepat Tanpa Handshake Ulang**: Meng-cache koneksi transport SSH per host dengan auto-reconnect cerdas, mengeliminasi jeda handshake 100–300ms untuk pemuatan puluhan aset web (CSS, JS, gambar).
+- **Port Forward ke Komputer Ini** (seperti `ssh -L`): buka service non-HTTP sebuah host (Postgres, Redis, MySQL, …) di port lokal dari rentang `-forward-ports` (default `15000-15019`) lalu arahkan DBeaver, `psql`, atau `redis-cli` ke `127.0.0.1:<port>`. Dibuat dari menu host, dropdown **Ports** di terminal, atau Command Palette; forward hanya disimpan di memori dan berhenti saat Pantau berhenti.
 - **Dukungan WebSocket Bawaan**: Aliran dua arah *full-duplex* berbasis protokol HTTP status `101 Switching Protocols` untuk server pengembangan modern (Vite HMR, Next.js, Jupyter Notebook).
 - **Zero-Configuration Remote Browser Bridge**: Otomatisasi penangkap sinyal terminal OSC 1337 (`OpenURL`) dan OSC 777 yang secara otomatis meneruskan permintaan buka peramban dari CLI remote (`gh auth login`, `xdg-open`, Python `webbrowser`, AWS SSO, `npm login`) langsung ke peramban desktop asli pengguna tanpa terjebak browser teks konsol (`w3m`/`lynx`). Permintaan membuka URL loopback remote meminta konfirmasi sebelum tunnel dibuka.
 - **Penyuntikan Senyap Lingkungan Shell**: Auto-provisioning script `/tmp/pantau-browser` dan penyetelan environment variable (`BROWSER`, `GH_BROWSER`) secara senyap pada shell login tanpa memicu echo perintah di layar konsol.
@@ -324,6 +325,7 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
       - "127.0.0.1:8081:8081"
+      - "127.0.0.1:15000-15019:15000-15019"
     volumes:
       - pantau-data:/data
     environment:
@@ -379,6 +381,7 @@ systemctl enable --now pantau
 | `-port` | `PANTAU_PORT` (atau `PORT`) | `8080` | Port listening HTTP (auto-scan port `8080`–`8099` jika default) |
 | `-listen` | `PANTAU_LISTEN` | `127.0.0.1` | Alamat bind (alamat IP atau `localhost`). Gunakan `0.0.0.0` agar Pantau bisa diakses dari mesin lain; UI tetap harus dibuka lewat `localhost` atau alamat IP (nama host lain ditolak dengan HTTP 403) |
 | `-tunnel-port` | - | port kosong pertama setelah `-port` | Port Remote Web Port Tunnel (origin terpisah dari UI, alamat bind sama) |
+| `-forward-ports` | `PANTAU_FORWARD_PORTS` | `15000-15019` | Rentang port lokal untuk Port Forward ke Komputer Ini (alamat bind sama dengan `-listen`); kosong atau `0` menonaktifkan |
 | `-db` | `PANTAU_DB` (atau `DB_PATH`) | `pantau.db` | Lokasi file basis data SQLite |
 | `-open` | - | `true` (Windows) / `false` | Buka peramban web bawaan secara otomatis saat startup |
 | `-disable-2fa` | - | `false` | Flag bypass darurat untuk menonaktifkan 2FA langsung dari terminal host |

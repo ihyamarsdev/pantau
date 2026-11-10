@@ -268,6 +268,13 @@ Pantau menyediakan visibilitas inventaris paket perangkat lunak secara agentless
   - **Prinsip Non-Destruktif**: Pantau tidak menyediakan tombol uninstall destruktif di web UI untuk mencegah risiko rusaknya dependensi berantai (*cascading broken dependencies*). Administrator diarahkan memanfaatkan Terminal Dock bawaan atau merumuskan aturan Desired State.
 
 
+### Fleet Search (Paket & Container di Semua Host)
+
+Jawab pertanyaan seperti "host mana yang masih memakai `openssl` 1.1?" atau "siapa yang menjalankan `postgres:13`?" tanpa login ke mana pun: buka Command Palette (`Ctrl+K`), ketik minimal 2 karakter lalu pilih **Cari paket & container di semua host**.
+- Hasil dikelompokkan per versi paket atau image container, masing-masing dengan host yang memilikinya (grup, versi atau nama container dan statusnya) serta umur data host tersebut. Klik host untuk membukanya di tab Packages atau Docker. Saring dengan **All / Packages / Containers**.
+- Tidak ada scan saat mencari: paket berasal dari scan paket terakhir tiap host (jalankan **Rescan Packages** untuk memperbarui), container dari inspeksi terakhir (container dan image-nya dicatat setiap inspeksi dan saat tab Docker dibuka) ditambah desired rule `container` dan proyek Compose yang tersimpan. Host yang belum punya data dihitung di catatan.
+- Maksimal 500 hasil per pencarian (`GET /api/search?q=&kind=all|package|container&limit=`).
+
 ### Pemindaian Keamanan Host & Pemeriksaan Hardening
 
 Pantau menyediakan visibilitas keamanan sistem operasi secara agentless dan pasif (read-only), mengidentifikasi pembaruan patch keamanan yang tertunda, kebutuhan reboot, kesegaran metadata repositori, serta 4 pemeriksaan pengerasan sistem (*hardening checks*) krusial—beroperasi 100% mandiri (*airgapped*) tanpa agen pihak ketiga, tanpa hak akses root/sudo, dan tanpa permintaan data keluar ke database CVE publik di internet.
@@ -367,6 +374,7 @@ Saat insiden memerlukan penanganan terminal langsung:
 - **Menu Toolbar Dropdown Ports (`🌐 Ports`)**: Akses aplikasi web privat yang berjalan di server remote dengan membuka dropdown `🌐 Ports` di toolbar terminal. Masukkan nomor port (1-65535) dan klik **Buka** untuk meluncurkan sesi tunnel. Port yang baru saja dibuka otomatis tersimpan di memori browser lokal (*localStorage*). Tunnel dibuka di port tunnel tersendiri (`-tunnel-port`, default: port kosong pertama setelah port UI, dicetak saat startup), yaitu origin peramban yang berbeda dari UI, sehingga aplikasi web remote tidak bisa memanggil API Pantau; cookie sesi Pantau tidak diteruskan ke aplikasi remote.
 - **Zero-Configuration Remote Browser Bridge**: Perintah CLI di server remote (`gh auth login`, `xdg-open`, Python `webbrowser`, AWS SSO, `npm login`) secara otomatis membuka tab peramban desktop asli di komputer klien via protokol escape terminal (OSC 1337 / OSC 777), mengeliminasi jebakan browser teks headless (`w3m`/`lynx`). Jika URL yang diminta adalah alamat loopback di host remote (`localhost`, `127.x`, `::1`), Pantau meminta konfirmasi dulu (host dan port ditampilkan) sebelum membukanya lewat tunnel.
 - **Sinkronisasi Direktori Kerja**: Memantau direktori kerja aktif secara otomatis melalui pembaruan judul jendela terminal dan sekuens escape ANSI OSC 7.
+- **Port Forward ke Komputer Ini** (seperti `ssh -L`): untuk service non-HTTP (Postgres, Redis, MySQL, …) buka **Port Forward** dari menu kartu host, **Forward port to this computer…** di dropdown `🌐 Ports`, atau Command Palette. Pilih port remote (dan opsional host tujuan dilihat dari server itu, default `127.0.0.1`); Pantau mendengarkan di port lokal kosong pertama dari rentang `-forward-ports` (default `15000-15019`) dan menampilkan alamat yang dipakai, misalnya `psql -h 127.0.0.1 -p 15000`. Dialog menampilkan semua forward aktif beserta jumlah koneksi, trafik, dan error terakhir; **Stop** menghentikan satu forward. Forward memakai alamat bind yang sama dengan UI (`-listen`), hanya disimpan di memori (berhenti saat Pantau berhenti), dan dihentikan saat host-nya dihapus. Docker: file compose mempublikasikan rentang ini hanya di `127.0.0.1`.
 - **Modal Stacking & Tombol Escape**: Dialog aksi turunan (form preset, aturan desired state, catatan) menumpuk di atas modal induk secara dinamis dengan layer z-index bertingkat. Penekanan tombol `Escape` menutup dialog paling atas secara berurutan tanpa merusak sesi terminal di bawahnya.
 
 ### In-App Activity Console & Live Telemetry Stream
@@ -427,6 +435,14 @@ Sub-tab **Images** punya dua tombol Docker Hub ([ADR-0063](adr/0063-docker-hub-i
 - **Cek pembaruan** membandingkan setiap image lokal dari Docker Hub (`nginx:1.28`, `bitnami/redis:7`, `docker.io/…`) dengan digest yang kini disajikan Docker Hub untuk tag-nya, lalu menambahkan badge di kolom Status: **Ada pembaruan** (tag kini menunjuk image lain; arahkan kursor untuk tanggal push-nya, dan **Pull pembaruan** menariknya), **Terbaru**, **Tidak ada di Docker Hub** (tag tidak ada di sana, mis. hasil build lokal), **Tidak dapat dibandingkan** (engine tidak mencatat digest registry, mis. `docker load`), atau **Cek gagal** (beserta alasannya). Image dari registry lain (ghcr.io, registry privat) tidak diberi badge. Baris ringkasan menampilkan jumlah pembaruan yang tersedia. Cek ini tidak menarik apa pun dan tidak memotong kuota pull; cek berhenti pada penolakan pertama Docker Hub (batas laju, tak terjangkau) agar tidak menghabiskan batas API, dan menanyakan maksimal 100 tag per cek.
 - Pembaruan yang sudah di-pull tidak mengubah container yang berjalan: buat ulang container-nya (untuk proyek Compose: **Stacks → Update**).
 - Belum didukung: repositori privat dan `docker login`, registry lain, cek terjadwal atau notifikasi. Hasil build lokal yang memakai nama repositori Docker Hub (mis. `nginx:latest`) tampil **Ada pembaruan**, dan **Pull pembaruan** akan menimpa tag lokal itu.
+
+### Command Palette (Ctrl+K)
+
+Tekan `Ctrl+K` (`Cmd+K` di macOS) atau klik ikon pencarian di header untuk melompat ke mana saja tanpa menggulir dashboard:
+- **Host**: ketik sebagian nama host, alamat, atau grup (pencocokan longgar, semua kata harus cocok) lalu tekan `Enter` untuk membukanya. Saat kotak pencarian kosong, 5 host terakhir yang dibuka tampil paling atas (disimpan di browser).
+- **Aksi host**: tanda panah di baris host (atau `→`) membuka Overview, Terminal, Files, Docker, Security, Packages, Inspect now, Port forward, dan Edit host untuk host itu. `Esc` atau `Backspace` saat kotak kosong kembali ke daftar sebelumnya.
+- **Perintah**: Inspect all hosts, Bulk exec, Add host, Import hosts, Settings, Documentation, pindah bagian (Hosts, Docker, Kubernetes, Cloudflare, Ansible, Terraform), Port forwards, dan jika mengetik minimal 2 karakter, **Cari paket & container di semua host** (Fleet Search).
+- `Ctrl+K` tidak diambil alih di dalam terminal (di bash itu kill-line) maupun di editor kode.
 
 ### Side Panel Global, Manajemen Docker & Kubernetes
 
@@ -1140,6 +1156,13 @@ SFTP File Manager dilengkapi navigasi dan ergonomi visual yang telah disempurnak
 - **Interactive Breadcrumb Bar**: Klik segmen folder mana saja pada bilah jalur direktori (contoh: `📁 /` &rarr; `var` &rarr; `www` &rarr; `html`) untuk melompat langsung ke direktori induk tanpa perlu menekan tombol navigasi atas berulang kali.
 - **Ikon Berkas Kontekstual**: Baris berkas menampilkan ikon spesifik berdasarkan ekstensi (🐚 script shell, ⚙️ konfigurasi/json/yaml, 📝 dokumen log/teks, 🗜️ arsip, 🖼️ media gambar, 💻 kode pemrograman).
 - **Sticky Table Header**: Header kolom dan tombol sorting tetap terpancang di posisi atas (*sticky*) saat menggulir daftar direktori yang panjang.
+
+### Disk Usage Explorer
+
+Klik **Disk usage** di toolbar File Manager untuk melihat folder mana yang paling banyak memakai ruang di direktori saat ini (seperti `ncdu`):
+- Menjalankan `du -x -k` satu tingkat di host tersebut, hanya saat diminta (tidak dijadwalkan dan tidak di-cache), tetap di filesystem yang sama, dan memakai user akses File Manager yang sedang aktif (sebagai user lain lewat `sudo -n -u`).
+- Folder diurutkan dari yang terbesar dengan bar proporsional dan persentase dari total; klik baris untuk masuk ke folder itu, tombol naik untuk kembali, dan **Open in file manager** untuk baris atau path saat ini.
+- Batasan: satu scan per host pada satu waktu (scan kedua ditolak sampai yang pertama selesai), maksimal 500 entri per tingkat, dan batas waktu 55 detik. Folder yang tidak bisa dibaca (permission denied), scan yang terkena batas waktu, dan daftar yang terpotong ditandai peringatan; ukurannya bisa tidak lengkap.
 
 ### Editor Modal Maximize & Tema VS Code Dark+
 

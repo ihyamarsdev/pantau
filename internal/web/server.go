@@ -97,6 +97,7 @@ type Server struct {
 	docsFS            fs.FS
 	tunnelRunners     sync.Map // hostID -> *tunnelRunnerEntry
 	tunnelPort        int      // dedicated loopback port for the tunnel origin (0 = disabled)
+	portFwd           *portForwardManager
 	inspectAllMu      sync.Mutex
 	inspectAllActive  bool
 	lastInspectAll    time.Time
@@ -238,6 +239,14 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/app/dockerhub.css", serveAppBundle("dockerhub", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/vulnintel.js", serveAppBundle("vulnintel", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/vulnintel.css", serveAppBundle("vulnintel", ".css", "text/css; charset=utf-8"))
+	s.mux.HandleFunc("/app/palette.js", serveAppBundle("palette", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/palette.css", serveAppBundle("palette", ".css", "text/css; charset=utf-8"))
+	s.mux.HandleFunc("/app/portfwd.js", serveAppBundle("portfwd", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/portfwd.css", serveAppBundle("portfwd", ".css", "text/css; charset=utf-8"))
+	s.mux.HandleFunc("/app/fleetsearch.js", serveAppBundle("fleetsearch", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/fleetsearch.css", serveAppBundle("fleetsearch", ".css", "text/css; charset=utf-8"))
+	s.mux.HandleFunc("/app/diskusage.js", serveAppBundle("diskusage", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/diskusage.css", serveAppBundle("diskusage", ".css", "text/css; charset=utf-8"))
 
 	// Vendor static assets (airgapped / local cache)
 	vendorHandler := http.StripPrefix("/vendor/", http.FileServer(http.FS(vendorFS())))
@@ -390,6 +399,10 @@ func (s *Server) routes() {
 
 	// Network Diagnostics (ADR Network Diagnostic)
 	s.mux.HandleFunc("/api/netdiag/stream", s.authMiddleware(s.handleNetDiagStream))
+
+	s.registerPortForwardRoutes()
+	s.registerFleetSearchRoutes()
+	s.registerDiskUsageRoutes()
 }
 
 func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -1184,6 +1197,7 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 		case http.MethodDelete:
 			s.evictTunnelRunner(hostID)
+			s.portFwd.stopHost(hostID)
 			if err := s.db.DeleteHost(hostID); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return

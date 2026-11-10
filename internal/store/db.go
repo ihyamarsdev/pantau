@@ -427,6 +427,17 @@ func (d *DB) migrate() error {
 		PRIMARY KEY (host_id, name)
 	);
 
+	-- Containers last seen on a host (name, image, state), so the fleet search can answer
+	-- "which hosts run postgres:13?" without opening the Docker tab.
+	CREATE TABLE IF NOT EXISTS host_containers (
+		host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+		name TEXT NOT NULL,
+		image TEXT NOT NULL,
+		state TEXT NOT NULL DEFAULT '',
+		seen_at DATETIME NOT NULL,
+		PRIMARY KEY (host_id, name)
+	);
+
 	CREATE TABLE IF NOT EXISTS ssh_keys (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL UNIQUE,

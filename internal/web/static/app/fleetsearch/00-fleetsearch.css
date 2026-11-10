@@ -1,0 +1,146 @@
+/* Fleet Search dialog */
+.fs-note {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.fs-searchrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.fs-searchrow input {
+  flex: 1;
+  min-width: 200px;
+}
+
+.fs-kinds {
+  display: flex;
+  gap: 6px;
+}
+
+#fsResults {
+  flex: 1;
+  min-height: 0;
+}
+
+.fs-group {
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface-2);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.fs-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.fs-group-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.fs-group-version {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.fs-hosts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fs-host {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--card-bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.fs-host:hover {
+  border-color: var(--accent-text);
+}
+
+.fs-host-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.fs-host-meta {
+  color: var(--text-muted);
+  min-width: 0;
+  word-break: break-word;
+}
+
+.fs-host-age {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.fs-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px;
+  text-align: center;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.fs-warn,
+.fs-note-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+.fs-warn {
+  color: var(--warning);
+}
+
+@media (max-width: 640px) {
+  .fs-host {
+    flex-wrap: wrap;
+  }
+  .fs-host-age {
+    margin-left: 0;
+  }
+}

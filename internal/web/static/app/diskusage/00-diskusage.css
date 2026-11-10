@@ -1,0 +1,26 @@
+/* Disk usage explorer (00-diskusage.js). Tokens come from index.html :root. */
+#diskUsageModal .modal-body { gap: 10px; }
+.du-loading { display: flex; align-items: center; gap: 8px; padding: 32px; justify-content: center; color: var(--text-muted); font-size: var(--fs-sm); }
+.du-loading .spinner { display: inline-flex; }
+.du-head { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.du-crumb { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+.du-path { font-size: var(--fs-sm); color: var(--text); overflow-wrap: anywhere; }
+.du-head-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.du-total { font-size: var(--fs-sm); color: var(--text-muted); white-space: nowrap; }
+.du-warn { display: flex; align-items: center; gap: 6px; background: var(--warning-soft); border: 1px solid var(--warning-border); border-radius: var(--radius); padding: 8px 10px; color: var(--warning); font-size: var(--fs-xs); }
+.du-err { display: flex; align-items: center; gap: 6px; background: var(--danger-soft); border: 1px solid var(--danger-border); border-radius: var(--radius); padding: 10px 12px; color: var(--danger); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.du-cols { display: grid; grid-template-columns: minmax(0, 1fr) 90px 60px 30px; gap: 10px; font-size: var(--fs-xs); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--card-border); padding-bottom: 4px; }
+.du-cols span:nth-child(2), .du-cols span:nth-child(3) { text-align: right; }
+.du-rows { display: flex; flex-direction: column; gap: 2px; }
+.du-row { display: grid; grid-template-columns: minmax(0, 1fr) 90px 60px 30px; gap: 10px; align-items: center; padding: 6px 8px; border-radius: var(--radius-sm); cursor: pointer; }
+.du-row:hover { background: var(--surface-2); }
+.du-row-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.du-row-name { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-sm); font-family: var(--font-mono); }
+.du-row-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.du-row-bar { height: 4px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+.du-row-fill { height: 100%; background: var(--primary); border-radius: 2px; }
+.du-row-size { text-align: right; font-size: var(--fs-sm); font-family: var(--font-mono); }
+.du-row-pct { text-align: right; font-size: var(--fs-xs); color: var(--text-muted); }
+.du-row-open { justify-self: end; }
+.du-empty { padding: 24px; text-align: center; color: var(--text-muted); font-size: var(--fs-sm); }
+.du-foot { font-size: var(--fs-xs); color: var(--text-faint); text-align: right; }
