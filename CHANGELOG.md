@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Terraform tab panels lost their column layout after the Ansible UI redesign (shared `.ans-section-panel`/`.ans-sched-tbl` rules had been removed).
 - **Web terminal goroutine leak**: every closed terminal session left a goroutine (window-resize loop) and could leave the WebSocket pump goroutines blocked; they now exit with the session.
 - **Reachable hosts no longer shown as Down on a lossy route**: a single SSH TCP connect that timed out (8 s) marked the host `down`, although a new connection usually succeeds at once (some routes drop every packet of one connection). A timed-out connect is now retried on a fresh connection, up to 4 attempts of at most 4 s each; refused or unreachable ports still fail immediately. A host that is really down now takes up to 16 s to be reported.
+- **Package upgrade preview**: the loading state showed the raw text `${svgIcon('loader-circle', 'icon-sm')}` instead of the spinner icon (template code in static HTML).
 
 ### Changed
 - **Terraform runs no longer pass the deprecated `-state` flag** ([ADR-0061](docs/adr/0061-terraform-state-ops-links-audit.md)): Pantau writes `pantau_backend_override.tf` (a `local` backend whose path is inside the run root; it replaces any backend declared by the user) and runs `init -reconfigure`. Do not use that file name in your own workspace files: it is overwritten.
