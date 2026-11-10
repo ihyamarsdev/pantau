@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -139,7 +140,7 @@ func Connect(host string, port int, user, privateKeyPEM string, timeout time.Dur
 
 // ponytail: ssh.Dial's Timeout only bounds the TCP dial, not the SSH handshake; bound both.
 func dialSSH(addr string, config *ssh.ClientConfig, timeout time.Duration) (*ssh.Client, error) {
-	conn, err := net.DialTimeout("tcp", addr, timeout)
+	conn, err := dialTCP(addr, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -151,6 +152,25 @@ func dialSSH(addr string, config *ssh.ClientConfig, timeout time.Duration) (*ssh
 	}
 	conn.SetDeadline(time.Time{})
 	return ssh.NewClient(c, chans, reqs), nil
+}
+
+// dialTCP retries a timed-out connect on a fresh connection: some routes drop every SYN of one flow
+// while a new connection (new source port) succeeds at once, so a reachable host must not be marked down.
+// Refused/unreachable errors fail immediately; a dead host now costs 4 × min(timeout, 4s) instead of timeout.
+func dialTCP(addr string, timeout time.Duration) (net.Conn, error) {
+	attempt := min(timeout, 4*time.Second) // 4s still covers the SYN retransmits at 1s and 3s
+	var err error
+	for range 4 {
+		var conn net.Conn
+		if conn, err = net.DialTimeout("tcp", addr, attempt); err == nil {
+			return conn, nil
+		}
+		var ne net.Error
+		if !errors.As(err, &ne) || !ne.Timeout() {
+			return nil, err
+		}
+	}
+	return nil, err
 }
 
 // configureLegacyCompatibleSSH applies a comprehensive set of key exchanges, ciphers, and host key algorithms
@@ -423,10 +443,21 @@ func (r *LiveSSHRunner) Terminal(in io.Reader, out io.Writer, cols, rows int, re
 		return fmt.Errorf("start shell: %w", err)
 	}
 
-	// Handle window resizing asynchronously
+	// Handle window resizing asynchronously. The caller never closes resizeChan,
+	// so this goroutine is stopped by done when the session ends.
+	done := make(chan struct{})
+	defer close(done)
 	go func() {
-		for sz := range resizeChan {
-			_ = session.WindowChange(sz[1], sz[0])
+		for {
+			select {
+			case <-done:
+				return
+			case sz, ok := <-resizeChan:
+				if !ok {
+					return
+				}
+				_ = session.WindowChange(sz[1], sz[0])
+			}
 		}
 	}()
 

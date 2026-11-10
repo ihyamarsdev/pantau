@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"pantau/internal/logger"
+
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/crypto/ssh"
 	_ "modernc.org/sqlite"
@@ -227,7 +229,9 @@ type GlobalFilePin struct {
 
 func Open(dbPath string) (*DB, error) {
 	if dir := filepath.Dir(dbPath); dir != "." && dir != "" {
-		_ = os.MkdirAll(dir, 0755)
+		// ponytail: DB holds plaintext private SSH keys, so a missing dir is created 0700.
+		// Existing dirs are left alone (the default DB path can be the cwd).
+		_ = os.MkdirAll(dir, 0700)
 	}
 
 	db, err := sql.Open("sqlite", dbPath+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(1)")
@@ -246,7 +250,19 @@ func Open(dbPath string) (*DB, error) {
 		return nil, fmt.Errorf("init defaults: %w", err)
 	}
 
+	secureDBFiles(dbPath)
+
 	return s, nil
+}
+
+// secureDBFiles restricts the SQLite database and its WAL/SHM sidecars to the
+// owner. SQLite creates new sidecars with the DB file's mode, so they inherit 0600.
+func secureDBFiles(dbPath string) {
+	for _, p := range []string{dbPath, dbPath + "-wal", dbPath + "-shm"} {
+		if err := os.Chmod(p, 0600); err != nil && !errors.Is(err, os.ErrNotExist) {
+			logger.Warn("store", "", fmt.Sprintf("restrict permissions on %s: %v", p, err))
+		}
+	}
 }
 
 func (d *DB) migrate() error {

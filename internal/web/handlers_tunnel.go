@@ -189,6 +189,16 @@ func (s *Server) handleTunnel(w http.ResponseWriter, r *http.Request) {
 			pr.SetXForwarded()
 			pr.Out.Header.Set("X-Forwarded-Prefix", pathPrefix)
 			pr.Out.Host = targetHostPort
+
+			// Strip Pantau's own session cookie: the tunneled app runs on a
+			// different origin but cookies are not port-isolated.
+			pr.Out.Header.Del("Cookie")
+			for _, c := range pr.In.Cookies() {
+				if c.Name == "pantau_session" {
+					continue
+				}
+				pr.Out.AddCookie(c)
+			}
 		},
 		ModifyResponse: func(res *http.Response) error {
 			// Rewrite Location header on redirects (301/302/307/308) to preserve tunnel subpath
@@ -197,6 +207,20 @@ func (s *Server) handleTunnel(w http.ResponseWriter, r *http.Request) {
 					res.Header.Set("Location", pathPrefix+loc)
 				}
 			}
+
+			// A tunneled app must not hijack Pantau's session or register a
+			// service worker on the shared tunnel origin.
+			setCookies := res.Header.Values("Set-Cookie")
+			res.Header.Del("Set-Cookie")
+			for _, sc := range setCookies {
+				c, err := http.ParseSetCookie(sc)
+				if err != nil || c.Name == "pantau_session" {
+					continue
+				}
+				res.Header.Add("Set-Cookie", sc)
+			}
+			res.Header.Del("Service-Worker-Allowed")
+
 			return nil
 		},
 		ErrorHandler: func(rw http.ResponseWriter, req *http.Request, err error) {
@@ -206,4 +230,40 @@ func (s *Server) handleTunnel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	proxy.ServeHTTP(w, r)
+}
+
+// SetTunnelPort records the loopback port that serves the dedicated tunnel
+// origin. Call before any server starts serving.
+func (s *Server) SetTunnelPort(p int) {
+	s.tunnelPort = p
+}
+
+// TunnelHandler returns the handler for the dedicated tunnel origin (a
+// separate loopback port, so tunneled apps are not same-origin with Pantau).
+// It serves only /api/tunnel/; every other path is a 404.
+func (s *Server) TunnelHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/tunnel/", s.authMiddleware(s.handleTunnel))
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	})
+	return mux
+}
+
+// handleTunnelRedirect sends tunnel requests arriving on the main origin to
+// the dedicated tunnel origin.
+func (s *Server) handleTunnelRedirect(w http.ResponseWriter, r *http.Request) {
+	if s.tunnelPort == 0 {
+		http.Error(w, "tunnel listener not running", http.StatusServiceUnavailable)
+		return
+	}
+
+	// r.Host is restricted to localhost/IP literals by Guard, so this is not
+	// an open redirect.
+	host := r.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	target := "http://" + net.JoinHostPort(strings.Trim(host, "[]"), strconv.Itoa(s.tunnelPort)) + r.URL.RequestURI()
+	http.Redirect(w, r, target, http.StatusTemporaryRedirect)
 }

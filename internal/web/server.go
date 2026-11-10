@@ -96,6 +96,7 @@ type Server struct {
 	htmlETag          string
 	docsFS            fs.FS
 	tunnelRunners     sync.Map // hostID -> *tunnelRunnerEntry
+	tunnelPort        int      // dedicated loopback port for the tunnel origin (0 = disabled)
 	inspectAllMu      sync.Mutex
 	inspectAllActive  bool
 	lastInspectAll    time.Time
@@ -368,7 +369,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/terraform/notifications/test", s.authMiddleware(s.handleTerraformNotificationsTest))
 	s.mux.HandleFunc("/api/terraform/webhook/", s.handleTerraformWebhook) // public, bypasses authMiddleware
 	// SSH Direct-TCPIP Reverse Proxy Tunnel
-	s.mux.HandleFunc("/api/tunnel/", s.authMiddleware(s.handleTunnel))
+	s.mux.HandleFunc("/api/tunnel/", s.authMiddleware(s.handleTunnelRedirect))
 	s.mux.HandleFunc("/ws/pkg/upgrade", s.authMiddleware(s.handleWSPkgUpgrade))
 
 	// Snapshots & GitHub Backup
@@ -2487,7 +2488,11 @@ func (s *Server) handleWSTerminal(w http.ResponseWriter, r *http.Request) {
 					Rows int `json:"rows"`
 				}
 				if json.Unmarshal(data, &sz) == nil && sz.Cols > 0 && sz.Rows > 0 {
-					resizeChan <- [2]int{sz.Cols, sz.Rows}
+					// Non-blocking: the session may have ended and nothing drains resizeChan.
+					select {
+					case resizeChan <- [2]int{sz.Cols, sz.Rows}:
+					default:
+					}
 					continue
 				}
 			}
@@ -2518,6 +2523,11 @@ func (s *Server) handleWSTerminal(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = runner.Terminal(inReader, outWriter, 120, 40, resizeChan)
+
+	// The session is over: unblock the pump goroutines, which would otherwise
+	// wait forever on a pipe nobody reads or a socket that stays open.
+	_ = inWriter.Close()
+	_ = outWriter.Close()
 }
 
 var (

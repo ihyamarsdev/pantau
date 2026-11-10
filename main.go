@@ -130,32 +130,66 @@ func resolveLogLevel(flagLevel string, quiet bool) slog.Level {
 	return slog.LevelError
 }
 
-// tryListen checks if port p is free on both IPv4 loopback and wildcard interfaces.
+// resolveListen validates the HTTP bind address and returns the configured
+// value (for display) plus the address to bind (for the listener).
+// "localhost" binds IPv4 loopback explicitly so both http://127.0.0.1 and
+// http://localhost reach the server.
+// The -listen flag wins over the PANTAU_LISTEN env var.
+func resolveListen(flagListen string, flagSet bool) (cfg string, bind string, err error) {
+	cfg = strings.TrimSpace(flagListen)
+	if !flagSet {
+		if env := strings.TrimSpace(os.Getenv("PANTAU_LISTEN")); env != "" {
+			cfg = env
+		}
+	}
+	if cfg == "" {
+		cfg = "127.0.0.1"
+	}
+	if cfg == "localhost" {
+		return cfg, "127.0.0.1", nil
+	}
+	if net.ParseIP(cfg) == nil {
+		return "", "", fmt.Errorf("invalid listen address %q: expected an IP address (e.g. 127.0.0.1, 0.0.0.0) or localhost", cfg)
+	}
+	return cfg, cfg, nil
+}
+
+// isLoopbackAddr reports whether the configured bind address stays on the local machine.
+func isLoopbackAddr(cfg string) bool {
+	if cfg == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(cfg)
+	return ip != nil && ip.IsLoopback()
+}
+
+// tryListen checks if port p is free on both IPv4 loopback and the target bind address.
 // ponytail: on Windows Winsock, net.Listen("tcp", ":p") binds dual-stack IPv6 without error even if an IPv4 service (e.g. SQLFox) occupies 127.0.0.1:p.
 // Probing 127.0.0.1 via Dial and verifying IPv4 binding ensures busy ports are correctly detected across OSes.
-func tryListen(p int) net.Listener {
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", p), 50*time.Millisecond)
+func tryListen(host string, p int) net.Listener {
+	portStr := strconv.Itoa(p)
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", portStr), 50*time.Millisecond)
 	if err == nil {
 		_ = conn.Close()
 		return nil
 	}
 
-	l4, err := net.Listen("tcp4", fmt.Sprintf("127.0.0.1:%d", p))
+	l4, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", portStr))
 	if err != nil {
 		return nil
 	}
 	_ = l4.Close()
 
-	l, err := net.Listen("tcp", fmt.Sprintf(":%d", p))
+	l, err := net.Listen("tcp", net.JoinHostPort(host, portStr))
 	if err != nil {
 		return nil
 	}
 	return l
 }
 
-func listenPort(port int, portExplicit bool) (net.Listener, int, error) {
+func listenPort(host string, port int, portExplicit bool) (net.Listener, int, error) {
 	if portExplicit {
-		l := tryListen(port)
+		l := tryListen(host, port)
 		if l == nil {
 			return nil, port, fmt.Errorf("port %d is already in use", port)
 		}
@@ -163,7 +197,7 @@ func listenPort(port int, portExplicit bool) (net.Listener, int, error) {
 	}
 
 	for p := port; p <= port+19; p++ {
-		if l := tryListen(p); l != nil {
+		if l := tryListen(host, p); l != nil {
 			if p != port {
 				fmt.Printf("⚠️ Port %d was in use, auto-scanned and bound to port %d\n", port, p)
 			}
@@ -172,7 +206,6 @@ func listenPort(port int, portExplicit bool) (net.Listener, int, error) {
 	}
 	return nil, port, fmt.Errorf("ports %d-%d are all in use", port, port+19)
 }
-
 
 func main() {
 	updater.CleanOldArtifacts()
@@ -183,6 +216,8 @@ func main() {
 	updateFlag := flag.Bool("update", false, "Self-update Pantau to latest release and exit")
 	disableUpdateCheckFlag := flag.Bool("disable-update-check", false, "Disable background update checks (recommended for airgapped environments)")
 	portFlag := flag.Int("port", 8080, "HTTP server port")
+	listenFlag := flag.String("listen", "127.0.0.1", "HTTP server bind address (IP address or localhost) [env: PANTAU_LISTEN]")
+	tunnelPortFlag := flag.Int("tunnel-port", 0, "Remote Web Port Tunnel port, a separate origin from the UI (default: first free port after -port)")
 	dbFlag := flag.String("db", "pantau.db", "SQLite database file path")
 	openBrowserFlag := flag.Bool("open", runtime.GOOS == "windows", "Open default browser on start")
 	disable2FAFlag := flag.Bool("disable-2fa", false, "Emergency bypass flag to disable 2FA")
@@ -190,6 +225,12 @@ func main() {
 	quietFlag := flag.Bool("quiet", false, "Suppress non-error console logs (shorthand for -log-level=error)")
 	flag.BoolVar(quietFlag, "q", false, "Suppress non-error console logs (shorthand)")
 	flag.Parse()
+	listenFlagSet := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "listen" {
+			listenFlagSet = true
+		}
+	})
 
 	ver := resolveVersion()
 	if *versionFlag {
@@ -244,6 +285,12 @@ func main() {
 			portExplicit = true
 		}
 	})
+
+	listenCfg, listenBind, err := resolveListen(*listenFlag, listenFlagSet)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ %v\n", err)
+		os.Exit(1)
+	}
 
 	port, dbPath, envPortExplicit := resolveConfig(*portFlag, *dbFlag)
 	if envPortExplicit {
@@ -339,7 +386,7 @@ func main() {
 	server.StartTerraformDriftScheduler(ctx)
 	server.StartTerraformAuditSink(ctx)
 	server.SetDocsFS(embeddedDocs)
-	listener, port, err := listenPort(port, portExplicit)
+	listener, port, err := listenPort(listenBind, port, portExplicit)
 	if err != nil {
 		logger.Error("system", "", "Failed to bind port: "+err.Error())
 		fmt.Fprintf(os.Stderr, "❌ Failed to bind port: %v\n", err)
@@ -350,9 +397,34 @@ func main() {
 		_ = guard.UpdatePort(port)
 	}
 
+	displayHost := listenCfg
+	if ip := net.ParseIP(displayHost); ip != nil && ip.IsUnspecified() {
+		displayHost = "localhost"
+	}
+	runURL := "http://" + net.JoinHostPort(displayHost, strconv.Itoa(port))
+
+	// Tunneled remote web apps get their own origin (another port) so their JS cannot call Pantau's API.
+	tunnelStart, tunnelExplicit := *tunnelPortFlag, *tunnelPortFlag > 0
+	if !tunnelExplicit {
+		tunnelStart = port + 1
+	}
+	tunnelListener, tunnelPort, err := listenPort(listenBind, tunnelStart, tunnelExplicit)
+	if err != nil {
+		logger.Error("system", "", "Web port tunnel disabled: "+err.Error())
+		fmt.Fprintf(os.Stderr, "⚠️ Web port tunnel disabled: %v\n", err)
+	} else {
+		server.SetTunnelPort(tunnelPort)
+	}
+	tunnelServer := &http.Server{
+		Addr:              net.JoinHostPort(listenBind, strconv.Itoa(tunnelPort)),
+		Handler:           web.Guard(server.TunnelHandler()),
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+
 	httpServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
-		Handler: server,
+		Addr:    net.JoinHostPort(listenBind, strconv.Itoa(port)),
+		Handler: web.Guard(server),
 		// ponytail: bound slow-header clients and idle keep-alives; no Read/WriteTimeout because SSE, WebSocket and file streams are long-lived.
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
@@ -362,6 +434,7 @@ func main() {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer shutdownCancel()
 		_ = httpServer.Shutdown(shutdownCtx)
+		_ = tunnelServer.Shutdown(shutdownCtx)
 		if guard != nil {
 			_ = guard.Close()
 		}
@@ -369,8 +442,20 @@ func main() {
 	})
 
 	go func() {
-		fmt.Printf("🛡️ Pantau running on http://0.0.0.0:%d (Default password: admin)\n\n", port)
-		logger.Info("system", "", fmt.Sprintf("🛡️ Pantau running on http://0.0.0.0:%d", port), "port", port)
+		fmt.Printf("🛡️ Pantau running on %s (Default password: admin)\n", runURL)
+		logger.Info("system", "", fmt.Sprintf("🛡️ Pantau running on %s", runURL), "port", port, "listen", listenCfg)
+		if !isLoopbackAddr(listenCfg) {
+			fmt.Printf("⚠️ Warning: Pantau is bound to %s and is reachable from other machines on the network.\n", listenCfg)
+		}
+		if tunnelListener != nil {
+			fmt.Printf("🌐 Web port tunnels on http://%s\n", net.JoinHostPort(displayHost, strconv.Itoa(tunnelPort)))
+			go func() {
+				if err := tunnelServer.Serve(tunnelListener); err != nil && err != http.ErrServerClosed {
+					logger.Error("system", "", "Tunnel server error: "+err.Error())
+				}
+			}()
+		}
+		fmt.Println()
 		if err := httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {
 			logger.Error("system", "", "HTTP server error: "+err.Error())
 			fmt.Fprintf(os.Stderr, "❌ HTTP server error: %v\n", err)
@@ -393,6 +478,7 @@ func main() {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 	_ = httpServer.Shutdown(shutdownCtx)
+	_ = tunnelServer.Shutdown(shutdownCtx)
 	fmt.Println("Pantau stopped cleanly.")
 	logger.Info("system", "", "Pantau stopped cleanly.")
 }

@@ -1458,6 +1458,38 @@ func TestResolveLogLevelFallbacks(t *testing.T) {
 	}
 }
 
+func TestResolveListen(t *testing.T) {
+	t.Setenv("PANTAU_LISTEN", "")
+
+	// 1. Default is loopback-only
+	cfg, bind, err := resolveListen("127.0.0.1", false)
+	if err != nil || cfg != "127.0.0.1" || bind != "127.0.0.1" {
+		t.Fatalf("expected default loopback, got (%s, %s, %v)", cfg, bind, err)
+	}
+
+	// 2. localhost resolves to IPv4 loopback for binding
+	cfg, bind, err = resolveListen("localhost", true)
+	if err != nil || cfg != "localhost" || bind != "127.0.0.1" {
+		t.Fatalf("expected localhost bind 127.0.0.1, got (%s, %s, %v)", cfg, bind, err)
+	}
+
+	// 3. Env var is used when the flag is absent, flag wins when set
+	t.Setenv("PANTAU_LISTEN", "0.0.0.0")
+	cfg, bind, err = resolveListen("127.0.0.1", false)
+	if err != nil || cfg != "0.0.0.0" || bind != "0.0.0.0" {
+		t.Fatalf("expected env PANTAU_LISTEN, got (%s, %s, %v)", cfg, bind, err)
+	}
+	cfg, _, err = resolveListen("127.0.0.1", true)
+	if err != nil || cfg != "127.0.0.1" {
+		t.Fatalf("expected flag to win over env, got (%s, %v)", cfg, err)
+	}
+
+	// 4. Invalid values are rejected
+	if _, _, err = resolveListen("not-an-ip", true); err == nil {
+		t.Fatal("expected invalid listen address to error")
+	}
+}
+
 func TestPortAutoScanFallback(t *testing.T) {
 	// 1. Simulating an active service (e.g. SQLFox on Windows) listening on IPv4 loopback
 	baseListener, err := net.Listen("tcp4", "127.0.0.1:0")
@@ -1469,7 +1501,7 @@ func TestPortAutoScanFallback(t *testing.T) {
 	basePort := baseListener.Addr().(*net.TCPAddr).Port
 
 	// In non-explicit mode, listenPort should detect basePort is busy and scan to another port
-	l, boundPort, err := listenPort(basePort, false)
+	l, boundPort, err := listenPort("127.0.0.1", basePort, false)
 	if err != nil {
 		t.Fatalf("expected listenPort to auto-scan and succeed, got error: %v", err)
 	}
@@ -1480,7 +1512,7 @@ func TestPortAutoScanFallback(t *testing.T) {
 	}
 
 	// 2. In explicit mode, listenPort should fail-fast when basePort is busy
-	_, _, err = listenPort(basePort, true)
+	_, _, err = listenPort("127.0.0.1", basePort, true)
 	if err == nil {
 		t.Fatalf("expected explicit listenPort to fail on busy port %d, but succeeded", basePort)
 	}

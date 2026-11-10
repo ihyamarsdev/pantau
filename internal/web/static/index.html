@@ -7506,6 +7506,9 @@ const I18N = {
     "tunnel_opening_remote_port": "Opening remote port ",
     "tunnel_via_pantau": " via Pantau Tunnel",
     "tunnel_opening_browser_link": "Opening link in browser: ",
+    "tunnel_confirm_title": "Open remote port?",
+    "tunnel_confirm_msg": "The remote host \"{host}\" asked to open port {port} in your browser through Pantau Tunnel. Only continue if you trust this host.",
+    "tunnel_confirm_open": "Open",
     "terminal_ctrl_click_link": "Press Ctrl+Click (or Cmd+Click) to open link",
     // ===== SLICE-C:END =====
     // ---------------------------------
@@ -9065,6 +9068,9 @@ const I18N = {
     "tunnel_opening_remote_port": "Membuka remote port ",
     "tunnel_via_pantau": " via Pantau Tunnel",
     "tunnel_opening_browser_link": "Membuka link di browser: ",
+    "tunnel_confirm_title": "Buka remote port?",
+    "tunnel_confirm_msg": "Remote host \"{host}\" meminta membuka port {port} di browser melalui Pantau Tunnel. Lanjutkan hanya jika host ini tepercaya.",
+    "tunnel_confirm_open": "Buka",
     "terminal_ctrl_click_link": "Tekan Ctrl+Click (atau Cmd+Click) untuk membuka link",
     // ===== SLICE-C:END =====
     // ---------------------------------
@@ -10390,7 +10396,7 @@ function renderGridView(grid, isManualSort) {
 
       const noteSnippet = (h.notes || '').trim();
       const noteHtml = noteSnippet ? `
-        <div class="host-card-note" onclick="openEditNoteModal(${h.id}, decodeURIComponent('${encodeURIComponent(h.notes || '')}'), decodeURIComponent('${encodeURIComponent(h.name || '')}'))" title="${t('edit_host_note_title')}">
+        <div class="host-card-note" onclick="openEditNoteModal(${h.id}, ${jsArg(h.notes || '')}, ${jsArg(h.name || '')})" title="${t('edit_host_note_title')}">
           <svg class="icon icon-sm text-muted"><use href="#i-pencil"/></svg>
           <span class="host-card-note-text">${escapeHtml(noteSnippet)}</span>
         </div>
@@ -10499,8 +10505,8 @@ function renderGridView(grid, isManualSort) {
             <div class="dropdown-menu" id="dropdown-${h.id}">
               <button class="dropdown-item" onclick="openEditHostModal(${h.id})"><svg class="icon icon-sm"><use href="#i-pencil"/></svg> <span>${t('edit_host', 'Edit Host')}</span></button>
               <button class="dropdown-item" onclick="testHostSSH(${h.id})"><svg class="icon icon-sm"><use href="#i-zap"/></svg> <span>${t('test_connection', 'Test Connection')}</span></button>
-              <button class="dropdown-item" onclick="openInjectKeyModal(${h.id}, '${escapeHtml(h.name)}')"><svg class="icon icon-sm"><use href="#i-key-round"/></svg> <span>${t('btn_inject_key', 'Inject Key')}</span></button>
-              ${!h.notes ? `<button class="dropdown-item" onclick="openEditNoteModal(${h.id}, '', decodeURIComponent('${encodeURIComponent(h.name || '')}'))"><svg class="icon icon-sm"><use href="#i-sticky-note"/></svg> <span>${t('add_note', 'Add Note')}</span></button>` : ''}
+              <button class="dropdown-item" onclick="openInjectKeyModal(${h.id}, ${jsArg(h.name)})"><svg class="icon icon-sm"><use href="#i-key-round"/></svg> <span>${t('btn_inject_key', 'Inject Key')}</span></button>
+              ${!h.notes ? `<button class="dropdown-item" onclick="openEditNoteModal(${h.id}, '', ${jsArg(h.name || '')})"><svg class="icon icon-sm"><use href="#i-sticky-note"/></svg> <span>${t('add_note', 'Add Note')}</span></button>` : ''}
               <div class="dropdown-divider"></div>
               <button class="dropdown-item danger" onclick="deleteHost(${h.id})"><svg class="icon icon-sm"><use href="#i-trash-2"/></svg> <span>${t('delete_host', 'Delete Host')}</span></button>
             </div>
@@ -10732,7 +10738,7 @@ function renderListView(listContainer, isManualSort) {
               <div class="dropdown-menu" id="dropdown-list-${h.id}">
                 <button class="dropdown-item" onclick="openEditHostModal(${h.id})"><svg class="icon icon-sm"><use href="#i-pencil"/></svg> <span>${t('edit_host', 'Edit Host')}</span></button>
                 <button class="dropdown-item" onclick="testHostSSH(${h.id})"><svg class="icon icon-sm"><use href="#i-zap"/></svg> <span>${t('test_connection', 'Test Connection')}</span></button>
-                <button class="dropdown-item" onclick="openInjectKeyModal(${h.id}, '${escapeHtml(h.name)}')"><svg class="icon icon-sm"><use href="#i-key-round"/></svg> <span>${t('btn_inject_key', 'Inject Key')}</span></button>
+                <button class="dropdown-item" onclick="openInjectKeyModal(${h.id}, ${jsArg(h.name)})"><svg class="icon icon-sm"><use href="#i-key-round"/></svg> <span>${t('btn_inject_key', 'Inject Key')}</span></button>
                 <div class="dropdown-divider"></div>
                 <button class="dropdown-item danger" onclick="deleteHost(${h.id})"><svg class="icon icon-sm"><use href="#i-trash-2"/></svg> <span>${t('delete_host', 'Delete Host')}</span></button>
               </div>
@@ -11948,7 +11954,7 @@ function switchTab(tab, presetID) {
                 <h4 style="margin: 0; display: flex; align-items: center; gap: 6px;">
                   ${svgIcon('gauge', 'icon-sm')} <span>${t('lifecycle_assessment')}</span>
                 </h4>
-                <button class="btn btn-sm btn-ghost" onclick="openCommissionDateModal(${h.id}, '${escapeHtml(h.commission_date || '')}', '${escapeHtml(h.bios_date || '')}')" style="font-size: var(--fs-xs); padding: 3px 8px; display: inline-flex; align-items: center; gap: 4px;" title="${t('edit_commission_date', 'Edit Commission Date')}">
+                <button class="btn btn-sm btn-ghost" onclick="openCommissionDateModal(${h.id}, ${jsArg(h.commission_date || '')}, ${jsArg(h.bios_date || '')})" style="font-size: var(--fs-xs); padding: 3px 8px; display: inline-flex; align-items: center; gap: 4px;" title="${t('edit_commission_date', 'Edit Commission Date')}">
                   ${svgIcon('calendar', 'icon-sm')}
                   <span>${h.commission_date ? escapeHtml(h.commission_date) : t('set_commission_date', 'Set Commission Date')}</span>
                 </button>
@@ -12087,7 +12093,7 @@ function switchTab(tab, presetID) {
               <h4 style="margin: 0; display: flex; align-items: center; gap: 6px;">
                 ${svgIcon('sticky-note', 'icon-sm')} <span>${t('host_note')}</span>
               </h4>
-              <button class="btn btn-sm btn-ghost" onclick="openEditNoteModal(${h.id}, decodeURIComponent('${encodeURIComponent(h.notes || '')}'), decodeURIComponent('${encodeURIComponent(h.name || '')}'))" style="font-size: var(--fs-xs); display: inline-flex; align-items: center; gap: 4px;">
+              <button class="btn btn-sm btn-ghost" onclick="openEditNoteModal(${h.id}, ${jsArg(h.notes || '')}, ${jsArg(h.name || '')})" style="font-size: var(--fs-xs); display: inline-flex; align-items: center; gap: 4px;">
                 ${svgIcon('pencil', 'icon-sm')} <span>${t('edit')}</span>
               </button>
             </div>
@@ -12282,7 +12288,7 @@ function switchTab(tab, presetID) {
                         </span>
                       </td>
                       <td style="text-align: right; white-space: nowrap;">
-                        <button class="btn btn-sm btn-ghost btn-icon" onclick="editRulePrompt(${r.id}, '${escapeHtml(r.kind)}', '${escapeHtml(r.target)}', '${escapeHtml(r.expected)}')" title="${t('edit_rule', 'Edit Rule')}">
+                        <button class="btn btn-sm btn-ghost btn-icon" onclick="editRulePrompt(${r.id}, ${jsArg(r.kind)}, ${jsArg(r.target)}, ${jsArg(r.expected)})" title="${t('edit_rule', 'Edit Rule')}">
                           ${svgIcon('pencil', 'icon-sm')}
                         </button>
                         <button class="btn btn-sm btn-danger btn-icon" onclick="deleteRule(${r.id})" title="${t('delete', 'Delete')}">
@@ -14040,13 +14046,13 @@ function renderQuickAccessBar() {
     const icon = isDir ? svgIcon('folder', 'icon-sm folder-glyph') : getFileIcon(pin.path);
     const name = pin.path.split('/').filter(Boolean).pop() || '/';
     const note = (pin.note || '').trim();
-    const action = isDir ? `loadFiles('${escapeHtml(pin.path)}')` : `openEditor('${escapeHtml(pin.path)}')`;
+    const action = isDir ? `loadFiles(${jsArg(pin.path)})` : `openEditor(${jsArg(pin.path)})`;
     return `
       <div class="file-pin-chip" onclick="${action}" title="${escapeHtml(pin.path)}${note ? ' — ' + escapeHtml(note) : ''}">
         <span class="pin-icon">${icon}</span>
         <span class="pin-name">${escapeHtml(name)}</span>
         ${note ? `<span class="pin-note">(${escapeHtml(note)})</span>` : ''}
-        <span class="pin-chip-action" onclick="event.stopPropagation(); openPinModal('${escapeHtml(pin.path)}', ${isDir})" title="${t('edit_pin')}">${svgIcon('pencil', 'icon-xs')}</span>
+        <span class="pin-chip-action" onclick="event.stopPropagation(); openPinModal(${jsArg(pin.path)}, ${isDir})" title="${t('edit_pin')}">${svgIcon('pencil', 'icon-xs')}</span>
       </div>
     `;
   }).join('');
@@ -14100,12 +14106,12 @@ function renderBreadcrumbs(currentPath) {
       html += `<span class="file-breadcrumb-item active">${escapeHtml(parts[i])}</span>`;
     } else {
       const clickPath = accum;
-      html += `<span class="file-breadcrumb-item" onclick="loadFiles('${escapeHtml(clickPath)}')">${escapeHtml(parts[i])}</span>`;
+      html += `<span class="file-breadcrumb-item" onclick="loadFiles(${jsArg(clickPath)})">${escapeHtml(parts[i])}</span>`;
     }
   }
   html += `
     <div style="margin-left:auto;display:inline-flex;align-items:center;gap:4px;">
-      <button type="button" class="btn btn-icon btn-sm" onclick="copyTextToClipboard('${escapeHtml(currentPath)}')" title="${t('copy_path', 'Copy Path')}">${svgIcon('copy', 'icon-xs')}</button>
+      <button type="button" class="btn btn-icon btn-sm" onclick="copyTextToClipboard(${jsArg(currentPath)})" title="${t('copy_path', 'Copy Path')}">${svgIcon('copy', 'icon-xs')}</button>
       <button type="button" class="btn btn-icon btn-sm" onclick="toggleBreadcrumbInput(true)" title="Edit path">${svgIcon('pencil', 'icon-xs')}</button>
     </div>
   `;
@@ -14151,15 +14157,15 @@ function renderFilesView() {
       </div>
       <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
         ${renderFileAccessControls()}
-        <button class="btn btn-sm" onclick="openTerminalForPath('${escapeHtml(data.path)}')" title="${t('open_terminal_here', 'Open Terminal Here')}">
+        <button class="btn btn-sm" onclick="openTerminalForPath(${jsArg(data.path)})" title="${t('open_terminal_here', 'Open Terminal Here')}">
           ${svgIcon('terminal', 'icon-sm')} <span>${t('open_terminal_here', 'Open Terminal Here')}</span>
         </button>
-        <button class="btn btn-sm btn-icon" onclick="loadFiles('${parent}')" title="${t('up_dir')}">${svgIcon('corner-up-left', 'icon-sm')}</button>
-        <button class="btn btn-sm btn-icon" onclick="loadFiles('${escapeHtml(data.path)}')" title="${t('refresh')}">${svgIcon('refresh-cw', 'icon-sm')}</button>
-        <button class="btn btn-sm" onclick="openNewEditor('${escapeHtml(data.path)}')" title="${t('new_file', 'New File')}">
+        <button class="btn btn-sm btn-icon" onclick="loadFiles(${jsArg(parent)})" title="${t('up_dir')}">${svgIcon('corner-up-left', 'icon-sm')}</button>
+        <button class="btn btn-sm btn-icon" onclick="loadFiles(${jsArg(data.path)})" title="${t('refresh')}">${svgIcon('refresh-cw', 'icon-sm')}</button>
+        <button class="btn btn-sm" onclick="openNewEditor(${jsArg(data.path)})" title="${t('new_file', 'New File')}">
           ${svgIcon('file-plus', 'icon-sm')} <span>${t('new_file', 'New File')}</span>
         </button>
-        <input type="file" id="fileUploadInput" style="display: none;" onchange="uploadFile('${data.path}')" />
+        <input type="file" id="fileUploadInput" style="display: none;" onchange="uploadFile(${jsArg(data.path)})" />
         <button class="btn btn-primary btn-sm" ${isProtectedDir ? 'disabled title="' + t('cannot_upload_protected') + '"' : ''} onclick="document.getElementById('fileUploadInput').click()">
           ${svgIcon('upload', 'icon-sm')} <span>${t('upload_file')}</span>
         </button>
@@ -14358,9 +14364,9 @@ function renderFilesTableBody() {
     return `
       <tr>
         <td style="word-break: break-all;">
-          <button type="button" class="btn-file-pin ${isPinned ? 'pinned' : ''}" onclick="openPinModal('${escapeHtml(fullPath)}', ${f.is_dir})" title="${isPinned ? escapeHtml(pin.note || t('pinned')) : t('pin_this_item')}">${svgIcon('pin', 'icon-sm')}</button>
+          <button type="button" class="btn-file-pin ${isPinned ? 'pinned' : ''}" onclick="openPinModal(${jsArg(fullPath)}, ${f.is_dir})" title="${isPinned ? escapeHtml(pin.note || t('pinned')) : t('pin_this_item')}">${svgIcon('pin', 'icon-sm')}</button>
           ${f.is_dir 
-            ? '<a class="folder-link" href="javascript:void(0)" onclick="loadFiles(\'' + fullPath + '\')">' + svgIcon('folder', 'icon-sm folder-glyph') + ' <b>' + escapeHtml(f.name) + '</b></a>' 
+            ? '<a class="folder-link" href="javascript:void(0)" onclick="loadFiles(' + jsArg(fullPath) + ')">' + svgIcon('folder', 'icon-sm folder-glyph') + ' <b>' + escapeHtml(f.name) + '</b></a>' 
             : '<span class="file-link-wrap">' + icon + ' <span>' + escapeHtml(f.name) + '</span></span>'}
           ${isPinned && pin.note ? `<span class="file-pin-badge" title="${escapeHtml(pin.note)}">${svgIcon('sticky-note', 'icon-xs')} <span>${escapeHtml(pin.note)}</span></span>` : ''}
           ${isItemProtected ? '<span class="file-protected-icon" title="' + t('protected_path') + '">' + svgIcon('lock', 'icon-xs') + '</span>' : ''}
@@ -14370,16 +14376,16 @@ function renderFilesTableBody() {
         <td class="file-time-cell mono" style="text-align: center; white-space: nowrap;">${f.mod_time}</td>
         <td style="text-align: right; white-space: nowrap; padding-right: 14px;">
           <div class="action-grid" style="margin-left: auto;">
-            <button class="btn btn-sm btn-icon" title="${t('open_terminal_here', 'Open Terminal Here')}" onclick="openTerminalForPath('${escapeHtml(targetTermPath)}')">${svgIcon('terminal', 'icon-sm')}</button>
+            <button class="btn btn-sm btn-icon" title="${t('open_terminal_here', 'Open Terminal Here')}" onclick="openTerminalForPath(${jsArg(targetTermPath)})">${svgIcon('terminal', 'icon-sm')}</button>
             ${!f.is_dir 
-              ? `<button class="btn btn-primary btn-sm" ${isItemProtected ? 'disabled title="' + t('cannot_modify_protected') + '"' : ''} onclick="openEditor('${escapeHtml(fullPath)}')">${svgIcon('pencil', 'icon-sm')} <span>${t('edit')}</span></button>` 
+              ? `<button class="btn btn-primary btn-sm" ${isItemProtected ? 'disabled title="' + t('cannot_modify_protected') + '"' : ''} onclick="openEditor(${jsArg(fullPath)})">${svgIcon('pencil', 'icon-sm')} <span>${t('edit')}</span></button>` 
               : '<span style="display:inline-block;"></span>'}
-            <button class="btn btn-sm btn-icon action-btn-duplicate" title="${t('duplicate')}" ${isItemProtected ? 'disabled title="' + t('cannot_modify_protected') + '"' : ''} onclick="openDuplicateModal('${escapeHtml(fullPath)}', ${f.is_dir}, '${escapeHtml(f.name)}')">${svgIcon('copy', 'icon-sm')}</button>
+            <button class="btn btn-sm btn-icon action-btn-duplicate" title="${t('duplicate')}" ${isItemProtected ? 'disabled title="' + t('cannot_modify_protected') + '"' : ''} onclick="openDuplicateModal(${jsArg(fullPath)}, ${f.is_dir}, ${jsArg(f.name)})">${svgIcon('copy', 'icon-sm')}</button>
             ${f.is_dir 
-              ? `<button class="btn btn-sm btn-icon action-btn-download" title="${t('download_folder', 'Download Folder Archive')}" onclick="downloadFolder('${escapeHtml(fullPath)}')">${svgIcon('download', 'icon-sm')}</button>` 
+              ? `<button class="btn btn-sm btn-icon action-btn-download" title="${t('download_folder', 'Download Folder Archive')}" onclick="downloadFolder(${jsArg(fullPath)})">${svgIcon('download', 'icon-sm')}</button>` 
               : `<a class="btn btn-sm btn-icon action-btn-download" title="${t('download_file', 'Download File')}" href="${filesApiUrl(currentHost.id, 'download', { path: fullPath })}" download>${svgIcon('download', 'icon-sm')}</a>`}
-            <button class="btn btn-ghost btn-sm" onclick="openTransferDialog('${escapeHtml(fullPath)}', ${f.is_dir})">${svgIcon('arrow-left-right', 'icon-sm')} <span>${t('copy_to_host')}</span></button>
-            <button class="btn btn-danger btn-sm btn-icon" ${isItemProtected ? 'disabled title="' + t('cannot_delete_protected') + '"' : ''} onclick="deleteRemoteFile('${escapeHtml(fullPath)}', '${escapeHtml(currentFilesData.path)}')">${svgIcon('trash-2', 'icon-sm')}</button>
+            <button class="btn btn-ghost btn-sm" onclick="openTransferDialog(${jsArg(fullPath)}, ${f.is_dir})">${svgIcon('arrow-left-right', 'icon-sm')} <span>${t('copy_to_host')}</span></button>
+            <button class="btn btn-danger btn-sm btn-icon" ${isItemProtected ? 'disabled title="' + t('cannot_delete_protected') + '"' : ''} onclick="deleteRemoteFile(${jsArg(fullPath)}, ${jsArg(currentFilesData.path)})">${svgIcon('trash-2', 'icon-sm')}</button>
           </div>
         </td>
       </tr>
@@ -14881,7 +14887,7 @@ function renderGlobalPinsList() {
             const fileName = p.path.split('/').filter(Boolean).pop() || '/';
             return `
               <div class="global-pins-item">
-                <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; cursor: pointer;" onclick="jumpToHostFile(${p.host_id}, '${escapeHtml(p.path)}', ${isDir})" title="${escapeHtml(p.path)}">
+                <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; cursor: pointer;" onclick="jumpToHostFile(${p.host_id}, ${jsArg(p.path)}, ${isDir})" title="${escapeHtml(p.path)}">
                   <span style="flex-shrink: 0; display: inline-flex; align-items: center;">${icon}</span>
                   <div style="min-width: 0; flex: 1;">
                     <div style="font-weight: 500; font-size: var(--fs-sm); color: var(--text); word-break: break-all;">
@@ -14892,13 +14898,13 @@ function renderGlobalPinsList() {
                   </div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: 12px;">
-                  <button class="btn btn-primary btn-sm" onclick="jumpToHostFile(${p.host_id}, '${escapeHtml(p.path)}', ${isDir})">
+                  <button class="btn btn-primary btn-sm" onclick="jumpToHostFile(${p.host_id}, ${jsArg(p.path)}, ${isDir})">
                     ${isDir ? svgIcon('folder-open', 'icon-xs') : svgIcon('pencil', 'icon-xs')} <span>Open</span>
                   </button>
-                  <button class="btn btn-sm" onclick="openTerminalFromGlobalPin(${p.host_id}, '${escapeHtml(p.path)}', ${isDir})" title="${t('open_terminal_here', 'Open Terminal Here')}" style="display: inline-flex; align-items: center; gap: 4px;">
+                  <button class="btn btn-sm" onclick="openTerminalFromGlobalPin(${p.host_id}, ${jsArg(p.path)}, ${isDir})" title="${t('open_terminal_here', 'Open Terminal Here')}" style="display: inline-flex; align-items: center; gap: 4px;">
                     ${svgIcon('terminal', 'icon-xs')} <span>Terminal</span>
                   </button>
-                  <button class="btn btn-danger btn-sm btn-icon" onclick="deleteGlobalPin(${p.host_id}, '${escapeHtml(p.path)}')" title="${t('btn_unpin')}">
+                  <button class="btn btn-danger btn-sm btn-icon" onclick="deleteGlobalPin(${p.host_id}, ${jsArg(p.path)})" title="${t('btn_unpin')}">
                     ${svgIcon('trash-2', 'icon-xs')}
                   </button>
                 </div>
@@ -15359,11 +15365,11 @@ function renderWorkspaceShelf() {
     }
     const tooltip = (s.type === 'editor' ? 'File: ' + s.path : 'Host: ' + s.hostName + ' (' + (s.tab === 'files' ? s.path : s.tab) + ')') + ' [Alt+' + (idx + 1) + ']';
     return `
-      <div class="workspace-chip" onclick="restoreWorkspaceSession('${s.id}')" title="${escapeHtml(tooltip)}">
+      <div class="workspace-chip" onclick="restoreWorkspaceSession(${jsArg(s.id)})" title="${escapeHtml(tooltip)}">
         <span style="display: inline-flex; align-items: center;">${icon}</span>
         <span class="workspace-chip-title">${escapeHtml(title)}</span>
         ${s.isDirty ? '<span class="workspace-chip-dirty" title="Unsaved changes">•</span>' : ''}
-        <button type="button" class="workspace-chip-close" onclick="closeWorkspaceSession('${s.id}', event)" title="${t('close_session', 'Close session')}">${svgIcon('x', 'icon-sm')}</button>
+        <button type="button" class="workspace-chip-close" onclick="closeWorkspaceSession(${jsArg(s.id)}, event)" title="${t('close_session', 'Close session')}">${svgIcon('x', 'icon-sm')}</button>
       </div>
     `;
   }).join('');
@@ -16444,7 +16450,7 @@ function renderTerminalPinsList(tabId, hostId, pins) {
     const icon = pin.is_dir ? svgIcon('folder', 'icon-sm') : svgIcon('file-text', 'icon-sm');
     const actionHint = pin.is_dir ? 'Click to cd' : 'Click to insert path';
     return `
-      <div class="terminal-dropdown-item" style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; cursor: pointer; border-bottom: 1px solid var(--card-border); gap: 8px;" onclick="triggerPinAction('${tabId}', '${escapeHtml(pin.path)}', ${pin.is_dir})" title="${escapeHtml(actionHint)}">
+      <div class="terminal-dropdown-item" style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; cursor: pointer; border-bottom: 1px solid var(--card-border); gap: 8px;" onclick="triggerPinAction('${tabId}', ${jsArg(pin.path)}, ${pin.is_dir})" title="${escapeHtml(actionHint)}">
         <div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1;">
           <span style="color: var(--text-muted); display: inline-flex; align-items: center; flex-shrink: 0;">${icon}</span>
           <div style="min-width: 0; display: flex; flex-direction: column;">
@@ -16452,7 +16458,7 @@ function renderTerminalPinsList(tabId, hostId, pins) {
             ${pin.note ? `<span style="font-size: 0.68rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;">${svgIcon('sticky-note', 'icon-xs')} ${escapeHtml(pin.note)}</span>` : ''}
           </div>
         </div>
-        <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); deleteTerminalPin('${tabId}', ${hostId}, '${escapeHtml(pin.path)}')" title="Unpin" style="padding: 2px; color: var(--text-muted);">
+        <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); deleteTerminalPin('${tabId}', ${hostId}, ${jsArg(pin.path)})" title="Unpin" style="padding: 2px; color: var(--text-muted);">
           ${svgIcon('x', 'icon-xs')}
         </button>
       </div>
@@ -16559,7 +16565,12 @@ function setupTerminalLinkProvider(term, tab, hostID) {
   });
 
   // Standard OSC 1337 (OpenURL) & OSC 777 remote browser opener hook
-  const handleRemoteBrowserOpen = (rawUrl) => {
+  const isLoopbackHostname = (hostname) => {
+    const h = String(hostname || '').toLowerCase().replace(/^\[/, '').replace(/\]$/, '');
+    return h === 'localhost' || h === '::1' || h === '0.0.0.0' || /^127\./.test(h);
+  };
+
+  const handleRemoteBrowserOpen = async (rawUrl) => {
     let url = (rawUrl || '').trim();
     if (!url) return false;
     if (!/^https?:\/\//i.test(url)) {
@@ -16568,10 +16579,21 @@ function setupTerminalLinkProvider(term, tab, hostID) {
     try {
       const parsed = new URL(url);
       const hostname = parsed.hostname.toLowerCase();
-      const isLoopback = (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0');
-      if (isLoopback && parsed.port) {
+      if (isLoopbackHostname(hostname) && parsed.port) {
         const subpath = parsed.pathname + (parsed.search || '') + (parsed.hash || '');
         const tunnelUrl = location.origin + '/api/tunnel/' + hostID + '/' + parsed.port + (subpath.startsWith('/') ? subpath : '/' + subpath);
+        const host = (currentHost && String(currentHost.id) === String(hostID))
+          ? currentHost
+          : (Array.isArray(allRawHosts) ? allRawHosts.find(h => String(h.id) === String(hostID)) : null);
+        const hostName = host ? (host.name || host.host) : ('Host #' + hostID);
+        const confirmed = await showConfirm({
+          title: t('tunnel_confirm_title', 'Open remote port?'),
+          message: t('tunnel_confirm_msg', 'The remote host "{host}" asked to open port {port} in your browser through Pantau Tunnel. Only continue if you trust this host.')
+            .replace('{host}', hostName).replace('{port}', parsed.port),
+          confirmText: t('tunnel_confirm_open', 'Open'),
+          danger: false
+        });
+        if (!confirmed) return true;
         saveRecentPort(parsed.port);
         window.open(tunnelUrl, '_blank');
         showToast(t('tunnel_opening_remote_port', 'Opening remote port ') + parsed.port + t('tunnel_via_pantau', ' via Pantau Tunnel'), 'info', 2500);
@@ -16586,13 +16608,15 @@ function setupTerminalLinkProvider(term, tab, hostID) {
   if (term.parser && typeof term.parser.registerOscHandler === 'function') {
     term.parser.registerOscHandler(1337, (data) => {
       if (data.startsWith('OpenURL=')) {
-        return handleRemoteBrowserOpen(data.slice(8));
+        handleRemoteBrowserOpen(data.slice(8));
+        return true;
       }
       return false;
     });
     term.parser.registerOscHandler(777, (data) => {
       if (data.startsWith('open;')) {
-        return handleRemoteBrowserOpen(data.slice(5));
+        handleRemoteBrowserOpen(data.slice(5));
+        return true;
       }
       return false;
     });
@@ -18624,7 +18648,12 @@ window.addEventListener('keydown', (e) => {
 
 function escapeHtml(s) {
   if (!s) return '';
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ponytail: inline-handler argument helper for double-quoted on*= attributes; the JSON literal is HTML-escaped so the browser decodes it back to valid JS. Use without surrounding quotes: onclick="loadFiles(${jsArg(path)})"
+function jsArg(v) {
+  return escapeHtml(JSON.stringify(v == null ? '' : String(v)));
 }
 
 let currentDoc = 'readme';
@@ -24442,7 +24471,7 @@ function renderCfZones() {
     const plan = z.plan || 'Free';
     const nameServers = Array.isArray(z.name_servers) ? z.name_servers.join(', ') : '';
     const isPaused = !!z.paused;
-    return `<div class="card host-card" style="cursor:pointer;" onclick="openCfZoneModal('${escapeHtml(z.id)}')">
+    return `<div class="card host-card" style="cursor:pointer;" onclick="openCfZoneModal(${jsArg(z.id)})">
       <div class="host-card-header">
         <div style="display:flex;align-items:center;gap:8px;min-width:0;">
           <span class="status-dot ${status === 'active' ? 'online' : (status === 'pending' ? 'warn' : 'offline')}"></span>
@@ -24461,7 +24490,7 @@ function renderCfZones() {
         NS: ${escapeHtml(nameServers || '-')}
       </div>
       <div style="margin-top:auto;display:flex;justify-content:flex-end;">
-        <button type="button" class="btn btn-sm btn-primary" onclick="event.stopPropagation();openCfZoneModal('${escapeHtml(z.id)}')" style="display:inline-flex;align-items:center;gap:6px;">
+        <button type="button" class="btn btn-sm btn-primary" onclick="event.stopPropagation();openCfZoneModal(${jsArg(z.id)})" style="display:inline-flex;align-items:center;gap:6px;">
           ${svgIcon('cloud', 'icon-sm')} <span>${t('cf_manage_zone', 'Manage Zone')}</span>
         </button>
       </div>
@@ -24668,7 +24697,7 @@ function renderCfDnsTable() {
     const ttlStr = r.ttl === 1 ? t('cf_ttl_auto', 'Auto') : (r.ttl >= 3600 ? `${r.ttl / 3600}h` : `${r.ttl}s`);
     const isProxied = r.proxied === true;
     const proxyBadge = r.proxiable
-      ? `<button type="button" class="badge ${isProxied ? 'badge-warning' : 'badge-info'}" style="cursor:pointer;border:none;outline:none;" onclick="toggleCfRecordProxied('${escapeHtml(r.id)}')" title="Click to toggle proxy">
+      ? `<button type="button" class="badge ${isProxied ? 'badge-warning' : 'badge-info'}" style="cursor:pointer;border:none;outline:none;" onclick="toggleCfRecordProxied(${jsArg(r.id)})" title="Click to toggle proxy">
           ${svgIcon('cloud', 'icon-xs')} <span>${isProxied ? t('cf_proxied_badge', 'Proxied') : t('cf_dns_only_badge', 'DNS only')}</span>
         </button>`
       : `<span class="badge" style="background:var(--surface-2);color:var(--text-muted);border:1px solid var(--card-border);">${t('cf_dns_only_badge', 'DNS only')}</span>`;
@@ -24680,8 +24709,8 @@ function renderCfDnsTable() {
       <td style="font-size:var(--fs-xs);">${escapeHtml(ttlStr)}</td>
       <td style="font-size:var(--fs-xs);color:var(--text-muted);">${escapeHtml(r.comment || '-')}</td>
       <td style="text-align:right;white-space:nowrap;">
-        <button type="button" class="btn btn-sm btn-ghost btn-icon" title="Edit" onclick="openCfRecordModal('${escapeHtml(r.id)}')">${svgIcon('pencil', 'icon-sm')}</button>
-        <button type="button" class="btn btn-sm btn-ghost btn-icon text-danger" title="Delete" onclick="deleteCfRecord('${escapeHtml(r.id)}')">${svgIcon('trash-2', 'icon-sm')}</button>
+        <button type="button" class="btn btn-sm btn-ghost btn-icon" title="Edit" onclick="openCfRecordModal(${jsArg(r.id)})">${svgIcon('pencil', 'icon-sm')}</button>
+        <button type="button" class="btn btn-sm btn-ghost btn-icon text-danger" title="Delete" onclick="deleteCfRecord(${jsArg(r.id)})">${svgIcon('trash-2', 'icon-sm')}</button>
       </td>
     </tr>`;
   }).join('');
@@ -24964,17 +24993,17 @@ function renderCfSettingRow(s) {
   const cur = String(s.value !== undefined && s.value !== null ? s.value : '');
   const editable = s.editable !== false && allowed.length > 0;
   const isToggle = editable && allowed.length === 2 && allowed.includes('on') && allowed.includes('off');
-  const id = escapeHtml(s.id);
+  const id = jsArg(s.id);
   const attention = (s.id === 'development_mode' && cur === 'on') || (s.id === 'security_level' && cur === 'under_attack') || (s.id === 'ssl' && (cur === 'off' || cur === 'flexible'));
   let ctl;
   if (isToggle) {
     ctl = `<label class="switch" style="margin:0;">
-      <input type="checkbox" ${cur === 'on' ? 'checked' : ''} onchange="updateCfZoneSetting('${id}', this.checked ? 'on' : 'off', this)" />
+      <input type="checkbox" ${cur === 'on' ? 'checked' : ''} onchange="updateCfZoneSetting(${id}, this.checked ? 'on' : 'off', this)" />
       <span class="switch-track"><span class="switch-thumb"></span></span>
       <span class="switch-label" style="min-width:64px;">${escapeHtml(cur === 'on' ? t('cf_set_on', 'On') : t('cf_set_off', 'Off'))}</span>
     </label>`;
   } else if (editable) {
-    ctl = `<select class="form-input" onchange="updateCfZoneSetting('${id}', this.value, this)">
+    ctl = `<select class="form-input" onchange="updateCfZoneSetting(${id}, this.value, this)">
       ${allowed.map(opt => `<option value="${escapeHtml(opt)}" ${opt === cur ? 'selected' : ''}>${escapeHtml(cfOptionLabel(opt))}</option>`).join('')}
     </select>`;
   } else {
@@ -25589,7 +25618,7 @@ function renderTfWorkspaces() {
     let html = '';
     sections.forEach(sec => {
       const isCol = collapsed.has(sec.key);
-      html += `<div class="host-group-divider collapsible" onclick="toggleTfWsGroup('${escapeHtml(sec.key)}')">
+      html += `<div class="host-group-divider collapsible" onclick="toggleTfWsGroup(${jsArg(sec.key)})">
         <span class="host-group-title">
           <svg class="icon icon-xs grp-caret ${isCol ? 'collapsed' : ''}"><use href="#i-chevron-down"/></svg>
           <svg class="icon icon-sm"><use href="#i-folder"/></svg>
@@ -25630,7 +25659,7 @@ function renderTfWorkspaces() {
     let html = '';
     sections.forEach(sec => {
       const isCol = collapsed.has(sec.key);
-      html += `<tr class="host-list-group-row collapsible" onclick="toggleTfWsGroup('${escapeHtml(sec.key)}')">
+      html += `<tr class="host-list-group-row collapsible" onclick="toggleTfWsGroup(${jsArg(sec.key)})">
         <td colspan="7">
           <div style="display: flex; align-items: center; gap: 8px;">
             <svg class="icon icon-xs grp-caret ${isCol ? 'collapsed' : ''}"><use href="#i-chevron-down"/></svg>
@@ -26595,7 +26624,7 @@ async function openTfModuleDetail(id, ver) {
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
         ${versions.length ? `<select class="form-input" style="width:auto;" onchange="openTfModuleDetail(${id}, this.value)">${versions.map(v => `<option value="${tfE(v.version)}" ${v.version === (cur && cur.version) ? 'selected' : ''}>${tfE(v.version)}</option>`).join('')}</select>` : ''}
         <button type="button" class="btn btn-sm btn-primary" onclick="openTfVersionDialog(${id})">${svgIcon('plus', 'icon-xs')} ${tfE(t('tf_btn_add_version', 'Add Version'))}</button>
-        ${cur ? `<button type="button" class="btn btn-sm" onclick="deleteTfModuleVersion(${id}, '${tfE(cur.version)}')">${svgIcon('trash-2', 'icon-xs')} ${tfE(cur.version)}</button>` : ''}
+        ${cur ? `<button type="button" class="btn btn-sm" onclick="deleteTfModuleVersion(${id}, ${jsArg(cur.version)})">${svgIcon('trash-2', 'icon-xs')} ${tfE(cur.version)}</button>` : ''}
         <button type="button" class="btn btn-sm" onclick="openTfModuleEdit(${id}, 2)">${svgIcon('pencil', 'icon-xs')}</button>
         <button type="button" class="btn btn-sm btn-danger" onclick="deleteTfModule(${id})">${svgIcon('trash-2', 'icon-xs')}</button></div></div>
     ${cur ? `<div><b>${tfE(t('tf_usage_snippet', 'Usage Snippet'))}</b> <button type="button" class="btn btn-icon btn-sm" data-copy="${tfE(usage)}" onclick="tfCopyData(this)">${svgIcon('copy', 'icon-xs')}</button><pre class="tf-log" style="margin-top:6px;max-height:200px;">${tfE(usage)}</pre></div>

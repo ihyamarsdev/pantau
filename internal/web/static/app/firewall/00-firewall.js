@@ -137,7 +137,7 @@
       const tabs = d.backends.map((b) => {
         const state = !b.installed ? t('fw_not_installed') : (b.active ? t('fw_active') : t('fw_inactive'));
         const sel = S.tab === b.id;
-        return `<button class="btn btn-sm ${sel ? '' : 'btn-ghost'}" ${sel ? 'style="border-color: var(--accent); color: var(--accent);"' : ''} onclick="Fw.tab('${b.id}')">${b.id} <span class="badge ${b.active ? 'badge-success' : 'badge-sec-unknown'}" style="margin-left: 4px;">${esc(state)}</span></button>`;
+        return `<button class="btn btn-sm ${sel ? '' : 'btn-ghost'}" ${sel ? 'style="border-color: var(--accent); color: var(--accent);"' : ''} onclick="Fw.tab(${jsArg(b.id)})">${esc(b.id)} <span class="badge ${b.active ? 'badge-success' : 'badge-sec-unknown'}" style="margin-left: 4px;">${esc(state)}</span></button>`;
       }).join('');
       body += `<div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px;">${tabs}</div>${panel(d.backends.find((b) => b.id === S.tab) || d.backends[0])}`;
     }
@@ -157,12 +157,12 @@
     const btn = (onclick, ic, label, cls) => `<button class="btn btn-sm ${cls || ''}" onclick="${onclick}" ${dis}>${icon(ic)} <span>${esc(label)}</span></button>`;
     if (!b.installed) {
       return `<div style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 10px;">${esc(b.id)} ${esc(t('fw_not_installed'))}.</div>` +
-        btn(`Fw.setup('${b.id}')`, 'download', t('fw_install_setup'), 'btn-primary');
+        btn(`Fw.setup(${jsArg(b.id)})`, 'download', t('fw_install_setup'), 'btn-primary');
     }
-    const buttons = [btn(`Fw.openRule('${b.id}', null)`, 'plus', t('fw_add_rule'), 'btn-primary')];
+    const buttons = [btn(`Fw.openRule(${jsArg(b.id)}, null)`, 'plus', t('fw_add_rule'), 'btn-primary')];
     if (b.id === 'firewalld') buttons.push(btn('Fw.openAddZone()', 'folder-plus', t('fw_add_zone')));
-    if (b.id !== 'iptables') buttons.push(btn(`Fw.toggle('${b.id}', ${!b.active})`, 'power', b.active ? t('fw_disable') : t('fw_enable')));
-    buttons.push(btn(`Fw.setup('${b.id}')`, 'shield-check', t('fw_setup')));
+    if (b.id !== 'iptables') buttons.push(btn(`Fw.toggle(${jsArg(b.id)}, ${!b.active})`, 'power', b.active ? t('fw_disable') : t('fw_enable')));
+    buttons.push(btn(`Fw.setup(${jsArg(b.id)})`, 'shield-check', t('fw_setup')));
     if (b.id === 'iptables') buttons.push(btn('Fw.persist()', 'save', t('fw_save_disk')));
     const meta = [b.detail, b.defaults].filter(Boolean).map(esc).join(' · ');
     let html = `<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;"><span class="badge ${b.active ? 'badge-success' : 'badge-sec-unknown'}">${esc(b.active ? t('fw_active') : t('fw_inactive'))}</span><span style="color: var(--text-muted); font-size: 0.82rem; font-family: var(--font-mono);">${meta}</span></div>
@@ -178,11 +178,11 @@
     const rows = b.rules.map((r, i) => {
       const cells = { ufw: [r.index, r.raw], firewalld: [r.zone, r.kind, r.value], iptables: [r.chain, r.index, r.raw] }[b.id];
       const edit = r.editable
-        ? `<button class="btn btn-icon btn-sm btn-ghost" ${dis} onclick="Fw.openRule('${b.id}', ${i})" title="${esc(t('edit', 'Edit'))}">${icon('pencil')}</button>`
+        ? `<button class="btn btn-icon btn-sm btn-ghost" ${dis} onclick="Fw.openRule(${jsArg(b.id)}, ${i})" title="${esc(t('edit', 'Edit'))}">${icon('pencil')}</button>`
         : `<span title="${esc(t('fw_readonly'))}" style="color: var(--text-muted);">${icon('lock')}</span>`;
       return `<tr style="border-bottom: 1px solid var(--card-border);">
         ${cells.map((c, k) => `<td style="padding: 6px 12px; ${k === cells.length - 1 ? mono : 'white-space: nowrap;'}">${esc(c)}</td>`).join('')}
-        <td style="padding: 6px 12px; white-space: nowrap; text-align: right;">${edit}<button class="btn btn-icon btn-sm btn-ghost" ${dis} onclick="Fw.del('${b.id}', ${i})" title="${esc(t('delete', 'Delete'))}">${icon('trash-2')}</button></td>
+        <td style="padding: 6px 12px; white-space: nowrap; text-align: right;">${edit}<button class="btn btn-icon btn-sm btn-ghost" ${dis} onclick="Fw.del(${jsArg(b.id)}, ${i})" title="${esc(t('delete', 'Delete'))}">${icon('trash-2')}</button></td>
       </tr>`;
     }).join('');
     return html + `<div style="overflow-x: auto;"><table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">

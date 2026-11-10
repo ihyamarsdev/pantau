@@ -29,5 +29,5 @@ COPY --from=terraform /usr/local/bin/terraform /usr/local/bin/terraform
 WORKDIR /app
 COPY --from=builder /app/pantau /app/pantau
 VOLUME ["/app/data"]
-EXPOSE 8080
-ENTRYPOINT ["/app/pantau", "-db", "/app/data/pantau.db", "-port", "8080"]
+EXPOSE 8080 8081
+ENTRYPOINT ["/app/pantau", "-db", "/app/data/pantau.db", "-port", "8080", "-listen", "0.0.0.0", "-tunnel-port", "8081"]

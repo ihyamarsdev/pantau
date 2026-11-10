@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -839,7 +840,6 @@ func TestKubeClusterIDAndModeStore(t *testing.T) {
 	}
 }
 
-
 // A deleted or disabled rule must not keep showing as Drift: the Host Detail banner reads actual_items, which
 // used to outlive the rule.
 func TestRuleRemovalPrunesActualItems(t *testing.T) {
@@ -914,5 +914,40 @@ func TestRuleRemovalPrunesActualItems(t *testing.T) {
 	// Deleting an unknown rule is a no-op.
 	if err := db.DeleteDesiredRule(99999); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestOpenRestrictsDBFilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix file modes only")
+	}
+	dir := filepath.Join(t.TempDir(), "nested")
+	dbPath := filepath.Join(dir, "test.db")
+
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	dirInfo, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := dirInfo.Mode().Perm(); perm != 0700 {
+		t.Fatalf("db dir mode = %o, want 700", perm)
+	}
+
+	for _, p := range []string{dbPath, dbPath + "-wal", dbPath + "-shm"} {
+		info, err := os.Stat(p)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			t.Fatal(err)
+		}
+		if perm := info.Mode().Perm(); perm != 0600 {
+			t.Fatalf("%s mode = %o, want 600", p, perm)
+		}
 	}
 }
