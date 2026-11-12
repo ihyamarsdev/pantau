@@ -29,6 +29,12 @@ Pantau stays a single Go binary with no runtime dependency (ADR-0002), so Hermes
   locks, plan policy checks and approval comments all apply. Read tools pick fields explicitly (the raw Terraform
   workspace JSON embeds the webhook token); env values, compose files, `describe` output and Terraform files go through a
   name-based `redactSecrets` before they reach the LLM provider.
+- **Cloudflare tools** (`agent_mcp_cloudflare.go`): `cf_accounts`, `cf_zones`, `cf_dns_list`, `cf_zone_settings` (read)
+  and `cf_dns_change` (create/update/delete), `cf_purge_cache`, `cf_zone_setting_set`. They go through the Cloudflare
+  HTTP handlers in-process like Kubernetes, so the token stays in Pantau and input validation (record types, TTL, one
+  purge mode, setting allowlist) is the UI's. Accounts and zones are addressed by name; a zone name is resolved inside
+  the account. Every change is **gate 2** and host-less: it always asks, even in `auto` mode, and cannot be covered by
+  a session grant. `update` starts from the current record because the API replaces the whole record.
 - **Gate 3.** Besides gate 1 (routine) and 2 (shell, drain, compose down), gate 3 is infrastructure change:
   `tf_apply`, `ansible_run` mode `run` and `kube_apply`. It is never auto-approved and never covered by a session
   grant, and host-less scopes (Terraform, Ansible) cannot be granted at all. The agent cannot override a policy
