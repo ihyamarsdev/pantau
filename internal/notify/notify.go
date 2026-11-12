@@ -7,13 +7,11 @@ import (
 	"fmt"
 	"html"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"pantau/internal/logger"
 	"pantau/internal/store"
-	"pantau/internal/triage"
 )
 
 type ChannelResult struct {
@@ -55,34 +53,6 @@ func (d *Dispatcher) SetHTTPClient(client *http.Client) {
 }
 
 func (d *Dispatcher) SendAlert(host *store.Host, rule *store.DesiredRule, summary, rootCause string) {
-	// Laya classification is advisory and bounded: when the sidecar is
-	// unreachable or slow the alert still goes out, only without labels.
-	if url, _ := d.db.GetSetting("laya_url"); strings.TrimSpace(url) != "" {
-		go func() {
-			res, ok := d.classify(rootCause)
-			d.dispatch(host, rule, summary, rootCause, res, ok)
-		}()
-		return
-	}
-	d.dispatch(host, rule, summary, rootCause, triage.Result{}, false)
-}
-
-// classify asks the Laya sidecar for incident labels. A failure returns
-// ok=false and never blocks the alert.
-func (d *Dispatcher) classify(rootCause string) (triage.Result, bool) {
-	url, _ := d.db.GetSetting("laya_url")
-	timeout := triage.DefaultTimeout
-	if raw, _ := d.db.GetSetting("laya_timeout_ms"); raw != "" {
-		if ms, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil && ms > 0 {
-			timeout = time.Duration(ms) * time.Millisecond
-		}
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	return triage.New(url, nil).Classify(ctx, rootCause)
-}
-
-func (d *Dispatcher) dispatch(host *store.Host, rule *store.DesiredRule, summary, rootCause string, labels triage.Result, hasLabels bool) {
 	tgToken, _ := d.db.GetSetting("telegram_token")
 	tgChatID, _ := d.db.GetSetting("telegram_chat_id")
 	webhookURL, _ := d.db.GetSetting("webhook_url")
@@ -102,7 +72,7 @@ func (d *Dispatcher) dispatch(host *store.Host, rule *store.DesiredRule, summary
 	// 1. Dispatch Telegram
 	if tgToken != "" && tgChatID != "" {
 		go func() {
-			if err := d.sendTelegram(tgToken, tgChatID, host.Name, summary, rootCause, labels, hasLabels); err != nil {
+			if err := d.sendTelegram(tgToken, tgChatID, host.Name, summary, rootCause); err != nil {
 				logger.Warn("notify", host.Name, "Failed to send Telegram alert", "error", err.Error())
 			}
 		}()
@@ -111,7 +81,7 @@ func (d *Dispatcher) dispatch(host *store.Host, rule *store.DesiredRule, summary
 	// 2. Dispatch Webhook
 	if webhookURL != "" {
 		go func() {
-			if err := d.sendWebhook(webhookURL, host, rule, summary, rootCause, labels, hasLabels); err != nil {
+			if err := d.sendWebhook(webhookURL, host, rule, summary, rootCause); err != nil {
 				logger.Warn("notify", host.Name, "Failed to send Webhook alert", "error", err.Error())
 			}
 		}()
@@ -171,20 +141,13 @@ func trimExcerpt(rootCause string, maxLen int) string {
 	return excerpt
 }
 
-func (d *Dispatcher) sendTelegram(token, chatID, hostName, summary, rootCause string, labels triage.Result, hasLabels bool) error {
+func (d *Dispatcher) sendTelegram(token, chatID, hostName, summary, rootCause string) error {
 	excerpt := trimExcerpt(rootCause, 1500)
 
 	var msg strings.Builder
 	msg.WriteString("🚨 <b>PANTAU DRIFT ALERT</b>\n\n")
 	msg.WriteString(fmt.Sprintf("<b>Host:</b> %s\n", html.EscapeString(hostName)))
 	msg.WriteString(fmt.Sprintf("<b>Issue:</b> %s\n\n", html.EscapeString(summary)))
-	if hasLabels {
-		msg.WriteString(fmt.Sprintf("<b>Category:</b> %s (urgency %d/3)\n", html.EscapeString(labels.Category), labels.Urgency))
-		if labels.Escalate {
-			msg.WriteString("<b>Human action needed before next inspection</b>\n")
-		}
-		msg.WriteString("\n")
-	}
 	if excerpt != "" {
 		msg.WriteString("<b>Root Cause Excerpt:</b>\n")
 		msg.WriteString(fmt.Sprintf("<pre>%s</pre>", html.EscapeString(excerpt)))
@@ -209,18 +172,12 @@ func (d *Dispatcher) sendTelegram(token, chatID, hostName, summary, rootCause st
 	return nil
 }
 
-func (d *Dispatcher) sendWebhook(url string, host *store.Host, rule *store.DesiredRule, summary, rootCause string, labels triage.Result, hasLabels bool) error {
+func (d *Dispatcher) sendWebhook(url string, host *store.Host, rule *store.DesiredRule, summary, rootCause string) error {
 	payload := map[string]interface{}{
 		"event":              "drift_alert",
 		"timestamp":          time.Now().UTC().Format(time.RFC3339),
 		"summary":            summary,
 		"root_cause_excerpt": rootCause,
-	}
-	if hasLabels {
-		payload["triage_category"] = labels.Category
-		payload["triage_urgency"] = labels.Urgency
-		payload["triage_escalate"] = labels.Escalate
-		payload["triage_confidence"] = labels.Confidence
 	}
 	if host != nil {
 		payload["host_id"] = host.ID

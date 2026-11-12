@@ -1306,27 +1306,6 @@ Pantau mengirimkan notifikasi instan ketika terjadi deteksi drift atau pemulihan
 - **Perlindungan Kolom Rahasia**: Token dan password sensitif (`ntfy_token`, `smtp_pass`) tidak pernah dikembalikan dalam respons GET (hanya flag `*_set` boolean). Pengiriman tanpa kunci mempertahankan rahasia lama, sedangkan nilai kosong menghapusnya.
 - **Debounce Alert**: Atur parameter `alert_debounce_runs` (1..10, default 1). Insiden dan notifikasi hanya dipicu bila drift bertahan selama N siklus inspeksi berturut-turut, mencegah alarm palsu akibat anomali jaringan sesaat.
 - **Uji Kanal Notifikasi**: Klik **Uji Notifikasi** untuk memicu pengiriman pesan pengujian ke seluruh kanal aktif secara bersamaan dan meninjau badge status keberhasilan masing-masing kanal.
-
-### Triage Insiden Laya (Sidecar Opsional)
-
-Pantau dapat meminta mesin keputusan [Laya](https://github.com/NandhaKishorM/laya) untuk memberi label pada alert drift. Mesin ini berjalan sebagai **layanan terpisah** (sidecar), tidak pernah di dalam biner Pantau.
-
-1. Jalankan sidecar. Compose bawaan menyertakannya di balik profile, sehingga tidak ikut jalan pada `docker compose up` biasa:
-   ```bash
-   docker compose --profile laya up -d laya
-   ```
-2. Buka **Settings** → **Notification Dispatcher** lalu isi **URL Sidecar Laya** dengan `http://laya:8000`. Biarkan kosong untuk mematikan fitur.
-3. Sesuaikan **Timeout Laya** (ms) bila perlu. Bawaan 15000; sidecar CPU yang sudah panas menjawab dalam sekitar 10 detik.
-
-Ketika URL terisi, setiap alert drift diberi label:
-- **Kategori Insiden**: `service_down`, `resource_exhaustion`, `network_connectivity`, `security_exposure`, `package_drift`, `backup_failure`, atau `unknown`.
-- **Tingkat Urgensi**: 0 (low) sampai 3 (critical).
-- **Eskalasi**: apakah perlu tindakan manusia sebelum inspeksi berikutnya.
-
-Payload webhook bertambah `triage_category`, `triage_urgency`, `triage_escalate`, dan `triage_confidence`; Telegram menampilkan baris *Category* dan *Human action needed*.
-
-Label bersifat advisory: Desired Rule dan diagnosis Root Cause tetap satu-satunya penentu drift, dan alert menunggu label sampai batas timeout Laya (bawaan 15 detik) sebelum dikirim, sehingga sidecar yang lambat, tidak terjangkau, atau gagal hanya menghilangkan label — alert itu sendiri tidak pernah ditahan atau hilang. Label tidak disimpan ke basis data dan tidak muncul pada catatan Incident atau Alert.
-
 ### System Snapshot Terenkripsi & Disaster Recovery GitHub
 
 **System Snapshot** adalah berkas arsip mandiri terenkripsi yang memuat seluruh basis data Pantau (inventaris host, kredensial SSH terenkripsi, aturan Desired State, dan preferensi aplikasi).

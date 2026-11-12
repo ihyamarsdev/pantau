@@ -5662,15 +5662,6 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
               <input type="number" id="settingAlertDebounce" min="1" max="10" placeholder="1" />
               <p class="set-desc" style="margin-top: 4px;" data-i18n="alert_debounce_desc">Require N consecutive drift inspections before triggering an Incident, Alert, or notifications.</p>
             </div>
-            <div class="form-group">
-              <label class="form-label" data-i18n="laya_url_label">Laya Sidecar URL (optional)</label>
-              <input type="text" id="settingLayaUrl" placeholder="http://laya:8000" />
-              <p class="set-desc" style="margin-top: 4px;" data-i18n="laya_url_desc">Optional Laya decision engine (laya-serve). When set, drift alerts carry an incident category, an urgency level and a human-needed flag. Pantau works fully without it; the alert waits up to the timeout for the labels and is sent either way, so a slow or unreachable sidecar only drops them.</p>
-            </div>
-            <div class="form-group">
-              <label class="form-label" data-i18n="laya_timeout_label">Laya Timeout (ms)</label>
-              <input type="number" id="settingLayaTimeout" min="500" max="60000" placeholder="15000" />
-            </div>
             <div style="display: flex; gap: 8px; margin-top: 8px;">
               <button class="btn btn-primary btn-sm" onclick="saveSettings()"><svg class="icon"><use href="#i-save"/></svg> <span data-i18n="save_notif_settings">Save Notification Settings</span></button>
               <button class="btn btn-ghost btn-sm" id="btnTestNotif" onclick="testNotification()"><svg class="icon"><use href="#i-bell"/></svg> <span data-i18n="test_notif">Test Notification</span></button>
@@ -7824,9 +7815,6 @@ const I18N = {
     "pkg_upgrade_confirm_msg": "Apply package upgrades to this host? Remote services may restart automatically. There is NO automatic rollback mechanism. Consider taking a System Snapshot or disk snapshot beforehand.",
     "alert_debounce_label": "Alert Debounce Runs (1..10)",
     "alert_debounce_desc": "Require N consecutive drift inspections before triggering an Incident, Alert, or notifications.",
-    "laya_url_label": "Laya Sidecar URL (optional)",
-    "laya_url_desc": "Optional Laya decision engine (laya-serve). When set, drift alerts carry an incident category, an urgency level and a human-needed flag. Pantau works fully without it; the alert waits up to the timeout for the labels and is sent either way, so a slow or unreachable sidecar only drops them.",
-    "laya_timeout_label": "Laya Timeout (ms)",
     "secret_saved": "Saved",
     "nav_cloudflare": "Cloudflare",
     "cf_section_title": "Cloudflare Management",
@@ -9420,9 +9408,6 @@ const I18N = {
     "pkg_upgrade_confirm_msg": "Terapkan pembaruan paket pada host ini? Layanan remote dapat restart secara otomatis. TIDAK ADA mekanisme rollback otomatis. Pertimbangkan untuk mengambil System Snapshot terlebih dahulu.",
     "alert_debounce_label": "Debounce Alert (1..10 Siklus)",
     "alert_debounce_desc": "Drift baru memicu Insiden, Alert, dan notifikasi hanya setelah terlihat pada N inspeksi berturut-turut.",
-    "laya_url_label": "URL Sidecar Laya (opsional)",
-    "laya_url_desc": "Mesin keputusan Laya opsional (laya-serve). Bila diisi, alert drift diberi kategori insiden, tingkat urgensi, dan penanda perlu tindakan manusia. Pantau tetap berfungsi penuh tanpanya; alert menunggu label sampai batas timeout lalu dikirim apakah labelnya tiba atau tidak, sehingga sidecar lambat atau tidak terjangkau hanya menghilangkan label.",
-    "laya_timeout_label": "Timeout Laya (ms)",
     "secret_saved": "Tersimpan",
     "nav_cloudflare": "Cloudflare",
     "cf_section_title": "Manajemen Cloudflare",
@@ -18176,10 +18161,6 @@ async function openSettingsModal(tab) {
   document.getElementById('settingSmtpSecurity').value = data.smtp_security || 'starttls';
   document.getElementById('settingSmtpTo').value = data.smtp_to || '';
   document.getElementById('settingAlertDebounce').value = data.alert_debounce_runs || '1';
-  const layaUrlEl = document.getElementById('settingLayaUrl');
-  if (layaUrlEl) layaUrlEl.value = data.laya_url || '';
-  const layaTimeoutEl = document.getElementById('settingLayaTimeout');
-  if (layaTimeoutEl) layaTimeoutEl.value = data.laya_timeout_ms || '15000';
   const testRes = document.getElementById('testNotifResults');
   if (testRes) { testRes.style.display = 'none'; testRes.innerHTML = ''; }
   const pollEl = document.getElementById('settingPollInterval');
@@ -18394,8 +18375,6 @@ async function saveSettings() {
     smtp_security: document.getElementById('settingSmtpSecurity').value,
     smtp_to: document.getElementById('settingSmtpTo').value.trim(),
     alert_debounce_runs: document.getElementById('settingAlertDebounce').value.trim() || '1',
-    laya_url: (document.getElementById('settingLayaUrl')?.value || '').trim(),
-    laya_timeout_ms: (document.getElementById('settingLayaTimeout')?.value || '').trim() || '15000',
   };
   const ntfyTokenVal = document.getElementById('settingNtfyToken').value;
   if (ntfyTokenVal !== '') payload.ntfy_token = ntfyTokenVal;

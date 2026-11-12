@@ -291,12 +291,6 @@ Pantau menginspeksi Host remote melalui perintah SSH non-interaktif, memvalidasi
 - **Terraform Gate & Perlindungan Snapshot**: Dilindungi saklar opt-in administrator (`terraform_enabled`). Konfigurasi workspace, variabel, variable set, policy, modul, dan state terbaru dicadangkan ke dalam System Snapshot terenkripsi.
 - **Pengelompokan Workspace**: Kelola workspace ke dalam bagian visual yang dapat dilipat dan filter berdasarkan grup memakai `group_name` teks bebas (dimodelkan dari Host Group, kosmetik murni, tersimpan di System Snapshot).
 
-### 32. 🧠 Triage Insiden Laya (Sidecar Opsional)
-- **Label Insiden Otomatis**: **URL Sidecar Laya** opsional di Pengaturan → Notification Dispatcher (`laya_url`, mati secara bawaan). Bila diisi, setiap alert drift diberi label oleh mesin keputusan [Laya](https://github.com/NandhaKishorM/laya) dengan **kategori insiden** (`service_down`, `resource_exhaustion`, `network_connectivity`, `security_exposure`, `package_drift`, `backup_failure`, `unknown`), **tingkat urgensi** (0-3), dan penanda apakah perlu tindakan manusia sebelum inspeksi berikutnya.
-- **Bersifat Advisory**: Desired Rule dan diagnosis regex Root Cause tetap satu-satunya penentu drift. Alert menunggu label sampai batas timeout Laya (bawaan 15 detik) lalu dikirim apakah labelnya arrived atau tidak, sehingga sidecar lambat, tidak terjangkau, atau gagal hanya menghilangkan label — alert tidak pernah ditahan atau berubah jadi galat.
-- **Payload Notifikasi**: body webhook bertambah `triage_category`, `triage_urgency`, `triage_escalate`, dan `triage_confidence`; Telegram menampilkan baris *Category* dan *Human action needed* di samping Root Cause Excerpt.
-- **Deploy Tanpa Repot**: `docker-compose.yml` menyertakan service opsional `laya` di balik profile `laya` (`docker compose --profile laya up -d`). Pantau sendiri tetap satu binary Go tanpa dependensi runtime, dan fitur ini mati sampai URL diisi.
-
 ---
 
 ## 🚀 Panduan Memulai Cepat (Quick Start)

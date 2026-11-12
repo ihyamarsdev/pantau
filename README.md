@@ -291,12 +291,6 @@ Pantau inspects remote hosts via non-interactive SSH commands, continuously vali
 - **Administrative Terraform Gate & Snapshot Safety**: Guarded by an explicit opt-in switch (`terraform_enabled`). Workspaces, variables, variable sets, policies, modules, and latest states are backed up inside encrypted System Snapshots.
 - **Workspace Grouping**: Organize workspaces into collapsible visual sections and filter them by group using a free-text `group_name` (modeled after Host Groups, cosmetic only, saved in System Snapshots).
 
-### 32. 🧠 Laya Incident Triage (Optional Sidecar)
-- **Automatic Incident Labels**: opt-in **Laya Sidecar URL** in Settings → Notification Dispatcher (`laya_url`, off by default). When set, each drift alert is labelled by the [Laya](https://github.com/NandhaKishorM/laya) decision engine with an **incident category** (`service_down`, `resource_exhaustion`, `network_connectivity`, `security_exposure`, `package_drift`, `backup_failure`, `unknown`), an **urgency level** (0-3) and whether a human is needed before the next inspection.
-- **Advisory Only**: Desired State rules and the regex Root Cause diagnosis stay the sole drift decision. The alert waits up to the Laya timeout (15 s by default) for the labels and is then sent whether or not they arrived, so a slow, unreachable or failing sidecar only drops the labels — it never suppresses the alert or turns it into an error.
-- **Notification Payloads**: the webhook body gains `triage_category`, `triage_urgency`, `triage_escalate` and `triage_confidence`; Telegram shows a *Category* line and a *Human action needed* line next to the Root Cause Excerpt.
-- **Zero-Friction Deployment**: `docker-compose.yml` ships an optional `laya` service behind the `laya` profile (`docker compose --profile laya up -d`). Pantau itself stays a single Go binary with no runtime dependency, and the feature is inert until the URL is set.
-
 ---
 
 ## 🚀 Quick Start

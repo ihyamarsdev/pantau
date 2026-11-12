@@ -1304,27 +1304,6 @@ Pantau dispatches instant alerts when drift is detected or an incident resolves 
 - **Secret Field Protection**: Sensitive tokens and passwords (`ntfy_token`, `smtp_pass`) are never exposed in GET responses (only a `*_set` boolean flag is returned). Submitting empty retains the existing secret, while blanking it explicitly clears the credential.
 - **Alert Debounce**: Configure `alert_debounce_runs` (1..10, default 1). Requires N consecutive drift inspections before generating an Incident and dispatching notifications, preventing alerts from transient network blips.
 - **Per-Channel Test**: Click **Test Notification** to trigger test messages across all configured channels simultaneously and inspect per-channel status badges.
-
-### Laya Incident Triage (Optional Sidecar)
-
-Pantau can ask a [Laya](https://github.com/NandhaKishorM/laya) decision engine to label a drift alert. The engine runs as a **separate service** (a sidecar), never inside the Pantau binary.
-
-1. Start the sidecar. The bundled compose file ships it behind a profile, so it stays off during a normal `docker compose up`:
-   ```bash
-   docker compose --profile laya up -d laya
-   ```
-2. Open **Settings** → **Notification Dispatcher** and set **Laya Sidecar URL** to `http://laya:8000`. Leave it empty to keep the feature off.
-3. Adjust **Laya Timeout** (ms) if needed. Default 15000; a warm CPU sidecar answers in roughly 10 seconds.
-
-When a URL is set, each drift alert is labelled with:
-- **Incident Category**: `service_down`, `resource_exhaustion`, `network_connectivity`, `security_exposure`, `package_drift`, `backup_failure`, or `unknown`.
-- **Urgency Level**: 0 (low) to 3 (critical).
-- **Escalation**: whether a human is needed before the next inspection.
-
-The webhook payload gains `triage_category`, `triage_urgency`, `triage_escalate` and `triage_confidence`; Telegram shows a *Category* line and a *Human action needed* line.
-
-The labels are advisory only: Desired State rules and the Root Cause diagnosis remain the sole drift decision, and the alert waits up to the Laya timeout (15 s by default) for the labels before it is sent, so a slow, unreachable or failing sidecar only drops the labels — the alert itself is never suppressed or lost. Labels are not stored in the database and do not appear on Incident or Alert records.
-
 ### Encrypted System Snapshots & GitHub Disaster Recovery
 
 A **System Snapshot** is a self-contained, encrypted archive containing the complete Pantau database (host inventories, encrypted SSH keys, Desired State rules, and application settings).
