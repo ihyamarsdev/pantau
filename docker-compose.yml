@@ -13,3 +13,38 @@ services:
     environment:
       - PANTAU_PORT=8080
       - PANTAU_DB=/app/data/pantau.db
+      # Bearer token Hermes presents at /mcp (16+ chars). Unset = Pantau generates one (Settings -> AI Agent).
+      - PANTAU_AGENT_TOKEN=${PANTAU_AGENT_TOKEN:-}
+
+  # AI agent (Hermes Agent), started by default. Needs HERMES_API_KEY and PANTAU_AGENT_TOKEN in .env.
+# Pantau alone: docker compose up -d pantau
+  # Then in Pantau: Settings -> AI Agent -> enable, URL http://hermes:8642, key = HERMES_API_KEY.
+  hermes:
+    image: sbx/hermes-agent:latest
+    container_name: pantau-hermes
+    restart: unless-stopped
+    entrypoint: ["sh", "/start.sh"]
+    volumes:
+      - ./docker/hermes/start.sh:/start.sh:ro
+      - hermes-data:/home/agent/.hermes
+    environment:
+      - API_SERVER_ENABLED=true
+      - API_SERVER_HOST=0.0.0.0
+      # Required, at least 16 characters (start.sh refuses to boot without it); paste the same value into Pantau. Reachable only on the compose network.
+      - API_SERVER_KEY=${HERMES_API_KEY:?set HERMES_API_KEY (16+ chars) in .env, e.g. openssl rand -hex 16}
+      - PANTAU_MCP_URL=http://pantau:8080/mcp
+      - PANTAU_MCP_TOKEN=${PANTAU_AGENT_TOKEN:?set PANTAU_AGENT_TOKEN (16+ chars) in .env, e.g. openssl rand -hex 16}
+      # LLM Hermes thinks with. Defaults: Claude via ANTHROPIC_API_KEY. Models: claude-opus-4-8, claude-sonnet-4-6, claude-haiku-4-5-20251001, ...
+      - HERMES_LLM_PROVIDER=${HERMES_LLM_PROVIDER:-anthropic}
+      - HERMES_LLM_MODEL=${HERMES_LLM_MODEL:-}
+      # Custom OpenAI-compatible endpoint (overrides the provider above). Needs HERMES_LLM_MODEL.
+      - HERMES_LLM_BASE_URL=${HERMES_LLM_BASE_URL:-}
+      - HERMES_LLM_API_KEY=${HERMES_LLM_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    depends_on:
+      - pantau
+
+volumes:
+  hermes-data:

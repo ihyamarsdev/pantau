@@ -106,6 +106,7 @@ type Server struct {
 	cfClient          func(token string) *cloudflare.Client
 	hub               *dockerhub.Client
 	vuln              *vulnintel.Client
+	agent             agentState
 	ansibleRun        func(ctx context.Context, spec ansible.RunSpec, log io.Writer) (int, error)
 	ansibleAvail      func() (string, string, error)
 	ansibleSync       func(ctx context.Context, g ansible.GitSource) (*ansible.GitSyncResult, error)
@@ -253,6 +254,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/app/domains.css", serveAppBundle("domains", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/dbbackup.js", serveAppBundle("dbbackup", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/dbbackup.css", serveAppBundle("dbbackup", ".css", "text/css; charset=utf-8"))
+	s.mux.HandleFunc("/app/agent.js", serveAppBundle("agent", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/agent.css", serveAppBundle("agent", ".css", "text/css; charset=utf-8"))
 
 	// Vendor static assets (airgapped / local cache)
 	vendorHandler := http.StripPrefix("/vendor/", http.FileServer(http.FS(vendorFS())))
@@ -414,6 +417,7 @@ func (s *Server) routes() {
 	s.registerDiskUsageRoutes()
 	s.registerDomainRoutes()
 	s.registerDatabaseRoutes()
+	s.registerAgentRoutes()
 }
 
 func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {

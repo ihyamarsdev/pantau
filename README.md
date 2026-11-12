@@ -295,6 +295,20 @@ Pantau inspects remote hosts via non-interactive SSH commands, continuously vali
 
 ---
 
+## 🤖 AI Agent (optional, Hermes Agent)
+
+Pantau can hand failures to [Hermes Agent](https://github.com/NousResearch/hermes-agent): a floating chat (bottom-right) plus **Ask agent** buttons on failed services, containers, alerts and the Security tab. The agent reads host state and, **only after you approve each change**, restarts services/containers, re-inspects, scans or runs a shell command.
+
+**With Docker Compose** (Hermes image [`sbx/hermes-agent`](https://hub.docker.com/r/sbx/hermes-agent), started by `docker compose up`; Pantau alone: `docker compose up -d pantau`):
+
+1. `.env` next to `docker-compose.yml`: `HERMES_API_KEY=` and `PANTAU_AGENT_TOKEN=` (each `openssl rand -hex 16`, 16+ chars) and `ANTHROPIC_API_KEY=sk-ant-...`. Model defaults to `claude-sonnet-4-6`; change with `HERMES_LLM_MODEL=` (e.g. `claude-opus-4-8`). Other providers: `HERMES_LLM_PROVIDER=openrouter` + `OPENROUTER_API_KEY`. **Custom OpenAI-compatible endpoint** (LiteLLM, vLLM, Ollama, a gateway): `HERMES_LLM_BASE_URL=http://host:port/v1`, `HERMES_LLM_API_KEY=...` and `HERMES_LLM_MODEL=<model id>` (required); `ANTHROPIC_API_KEY` is then not used. The URL must be reachable *from the Hermes container* (not `localhost`).
+2. `docker compose up -d --build`.
+3. Pantau → **Settings → AI Agent**: enable, URL `http://hermes:8642`, key = `HERMES_API_KEY`, **Test connection**. The MCP link (`http://pantau:8080/mcp` + `PANTAU_AGENT_TOKEN`) is already wired by compose.
+
+**Without Docker** (Hermes installed on the host): in `~/.hermes/.env` set `API_SERVER_ENABLED=true` and `API_SERVER_KEY=<secret>`, run `hermes gateway`; in Pantau enable the agent with URL `http://127.0.0.1:8642`, then copy the shown `mcp_servers:` block into `~/.hermes/config.yaml` and restart the gateway.
+
+The agent's identity and rules (SOUL) are editable in the same panel.
+
 ## 🚀 Quick Start
 
 ### Option 1: Standalone Binary (Fastest)

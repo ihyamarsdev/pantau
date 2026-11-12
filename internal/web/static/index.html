@@ -18,6 +18,7 @@
 <link rel="stylesheet" href="/app/diskusage.css" />
 <link rel="stylesheet" href="/app/domains.css" />
 <link rel="stylesheet" href="/app/dbbackup.css" />
+<link rel="stylesheet" href="/app/agent.css" />
 <style>
 @font-face { font-family: 'Inter'; src: url('/vendor/fonts/inter-latin-var.woff2') format('woff2'); font-weight: 100 900; font-style: normal; font-display: swap; }
 @font-face { font-family: 'JetBrains Mono'; src: url('/vendor/fonts/jetbrains-mono-latin-var.woff2') format('woff2'); font-weight: 100 800; font-style: normal; font-display: swap; }
@@ -3650,6 +3651,8 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><path d="M16 3.128a4 4 0 0 1 0 7.744" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><circle cx="9" cy="7" r="4" /></symbol>
 <symbol id="i-scroll-text" viewBox="0 0 24 24"><path d="M15 12h-5" /><path d="M15 8h-5" /><path d="M19 17V5a2 2 0 0 0-2-2H4" /><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3" /></symbol>
 <symbol id="i-bug" viewBox="0 0 24 24"><path d="M12 20v-9" /><path d="M14 7a4 4 0 0 1 4 4v3a6 6 0 0 1-12 0v-3a4 4 0 0 1 4-4z" /><path d="M14.12 3.88 16 2" /><path d="M21 21a4 4 0 0 0-3.81-4" /><path d="M21 5a4 4 0 0 1-3.55 3.97" /><path d="M22 13h-4" /><path d="M3 21a4 4 0 0 1 3.81-4" /><path d="M3 5a4 4 0 0 0 3.55 3.97" /><path d="M6 13H2" /><path d="m8 2 1.88 1.88" /><path d="M9 7.13V6a3 3 0 1 1 6 0v1.13" /></symbol>
+<symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13v2" /><path d="M9 13v2" /></symbol>
+<symbol id="i-send" viewBox="0 0 24 24"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z" /><path d="m21.854 2.147-10.94 10.939" /></symbol>
 <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z" /></symbol>
 <symbol id="i-rocket" viewBox="0 0 24 24"><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" /><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09" /><path d="M9 12a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.4 22.4 0 0 1-4 2z" /><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 .05 5 .05" /></symbol>
 <symbol id="i-flask-conical" viewBox="0 0 24 24"><path d="M14 2v6a2 2 0 0 0 .245.96l5.51 10.08A2 2 0 0 1 18 22H6a2 2 0 0 1-1.755-2.96l5.51-10.08A2 2 0 0 0 10 8V2" /><path d="M6.453 15h11.094" /><path d="M8.5 2h7" /></symbol>
@@ -5404,6 +5407,10 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
           <svg class="icon"><use href="#i-refresh-cw"/></svg>
           <span data-i18n="tab_settings_updates">Updates</span>
         </div>
+        <div class="tab" id="tabSettingsAgent" onclick="switchSettingsTab('agent')">
+          <svg class="icon"><use href="#i-bot"/></svg>
+          <span>AI Agent</span>
+        </div>
       </nav>
       <div class="modal-body settings-body">
         <!-- General Tab -->
@@ -5814,6 +5821,8 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         </div>
 
         <!-- Updates Tab -->
+        <div id="settingsPanelAgent" style="display: none; flex-direction: column; gap: 16px;"><div id="agentSettingsBody"></div></div>
+
         <div id="settingsPanelUpdates" style="display: none; flex-direction: column; gap: 16px;">
           <div class="set-card">
             <div class="set-header">
@@ -9982,6 +9991,7 @@ async function checkAuth() {
     checkInspectAllStatus();
     setTimeout(() => checkForUpdates(false), 2000);
     connectActivityEventSource();
+    if (window.AG) window.AG.init();
   } else {
     document.getElementById('loginView').style.display = 'flex';
     document.getElementById('appView').style.display = 'none';
@@ -11265,6 +11275,7 @@ async function loadAlerts() {
                 </div>
                 <div class="alert-overlay-item-actions">
                   ${a.host_id ? `<button class="btn btn-sm btn-ghost" style="font-size: var(--fs-xs); padding: 3px 8px; color: var(--accent-text);" onclick="openHostDetailFromAlert(${a.host_id})">${t('open_host', 'Open Host')}</button>` : ''}
+                  ${window.AG ? AG.btnNum('askAlert', a.id) : ''}
                   <button class="btn btn-sm btn-ghost" style="font-size: var(--fs-xs); padding: 3px 8px;" onclick="ackAlert(${a.id})">${t('dismiss', 'Dismiss')}</button>
                 </div>
               </div>
@@ -13595,6 +13606,7 @@ function renderSecurityData(scan, hostID, intel) {
         <button id="btnUpgradePkgsSec" class="btn btn-sm btn-primary" onclick="openHostPackageUpgradePreview(${hostID})" style="display: inline-flex; align-items: center; gap: 4px;" ${(window.detailData && window.detailData.host && window.detailData.host.os_info && window.detailData.host.os_info.toLowerCase().includes('darwin')) ? 'disabled title="Package upgrade unsupported on macOS"' : ''}>
           ${svgIcon('package', 'icon-sm')} <span>${t('pkg_upgrade_btn', 'Upgrade packages')}</span>
         </button>
+        ${window.AG ? AG.btnNum('askSecurity', hostID) : ''}
         <button id="btnScanSecurity" class="btn btn-sm" onclick="runHostSecurityScan(${hostID})" style="display: inline-flex; align-items: center; gap: 4px;">
           ${svgIcon('refresh-cw', 'icon-sm')} <span>${t('sec_scan_now', 'Scan Now')}</span>
         </button>
@@ -18010,6 +18022,7 @@ function switchSettingsTab(tab) {
   else if (tab === 'presets') document.getElementById('tabSettingsPresets')?.classList.add('active');
   else if (tab === 'updates') document.getElementById('tabSettingsUpdates')?.classList.add('active');
   else if (tab === 's3') document.getElementById('tabSettingsS3')?.classList.add('active');
+  else if (tab === 'agent') document.getElementById('tabSettingsAgent')?.classList.add('active');
 
   const panelGeneral = document.getElementById('settingsPanelGeneral');
   const panelSecurity = document.getElementById('settingsPanelSecurity');
@@ -18019,6 +18032,7 @@ function switchSettingsTab(tab) {
   const panelPresets = document.getElementById('settingsPanelPresets');
   const panelUpdates = document.getElementById('settingsPanelUpdates');
   const panelS3 = document.getElementById('settingsPanelS3');
+  const panelAgent = document.getElementById('settingsPanelAgent');
 
   if (panelGeneral) panelGeneral.style.display = tab === 'general' ? 'flex' : 'none';
   if (panelSecurity) panelSecurity.style.display = tab === 'security' ? 'flex' : 'none';
@@ -18028,6 +18042,8 @@ function switchSettingsTab(tab) {
   if (panelPresets) panelPresets.style.display = tab === 'presets' ? 'flex' : 'none';
   if (panelUpdates) panelUpdates.style.display = tab === 'updates' ? 'flex' : 'none';
   if (panelS3) panelS3.style.display = tab === 's3' ? 'flex' : 'none';
+  if (panelAgent) panelAgent.style.display = tab === 'agent' ? 'flex' : 'none';
+  if (tab === 'agent' && window.AG) window.AG.loadSettings();
 
   if (tab === 'keys') {
     loadSSHKeys();
@@ -21731,6 +21747,7 @@ function systemdRowsHtml(services) {
     const canAct = s.load !== 'masked' && s.load !== 'not-found';
     const btn = (action, icon, extra) => `<button class="btn btn-icon btn-sm ${extra || 'btn-ghost'}" data-unit="${u}" onclick="systemdAction(this.dataset.unit, '${action}')" title="${escapeHtml(t(action))}">${svgIcon(icon, 'icon-sm')}</button>`;
     const acts = [`<button class="btn btn-icon btn-sm ${s.active === 'failed' ? 'btn-danger' : 'btn-ghost'}" data-unit="${u}" onclick="openSystemdDetail(this.dataset.unit)" title="${escapeHtml(t('systemd_btn_debug'))}">${svgIcon('stethoscope', 'icon-sm')}</button>`];
+    if (s.active === 'failed' && window.AG && AG.enabled()) acts.push(`<button class="btn btn-icon btn-sm btn-ghost ag-ask-btn" data-arg="${u}" onclick="AG.askUnit(this.dataset.arg)" title="${escapeHtml(t('ag_ask'))}">${svgIcon('bot', 'icon-sm')}</button>`);
     if (canAct) {
       if (!up) acts.push(btn('start', 'play'));
       acts.push(btn('restart', 'rotate-ccw'));
@@ -22014,7 +22031,7 @@ function renderSystemdDetail() {
       <div class="dropdown-menu" id="dropdown-sd-more" style="left: 0; right: auto;">${more.join('')}</div>
     </div>`;
   footer.innerHTML = `
-    <div class="sd-footer-group">${buttons.join('')}${moreMenu}</div>
+    <div class="sd-footer-group">${buttons.join('')}${moreMenu}${window.AG ? AG.btn('askUnit', st.unit, state === 'failed' ? 'btn-primary' : 'btn-ghost') : ''}</div>
     <div class="sd-footer-group">
       <button class="btn btn-sm btn-ghost" ${dis} onclick="loadSystemdDetail()">${svgIcon('refresh-cw', 'icon-sm')} <span>${t('refresh')}</span></button>
       ${closeBtn}
@@ -22427,6 +22444,7 @@ function renderDockerInspect() {
     buttons.push(act('stop', 'btn-danger', 'square', t('stop')));
   }
   buttons.push(`<button class="btn btn-sm" data-name="${n}" onclick="openDockerLogs(this.dataset.name)">${svgIcon('scroll-text', 'icon-sm')} <span>${t('docker_logs')}</span></button>`);
+  if (window.AG) buttons.push(AG.btn('askContainer', d.name, d.running ? 'btn-ghost' : 'btn-primary').replace('data-arg=', 'data-name="' + n + '" data-arg='));
   if (d.running) buttons.push(`<button class="btn btn-sm" data-name="${n}" onclick="dockerConsole(this.dataset.name)">${svgIcon('square-terminal', 'icon-sm')} <span>${t('dk_console')}</span></button>`);
   footer.innerHTML = `<div class="sd-footer-group">${buttons.join('')}</div><div class="sd-footer-group"><button class="btn btn-sm btn-ghost" onclick="loadDockerInspect()">${svgIcon('refresh-cw', 'icon-sm')} <span>${t('refresh')}</span></button>${closeBtn}</div>`;
 }
@@ -27558,5 +27576,6 @@ langRerenderHooks.push(renderTfWorkspaces, tfRenderWsHead, () => {
 <script src="/app/diskusage.js"></script>
 <script src="/app/domains.js"></script>
 <script src="/app/dbbackup.js"></script>
+<script src="/app/agent.js"></script>
 </body>
 </html>

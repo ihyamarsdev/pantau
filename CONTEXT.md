@@ -59,6 +59,18 @@ _Avoid_: Purchase date, install date, server birthday, warranty start
 Status kevalidan backup berdasarkan keberadaan file di path tujuan, timestamp perubahan terbaru (recency), dan ukuran file yang wajar (> 0 byte).
 _Avoid_: Backup validation, dump check
 
+**AI Agent**:
+Asisten operasi opsional (Hermes Agent, proses terpisah) yang mengobrol lewat chat melayang di pojok kanan bawah dan memanggil *Agent Tool* Pantau melalui MCP (`/mcp`) untuk menyelidiki dan memperbaiki Host. Identitas dan aturannya ditentukan oleh **SOUL**.
+_Avoid_: Bot, copilot, auto-fixer
+
+**Agent Tool**:
+Satu fungsi Pantau yang dapat dipanggil AI Agent (baca: `list_hosts`, `systemd_detail`, `docker_logs`, dst.; ubah: `systemd_action`, `docker_action`, `inspect_host`, `security_scan`, `exec_command`). Setiap tool ubah menunggu **Agent Approval** dari operator.
+_Avoid_: Plugin, skill, command
+
+**Agent Approval**:
+Keputusan operator (setujui/tolak) atas satu aksi pengubah yang diminta AI Agent, ditampilkan sebagai kartu persetujuan. Mode `ask` meminta untuk semua perubahan; mode `auto` melewati aksi service/container/scan/inspeksi, tetapi `exec_command` selalu meminta.
+_Avoid_: Confirmation dialog, permission prompt
+
 **Disk I/O Rate**:
 Kecepatan transfer data baca dan tulis pada disk fisik/virtual utama Host (dihitung dalam bytes per detik) yang diekstrak secara berkala dari `/proc/diskstats`.
 _Avoid_: Disk speed, disk activity, raw io count

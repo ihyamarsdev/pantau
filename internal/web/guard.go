@@ -13,6 +13,11 @@ import (
 // so it bypasses both checks below.
 const webhookPrefix = "/api/terraform/webhook/"
 
+// mcpPath is the AI agent's MCP endpoint. Hermes reaches it by service name (http://pantau:8080/mcp), which the
+// Host check would reject. It carries no cookie auth (rebinding and CSRF target ambient browser credentials) and
+// requires the agent bearer token.
+const mcpPath = "/mcp"
+
 // Guard rejects requests that a local browser tab did not originate: DNS
 // rebinding (Host is a hostname other than localhost) and cross-site requests
 // (another app on a different local port posting to Pantau).
@@ -23,11 +28,12 @@ const webhookPrefix = "/api/terraform/webhook/"
 func Guard(next http.Handler) http.Handler {
 	protection := http.NewCrossOriginProtection()
 	protection.AddInsecureBypassPattern(webhookPrefix)
+	protection.AddInsecureBypassPattern(mcpPath)
 	csrf := protection.Handler(next)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// The webhook is reached through a reverse tunnel with an arbitrary Host.
-		if !isWebhookPath(r.URL.Path) && !hostAllowed(r.Host) {
+		if !isWebhookPath(r.URL.Path) && path.Clean(r.URL.Path) != mcpPath && !hostAllowed(r.Host) {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.WriteHeader(http.StatusForbidden)
 			io.WriteString(w, "Pantau only answers requests addressed to localhost or an IP address.\nOpen Pantau via http://localhost:<port> or via its IP address.\n")

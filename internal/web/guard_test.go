@@ -30,6 +30,9 @@ func TestGuard(t *testing.T) {
 		{"foreign origin post blocked", http.MethodPost, "/", "localhost:8080", "", "http://localhost:3000", http.StatusForbidden},
 		{"same-origin post allowed", http.MethodPost, "/", "localhost:8080", "same-origin", "", http.StatusOK},
 		{"curl post allowed", http.MethodPost, "/", "localhost:8080", "", "", http.StatusOK},
+		{"mcp reachable by service name", http.MethodPost, "/mcp", "pantau:8080", "", "", http.StatusOK},
+		{"mcp lookalike path still guarded", http.MethodPost, "/mcpx", "pantau:8080", "", "", http.StatusForbidden},
+		{"api by service name still blocked", http.MethodPost, "/api/hosts", "pantau:8080", "", "", http.StatusForbidden},
 		{"webhook bypasses guard", http.MethodPost, "/api/terraform/webhook/x", "evil.example", "cross-site", "", http.StatusOK},
 	}
 
