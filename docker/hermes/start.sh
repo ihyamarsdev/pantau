@@ -24,6 +24,13 @@ model:
   default: "${HERMES_LLM_MODEL:-claude-sonnet-4-6}"
 YAML
 fi
+# Hermes' built-in toolsets run inside this container, outside Pantau's approval cards, and the container holds the LLM
+# and MCP secrets in its environment. Only Pantau's MCP tools and web search stay on; rewritten at every start, so a
+# `hermes tools disable` would be lost.
+cat >> "$H/config.yaml" <<'YAML'
+agent:
+  disabled_toolsets: [terminal, file, code_execution, browser, delegation, cronjob, image_gen, vision, skills, todo, memory, session_search, connections]
+YAML
 # ${...} stays literal here: Hermes expands it from its own environment, so the token never lands in a file.
 cat >> "$H/config.yaml" <<'YAML'
 mcp_servers:
