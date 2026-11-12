@@ -15,6 +15,32 @@ func siteByDomain(sites []store.WebSite, domain string) *store.WebSite {
 	return nil
 }
 
+// A :80 block with a root (ACME) that redirects to https is the same site as the TLS block.
+func TestParseWebScanMergesRedirectWithRoot(t *testing.T) {
+	out := `__PANTAU_SECTION__ nginx host
+METHOD nginx -T
+# configuration file /etc/nginx/conf.d/dev.conf:
+http {
+    server {
+        listen 80;
+        server_name dev.example.com;
+        root /usr/share/nginx/html;
+        location /.well-known/acme-challenge/ { allow all; }
+        location / { return 301 https://$host$request_uri; }
+    }
+    server {
+        listen 443 ssl;
+        server_name dev.example.com;
+        location / { proxy_pass https://127.0.0.1:8443; }
+    }
+}
+`
+	scan := parseWebScan(1, out)
+	if len(scan.Sites) != 1 || !scan.Sites[0].TLS || len(scan.Sites[0].Upstreams) != 1 {
+		t.Fatalf("expected one merged TLS site, got %+v", scan.Sites)
+	}
+}
+
 func TestParseNginxConfigMarkersAndServerNames(t *testing.T) {
 	out := `# configuration file /etc/nginx/nginx.conf:
 user www-data;

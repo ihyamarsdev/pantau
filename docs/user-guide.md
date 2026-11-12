@@ -417,10 +417,18 @@ When troubleshooting server connectivity issues, firewall blocking, or cross-dat
   - Open globally via the **`⚡ NetDiag`** button in the top navigation header cluster (with host picker).
 - **Concurrency & Safety Guards**: Employs an in-memory singleflight lock per host to prevent SSH session saturation. Offline hosts are automatically disabled in inter-host target dropdowns.
 
+### Databases Tab: Database Backup
+
+The **Databases** tab of a host finds its database servers (MySQL/MariaDB, PostgreSQL, MongoDB), both installed on the host and running in Docker containers, and downloads a full backup of one with **Backup**. The dump is compressed and streamed straight to your browser (`<host>-<container>-<engine>-<timestamp>.sql.gz`, MongoDB `.archive.gz`, restorable with `mongorestore --archive`); nothing is written on the host or the Pantau server. One backup per host at a time.
+- **On the host**: the server must be running outside Docker and its dump tool installed (`mysqldump`/`mariadb-dump`, `pg_dumpall`, `mongodump`; the tab says which one is missing). Pantau uses the SSH user's local login: root, or passwordless `sudo`, over the unix socket for MySQL/MariaDB, and the `postgres` account for PostgreSQL. **MongoDB** is dumped over its network port: Pantau reads `/etc/mongod.conf` (via `sudo` if needed) for the port, bind address and, when TLS is required, the CA and key files, and **Backup** asks for a username, password and authentication database (leave the username empty for a server without authentication). The login is sent in the request body, handed to `mongodump` on stdin through a config descriptor (never on a command line), and not stored.
+- **In Docker**: running containers whose image is MySQL, MariaDB, Percona, PostgreSQL (also PostGIS, TimescaleDB) or MongoDB. The dump runs inside the container with the credentials of the official image variables (`MYSQL_ROOT_PASSWORD`/`MARIADB_ROOT_PASSWORD`, `POSTGRES_USER`/`POSTGRES_PASSWORD`, `MONGO_INITDB_ROOT_USERNAME`/`PASSWORD`, and their `_FILE` variants), so no password is sent over SSH; for MongoDB a login typed in the dialog replaces them. Containers set up another way may fail with an authentication error, which is shown as a message.
+- A backup always covers **every database** of the server. A dump that stops midway leaves a truncated gzip file that `gunzip` reports as corrupt.
+
 ### Domains Tab: nginx, Caddy & Traefik Domain Inventory
 
 The **Domains** tab of a host lists every domain its reverse proxies serve, with TLS, listen ports, upstream targets and where each one is configured. The first time the tab is opened Pantau scans the host; **Scan again** refreshes it. Results are stored, so the fleet view and Fleet Search work without connecting again.
 - **nginx** (host and containers): `nginx -T` (falling back to `sudo -n nginx -T`, then to the readable files in `/etc/nginx`); one row per `server_name`, `upstream` blocks are resolved to their servers, `_` catch-all servers are skipped, and the source is shown as `file:line` with **Open** to edit it.
+- **Remove an nginx config**: the trash button next to **Open** deletes that config file from the host (files under `/etc/nginx/` on the host only, never `nginx.conf` or a container's config) after a confirmation. Every domain defined in the file goes with it. Pantau moves the file aside, runs `nginx -t`, then reloads nginx and drops the file; if the test fails the file is put back and the nginx error is shown. Needs root or passwordless `sudo`. The tab rescans afterwards.
 - **Caddy** (host and containers): the running config from the admin API (`localhost:2019`), else `caddy adapt` of `/etc/caddy/Caddyfile`, else the Caddyfile site addresses.
 - **Traefik**: router rules from Docker labels (`Host(...)`, `HostRegexp(...)`, v1 `Host:`) and the Traefik API on `127.0.0.1:8080` when it is reachable; also **caddy-docker-proxy** labels and **nginx-proxy** `VIRTUAL_HOST` containers.
 - Docker needs the SSH user to run `docker` (or passwordless `sudo docker`); at most 10 proxy containers are read per scan. Problems (no permission, admin API off) are shown as red proxy badges and warnings instead of failing the scan. Kubernetes ingresses are not included.
@@ -1145,6 +1153,10 @@ Transferring large databases, directory trees, or archive bundles between two re
 To download an entire remote folder structure to your local workstation:
 - Select the folder in the SFTP manager and click **Download as Archive**.
 - Pantau streams the compressed archive on-the-fly (`zip` if installed on remote host, or `tar.gz`) directly to your browser's HTTP download stream without creating temporary files on the Pantau server disk.
+
+To back up several folders into one archive:
+- Tick the checkbox in front of each folder (or file) you want, in any directory; the selection is kept while you navigate (up to 50 items).
+- Click **Backup** in the toolbar, review the list, and click **Download .tar.gz**. The archive (`<host>-backup-<timestamp>.tar.gz`, paths kept relative to `/`) is streamed to your browser like a folder archive. **Clear selection** in the dialog empties the list.
 
 ### Safe File & Folder Duplication (Disk Space Safety Check)
 

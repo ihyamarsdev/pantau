@@ -301,6 +301,11 @@ func nginxServerSites(node *nginxNode, file, where, container string, upstreams 
 	if sslCert {
 		tls = true
 	}
+	// A block that redirects (return 3xx / rewrite ... permanent) serves no content of its own;
+	// its root is only there for ACME challenges, so it must not make it differ from the TLS block.
+	if len(passes) == 0 && nginxRedirects(node) {
+		root = ""
+	}
 
 	source := strconv.Itoa(node.line)
 	if file != "" {
@@ -332,6 +337,40 @@ func nginxServerSites(node *nginxNode, file, where, container string, upstreams 
 		})
 	}
 	return sites
+}
+
+// nginxRedirects reports whether a server block redirects its traffic: a
+// return 3xx or a permanent/redirect rewrite directly in the block or in "location /".
+func nginxRedirects(server *nginxNode) bool {
+	isRedirect := func(k *nginxNode) bool {
+		switch k.name {
+		case "return":
+			if len(k.args) > 0 {
+				switch k.args[0] {
+				case "301", "302", "303", "307", "308":
+					return true
+				}
+			}
+		case "rewrite":
+			if n := len(k.args); n >= 3 && (k.args[n-1] == "permanent" || k.args[n-1] == "redirect") {
+				return true
+			}
+		}
+		return false
+	}
+	for _, k := range server.kids {
+		if isRedirect(k) {
+			return true
+		}
+		if k.name == "location" && len(k.args) == 1 && k.args[0] == "/" {
+			for _, kk := range k.kids {
+				if isRedirect(kk) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // resolveNginxUpstream expands "proxy_pass http://backend" with the servers of

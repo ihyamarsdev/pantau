@@ -96,3 +96,31 @@ func TestScanWebDomainsUnknownHost(t *testing.T) {
 		t.Fatal("expected an error for an unknown host")
 	}
 }
+
+func TestRemoveNginxConfig(t *testing.T) {
+	db, hostID := webScanTestDB(t)
+	scan := &store.WebScan{HostID: hostID, Sites: []store.WebSite{
+		{Domain: "a.example.com", Proxy: "nginx", Where: "host", Source: "/etc/nginx/sites-enabled/a.conf:3"},
+		{Domain: "main.example.com", Proxy: "nginx", Where: "host", Source: "/etc/nginx/nginx.conf:40"},
+	}}
+	if err := db.ReplaceWebScan(hostID, scan); err != nil {
+		t.Fatalf("store scan: %v", err)
+	}
+	var code int
+	runner := sshrunner.NewMockRunner()
+	runner.DefaultExec = func(cmd string) (string, string, int, error) { return "", "nginx: bad", code, nil }
+	ins := New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) { return runner, nil }, nil)
+
+	for _, p := range []string{"/etc/nginx/nginx.conf", "/etc/passwd", "/etc/nginx/../shadow", "/etc/nginx/sites-enabled/other.conf"} {
+		if err := ins.RemoveNginxConfig(hostID, p); !errors.Is(err, ErrNginxRemoveRejected) {
+			t.Errorf("%s: expected rejection, got %v", p, err)
+		}
+	}
+	if err := ins.RemoveNginxConfig(hostID, "/etc/nginx/sites-enabled/a.conf"); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	code = 4
+	if err := ins.RemoveNginxConfig(hostID, "/etc/nginx/sites-enabled/a.conf"); !errors.Is(err, ErrNginxRemoveInvalid) {
+		t.Fatalf("expected rollback error, got %v", err)
+	}
+}

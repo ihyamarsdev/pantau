@@ -2,7 +2,25 @@ package inspector
 
 import (
 	"testing"
+
+	"pantau/internal/store"
 )
+
+func TestDedupeWebSitesMergesTLSAndPlain(t *testing.T) {
+	site := func(tls bool, listen, src, root string, ups ...string) store.WebSite {
+		return store.WebSite{Domain: "a.example.com", Proxy: "nginx", Where: "host", TLS: tls, Listen: []string{listen}, Upstreams: ups, Root: root, Source: src}
+	}
+	// redirect-only :80 block + https block, same domain: one row
+	got := dedupeWebSites([]store.WebSite{site(false, "80", "a:1", ""), site(true, "443 ssl", "a:9", "", "app:3000")})
+	if len(got) != 1 || !got[0].TLS || got[0].Source != "a:9" || len(got[0].Upstreams) != 1 || len(got[0].Listen) != 2 {
+		t.Fatalf("expected one merged TLS row, got %+v", got)
+	}
+	// plain and TLS serving different upstreams: config differs, both stay
+	got = dedupeWebSites([]store.WebSite{site(false, "80", "a:1", "", "old:80"), site(true, "443 ssl", "a:9", "", "app:3000")})
+	if len(got) != 2 {
+		t.Fatalf("different config must stay separate, got %+v", got)
+	}
+}
 
 func TestSplitWebSections(t *testing.T) {
 	out := `noise before the first marker

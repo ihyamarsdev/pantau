@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -727,6 +728,112 @@ func TestTicket09_SFTPFileManagerAndEditor(t *testing.T) {
 	if string(tarBody) != "tar_gz_mock_stream_data" {
 		t.Fatalf("unexpected tar body: %s", string(tarBody))
 	}
+
+	// 7. Multi-path backup streams one tar.gz; bad input is rejected before any streaming
+	subDir := tmpDir + "/sub"
+	if err := os.Mkdir(subDir, 0o755); err != nil {
+		t.Fatalf("mkdir sub: %v", err)
+	}
+	backupCmd := fmt.Sprintf(`tar -czf - -C / -- '%s' '%s'`, tmpDir[1:], subDir[1:])
+	env.mockRunner.Handlers[backupCmd] = func() (string, string, int, error) {
+		return "backup_mock_stream_data", "", 0, nil
+	}
+	bkResp, err := client.Get(fmt.Sprintf("%s/api/hosts/%d/files/backup?path=%s&path=%s&path=%s", env.httpServer.URL, hostID, tmpDir, subDir, tmpDir+"/"))
+	if err != nil || bkResp.StatusCode != http.StatusOK {
+		t.Fatalf("backup failed: %v", err)
+	}
+	bkBody, _ := io.ReadAll(bkResp.Body)
+	bkResp.Body.Close()
+	if string(bkBody) != "backup_mock_stream_data" || bkResp.Header.Get("Content-Type") != "application/gzip" || !strings.HasSuffix(bkResp.Header.Get("Content-Disposition"), `.tar.gz"`) {
+		t.Fatalf("unexpected backup response: %q %v", bkBody, bkResp.Header)
+	}
+	for _, bad := range []string{"", "?path=relative/dir", "?path=/", "?path=" + tmpDir + "/missing"} {
+		badResp, err := client.Get(fmt.Sprintf("%s/api/hosts/%d/files/backup%s", env.httpServer.URL, hostID, bad))
+		if err != nil || badResp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("backup %q should be 400, got %v %v", bad, err, badResp)
+		}
+		badResp.Body.Close()
+	}
+}
+
+// Databases tab: discovery and a streamed, gzip-compressed dump of a Docker database.
+func TestDatabaseBackup_DiscoverAndStreamDump(t *testing.T) {
+	env := setupTestEnv(t)
+	client := loginClient(t, env)
+	hostID, _ := env.db.CreateHost(&store.Host{Name: "DB Host", Host: "10.0.0.6", Port: 22, User: "root"})
+
+	env.mockRunner.Handlers["CTR {{.Names}}"] = func() (string, string, int, error) {
+		return "BIN pg_dumpall\nPROC postgres\nCTR shop-db|postgres:16\nCTR cache|redis:7\n", "", 0, nil
+	}
+	env.mockRunner.Handlers["docker exec shop-db"] = func() (string, string, int, error) {
+		return "-- PostgreSQL database cluster dump\nCREATE DATABASE shop;\n", "", 0, nil
+	}
+	env.mockRunner.Handlers["command -v mariadb-dump"] = func() (string, string, int, error) { return "", "", 0, nil }
+
+	resp, err := client.Get(fmt.Sprintf("%s/api/databases?host_id=%d", env.httpServer.URL, hostID))
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("databases scan failed: %v %v", err, resp)
+	}
+	var scan struct {
+		Sources []struct{ Engine, Where, Container string } `json:"sources"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&scan)
+	resp.Body.Close()
+	if len(scan.Sources) != 2 || scan.Sources[0].Where != "host" || scan.Sources[1].Container != "shop-db" || scan.Sources[1].Engine != "postgres" {
+		t.Fatalf("unexpected sources: %+v", scan.Sources)
+	}
+
+	bk, err := client.Get(fmt.Sprintf("%s/api/databases/backup?host_id=%d&where=container&engine=postgres&container=shop-db", env.httpServer.URL, hostID))
+	if err != nil || bk.StatusCode != http.StatusOK {
+		t.Fatalf("backup failed: %v %v", err, bk)
+	}
+	if cd := bk.Header.Get("Content-Disposition"); !strings.Contains(cd, "DB_Host-shop-db-postgres-") || !strings.HasSuffix(cd, `.sql.gz"`) {
+		t.Fatalf("unexpected file name: %s", cd)
+	}
+	gz, err := gzip.NewReader(bk.Body)
+	if err != nil {
+		t.Fatalf("response is not gzip: %v", err)
+	}
+	dump, _ := io.ReadAll(gz)
+	bk.Body.Close()
+	if !strings.Contains(string(dump), "CREATE DATABASE shop;") {
+		t.Fatalf("unexpected dump: %q", dump)
+	}
+
+	// a dump with no output is an error, not an empty download
+	empty, err := client.Get(fmt.Sprintf("%s/api/databases/backup?host_id=%d&where=host&engine=mysql", env.httpServer.URL, hostID))
+	if err != nil || empty.StatusCode != http.StatusBadGateway {
+		t.Fatalf("empty dump should be 502, got %v %v", err, empty)
+	}
+	empty.Body.Close()
+	for _, bad := range []string{"engine=oracle&where=host", "engine=mysql&where=container&container=a;b", "engine=mysql&where=nowhere"} {
+		r, err := client.Get(fmt.Sprintf("%s/api/databases/backup?host_id=%d&%s", env.httpServer.URL, hostID, bad))
+		if err != nil || r.StatusCode != http.StatusBadRequest {
+			t.Fatalf("%q should be 400, got %v %v", bad, err, r)
+		}
+		r.Body.Close()
+	}
+
+	// A MongoDB login is read from the POST body and handed to the dump on stdin (the mock runner
+	// echoes stdin as the dump); it is rejected when it carries a line break.
+	form := fmt.Sprintf("host_id=%d&where=host&engine=mongo&user=dbuser&password=pw&auth_db=admin", hostID)
+	mg, err := client.Post(env.httpServer.URL+"/api/databases/backup", "application/x-www-form-urlencoded", strings.NewReader(form))
+	if err != nil || mg.StatusCode != http.StatusOK || !strings.HasSuffix(mg.Header.Get("Content-Disposition"), `.archive.gz"`) {
+		t.Fatalf("mongo backup failed: %v %v", err, mg)
+	}
+	mgz, err := gzip.NewReader(mg.Body)
+	if err != nil {
+		t.Fatalf("mongo response is not gzip: %v", err)
+	}
+	if got, _ := io.ReadAll(mgz); string(got) != "dbuser\npw\nadmin\n" {
+		t.Fatalf("login did not reach stdin: %q", got)
+	}
+	mg.Body.Close()
+	bad, err := client.Post(env.httpServer.URL+"/api/databases/backup", "application/x-www-form-urlencoded", strings.NewReader(form+"%0Aevil"))
+	if err != nil || bad.StatusCode != http.StatusBadRequest {
+		t.Fatalf("a login with a line break should be 400, got %v %v", err, bad)
+	}
+	bad.Body.Close()
 }
 
 // Test Key Provisioning (Auto-Inject SSH Key)

@@ -417,10 +417,18 @@ Saat menangani kendala konektivitas antar-server, pemblokiran firewall, atau ano
   - Buka secara global via tombol **`⚡ NetDiag`** di header navbar atas (dengan pemilih host sumber aktif).
 - **Proteksi Konkurensi & Keamanan**: Menggunakan kunci singleflight in-memory per host untuk mencegah kehabisan sesi SSH. Host yang sedang offline secara otomatis dinonaktifkan dari daftar target antar-host.
 
+### Tab Database: Backup Database
+
+Tab **Database** pada sebuah host menemukan server database-nya (MySQL/MariaDB, PostgreSQL, MongoDB), baik yang terpasang di host maupun yang berjalan di container Docker, dan mengunduh backup lengkap dengan tombol **Backup**. Dump dikompresi dan dialirkan langsung ke browser (`<host>-<container>-<engine>-<timestamp>.sql.gz`, MongoDB `.archive.gz`, dipulihkan dengan `mongorestore --archive`); tidak ada yang ditulis di host maupun di server Pantau. Satu backup per host dalam satu waktu.
+- **Di host**: server harus berjalan di luar Docker dan tool dump-nya terpasang (`mysqldump`/`mariadb-dump`, `pg_dumpall`, `mongodump`; tab menyebut mana yang belum ada). Pantau memakai login lokal user SSH: root, atau `sudo` tanpa password, lewat unix socket untuk MySQL/MariaDB, dan akun `postgres` untuk PostgreSQL. **MongoDB** di-dump lewat port jaringannya: Pantau membaca `/etc/mongod.conf` (lewat `sudo` bila perlu) untuk port, bind address, dan, bila TLS diwajibkan, file CA dan key, lalu **Backup** meminta username, password, dan database autentikasi (kosongkan username untuk server tanpa autentikasi). Login dikirim di body request, diteruskan ke `mongodump` lewat stdin dan config descriptor (tidak pernah di command line), dan tidak disimpan.
+- **Di Docker**: container berjalan yang image-nya MySQL, MariaDB, Percona, PostgreSQL (termasuk PostGIS, TimescaleDB), atau MongoDB. Dump dijalankan di dalam container dengan kredensial dari environment variable image resmi (`MYSQL_ROOT_PASSWORD`/`MARIADB_ROOT_PASSWORD`, `POSTGRES_USER`/`POSTGRES_PASSWORD`, `MONGO_INITDB_ROOT_USERNAME`/`PASSWORD`, beserta varian `_FILE`), sehingga password tidak dikirim lewat SSH; untuk MongoDB, login yang diketik di dialog menggantikannya. Container dengan konfigurasi lain bisa gagal dengan error autentikasi, yang ditampilkan sebagai pesan.
+- Backup selalu mencakup **semua database** pada server. Dump yang berhenti di tengah menghasilkan file gzip terpotong yang dilaporkan rusak oleh `gunzip`.
+
 ### Tab Domain: Inventaris Domain nginx, Caddy & Traefik
 
 Tab **Domain** pada sebuah host menampilkan semua domain yang dilayani reverse proxy-nya, lengkap dengan TLS, port listen, upstream tujuan, dan lokasi konfigurasinya. Saat tab pertama kali dibuka Pantau langsung memindai host; **Scan again** memperbaruinya. Hasil disimpan, sehingga tampilan lintas host dan Fleet Search berjalan tanpa koneksi ulang.
 - **nginx** (host dan container): `nginx -T` (jika gagal `sudo -n nginx -T`, lalu file yang bisa dibaca di `/etc/nginx`); satu baris per `server_name`, blok `upstream` diterjemahkan ke server tujuannya, server catch-all `_` dilewati, dan sumbernya ditampilkan sebagai `file:baris` dengan tombol **Open** untuk menyunting.
+- **Hapus konfigurasi nginx**: tombol tong sampah di samping **Open** menghapus berkas konfigurasi itu dari host (hanya berkas di bawah `/etc/nginx/` pada host, tidak pernah `nginx.conf` atau konfigurasi container) setelah konfirmasi. Semua domain di dalam berkas ikut hilang. Pantau memindahkan berkas, menjalankan `nginx -t`, lalu me-reload nginx dan membuang berkas; jika pengujian gagal berkas dikembalikan dan error nginx ditampilkan. Butuh root atau `sudo` tanpa password. Tab memindai ulang setelahnya.
 - **Caddy** (host dan container): konfigurasi yang sedang berjalan dari admin API (`localhost:2019`), jika tidak ada `caddy adapt` dari `/etc/caddy/Caddyfile`, jika tidak ada alamat site di Caddyfile.
 - **Traefik**: aturan router dari label Docker (`Host(...)`, `HostRegexp(...)`, v1 `Host:`) dan API Traefik di `127.0.0.1:8080` jika bisa diakses; juga label **caddy-docker-proxy** dan container **nginx-proxy** dengan `VIRTUAL_HOST`.
 - Docker membutuhkan user SSH yang boleh menjalankan `docker` (atau `sudo docker` tanpa password); maksimal 10 container proxy dibaca per scan. Masalah (tidak ada izin, admin API mati) ditampilkan sebagai badge proxy merah dan peringatan, bukan menggagalkan scan. Ingress Kubernetes tidak termasuk.
@@ -1147,6 +1155,10 @@ Pemindahan basis data berukuran besar atau arsip direktori antar-dua server Linu
 Untuk mengunduh satu struktur folder dari server target ke komputer kerja Anda:
 - Pilih folder pada manajer berkas SFTP, lalu klik **Download as Archive**.
 - Pantau akan memampatkan folder secara instan (*on-the-fly* menggunakan `zip` jika terpasang di target, atau `tar.gz`) dan mengalirkannya langsung ke antarmuka unduhan browser Anda tanpa menyisakan sampah arsip di server Pantau.
+
+Untuk membackup beberapa folder sekaligus ke satu arsip:
+- Centang kotak di depan setiap folder (atau berkas) yang diinginkan, di direktori mana pun; pilihan tetap tersimpan saat berpindah folder (maksimal 50 item).
+- Klik **Backup** di toolbar, periksa daftarnya, lalu klik **Unduh .tar.gz**. Arsip (`<host>-backup-<timestamp>.tar.gz`, path relatif terhadap `/`) dialirkan ke browser seperti arsip folder. **Hapus pilihan** di dialog mengosongkan daftar.
 
 ### Duplikasi Berkas & Folder Aman (Disk Space Safety Check)
 

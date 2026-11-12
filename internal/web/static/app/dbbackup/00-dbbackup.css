@@ -1,0 +1,13 @@
+/* Databases tab (00-dbbackup.js). Tokens come from index.html :root. */
+.dbb-loading { display: flex; align-items: center; gap: 8px; padding: 32px; justify-content: center; color: var(--text-muted); font-size: var(--fs-sm); }
+.dbb-loading .spinner { display: inline-flex; }
+.dbb-err { display: flex; align-items: center; gap: 6px; background: var(--danger-soft); border: 1px solid var(--danger-border); border-radius: var(--radius); padding: 10px 12px; color: var(--danger); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.dbb-head { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; }
+.dbb-note { font-size: var(--fs-xs); color: var(--text-muted); max-width: 70ch; }
+.dbb-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.dbb-table th { text-align: left; font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--card-border); white-space: nowrap; }
+.dbb-table td { padding: 8px; border-bottom: 1px solid var(--card-border); vertical-align: middle; }
+.dbb-table tbody tr:hover { background: var(--surface-2); }
+.dbb-image { font-size: var(--fs-xs); color: var(--text-muted); font-family: var(--font-mono); }
+.dbb-actions { text-align: right; white-space: nowrap; }
+.dbb-missing { display: inline-flex; align-items: center; gap: 4px; margin-right: 8px; font-size: var(--fs-xs); color: var(--warning); }

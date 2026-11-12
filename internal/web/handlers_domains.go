@@ -15,6 +15,7 @@ import (
 //
 //	GET  /api/domains?host_id=N   the stored scan of one host
 //	POST /api/domains/scan        scan one host now and store the result
+//	POST /api/domains/remove      delete one nginx config file of a host (nginx -t, reload, rollback)
 //	GET  /api/domains              the fleet view of every host
 //
 // The discovery is on demand: the scan runs over SSH only when the user asks
@@ -24,6 +25,7 @@ import (
 func (s *Server) registerDomainRoutes() {
 	s.mux.HandleFunc("/api/domains", s.authMiddleware(s.handleDomains))
 	s.mux.HandleFunc("/api/domains/scan", s.authMiddleware(s.handleDomainsScan))
+	s.mux.HandleFunc("/api/domains/remove", s.authMiddleware(s.handleDomainsRemove))
 }
 
 // handleDomains answers GET /api/domains (one host or the fleet view).
@@ -149,6 +151,40 @@ func (s *Server) handleDomainsScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, domainResponse(scan.HostID, scan.ScannedAt.UTC().Format("2006-01-02T15:04:05Z07:00"), scan.Proxies, scan.Sites, scan.Warnings))
+}
+
+// handleDomainsRemove answers POST /api/domains/remove: it deletes one scanned
+// nginx config file of the host and reloads nginx. The caller rescans afterwards.
+func (s *Server) handleDomainsRemove(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		HostID int64  `json:"host_id"`
+		Path   string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.HostID <= 0 || body.Path == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "host_id and path are required"})
+		return
+	}
+	if s.inspector == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "inspector not available"})
+		return
+	}
+	err := s.inspector.RemoveNginxConfig(body.HostID, body.Path)
+	switch {
+	case err == nil:
+		writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
+	case errors.Is(err, inspector.ErrNginxRemoveRejected):
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error()})
+	case errors.Is(err, inspector.ErrNginxRemoveInvalid):
+		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": err.Error()})
+	case errors.Is(err, inspector.ErrWebScanSSH):
+		writeJSON(w, http.StatusBadGateway, map[string]interface{}{"error": err.Error()})
+	default:
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": err.Error()})
+	}
 }
 
 // domainResponse builds the JSON shape of one host scan.

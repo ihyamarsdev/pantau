@@ -39,6 +39,10 @@
       dm_copy: 'Copy domain',
       dm_copied: 'Copied to clipboard',
       dm_open: 'Open in editor',
+      dm_remove: 'Remove config file',
+      dm_remove_confirm: 'Delete {path} from this host? Every domain defined in it stops being served. nginx is tested and reloaded; if the test fails the file is restored.',
+      dm_removed: 'Config removed, nginx reloaded',
+      dm_remove_failed: 'Remove failed: {why}',
       dm_tls_yes: 'TLS',
       dm_tls_no: 'Plain',
       dm_no_proxy_title: 'No proxy detected on this host',
@@ -78,6 +82,10 @@
       dm_copy: 'Salin domain',
       dm_copied: 'Disalin ke clipboard',
       dm_open: 'Buka di editor',
+      dm_remove: 'Hapus berkas konfigurasi',
+      dm_remove_confirm: 'Hapus {path} dari host ini? Semua domain di dalamnya berhenti dilayani. nginx diuji dan di-reload; jika pengujian gagal, berkas dikembalikan.',
+      dm_removed: 'Konfigurasi dihapus, nginx di-reload',
+      dm_remove_failed: 'Gagal menghapus: {why}',
       dm_tls_yes: 'TLS',
       dm_tls_no: 'Biasa',
       dm_no_proxy_title: 'Tidak ada proxy terdeteksi di host ini',
@@ -159,7 +167,11 @@
     const editable = m && activeHostId() === S.hostId && typeof openEditor === 'function';
     const text = `<span class="mono">${esc(src)}</span>`;
     if (!editable) return text;
-    return `${text} <button class="btn btn-sm btn-icon btn-ghost dm-open" data-dm-open="${esc(m[1])}" title="${esc(t('dm_open'))}">${icon('file-code')}</button>`;
+    const open = `<button class="btn btn-sm btn-icon btn-ghost dm-open" data-dm-open="${esc(m[1])}" title="${esc(t('dm_open'))}">${icon('file-code')}</button>`;
+    // nginx.conf holds the global config; removing it would break the proxy, so only include files qualify.
+    const removable = s.proxy === 'nginx' && m[1].indexOf('/etc/nginx/') === 0 && m[1] !== '/etc/nginx/nginx.conf';
+    const remove = removable ? `<button class="btn btn-sm btn-icon btn-ghost dm-remove" data-dm-remove="${esc(m[1])}" title="${esc(t('dm_remove'))}">${icon('trash-2')}</button>` : '';
+    return `${text} ${open}${remove}`;
   }
 
   function siteRow(s) {
@@ -290,6 +302,22 @@
     S.data = r.data;
     S.error = '';
     renderTab();
+  }
+
+  async function removeConfig(path) {
+    const hostId = S.hostId;
+    if (!await showConfirm({ message: fill(t('dm_remove_confirm'), { path }), confirmText: t('delete', 'Delete') })) return;
+    const r = await api('/api/domains/remove', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ host_id: hostId, path })
+    });
+    if (!r.ok) {
+      showToast(fill(t('dm_remove_failed'), { why: r.data.error || ('HTTP ' + r.status) }), 'error');
+      return;
+    }
+    showToast(t('dm_removed'), 'success');
+    if (tabStillActive()) await scanHost(hostId, S.seq);
   }
 
   D.renderTab = function (host) {
@@ -511,6 +539,13 @@
       e.preventDefault();
       const path = openBtn.getAttribute('data-dm-open') || '';
       if (path && typeof openEditor === 'function') openEditor(path);
+      return;
+    }
+    const rmBtn = e.target.closest('[data-dm-remove]');
+    if (rmBtn) {
+      e.preventDefault();
+      const path = rmBtn.getAttribute('data-dm-remove') || '';
+      if (path) removeConfig(path);
       return;
     }
     const closeBtn = e.target.closest('[data-dm-allclose]');

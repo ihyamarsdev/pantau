@@ -17,6 +17,7 @@
 <link rel="stylesheet" href="/app/fleetsearch.css" />
 <link rel="stylesheet" href="/app/diskusage.css" />
 <link rel="stylesheet" href="/app/domains.css" />
+<link rel="stylesheet" href="/app/dbbackup.css" />
 <style>
 @font-face { font-family: 'Inter'; src: url('/vendor/fonts/inter-latin-var.woff2') format('woff2'); font-weight: 100 900; font-style: normal; font-display: swap; }
 @font-face { font-family: 'JetBrains Mono'; src: url('/vendor/fonts/jetbrains-mono-latin-var.woff2') format('woff2'); font-weight: 100 800; font-style: normal; font-display: swap; }
@@ -5280,6 +5281,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <div class="tab" data-tab="docker" onclick="switchTab('docker')"><svg class="icon icon-sm"><use href="#i-container"/></svg><span data-i18n="tab_docker">Docker</span></div>
         <div class="tab" data-tab="systemd" onclick="switchTab('systemd')"><svg class="icon icon-sm"><use href="#i-cog"/></svg><span data-i18n="tab_systemd">Services</span></div>
         <div class="tab" data-tab="domains" onclick="switchTab('domains')"><svg class="icon icon-sm"><use href="#i-globe"/></svg><span data-i18n="tab_domains">Domains</span></div>
+        <div class="tab" data-tab="databases" onclick="switchTab('databases')"><svg class="icon icon-sm"><use href="#i-database"/></svg><span data-i18n="tab_databases">Databases</span></div>
         <div class="tab" data-tab="timeline" onclick="switchTab('timeline')"><svg class="icon icon-sm"><use href="#i-history"/></svg><span data-i18n="tab_timeline">Incident Timeline</span></div>
         <div class="tab" data-tab="runs" onclick="switchTab('runs')"><svg class="icon icon-sm"><use href="#i-clock"/></svg><span data-i18n="tab_runs">Inspection Runs</span></div>
         <div class="tab" data-tab="files" onclick="switchTab('files')"><svg class="icon icon-sm"><use href="#i-folder"/></svg><span data-i18n="tab_files">File Manager</span></div>
@@ -6849,6 +6851,14 @@ const I18N = {
     "file_actions": "Actions",
     "download_file": "Download File",
     "download_folder": "Download Folder Archive",
+    "backup_btn": "Backup",
+    "backup_title": "Backup selected folders as .tar.gz",
+    "backup_none": "Tick the checkbox of the folders to back up first.",
+    "backup_confirm": "Download {n} item(s) as one .tar.gz archive?\n\n{list}",
+    "backup_clear": "Clear selection",
+    "backup_download": "Download .tar.gz",
+    "backup_limit": "At most {n} items per backup.",
+    "backup_select": "Include in backup",
     "copy_to_host": "Copy to Host",
     "loading_files": "Loading files...",
     "failed_open_path": "Failed to open path: ",
@@ -7250,6 +7260,7 @@ const I18N = {
     "service_unknown_hint": "Owner process not visible. Pantau tries passwordless sudo automatically; otherwise the SSH user must be root (or able to run sudo without a password).",
     "tab_systemd": "Services",
     "tab_domains": "Domains",
+    "tab_databases": "Databases",
     "systemd_title": "systemd Services",
     "systemd_loading": "Reading services...",
     "systemd_unavailable": "Could not read services",
@@ -8433,6 +8444,14 @@ const I18N = {
     "file_actions": "Aksi",
     "download_file": "Unduh Berkas",
     "download_folder": "Unduh Arsip Folder",
+    "backup_btn": "Backup",
+    "backup_title": "Backup folder terpilih sebagai .tar.gz",
+    "backup_none": "Centang dulu folder yang akan di-backup.",
+    "backup_confirm": "Unduh {n} item sebagai satu arsip .tar.gz?\n\n{list}",
+    "backup_clear": "Hapus pilihan",
+    "backup_download": "Unduh .tar.gz",
+    "backup_limit": "Maksimal {n} item per backup.",
+    "backup_select": "Sertakan dalam backup",
     "copy_to_host": "Salin ke Host",
     "loading_files": "Memuat berkas...",
     "failed_open_path": "Gagal membuka path: ",
@@ -8834,6 +8853,7 @@ const I18N = {
     "service_unknown_hint": "Proses pemilik tidak terlihat. Pantau mencoba sudo tanpa password secara otomatis; jika tidak bisa, user SSH harus root (atau boleh menjalankan sudo tanpa password).",
     "tab_systemd": "Layanan",
     "tab_domains": "Domain",
+    "tab_databases": "Database",
     "systemd_title": "Layanan systemd",
     "systemd_loading": "Membaca layanan...",
     "systemd_unavailable": "Tidak dapat membaca layanan",
@@ -10672,7 +10692,7 @@ function renderListView(listContainer, isManualSort) {
         <th style="width: 70px;">${t('tab_security', 'Security')}</th>
         <th style="width: 70px;">${t('card_issues', 'Issues')}</th>
         <th style="width: 110px;">${t('col_last_inspected', 'Inspected')}</th>
-        <th style="text-align: right; width: 140px;">${t('col_actions')}</th>
+        <th style="width: 140px;">${t('col_actions')}</th>
       </tr>
     </thead>
     <tbody></tbody>
@@ -10828,7 +10848,7 @@ function renderListView(listContainer, isManualSort) {
         <td title="${recency.title}" style="font-size: var(--fs-xs); white-space: nowrap; ${recency.isStale ? 'color: var(--warning); font-weight: 500;' : 'color: var(--text-muted);'}">
           ${recency.relative}${h.last_duration_ms > 0 ? `<div style="font-size: 0.7rem; color: var(--success);">${h.last_duration_ms}ms</div>` : ''}
         </td>
-        <td style="text-align: right;">
+        <td>
           <div style="display: inline-flex; gap: 4px; align-items: center;">
             <button class="btn btn-inspect-quick" id="inspectBtnList-${h.id}" onclick="inspectHost(${h.id}, event)" title="${t('btn_inspect_title', 'Run Inspection (Refresh)')}">
               <svg class="icon icon-sm"><use href="#i-rotate-ccw"/></svg>
@@ -12555,6 +12575,8 @@ function switchTab(tab, presetID) {
     loadDockerTab();
   } else if (tab === 'domains') {
     if (window.Domains) Domains.renderTab(d.host);
+  } else if (tab === 'databases') {
+    if (window.DbBackup) DbBackup.renderTab(d.host);
   } else if (tab === 'systemd') {
     content.innerHTML = `<div class="empty-state"><div class="empty-state-icon">${svgIcon('cog', 'icon-xl')}</div><div class="empty-state-desc">${t('systemd_loading', 'Reading services...')}</div></div>`;
     loadSystemdTab();
@@ -14418,6 +14440,9 @@ function renderFilesView() {
         <button class="btn btn-primary btn-sm" ${isProtectedDir ? 'disabled title="' + t('cannot_upload_protected') + '"' : ''} onclick="document.getElementById('fileUploadInput').click()">
           ${svgIcon('upload', 'icon-sm')} <span>${t('upload_file')}</span>
         </button>
+        <button class="btn btn-sm" onclick="backupSelected()" title="${t('backup_title', 'Backup selected folders as .tar.gz')}">
+          ${svgIcon('archive', 'icon-sm')} <span id="fileBackupLabel">${backupBtnLabel()}</span>
+        </button>
       </div>
     </div>
     ${renderQuickAccessBar()}
@@ -14613,6 +14638,7 @@ function renderFilesTableBody() {
     return `
       <tr>
         <td style="word-break: break-all;">
+          <input type="checkbox" class="file-backup-check" title="${t('backup_select', 'Include in backup')}" ${backupSelFor(currentHost.id).has(fullPath) ? 'checked' : ''} onchange="toggleBackupSel(${jsArg(fullPath)}, this)" />
           <button type="button" class="btn-file-pin ${isPinned ? 'pinned' : ''}" onclick="openPinModal(${jsArg(fullPath)}, ${f.is_dir})" title="${isPinned ? escapeHtml(pin.note || t('pinned')) : t('pin_this_item')}">${svgIcon('pin', 'icon-sm')}</button>
           ${f.is_dir 
             ? '<a class="folder-link" href="javascript:void(0)" onclick="loadFiles(' + jsArg(fullPath) + ')">' + svgIcon('folder', 'icon-sm folder-glyph') + ' <b>' + escapeHtml(f.name) + '</b></a>' 
@@ -14715,6 +14741,55 @@ async function downloadFolder(path) {
     console.warn('size check error:', e);
   }
   window.location.href = filesApiUrl(currentHost.id, 'download', { path });
+}
+
+// Multi-item backup: the selection survives folder navigation; one tar.gz is streamed to the browser.
+const BACKUP_MAX_ITEMS = 50; // keep in sync with the server limit
+const fileBackupSel = new Set();
+let fileBackupHostId = 0;
+
+function backupSelFor(hostId) {
+  if (fileBackupHostId !== hostId) { fileBackupSel.clear(); fileBackupHostId = hostId; }
+  return fileBackupSel;
+}
+
+function backupBtnLabel() {
+  const n = backupSelFor(currentHost.id).size;
+  return t('backup_btn', 'Backup') + (n ? ' (' + n + ')' : '');
+}
+
+function toggleBackupSel(p, input) {
+  const sel = backupSelFor(currentHost.id);
+  if (input.checked && sel.size >= BACKUP_MAX_ITEMS) {
+    input.checked = false;
+    showToast(t('backup_limit', 'At most {n} items per backup.').replace('{n}', BACKUP_MAX_ITEMS), 'error');
+    return;
+  }
+  if (input.checked) sel.add(p); else sel.delete(p);
+  const el = document.getElementById('fileBackupLabel');
+  if (el) el.textContent = backupBtnLabel();
+}
+
+async function backupSelected() {
+  const sel = backupSelFor(currentHost.id);
+  if (!sel.size) { showToast(t('backup_none', 'Tick the checkbox of the folders to back up first.'), 'info'); return; }
+  const ok = await showConfirm({
+    title: t('backup_title', 'Backup selected folders as .tar.gz'),
+    message: t('backup_confirm').replace('{n}', sel.size).replace('{list}', [...sel].join('\n')),
+    confirmText: t('backup_download', 'Download .tar.gz'),
+    danger: false,
+    extraBtnText: t('backup_clear', 'Clear selection'),
+    extraBtnClass: 'btn-ghost',
+    extraBtnValue: 'clear'
+  });
+  if (ok === 'clear') {
+    sel.clear();
+    renderFilesView();
+    return;
+  }
+  if (ok !== true) return;
+  const base = filesApiUrl(currentHost.id, 'backup');
+  window.location.href = base + (base.includes('?') ? '&' : '?') + [...sel].map(p => 'path=' + encodeURIComponent(p)).join('&');
 }
 
 async function uploadFile(targetDir, overwrite = false) {
@@ -26975,5 +27050,6 @@ langRerenderHooks.push(renderTfWorkspaces, tfRenderWsHead, () => {
 <script src="/app/fleetsearch.js"></script>
 <script src="/app/diskusage.js"></script>
 <script src="/app/domains.js"></script>
+<script src="/app/dbbackup.js"></script>
 </body>
 </html>

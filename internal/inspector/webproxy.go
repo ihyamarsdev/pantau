@@ -35,7 +35,75 @@ var (
 	ErrWebScanInProgress = errors.New("web domain scan already in progress for this host")
 	// ErrWebScanSSH marks a failure to reach the host (the handler answers 502).
 	ErrWebScanSSH = errors.New("ssh connection failed")
+	// ErrNginxRemoveRejected marks a path Pantau refuses to remove (the handler answers 400).
+	ErrNginxRemoveRejected = errors.New("nginx config path rejected")
+	// ErrNginxRemoveInvalid marks a removal rolled back because nginx -t failed without the file (the handler answers 409).
+	ErrNginxRemoveInvalid = errors.New("nginx rejected the configuration without this file; file restored")
 )
+
+// nginxRemoveScript moves the config out of the way, tests the result and either
+// reloads nginx (file dropped) or puts the file back. $1 is the config path.
+// Exit 4 = restored because nginx -t failed; the nginx -t output goes to stderr.
+const nginxRemoveScript = `S=''; [ "$(id -u)" = 0 ] || S='sudo -n'
+f=$1
+$S test -e "$f" || $S test -L "$f" || exit 0
+d=$($S mktemp -d) || exit 1
+$S mv -- "$f" "$d/f" || exit 1
+if out=$($S nginx -t 2>&1); then
+  $S rm -rf "$d"
+  $S systemctl reload nginx 2>/dev/null || $S nginx -s reload
+else
+  $S mv -- "$d/f" "$f"; $S rm -rf "$d"
+  printf '%s\n' "$out" >&2
+  exit 4
+fi
+`
+
+// RemoveNginxConfig deletes one host nginx config file listed by the last scan
+// (a conf.d or sites-enabled file under /etc/nginx, never nginx.conf itself),
+// then reloads nginx. If nginx -t fails without the file, it is restored.
+func (ins *Inspector) RemoveNginxConfig(hostID int64, file string) error {
+	if !strings.HasPrefix(file, "/etc/nginx/") || file == "/etc/nginx/nginx.conf" || strings.ContainsAny(file, "\r\n") || strings.Contains(file, "/../") {
+		return fmt.Errorf("%w: %s", ErrNginxRemoveRejected, file)
+	}
+	sites, err := ins.db.GetHostDomains(hostID)
+	if err != nil {
+		return err
+	}
+	known := false
+	for _, s := range sites {
+		if s.Where == "host" && strings.HasPrefix(s.Source, file+":") {
+			known = true
+			break
+		}
+	}
+	if !known {
+		return fmt.Errorf("%w: not a scanned config of this host", ErrNginxRemoveRejected)
+	}
+	host, err := ins.db.GetHost(hostID)
+	if err != nil {
+		return err
+	}
+	if host == nil {
+		return fmt.Errorf("host %d not found", hostID)
+	}
+	runner, err := ins.GetRunnerForHost(host)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrWebScanSSH, err)
+	}
+	defer runner.Close()
+	_, stderr, code, err := runner.ExecTimeout("sh -c "+shellQuote(nginxRemoveScript)+" sh "+shellQuote(file), webScanTimeout)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrWebScanSSH, err)
+	}
+	switch code {
+	case 0:
+		return nil
+	case 4:
+		return fmt.Errorf("%w: %s", ErrNginxRemoveInvalid, strings.TrimSpace(stderr))
+	}
+	return fmt.Errorf("remove failed (exit %d): %s", code, strings.TrimSpace(stderr))
+}
 
 // webScanInFlight guards concurrent scans of the same host. The key carries the
 // inspector pointer so two inspectors (tests, tools) do not block each other.
@@ -351,20 +419,46 @@ func containerLabel(container string) string {
 	return "container " + container
 }
 
-// dedupeWebSites removes the identical rows (a domain can be listed twice when
-// it comes from several sources of the same proxy).
+// dedupeWebSites folds the rows of one domain (same proxy and container) into
+// one when their config is the same: the http and https server blocks of a
+// site, or the same domain listed by several sources. A plain row with no
+// upstream and no root (a redirect to https) counts as the same config as the
+// TLS row. Rows whose upstreams or root differ stay separate.
 func dedupeWebSites(sites []store.WebSite) []store.WebSite {
-	seen := map[string]bool{}
 	out := make([]store.WebSite, 0, len(sites))
 	for _, s := range sites {
-		k := s.Domain + "|" + s.Proxy + "|" + s.Where + "|" + s.Container + "|" + s.Source
-		if seen[k] {
-			continue
+		merged := false
+		for i := range out {
+			d := &out[i]
+			if d.Domain != s.Domain || d.Proxy != s.Proxy || d.Where != s.Where || d.Container != s.Container || !sameWebConfig(*d, s) {
+				continue
+			}
+			if s.TLS && !d.TLS {
+				d.Source = s.Source
+			}
+			d.TLS = d.TLS || s.TLS
+			d.DefaultServer = d.DefaultServer || s.DefaultServer
+			d.Listen = dedupeStrings(append(append([]string{}, d.Listen...), s.Listen...))
+			if len(d.Upstreams) == 0 {
+				d.Upstreams = s.Upstreams
+			}
+			if d.Root == "" {
+				d.Root = s.Root
+			}
+			merged = true
+			break
 		}
-		seen[k] = true
-		out = append(out, s)
+		if !merged {
+			out = append(out, s)
+		}
 	}
 	return out
+}
+
+func sameWebConfig(a, b store.WebSite) bool {
+	redirectOnly := func(s store.WebSite) bool { return !s.TLS && len(s.Upstreams) == 0 && s.Root == "" }
+	return strings.Join(a.Upstreams, ",") == strings.Join(b.Upstreams, ",") && a.Root == b.Root ||
+		redirectOnly(a) || redirectOnly(b)
 }
 
 func sortWebSites(sites []store.WebSite) {

@@ -99,6 +99,8 @@ type Server struct {
 	tunnelPort        int      // dedicated loopback port for the tunnel origin (0 = disabled)
 	portFwd           *portForwardManager
 	inspectAllMu      sync.Mutex
+	loginScanMu       sync.Mutex
+	dbBackupActive    sync.Map
 	inspectAllActive  bool
 	lastInspectAll    time.Time
 	cfClient          func(token string) *cloudflare.Client
@@ -249,6 +251,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/app/diskusage.css", serveAppBundle("diskusage", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/domains.js", serveAppBundle("domains", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/domains.css", serveAppBundle("domains", ".css", "text/css; charset=utf-8"))
+	s.mux.HandleFunc("/app/dbbackup.js", serveAppBundle("dbbackup", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/dbbackup.css", serveAppBundle("dbbackup", ".css", "text/css; charset=utf-8"))
 
 	// Vendor static assets (airgapped / local cache)
 	vendorHandler := http.StripPrefix("/vendor/", http.FileServer(http.FS(vendorFS())))
@@ -406,6 +410,7 @@ func (s *Server) routes() {
 	s.registerFleetSearchRoutes()
 	s.registerDiskUsageRoutes()
 	s.registerDomainRoutes()
+	s.registerDatabaseRoutes()
 }
 
 func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -442,6 +447,7 @@ func (s *Server) issueSession(w http.ResponseWriter) string {
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
+	go s.scanFleetOnLogin()
 	return token
 }
 
@@ -2110,6 +2116,39 @@ func (s *Server) handleFilesRoute(hostID int64, subparts []string, w http.Respon
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", path.Base(targetPath)))
 		w.Header().Set("Content-Type", "application/octet-stream")
 		_, _ = io.Copy(w, f)
+
+	case "backup":
+		// Several paths (repeat ?path=) streamed to the browser as one tar.gz.
+		var rels []string
+		seen := map[string]bool{}
+		for _, p := range r.URL.Query()["path"] {
+			p = path.Clean(strings.TrimSpace(p))
+			if !path.IsAbs(p) || p == "/" {
+				http.Error(w, "backup needs absolute paths below /", http.StatusBadRequest)
+				return
+			}
+			if seen[p] {
+				continue
+			}
+			if _, err := sftpClient.Stat(p); err != nil {
+				http.Error(w, fmt.Sprintf("%s: %v", p, err), http.StatusBadRequest)
+				return
+			}
+			seen[p] = true
+			rels = append(rels, shellQuote(strings.TrimPrefix(p, "/")))
+		}
+		if len(rels) == 0 || len(rels) > 50 {
+			http.Error(w, "backup needs 1 to 50 paths", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", slugName(host.Name)+"-backup-"+time.Now().Format("20060102-150405")+".tar.gz"))
+		w.Header().Set("Content-Type", "application/gzip")
+		// -C / with relative members keeps the tree layout and avoids tar's leading-slash rewrite.
+		if err := runner.PipeCommand(asCmd("tar -czf - -C / -- "+strings.Join(rels, " ")), nil, w); err != nil {
+			logger.Warn("files", host.Name, fmt.Sprintf("backup of %d path(s) ended with error: %v", len(rels), err))
+			return
+		}
+		logger.Info("files", host.Name, fmt.Sprintf("backup streamed: %d path(s)", len(rels)))
 
 	case "delete":
 		if r.Method != http.MethodPost {
