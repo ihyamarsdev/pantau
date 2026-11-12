@@ -321,6 +321,9 @@ func (s *Server) routes() {
 
 	// Cross-Host Transfers
 	s.mux.HandleFunc("/api/transfers", s.authMiddleware(s.handleTransfers))
+	s.mux.HandleFunc("/api/transfers/s3", s.authMiddleware(s.handleS3Upload))
+	s.mux.HandleFunc("/api/s3/accounts", s.authMiddleware(s.handleS3Accounts))
+	s.mux.HandleFunc("/api/s3/accounts/", s.authMiddleware(s.handleS3AccountRoute))
 	s.mux.HandleFunc("/api/transfers/", s.authMiddleware(s.handleTransferDetail))
 
 	// Terminal Presets

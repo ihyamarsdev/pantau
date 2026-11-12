@@ -211,8 +211,8 @@ Resume: pmtu 1500 hops 3 back 3`, "", 0, nil
 		if strings.Contains(cmd, "/dev/tcp") {
 			return "PORT_OPEN\n", "", 0, nil
 		}
-		if strings.Contains(cmd, "getent hosts") {
-			return "142.250.190.46  google.com\n", "", 0, nil
+		if strings.Contains(cmd, "getent ahosts") {
+			return "142.250.190.46  STREAM google.com\n142.250.190.46  DGRAM\n", "", 0, nil
 		}
 		return "", "", 0, nil
 	}

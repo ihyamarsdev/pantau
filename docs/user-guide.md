@@ -413,8 +413,9 @@ When troubleshooting server connectivity issues, firewall blocking, or cross-dat
 - **Diagnostic Modes**: Execute non-destructive diagnostics directly from the remote host:
   - **Ping**: Probes host reachability and roundtrip times via `timeout 14 ping -c 4 -W 2 <target>`.
   - **Traceroute**: Inspects network route hops with `traceroute` (preferred, streams hop by hop). If it is missing on the source host, Pantau installs it first (apt, dnf, yum, apk, pacman, zypper; apt runs without restarting services) and streams the installer output to the raw viewer before probing. Installing requires the SSH user to be root or have passwordless `sudo`; otherwise Pantau falls back to `tracepath` (run line-buffered via `stdbuf -oL`) and notes the fallback in the raw viewer. If neither tool exists and installation is impossible, the probe stops with a message telling you what to install manually.
-  - **Port Probe (TCP)**: Tests TCP port connectivity via native bash socket `/dev/tcp/<target>/<port>`, bypassing the need for `nc`, `telnet`, or `nmap`.
-  - **DNS Resolve**: Verifies DNS resolution path and name resolution latency via `getent hosts` and `nslookup`.
+  - **Port Probe (TCP)**: Tests TCP port connectivity via native bash socket `/dev/tcp/<target>/<port>`; on hosts without bash (Alpine/BusyBox) it falls back to `nc -z`.
+  - **DNS Resolve**: Resolves any domain, including global/public ones like `google.com`, to IPv4 and IPv6 addresses via the host's system resolver (`getent ahosts`, `dscacheutil` on macOS, or `nslookup`). If the system resolver returns nothing, Pantau retries against the public resolver `1.1.1.1` (`dig`, `nslookup`, or `host`) and notes it in the summary.
+  - **Dig (DNS Records)**: Runs `dig` on the source host for a chosen record type (`A`, `AAAA`, `CNAME`, `MX`, `NS`, `TXT`, `SOA`, or `PTR` reverse lookup on an IP) against the system resolver or an optional DNS server (for example `1.1.1.1` or `8.8.8.8`). It shows the answer records (name, TTL, type, value), the response code (`NOERROR`, `NXDOMAIN`, `SERVFAIL`), the answering server, and the query time. Requires `dig` on the source host (`dnsutils` / `bind-utils` / `bind-tools`).
 - **Intelligent Hop Analysis**: Automatically parses traceroute hops into structured topology cards:
   - **Zone Classification**: Identifies whether each hop belongs to `Local/Private VPC` (RFC 1918 / CGNAT), `ISP Transit`, or `Destination`.
   - **Blackhole Detection**: Pins down the exact network hop where traffic drops if destination is unreachable.
@@ -1154,6 +1155,19 @@ Transferring large databases, directory trees, or archive bundles between two re
    - **Fast Stream Mode**: High-throughput in-memory piping using standard `tar` streams.
    - **Verified Mode**: Calculates and validates SHA256 hashes end-to-end on both source and destination hosts before concluding the transfer.
 5. Track progress in the background **Transfer Job** queue (real-time MB/s throughput, transferred bytes, and ETA).
+
+### Upload to S3 (File Manager)
+
+Upload a file or folder from a host straight to an S3-compatible bucket (AWS S3, MinIO, Cloudflare R2, Wasabi, Ceph). Data is streamed through Pantau without a temporary file on the Pantau server.
+
+1. Open **Settings > S3 Storage**, click **Add S3 Account** and fill in a **name**, the **Bucket**, **Access Key ID** and **Secret Access Key**. For anything other than AWS S3 also set the **Endpoint** (for example `https://minio.example.com`); Cloudflare R2 uses region `auto`. Click **Save**, then **Test** on the account row. Add as many accounts as you need (for example one per provider or per environment); edit or delete them from the same list.
+2. In the File Manager click the cloud button on a file or folder row, pick the **S3 account**, check or change the destination folder inside the bucket (it defaults to the account's folder), and click **Upload**. The last account you used is preselected.
+3. Follow the job in **Cross-Host Transfers** (progress, speed, ETA, cancel).
+
+- A file is uploaded as is. A folder is packed on the host and stored as one `<name>.tar.gz` object.
+- The secret key is stored in the Pantau database in plain text, like the other credentials (see [ADR-0035](adr/0035-ssh-key-library.md)), and is never returned by the API. Use a key limited to the one bucket (`s3:PutObject`, `s3:AbortMultipartUpload`, `s3:ListBucket`).
+- Files over 16 MB use multipart upload. There is no retry of a failed part: run the upload again after a network failure. A failed multipart upload is aborted so no orphan parts stay in the bucket.
+- Existing objects with the same key are overwritten.
 
 ### On-The-Fly Folder Streaming Download
 

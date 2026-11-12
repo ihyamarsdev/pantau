@@ -120,8 +120,17 @@ func TestPortableTimeoutPrelude(t *testing.T) {
 	}
 }
 
+// probeScript unwraps the `sh -c '<script>'` form every probe uses.
+func probeScript(t *testing.T, cmd string) string {
+	t.Helper()
+	if !strings.HasPrefix(cmd, "sh -c '") {
+		t.Fatalf("probe must run under sh -c for non-POSIX login shells: %s", cmd)
+	}
+	return strings.ReplaceAll(strings.TrimSuffix(strings.TrimPrefix(cmd, "sh -c '"), "'"), `'\''`, "'")
+}
+
 func TestPingProbeCommand_DarwinAndLinux(t *testing.T) {
-	cmd := PingProbeCommand("'1.1.1.1'")
+	cmd := probeScript(t, PingProbeCommand("1.1.1.1"))
 	if !strings.Contains(cmd, PortableTimeoutPrelude) {
 		t.Errorf("expected command to include PortableTimeoutPrelude")
 	}
@@ -170,25 +179,34 @@ func TestEnsureTraceTool_DarwinNoPkgManager(t *testing.T) {
 	}
 }
 
-func TestDNSProbeCommand_DarwinDscacheutil(t *testing.T) {
-	cmd := DNSProbeCommand("'google.com'")
-	if !strings.Contains(cmd, PortableTimeoutPrelude) {
-		t.Errorf("expected DNS command to include PortableTimeoutPrelude")
+func TestDNSProbeCommand_SystemThenPublicResolver(t *testing.T) {
+	cmd := probeScript(t, DNSProbeCommand("google.com"))
+	iSystem := strings.Index(cmd, "getent ahosts")
+	iPublic := strings.Index(cmd, "@1.1.1.1")
+	if !strings.Contains(cmd, "dscacheutil -q host -a name") || iSystem < 0 || iPublic < 0 || iSystem > iPublic {
+		t.Fatalf("expected system resolver (dscacheutil/getent ahosts) before public resolver fallback: %s", cmd)
 	}
-	if !strings.Contains(cmd, "dscacheutil -q host -a name") {
-		t.Errorf("expected DNS command to contain dscacheutil: %s", cmd)
-	}
-	if !strings.Contains(cmd, "getent hosts") {
-		t.Errorf("expected DNS command to contain getent hosts: %s", cmd)
+	if !strings.Contains(cmd, `"$d" AAAA`) {
+		t.Errorf("public fallback must also ask for IPv6 records: %s", cmd)
 	}
 }
 
-func TestPortProbeCommand_PortableTimeout(t *testing.T) {
-	cmd := PortProbeCommand("1.1.1.1", 443)
-	if !strings.Contains(cmd, PortableTimeoutPrelude) {
-		t.Errorf("expected Port command to include PortableTimeoutPrelude")
+func TestPortProbeCommand_BashThenNc(t *testing.T) {
+	cmd := probeScript(t, PortProbeCommand("1.1.1.1", 443))
+	iBash := strings.Index(cmd, "</dev/tcp/1.1.1.1/443")
+	iNc := strings.Index(cmd, "nc -z -w 3 1.1.1.1 443")
+	if iBash < 0 || iNc < 0 || iBash > iNc {
+		t.Fatalf("expected bash /dev/tcp probe with nc fallback: %s", cmd)
 	}
-	if !strings.Contains(cmd, "</dev/tcp/1.1.1.1/443") {
-		t.Errorf("expected /dev/tcp port probe: %s", cmd)
+}
+
+func TestDigProbeCommand(t *testing.T) {
+	cmd := probeScript(t, DigProbeCommand("'google.com'", "MX", "1.1.1.1"))
+	if !strings.Contains(cmd, "dig +noall +answer +comments +stats +time=3 +tries=2 @'1.1.1.1' 'google.com' MX") {
+		t.Fatalf("unexpected dig command: %s", cmd)
+	}
+	ptr := probeScript(t, DigProbeCommand("'1.1.1.1'", "PTR", ""))
+	if !strings.Contains(ptr, "+tries=2 -x '1.1.1.1'") || strings.Contains(ptr, "@'") {
+		t.Fatalf("PTR must use -x and the system resolver: %s", ptr)
 	}
 }

@@ -192,9 +192,10 @@ Pantau menginspeksi Host remote melalui perintah SSH non-interaktif, memvalidasi
 - **Tab Packages & Guardrail Pemindaian**: Tab penjelajah paket khusus di Workspace Modal dengan pencarian instan, filter kategori (`⭐ Manual Install`, `💤 Dormant Packages`, `📋 All Packages`), tombol pemindaian ulang on-demand yang dilindungi cooldown anti-flood 30 detik (`HTTP 429`) dan kunci konkurensi latar belakang (`HTTP 409`).
 
 ### 20. 🌐 Diagnostik Jaringan Agentless & Analisis Hop
-- **Perkakas Diagnostik On-Demand**: Uji coba interaktif Ping, Traceroute (dengan auto-fallback tracepath), TCP Port Probe tanpa dependensi (`/dev/tcp`), dan DNS Resolve secara real-time via Server-Sent Events (SSE).
+- **Perkakas Diagnostik On-Demand**: Uji coba interaktif Ping, Traceroute (dengan auto-fallback tracepath), TCP Port Probe tanpa dependensi (`/dev/tcp`), DNS Resolve, dan Dig (record A/AAAA/CNAME/MX/NS/TXT/SOA/PTR ke server DNS mana pun) secara real-time via Server-Sent Events (SSE).
 - **Analisis Hop Otomatis**: Klasifikasi hop jaringan ke zona Lokal/VPC Privat, Transit ISP, dan Destinasi, dilengkapi deteksi titik paket terhenti (*blackhole drop*) dan peringatan lonjakan latensi (>60ms).
 - **Proteksi Konkurensi & Pencegahan Kesalahan**: Guard singleflight mencegah penumpukan proses per host, serta seleksi target secara otomatis menonaktifkan host yang sedang offline.
+- **Upload ke S3**: kirim file atau folder dari File Manager ke bucket kompatibel S3 mana pun (AWS S3, MinIO, Cloudflare R2, ...) dengan beberapa akun S3 yang kredensialnya disimpan di Settings; dialirkan tanpa file sementara di server Pantau.
 
 ### 21. ⚖️ Evaluasi Komparatif Multi-Host & Matriks Penilaian
 - **Matriks Komparasi Head-to-Head**: Evaluasi interaktif berdampingan membandingkan 2 hingga 4 host secara bersamaan di Workspace Modal menggunakan telemetri inspeksi sisi klien.

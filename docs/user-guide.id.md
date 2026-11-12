@@ -413,8 +413,9 @@ Saat menangani kendala konektivitas antar-server, pemblokiran firewall, atau ano
 - **Mode Diagnostik**: Eksekusi pengujian non-destruktif langsung dari host jarak jauh:
   - **Ping**: Menguji keterjangkauan host dan roundtrip time via `timeout 14 ping -c 4 -W 2 <target>`.
   - **Traceroute**: Memeriksa hop rute jaringan dengan `traceroute` (diutamakan, hop tampil satu per satu). Jika belum ada di host sumber, Pantau memasangnya lebih dulu (apt, dnf, yum, apk, pacman, zypper; apt berjalan tanpa me-restart service) dan menampilkan output instalasi di viewer mentah sebelum probe dijalankan. Pemasangan membutuhkan user SSH berstatus root atau memiliki `sudo` tanpa password; jika tidak, Pantau beralih ke `tracepath` (dijalankan line-buffered via `stdbuf -oL`) dan mencatat fallback itu di viewer mentah. Jika kedua tool tidak ada dan tidak bisa dipasang, probe berhenti dengan pesan yang menjelaskan paket yang perlu dipasang manual.
-  - **Port Probe (TCP)**: Menguji konektivitas port TCP via socket bash native `/dev/tcp/<target>/<port>`, tanpa butuh `nc`, `telnet`, atau `nmap`.
-  - **DNS Resolve**: Memverifikasi jalur resolusi DNS dan latensi nama domain via `getent hosts` dan `nslookup`.
+  - **Port Probe (TCP)**: Menguji konektivitas port TCP via socket bash native `/dev/tcp/<target>/<port>`; pada host tanpa bash (Alpine/BusyBox) beralih ke `nc -z`.
+  - **DNS Resolve**: Me-resolve domain apa pun, termasuk domain global/publik seperti `google.com`, ke alamat IPv4 dan IPv6 via resolver sistem host (`getent ahosts`, `dscacheutil` di macOS, atau `nslookup`). Jika resolver sistem tidak memberi jawaban, Pantau mencoba ulang ke resolver publik `1.1.1.1` (`dig`, `nslookup`, atau `host`) dan mencatatnya di ringkasan.
+  - **Dig (Record DNS)**: Menjalankan `dig` di host sumber untuk tipe record pilihan (`A`, `AAAA`, `CNAME`, `MX`, `NS`, `TXT`, `SOA`, atau `PTR` untuk reverse lookup IP) ke resolver sistem atau server DNS opsional (misalnya `1.1.1.1` atau `8.8.8.8`). Menampilkan record jawaban (nama, TTL, tipe, nilai), kode respons (`NOERROR`, `NXDOMAIN`, `SERVFAIL`), server yang menjawab, dan waktu query. Membutuhkan `dig` di host sumber (`dnsutils` / `bind-utils` / `bind-tools`).
 - **Analisis Hop Cerdas**: Memetakan hop rute traceroute secara otomatis ke dalam kartu topologi terstruktur:
   - **Klasifikasi Zona**: Mengidentifikasi apakah tiap hop merupakan `Lokal/VPC Privat` (RFC 1918 / CGNAT), `Transit ISP`, atau `Destinasi`.
   - **Deteksi Titik Terhenti (*Blackhole Drop*)**: Menunjukkan persis hop jaringan tempat paket terhenti jika target tidak tercapai.
@@ -1156,6 +1157,19 @@ Pemindahan basis data berukuran besar atau arsip direktori antar-dua server Linu
    - **Fast Stream Mode**: Aliran data berkecepatan tinggi memanfaatkan pipa *tar stream*.
    - **Verified Mode**: Menghitung dan mencocokkan checksum SHA256 secara end-to-end di kedua host sebelum transfer dinyatakan selesai.
 5. Pantau progres pemindahan pada antrean **Transfer Job** latar belakang (menampilkan kecepatan transfer MB/s, akumulasi byte, dan estimasi waktu tersisa).
+
+### Upload ke S3 (File Manager)
+
+Unggah file atau folder dari host langsung ke bucket yang kompatibel S3 (AWS S3, MinIO, Cloudflare R2, Wasabi, Ceph). Data dialirkan lewat Pantau tanpa file sementara di server Pantau.
+
+1. Buka **Settings > Penyimpanan S3**, klik **Tambah Akun S3** dan isi **nama**, **Bucket**, **Access Key ID**, dan **Secret Access Key**. Untuk selain AWS S3 isi juga **Endpoint** (misalnya `https://minio.example.com`); Cloudflare R2 memakai region `auto`. Klik **Simpan**, lalu **Uji** pada baris akun. Tambahkan akun sebanyak yang diperlukan (misalnya satu per provider atau per environment); ubah atau hapus dari daftar yang sama.
+2. Di File Manager klik tombol awan pada baris file atau folder, pilih **akun S3**, periksa atau ubah folder tujuan di dalam bucket (bawaannya folder milik akun), lalu klik **Unggah**. Akun yang terakhir dipakai terpilih otomatis.
+3. Pantau jobnya di **Cross-Host Transfers** (progres, kecepatan, ETA, batalkan).
+
+- File diunggah apa adanya. Folder dikemas di host dan disimpan sebagai satu objek `<nama>.tar.gz`.
+- Secret key disimpan di database Pantau sebagai teks biasa, sama seperti kredensial lain (lihat [ADR-0035](adr/0035-ssh-key-library.md)), dan tidak pernah dikembalikan oleh API. Pakai key yang dibatasi ke satu bucket (`s3:PutObject`, `s3:AbortMultipartUpload`, `s3:ListBucket`).
+- File di atas 16 MB memakai multipart upload. Tidak ada retry untuk part yang gagal: jalankan ulang unggahan setelah jaringan putus. Multipart yang gagal dibatalkan agar tidak ada part yatim di bucket.
+- Objek dengan key yang sama akan ditimpa.
 
 ### Folder Streaming Download Langsung ke Browser
 

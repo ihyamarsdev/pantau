@@ -218,7 +218,7 @@ func TestParseDNSOutput_MacOSDscacheutil(t *testing.T) {
 ip_address: 142.250.190.46
 ipv6_address: 2607:f8b0:4006:81b::200e`
 	dns1 := ParseDNSOutput(outputSingle, "google.com")
-	if dns1.Status != "healthy" || len(dns1.ResolvedIPs) != 1 || dns1.ResolvedIPs[0] != "142.250.190.46" {
+	if dns1.Status != "healthy" || len(dns1.ResolvedIPs) != 2 || dns1.ResolvedIPs[0] != "142.250.190.46" || dns1.ResolvedIPs[1] != "2607:f8b0:4006:81b::200e" {
 		t.Fatalf("unexpected DNS stats for dscacheutil: %+v", dns1)
 	}
 
@@ -254,6 +254,85 @@ func TestParseDNSOutput(t *testing.T) {
 	dns := ParseDNSOutput(output, "google.com")
 	if dns.Status != "healthy" || len(dns.ResolvedIPs) == 0 || dns.ResolvedIPs[0] != "142.250.190.46" {
 		t.Fatalf("unexpected DNS stats: %+v", dns)
+	}
+}
+
+func TestParseDNSOutput_GlobalDomainFormats(t *testing.T) {
+	cases := []struct {
+		name, output string
+		want         []string
+	}{
+		{"getent ahosts IPv6 only", "2404:6800:4003:c03::64 STREAM google.com\n2404:6800:4003:c03::64 DGRAM\n", []string{"2404:6800:4003:c03::64"}},
+		{"nslookup skips resolver", "Server:\t\t127.0.0.53\nAddress:\t127.0.0.53#53\n\nNon-authoritative answer:\nName:\tgoogle.com\nAddress: 142.250.4.100\nName:\tgoogle.com\nAddress: 2404:6800:4003:c03::64\n", []string{"142.250.4.100", "2404:6800:4003:c03::64"}},
+		{"busybox nslookup skips resolver", "Server:    10.0.0.2\nAddress 1: 10.0.0.2 dns.lan\n\nName:      google.com\nAddress 1: 142.250.4.100 sb-in-f100.1e100.net\n", []string{"142.250.4.100"}},
+		{"dig public fallback", dnsPublicFallbackMarker + "\nwww.google.com.\n142.250.4.100\n2404:6800:4003:c03::64\n", []string{"142.250.4.100", "2404:6800:4003:c03::64"}},
+		{"host skips server block", "Using domain server:\nName: 1.1.1.1\nAddress: 1.1.1.1#53\nAliases: \n\ngoogle.com has address 142.250.4.100\n", []string{"142.250.4.100"}},
+		{"nxdomain", "Server:\t\t1.1.1.1\nAddress:\t1.1.1.1#53\n\n** server can't find nope.invalid: NXDOMAIN\n", nil},
+	}
+	for _, c := range cases {
+		dns := ParseDNSOutput(c.output, "google.com")
+		if strings.Join(dns.ResolvedIPs, ",") != strings.Join(c.want, ",") {
+			t.Errorf("%s: got %v want %v", c.name, dns.ResolvedIPs, c.want)
+		}
+		if (len(c.want) > 0) != (dns.Status == "healthy") {
+			t.Errorf("%s: unexpected status %s", c.name, dns.Status)
+		}
+	}
+}
+
+func TestParsePingOutput_BusyBox(t *testing.T) {
+	output := "4 packets transmitted, 4 packets received, 0% packet loss\nround-trip min/avg/max = 11.1/12.2/13.3 ms\n"
+	stats := ParsePingOutput(output)
+	if stats.Status != "healthy" || stats.AvgMs != 12.2 || stats.MaxMs != 13.3 {
+		t.Fatalf("unexpected BusyBox ping stats: %+v", stats)
+	}
+}
+
+func TestTracerouteHeaderGivesDomainDestination(t *testing.T) {
+	m := tracerouteHeaderRegex.FindStringSubmatch("traceroute to google.com (142.250.4.100), 20 hops max, 60 byte packets")
+	if m == nil || m[1] != "142.250.4.100" {
+		t.Fatalf("expected resolved IP from header, got %v", m)
+	}
+	hop := ParseTracepathOrTracerouteLine(" 9  142.250.4.100  12.3 ms", m[1])
+	if hop == nil || hop.Zone != "destination" {
+		t.Fatalf("expected destination hop, got %+v", hop)
+	}
+}
+
+func TestParseDigOutput(t *testing.T) {
+	mx := `;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 62203
+;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
+
+;; ANSWER SECTION:
+google.com.		22	IN	MX	10 smtp.google.com.
+
+;; Query time: 14 msec
+;; SERVER: 1.1.1.1#53(1.1.1.1) (UDP)`
+	d := ParseDigOutput(mx, "google.com", "MX")
+	if d.Status != "healthy" || d.RCode != "NOERROR" || d.Server != "1.1.1.1" || d.QueryTimeMs != 14 ||
+		len(d.Answers) != 1 || d.Answers[0] != (DigRecord{Name: "google.com.", TTL: 22, Type: "MX", Value: "10 smtp.google.com."}) {
+		t.Fatalf("unexpected MX dig stats: %+v", d)
+	}
+
+	nx := ParseDigOutput(";; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 1\n;; Query time: 5 msec\n", "nope.invalid", "A")
+	if nx.Status != "down" || nx.RCode != "NXDOMAIN" || len(nx.Answers) != 0 {
+		t.Fatalf("unexpected NXDOMAIN stats: %+v", nx)
+	}
+
+	empty := ParseDigOutput(";; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 1\n", "google.com", "CNAME")
+	if empty.Status != "degraded" {
+		t.Fatalf("NOERROR without answers must be degraded: %+v", empty)
+	}
+
+	timeout := ParseDigOutput(";; communications error to 10.255.255.1#53: timed out\n;; no servers could be reached\n", "google.com", "A")
+	if timeout.Status != "down" || !strings.Contains(timeout.Summary, "No response") {
+		t.Fatalf("unexpected timeout stats: %+v", timeout)
+	}
+
+	missing := ParseDigOutput(digMissingMarker+"\n", "google.com", "A")
+	if missing.Status != "down" || !strings.Contains(missing.Summary, "not installed") {
+		t.Fatalf("unexpected missing-dig stats: %+v", missing)
 	}
 }
 

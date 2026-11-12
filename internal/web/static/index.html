@@ -5392,6 +5392,10 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
           <svg class="icon"><use href="#i-database"/></svg>
           <span data-i18n="tab_settings_backup">Backup</span>
         </div>
+        <div class="tab" id="tabSettingsS3" onclick="switchSettingsTab('s3')">
+          <svg class="icon"><use href="#i-cloud"/></svg>
+          <span data-i18n="tab_settings_s3">S3 Storage</span>
+        </div>
         <div class="tab" id="tabSettingsPresets" onclick="switchSettingsTab('presets')">
           <svg class="icon"><use href="#i-square-terminal"/></svg>
           <span data-i18n="tab_settings_presets">Presets</span>
@@ -5744,6 +5748,71 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
           <div id="settingsPresetsList" style="overflow-x: auto; background: var(--surface-2); border: 1px solid var(--card-border); border-radius: var(--radius-lg);">Loading presets...</div>
         </div>
 
+        <!-- S3 Storage Tab -->
+        <div id="settingsPanelS3" style="display: none; flex-direction: column; gap: 16px;">
+          <div class="set-card">
+            <div class="set-header">
+              <div>
+                <h4 class="set-title"><svg class="icon"><use href="#i-cloud"/></svg> <span data-i18n="s3_title">S3 Storage</span></h4>
+                <p class="set-desc" data-i18n="s3_desc">S3-compatible accounts (AWS S3, MinIO, Cloudflare R2, Wasabi, ...) used to upload files and folders from the File Manager. Add as many as you need.</p>
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="editS3Account(0)"><svg class="icon"><use href="#i-plus"/></svg> <span data-i18n="s3_add_account">Add S3 Account</span></button>
+            </div>
+            <div id="s3AccountsList" style="background: var(--surface-2); border: 1px solid var(--card-border); border-radius: var(--radius-lg);"></div>
+          </div>
+
+          <div class="set-card" id="s3AccountForm" style="display: none; flex-direction: column; gap: 12px;">
+            <h4 class="set-title" id="s3FormTitle">Add S3 Account</h4>
+            <div class="form-group">
+              <label class="form-label" data-i18n="s3_name">Account Name</label>
+              <input type="text" id="settingS3Name" maxlength="64" placeholder="backups-aws" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-i18n="s3_endpoint">Endpoint (empty = AWS S3)</label>
+              <input type="text" id="settingS3Endpoint" placeholder="https://minio.example.com or https://&lt;account&gt;.r2.cloudflarestorage.com" />
+            </div>
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label class="form-label" data-i18n="s3_bucket">Bucket</label>
+                <input type="text" id="settingS3Bucket" placeholder="my-backups" />
+              </div>
+              <div class="form-group">
+                <label class="form-label" data-i18n="s3_region">Region</label>
+                <input type="text" id="settingS3Region" placeholder="us-east-1 (R2: auto)" />
+              </div>
+            </div>
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label class="form-label" data-i18n="s3_access_key">Access Key ID</label>
+                <input type="text" id="settingS3AccessKey" autocomplete="off" />
+              </div>
+              <div class="form-group">
+                <label class="form-label" data-i18n="s3_secret_key">Secret Access Key</label>
+                <input type="password" id="settingS3SecretKey" autocomplete="new-password" />
+                <span id="settingS3SecretKeySaved" class="badge badge-info" style="display: none; margin-top: 4px;" data-i18n="secret_saved">Saved</span>
+              </div>
+            </div>
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label class="form-label" data-i18n="s3_prefix">Default Folder (key prefix)</label>
+                <input type="text" id="settingS3Prefix" placeholder="pantau/uploads/" />
+              </div>
+              <div class="form-group">
+                <label class="form-label" data-i18n="s3_addressing">Addressing Style</label>
+                <select id="settingS3PathStyle">
+                  <option value="" data-i18n="s3_addr_auto">Auto (path-style with custom endpoint)</option>
+                  <option value="1" data-i18n="s3_addr_path">Path-style (endpoint/bucket/key)</option>
+                  <option value="0" data-i18n="s3_addr_virtual">Virtual-hosted (bucket.endpoint/key)</option>
+                </select>
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-primary btn-sm" onclick="saveS3Account()"><svg class="icon"><use href="#i-save"/></svg> <span data-i18n="s3_save">Save</span></button>
+              <button class="btn btn-sm btn-ghost" onclick="cancelS3Form()" data-i18n="cancel">Cancel</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Updates Tab -->
         <div id="settingsPanelUpdates" style="display: none; flex-direction: column; gap: 16px;">
           <div class="set-card">
@@ -6090,6 +6159,43 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
       <button class="btn btn-primary btn-sm" id="btnStartTransfer" onclick="submitTransfer()">
         <svg class="icon icon-sm"><use href="#i-arrow-left-right"/></svg>
         <span data-i18n="start_transfer">Start Transfer</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Upload to S3 Modal -->
+<div id="s3UploadModal" class="modal">
+  <div class="modal-content modal-dialog" style="max-width: 520px;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <svg class="icon"><use href="#i-cloud"/></svg>
+        <h3 data-i18n="s3_upload_title">Upload to S3</h3>
+      </div>
+      <button class="btn btn-sm btn-icon" onclick="closeModal('s3UploadModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body" style="padding: 16px 20px; display: flex; flex-direction: column; gap: 14px;">
+      <div class="form-group">
+        <label style="font-size: var(--fs-xs); color: var(--text-muted); display: block; margin-bottom: 6px;" data-i18n="source_host_item">Source Host & Item</label>
+        <div id="s3UploadSourceHost" style="font-size: var(--fs-xs); color: var(--text-muted); margin-bottom: 4px;"></div>
+        <input type="text" id="s3UploadSourcePath" class="input mono" readonly style="background: var(--surface-2); cursor: not-allowed; color: var(--text);" />
+      </div>
+      <div class="form-group">
+        <label style="font-size: var(--fs-xs); color: var(--text-muted); display: block; margin-bottom: 6px;" data-i18n="s3_upload_dest">Destination</label>
+        <select id="s3UploadAccount" class="input" style="width: 100%; margin-bottom: 6px;" onchange="updateS3UploadDest()"></select>
+        <div id="s3UploadBucket" class="mono" style="font-size: var(--fs-xs); margin-bottom: 4px;"></div>
+        <input type="text" id="s3UploadPrefix" class="input mono" placeholder="folder/inside/bucket/" />
+      </div>
+      <div class="sec-banner sec-banner-info" style="margin: 0; padding: 10px 12px; display: flex; align-items: flex-start; gap: 8px;">
+        <svg class="icon icon-sm" style="color: var(--info); flex-shrink: 0; margin-top: 2px;"><use href="#i-info"/></svg>
+        <span id="s3UploadNote" style="font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.45;"></span>
+      </div>
+    </div>
+    <div class="modal-footer" style="padding: 12px 20px; border-top: 1px solid var(--card-border); display: flex; justify-content: flex-end; gap: 8px;">
+      <button class="btn btn-sm" onclick="closeModal('s3UploadModal')" data-i18n="cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="btnStartS3Upload" onclick="submitS3Upload()">
+        <svg class="icon icon-sm"><use href="#i-upload"/></svg>
+        <span data-i18n="s3_upload_btn">Upload</span>
       </button>
     </div>
   </div>
@@ -6995,6 +7101,37 @@ const I18N = {
     "transfer_mode_fast": "Fast Stream (Direct in-memory pipe, max speed for 500GB+)",
     "transfer_mode_verified": "Verified (Piped stream + SHA256 integrity check)",
     "transfer_note": "Piped streaming streams directly between servers via Pantau in-memory bridge. Zero temporary master disk space used.",
+    "tab_settings_s3": "S3 Storage",
+    "s3_title": "S3 Storage",
+    "s3_desc": "S3-compatible accounts (AWS S3, MinIO, Cloudflare R2, Wasabi, ...) used to upload files and folders from the File Manager. Add as many as you need.",
+    "s3_add_account": "Add S3 Account",
+    "s3_edit_account": "Edit S3 Account",
+    "s3_name": "Account Name",
+    "s3_no_accounts": "No S3 accounts yet. Add one to upload files from the File Manager.",
+    "s3_delete_title": "Delete S3 Account",
+    "s3_delete_msg": "Delete S3 account \"{name}\"? Its stored credentials are removed; uploaded objects stay in the bucket.",
+    "s3_endpoint": "Endpoint (empty = AWS S3)",
+    "s3_bucket": "Bucket",
+    "s3_region": "Region",
+    "s3_access_key": "Access Key ID",
+    "s3_secret_key": "Secret Access Key",
+    "s3_prefix": "Default Folder (key prefix)",
+    "s3_addressing": "Addressing Style",
+    "s3_addr_auto": "Auto (path-style with custom endpoint)",
+    "s3_addr_path": "Path-style (endpoint/bucket/key)",
+    "s3_addr_virtual": "Virtual-hosted (bucket.endpoint/key)",
+    "s3_save": "Save",
+    "s3_test": "Test",
+    "s3_testing": "Testing...",
+    "s3_test_ok": "Connection OK: bucket is reachable and the credentials are valid.",
+    "s3_upload_to": "Upload to S3",
+    "s3_upload_title": "Upload to S3",
+    "s3_upload_dest": "Destination",
+    "s3_upload_btn": "Upload",
+    "s3_upload_note_file": "The file is uploaded as is. Streamed through Pantau without a temporary file; files over 16 MB use multipart upload.",
+    "s3_upload_note_dir": "The folder is packed on the host and uploaded as a single .tar.gz archive. Streamed through Pantau without a temporary file.",
+    "s3_not_configured": "No S3 account yet. Add one in Settings > S3 Storage.",
+    "s3_upload_failed": "Failed to start S3 upload: ",
     "start_transfer": "Start Transfer",
     "starting": "Starting...",
     "transfers_list_title": "Cross-Host Transfers",
@@ -7106,6 +7243,14 @@ const I18N = {
     "netdiag_tool_traceroute": "Traceroute (Path)",
     "netdiag_tool_port": "Port Probe (TCP)",
     "netdiag_tool_dns": "DNS Resolve",
+    "netdiag_tool_dig": "Dig (DNS Records)",
+    "netdiag_dig_record_type": "Record Type",
+    "netdiag_dig_server": "DNS Server",
+    "netdiag_dig_server_ph": "system resolver",
+    "netdiag_dig_name": "Name",
+    "netdiag_dig_type": "Type",
+    "netdiag_dig_value": "Value",
+    "netdiag_dig_no_answer": "No records in answer section",
     "netdiag_port_label": "TCP Port",
     "netdiag_port_ph": "1 - 65535",
     "netdiag_run_btn": "Run Diagnostic",
@@ -8597,6 +8742,37 @@ const I18N = {
     "transfer_mode_fast": "Fast Stream (Pipa in-memory langsung, kecepatan maks untuk 500GB+)",
     "transfer_mode_verified": "Verified (Piped stream + verifikasi integritas SHA256)",
     "transfer_note": "Piped streaming dialirkan langsung antar-server melalui bridge in-memory Pantau. Nol ruang disk sementara pada master.",
+    "tab_settings_s3": "Penyimpanan S3",
+    "s3_title": "Penyimpanan S3",
+    "s3_desc": "Akun kompatibel S3 (AWS S3, MinIO, Cloudflare R2, Wasabi, ...) untuk mengunggah file dan folder dari File Manager. Tambahkan sebanyak yang diperlukan.",
+    "s3_add_account": "Tambah Akun S3",
+    "s3_edit_account": "Ubah Akun S3",
+    "s3_name": "Nama Akun",
+    "s3_no_accounts": "Belum ada akun S3. Tambahkan satu untuk mengunggah file dari File Manager.",
+    "s3_delete_title": "Hapus Akun S3",
+    "s3_delete_msg": "Hapus akun S3 \"{name}\"? Kredensialnya dihapus; objek yang sudah diunggah tetap ada di bucket.",
+    "s3_endpoint": "Endpoint (kosong = AWS S3)",
+    "s3_bucket": "Bucket",
+    "s3_region": "Region",
+    "s3_access_key": "Access Key ID",
+    "s3_secret_key": "Secret Access Key",
+    "s3_prefix": "Folder Bawaan (prefix key)",
+    "s3_addressing": "Gaya Pengalamatan",
+    "s3_addr_auto": "Otomatis (path-style jika memakai endpoint kustom)",
+    "s3_addr_path": "Path-style (endpoint/bucket/key)",
+    "s3_addr_virtual": "Virtual-hosted (bucket.endpoint/key)",
+    "s3_save": "Simpan",
+    "s3_test": "Uji",
+    "s3_testing": "Menguji...",
+    "s3_test_ok": "Koneksi OK: bucket dapat dijangkau dan kredensial valid.",
+    "s3_upload_to": "Unggah ke S3",
+    "s3_upload_title": "Unggah ke S3",
+    "s3_upload_dest": "Tujuan",
+    "s3_upload_btn": "Unggah",
+    "s3_upload_note_file": "File diunggah apa adanya. Dialirkan lewat Pantau tanpa file sementara; file di atas 16 MB memakai multipart upload.",
+    "s3_upload_note_dir": "Folder dikemas di host lalu diunggah sebagai satu arsip .tar.gz. Dialirkan lewat Pantau tanpa file sementara.",
+    "s3_not_configured": "Belum ada akun S3. Tambahkan di Pengaturan > Penyimpanan S3.",
+    "s3_upload_failed": "Gagal memulai unggahan S3: ",
     "start_transfer": "Mulai Transfer",
     "starting": "Memulai...",
     "transfers_list_title": "Cross-Host Transfers",
@@ -8708,6 +8884,14 @@ const I18N = {
     "netdiag_tool_traceroute": "Traceroute (Rute)",
     "netdiag_tool_port": "Uji Port (TCP)",
     "netdiag_tool_dns": "Resolusi DNS",
+    "netdiag_tool_dig": "Dig (Record DNS)",
+    "netdiag_dig_record_type": "Tipe Record",
+    "netdiag_dig_server": "Server DNS",
+    "netdiag_dig_server_ph": "resolver sistem",
+    "netdiag_dig_name": "Nama",
+    "netdiag_dig_type": "Tipe",
+    "netdiag_dig_value": "Nilai",
+    "netdiag_dig_no_answer": "Tidak ada record di answer section",
     "netdiag_port_label": "Port TCP",
     "netdiag_port_ph": "1 - 65535",
     "netdiag_run_btn": "Mulai Diagnostik",
@@ -14679,6 +14863,7 @@ function renderFilesTableBody() {
               ? `<button class="btn btn-sm btn-icon action-btn-download" title="${t('download_folder', 'Download Folder Archive')}" onclick="downloadFolder(${jsArg(fullPath)})">${svgIcon('download', 'icon-sm')}</button>` 
               : `<a class="btn btn-sm btn-icon action-btn-download" title="${t('download_file', 'Download File')}" href="${filesApiUrl(currentHost.id, 'download', { path: fullPath })}" download>${svgIcon('download', 'icon-sm')}</a>`}
             <button class="btn btn-ghost btn-sm" onclick="openTransferDialog(${jsArg(fullPath)}, ${f.is_dir})">${svgIcon('arrow-left-right', 'icon-sm')} <span>${t('copy_to_host')}</span></button>
+            <button class="btn btn-sm btn-icon" title="${t('s3_upload_to')}" onclick="openS3UploadDialog(${jsArg(fullPath)}, ${f.is_dir})">${svgIcon('cloud', 'icon-sm')}</button>
             <button class="btn btn-danger btn-sm btn-icon" ${isItemProtected ? 'disabled title="' + t('cannot_delete_protected') + '"' : ''} onclick="deleteRemoteFile(${jsArg(fullPath)}, ${jsArg(currentFilesData.path)})">${svgIcon('trash-2', 'icon-sm')}</button>
           </div>
         </td>
@@ -17780,6 +17965,7 @@ function switchSettingsTab(tab) {
   else if (tab === 'backup') document.getElementById('tabSettingsBackup')?.classList.add('active');
   else if (tab === 'presets') document.getElementById('tabSettingsPresets')?.classList.add('active');
   else if (tab === 'updates') document.getElementById('tabSettingsUpdates')?.classList.add('active');
+  else if (tab === 's3') document.getElementById('tabSettingsS3')?.classList.add('active');
 
   const panelGeneral = document.getElementById('settingsPanelGeneral');
   const panelSecurity = document.getElementById('settingsPanelSecurity');
@@ -17788,6 +17974,7 @@ function switchSettingsTab(tab) {
   const panelBackup = document.getElementById('settingsPanelBackup');
   const panelPresets = document.getElementById('settingsPanelPresets');
   const panelUpdates = document.getElementById('settingsPanelUpdates');
+  const panelS3 = document.getElementById('settingsPanelS3');
 
   if (panelGeneral) panelGeneral.style.display = tab === 'general' ? 'flex' : 'none';
   if (panelSecurity) panelSecurity.style.display = tab === 'security' ? 'flex' : 'none';
@@ -17796,6 +17983,7 @@ function switchSettingsTab(tab) {
   if (panelBackup) panelBackup.style.display = tab === 'backup' ? 'flex' : 'none';
   if (panelPresets) panelPresets.style.display = tab === 'presets' ? 'flex' : 'none';
   if (panelUpdates) panelUpdates.style.display = tab === 'updates' ? 'flex' : 'none';
+  if (panelS3) panelS3.style.display = tab === 's3' ? 'flex' : 'none';
 
   if (tab === 'keys') {
     loadSSHKeys();
@@ -18195,6 +18383,7 @@ async function openSettingsModal(tab) {
   document.getElementById('settingGhPassphrase').value = data.snapshot_passphrase || '';
   document.getElementById('settingGhInterval').value = data.backup_interval_hours || '24';
   document.getElementById('settingGhPath').value = data.github_file_path || 'pantau-state.enc';
+  renderS3Accounts();
 
   let statusText = t('not_configured');
   if (data.github_repo) {
@@ -18732,6 +18921,168 @@ async function submitTransfer() {
   }
 }
 
+let s3Accounts = [];
+let s3EditingId = 0;
+
+async function loadS3Accounts() {
+  const res = await fetch('/api/s3/accounts');
+  s3Accounts = res.ok ? ((await res.json()).accounts || []) : [];
+  return s3Accounts;
+}
+
+async function renderS3Accounts() {
+  const box = document.getElementById('s3AccountsList');
+  if (!box) return;
+  await loadS3Accounts();
+  if (s3Accounts.length === 0) {
+    box.innerHTML = `<div style="color: var(--text-muted); font-size: var(--fs-sm); padding: 12px;">${escapeHtml(t('s3_no_accounts'))}</div>`;
+    return;
+  }
+  box.innerHTML = s3Accounts.map(a => `
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--card-border);">
+      <div style="min-width: 0;">
+        <div style="font-weight: 600;">${escapeHtml(a.name)}</div>
+        <div class="mono" style="font-size: var(--fs-xs); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis;">s3://${escapeHtml(a.bucket)}/${escapeHtml(a.prefix)} &middot; ${escapeHtml(a.endpoint || 'AWS')}</div>
+        <div id="s3AccTest_${a.id}" style="font-size: var(--fs-xs); display: none;"></div>
+      </div>
+      <div style="display: flex; gap: 6px; flex-shrink: 0;">
+        <button class="btn btn-sm btn-ghost" onclick="testS3Account(${a.id})">${escapeHtml(t('s3_test'))}</button>
+        <button class="btn btn-sm btn-icon" title="${escapeHtml(t('edit'))}" onclick="editS3Account(${a.id})">${svgIcon('pencil', 'icon-sm')}</button>
+        <button class="btn btn-sm btn-icon btn-danger" onclick="deleteS3Account(${a.id})">${svgIcon('trash-2', 'icon-sm')}</button>
+      </div>
+    </div>`).join('');
+}
+
+function editS3Account(id) {
+  const a = s3Accounts.find(x => x.id === id) || { id: 0, name: '', endpoint: '', region: '', bucket: '', access_key: '', prefix: '', path_style: '', secret_key_set: false };
+  s3EditingId = a.id;
+  document.getElementById('s3FormTitle').innerText = t(a.id ? 's3_edit_account' : 's3_add_account');
+  document.getElementById('settingS3Name').value = a.name;
+  document.getElementById('settingS3Endpoint').value = a.endpoint;
+  document.getElementById('settingS3Bucket').value = a.bucket;
+  document.getElementById('settingS3Region').value = a.region;
+  document.getElementById('settingS3AccessKey').value = a.access_key;
+  document.getElementById('settingS3SecretKey').value = '';
+  document.getElementById('settingS3SecretKeySaved').style.display = a.secret_key_set ? 'inline-flex' : 'none';
+  document.getElementById('settingS3Prefix').value = a.prefix;
+  document.getElementById('settingS3PathStyle').value = a.path_style;
+  document.getElementById('s3AccountForm').style.display = 'flex';
+}
+
+function cancelS3Form() {
+  document.getElementById('s3AccountForm').style.display = 'none';
+}
+
+async function saveS3Account() {
+  const payload = {
+    name: document.getElementById('settingS3Name').value.trim(),
+    endpoint: document.getElementById('settingS3Endpoint').value.trim(),
+    bucket: document.getElementById('settingS3Bucket').value.trim(),
+    region: document.getElementById('settingS3Region').value.trim(),
+    access_key: document.getElementById('settingS3AccessKey').value.trim(),
+    secret_key: document.getElementById('settingS3SecretKey').value.trim(),
+    prefix: document.getElementById('settingS3Prefix').value.trim(),
+    path_style: document.getElementById('settingS3PathStyle').value
+  };
+  const res = await fetch(s3EditingId ? '/api/s3/accounts/' + s3EditingId : '/api/s3/accounts', {
+    method: s3EditingId ? 'PUT' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    showToast(err.error || 'Failed to save S3 account', 'error');
+    return;
+  }
+  showToast(t('settings_saved'), 'success');
+  cancelS3Form();
+  renderS3Accounts();
+}
+
+async function deleteS3Account(id) {
+  const a = s3Accounts.find(x => x.id === id);
+  const ok = await showConfirm({
+    title: t('s3_delete_title'),
+    message: t('s3_delete_msg').replace('{name}', a ? a.name : '#' + id),
+    confirmText: t('delete', 'Delete'),
+    danger: true
+  });
+  if (!ok) return;
+  const res = await fetch('/api/s3/accounts/' + id, { method: 'DELETE' });
+  if (res.ok) renderS3Accounts();
+  else showToast('Failed to delete S3 account', 'error');
+}
+
+async function testS3Account(id) {
+  const box = document.getElementById('s3AccTest_' + id);
+  box.style.display = 'block';
+  box.style.color = 'var(--text-muted)';
+  box.innerText = t('s3_testing');
+  try {
+    const res = await fetch('/api/s3/accounts/' + id + '/test', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    box.style.color = data.ok ? 'var(--success)' : 'var(--danger)';
+    box.innerText = data.ok ? t('s3_test_ok') : (data.error || res.statusText);
+  } catch (e) {
+    box.style.color = 'var(--danger)';
+    box.innerText = e.message;
+  }
+}
+
+function updateS3UploadDest() {
+  const a = s3Accounts.find(x => x.id === parseInt(document.getElementById('s3UploadAccount').value, 10));
+  document.getElementById('s3UploadBucket').innerText = a ? 's3://' + a.bucket + '/' : '';
+  document.getElementById('s3UploadPrefix').value = a ? a.prefix : '';
+}
+
+async function openS3UploadDialog(srcPath, isDir) {
+  if (!currentHost) return;
+  await loadS3Accounts();
+  if (s3Accounts.length === 0) {
+    showToast(t('s3_not_configured'), 'error');
+    openSettingsModal('s3');
+    return;
+  }
+  document.getElementById('s3UploadSourceHost').innerText = 'From: ' + currentHost.name + ' (' + currentHost.host + ')';
+  document.getElementById('s3UploadSourcePath').value = srcPath;
+  const sel = document.getElementById('s3UploadAccount');
+  const last = localStorage.getItem('pantau_s3_account');
+  sel.innerHTML = s3Accounts.map(a => `<option value="${a.id}" ${String(a.id) === last ? 'selected' : ''}>${escapeHtml(a.name)}</option>`).join('');
+  updateS3UploadDest();
+  document.getElementById('s3UploadNote').innerText = t(isDir ? 's3_upload_note_dir' : 's3_upload_note_file');
+  openModal('s3UploadModal');
+}
+
+async function submitS3Upload() {
+  const btn = document.getElementById('btnStartS3Upload');
+  const accountId = parseInt(document.getElementById('s3UploadAccount').value, 10);
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/transfers/s3', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source_host_id: currentHost.id,
+        source_path: document.getElementById('s3UploadSourcePath').value,
+        account_id: accountId,
+        prefix: document.getElementById('s3UploadPrefix').value.trim()
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(t('s3_upload_failed') + (data.error || res.statusText), 'error');
+      return;
+    }
+    localStorage.setItem('pantau_s3_account', String(accountId));
+    closeModal('s3UploadModal');
+    openTransfersModal();
+  } catch (err) {
+    showToast(t('error_prefix', 'Error: ') + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function openTransfersModal() {
   openModal('transfersListModal');
   loadTransfers();
@@ -18811,7 +19162,7 @@ async function loadTransfers() {
           <div class="transfer-job-header">
             <div style="display: flex; align-items: center; gap: 8px;">
               <span style="font-weight: 600; font-size: var(--fs-sm);">${t('job')} #${j.id}</span>
-              <span class="badge badge-subtle" style="display: inline-flex; align-items: center; gap: 4px;">${j.mode === 'verified' ? svgIcon('shield-check', 'icon-xs') + ' <span>Verified</span>' : svgIcon('zap', 'icon-xs') + ' <span>Fast Stream</span>'}</span>
+              <span class="badge badge-subtle" style="display: inline-flex; align-items: center; gap: 4px;">${j.kind === 's3' ? svgIcon('cloud', 'icon-xs') + ' <span>S3</span>' : j.mode === 'verified' ? svgIcon('shield-check', 'icon-xs') + ' <span>Verified</span>' : svgIcon('zap', 'icon-xs') + ' <span>Fast Stream</span>'}</span>
               <span class="badge ${statusBadgeCls}">${escapeHtml(j.status)}</span>
             </div>
             <div>
@@ -18821,7 +19172,7 @@ async function loadTransfers() {
           <div class="transfer-job-route">
             <b>${escapeHtml(j.source_host_name || 'Source')}</b>:<code class="mono">${escapeHtml(j.source_path)}</code>
             <svg class="icon icon-xs" style="color:var(--text-muted);"><use href="#i-arrow-left-right"/></svg>
-            <b>${escapeHtml(j.dest_host_name || 'Dest')}</b>:<code class="mono">${escapeHtml(j.dest_path)}</code>
+            ${j.kind === 's3' ? '' : '<b>' + escapeHtml(j.dest_host_name || 'Dest') + '</b>:'}<code class="mono">${escapeHtml(j.dest_path)}</code>
           </div>
           <div class="progress" style="height: 6px; margin: 8px 0; background: var(--surface-2);">
             <div class="progress-fill ${fillCls}" style="width: ${j.status === 'completed' ? '100' : pct}%;"></div>
@@ -19863,6 +20214,9 @@ function renderNetDiagUI(container, contextPrefix, defaultSourceId, isSourceLock
               <button type="button" class="btn btn-sm ${currentNetDiagTool === 'dns_resolve' ? 'btn-primary' : 'btn-ghost'}" id="${cid}_tool_dns_resolve" onclick="setNetDiagTool('${cid}', 'dns_resolve')" style="display: inline-flex; align-items: center; gap: 4px;">
                 ${svgIcon('search', 'icon-sm')} <span>${t('netdiag_tool_dns')}</span>
               </button>
+              <button type="button" class="btn btn-sm ${currentNetDiagTool === 'dig' ? 'btn-primary' : 'btn-ghost'}" id="${cid}_tool_dig" onclick="setNetDiagTool('${cid}', 'dig')" style="display: inline-flex; align-items: center; gap: 4px;">
+                ${svgIcon('search', 'icon-sm')} <span>${t('netdiag_tool_dig')}</span>
+              </button>
             </div>
           </div>
 
@@ -19882,6 +20236,21 @@ function renderNetDiagUI(container, contextPrefix, defaultSourceId, isSourceLock
                 <button type="button" class="btn btn-sm" style="padding: 2px 6px; font-size: 0.72rem;" onclick="document.getElementById('${cid}_portInput').value=6379">6379</button>
               </div>
             </div>
+          </div>
+
+          <!-- Dig Extra Options -->
+          <div id="${cid}_digOptions" style="${currentNetDiagTool === 'dig' ? 'display: flex;' : 'display: none;'} gap: 10px; flex-wrap: wrap;">
+            <label style="font-size: var(--fs-xs); font-weight: 600; color: var(--text-muted); display: flex; flex-direction: column; gap: 6px;">
+              <span>${t('netdiag_dig_record_type')}</span>
+              <select id="${cid}_digRecordType" class="input" style="width: 100px; font-family: var(--font-mono);">
+                ${['A', 'AAAA', 'CNAME', 'MX', 'NS', 'TXT', 'SOA', 'PTR'].map(rt => `<option value="${rt}">${rt}</option>`).join('')}
+              </select>
+            </label>
+            <label style="font-size: var(--fs-xs); font-weight: 600; color: var(--text-muted); display: flex; flex-direction: column; gap: 6px;">
+              <span>${t('netdiag_dig_server')}</span>
+              <input type="text" id="${cid}_digServer" class="input" list="${cid}_digServerList" style="width: 150px; font-family: var(--font-mono);" placeholder="${t('netdiag_dig_server_ph')}" />
+              <datalist id="${cid}_digServerList"><option value="1.1.1.1"></option><option value="8.8.8.8"></option><option value="9.9.9.9"></option></datalist>
+            </label>
           </div>
 
           <!-- Submit Button -->
@@ -19974,21 +20343,13 @@ function setNetDiagTargetMode(cid, mode) {
 
   if (!btnInter || !btnCustom) return;
 
-  if (mode === 'inter_host') {
-    btnInter.style.background = 'var(--primary-hover)';
-    btnInter.style.color = '#fff';
-    btnCustom.style.background = 'transparent';
-    btnCustom.style.color = 'var(--text-muted)';
-    if (interContainer) interContainer.style.display = 'block';
-    if (customContainer) customContainer.style.display = 'none';
-  } else {
-    btnCustom.style.background = 'var(--primary-hover)';
-    btnCustom.style.color = '#fff';
-    btnInter.style.background = 'transparent';
-    btnInter.style.color = 'var(--text-muted)';
-    if (customContainer) customContainer.style.display = 'block';
-    if (interContainer) interContainer.style.display = 'none';
-  }
+  const inter = mode === 'inter_host';
+  btnInter.classList.toggle('btn-primary', inter);
+  btnInter.classList.toggle('btn-ghost', !inter);
+  btnCustom.classList.toggle('btn-primary', !inter);
+  btnCustom.classList.toggle('btn-ghost', inter);
+  if (interContainer) interContainer.style.display = inter ? 'block' : 'none';
+  if (customContainer) customContainer.style.display = inter ? 'none' : 'block';
 }
 
 function setNetDiagPresetTarget(cid, address) {
@@ -19998,15 +20359,12 @@ function setNetDiagPresetTarget(cid, address) {
 
 function setNetDiagTool(cid, tool) {
   currentNetDiagTool = tool;
-  const tools = ['ping', 'traceroute', 'port_probe', 'dns_resolve'];
+  const tools = ['ping', 'traceroute', 'port_probe', 'dns_resolve', 'dig'];
   tools.forEach(tName => {
     const btn = document.getElementById(`${cid}_tool_${tName}`);
     if (btn) {
-      if (tName === tool) {
-        btn.classList.add('btn-primary');
-      } else {
-        btn.classList.remove('btn-primary');
-      }
+      btn.classList.toggle('btn-primary', tName === tool);
+      btn.classList.toggle('btn-ghost', tName !== tool);
     }
   });
 
@@ -20014,6 +20372,8 @@ function setNetDiagTool(cid, tool) {
   if (portOpt) {
     portOpt.style.display = (tool === 'port_probe') ? 'flex' : 'none';
   }
+  const digOpt = document.getElementById(`${cid}_digOptions`);
+  if (digOpt) digOpt.style.display = (tool === 'dig') ? 'flex' : 'none';
 }
 
 function runNetDiag(cid) {
@@ -20123,6 +20483,10 @@ function runNetDiag(cid) {
     target: targetAddress,
     port: port
   });
+  if (currentNetDiagTool === 'dig') {
+    queryParams.set('record_type', document.getElementById(`${cid}_digRecordType`)?.value || 'A');
+    queryParams.set('dns_server', (document.getElementById(`${cid}_digServer`)?.value || '').trim());
+  }
 
   const streamURL = `/api/netdiag/stream?${queryParams.toString()}`;
   const evtSource = new EventSource(streamURL);
@@ -20207,6 +20571,10 @@ function handleNetDiagEvent(cid, evt) {
     renderDNSResults(cid, evt.dns);
   }
 
+  if (evt.type === 'dig_stats' && evt.dig) {
+    renderDigResults(cid, evt.dig);
+  }
+
   if (evt.type === 'error') {
     showToast(evt.message || 'Diagnostic probe error', 'error');
     const autoDiag = document.getElementById(`${cid}_autoDiagBanner`);
@@ -20237,11 +20605,11 @@ function handleNetDiagEvent(cid, evt) {
 }
 
 function renderHopRow(tbody, hop) {
-  let rowEl = document.getElementById(`hop_row_${hop.hop}`);
+  let rowEl = tbody.querySelector(`tr[data-hop="${hop.hop}"]`);
   const isNew = !rowEl;
   if (isNew) {
     rowEl = document.createElement('tr');
-    rowEl.id = `hop_row_${hop.hop}`;
+    rowEl.dataset.hop = hop.hop;
     rowEl.style.borderBottom = '1px solid color-mix(in srgb, var(--text) 5%, transparent)';
     tbody.appendChild(rowEl);
   }
@@ -20416,6 +20784,49 @@ function renderDNSResults(cid, dnsStats) {
     status: isHealthy ? 'optimal' : 'failed',
     summary: dnsStats.summary,
     summary_id: dnsStats.summary_id
+  });
+}
+
+function renderDigResults(cid, dig) {
+  const results = document.getElementById(`${cid}_structuredResults`);
+  if (!results) return;
+
+  const rows = (dig.answers || []).map(r => `
+    <tr style="border-bottom: 1px solid color-mix(in srgb, var(--text) 5%, transparent);">
+      <td style="padding: 6px 8px; font-family: var(--font-mono);">${escapeHtml(r.name)}</td>
+      <td style="padding: 6px 8px; font-family: var(--font-mono);">${r.ttl}</td>
+      <td style="padding: 6px 8px;"><span class="badge">${escapeHtml(r.type)}</span></td>
+      <td style="padding: 6px 8px; font-family: var(--font-mono); word-break: break-all;">${escapeHtml(r.value)}</td>
+    </tr>`).join('');
+  results.innerHTML = `
+    <div class="card" style="padding: 16px; border: 1px solid var(--card-border); border-radius: var(--radius);">
+      <div style="font-weight: 600; font-size: var(--fs-xs); color: var(--text-muted); margin-bottom: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+        ${svgIcon('search', 'icon-sm')} <span>dig ${escapeHtml(dig.target)} ${escapeHtml(dig.record_type)}</span>
+        ${dig.rcode ? `<span class="badge ${dig.rcode === 'NOERROR' ? 'badge-healthy' : 'badge-down'}">${escapeHtml(dig.rcode)}</span>` : ''}
+        ${dig.server ? `<span class="badge">@${escapeHtml(dig.server)}</span>` : ''}
+        ${dig.rcode ? `<span class="badge">${dig.query_time_ms} ms</span>` : ''}
+      </div>
+      ${rows ? `
+      <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; font-size: var(--fs-xs);">
+          <thead>
+            <tr style="border-bottom: 1px solid var(--card-border); text-align: left; color: var(--text-muted); text-transform: uppercase;">
+              <th style="padding: 6px 8px;">${t('netdiag_dig_name')}</th>
+              <th style="padding: 6px 8px; width: 70px;">TTL</th>
+              <th style="padding: 6px 8px; width: 80px;">${t('netdiag_dig_type')}</th>
+              <th style="padding: 6px 8px;">${t('netdiag_dig_value')}</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>` : `<span style="color: var(--danger); font-size: var(--fs-xs);">${t('netdiag_dig_no_answer')}</span>`}
+    </div>
+  `;
+
+  renderHopAnalysisBanner(cid, {
+    status: dig.status === 'healthy' ? 'optimal' : dig.status === 'degraded' ? 'degraded' : 'failed',
+    summary: dig.summary,
+    summary_id: dig.summary_id
   });
 }
 

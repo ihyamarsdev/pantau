@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"pantau/internal/s3"
 	"pantau/internal/sshrunner"
 	"pantau/internal/store"
 )
@@ -21,6 +22,7 @@ func shellQuote(s string) string {
 
 type TransferJob struct {
 	ID               int64      `json:"id"`
+	Kind             string     `json:"kind,omitempty"` // "" = host-to-host copy, "s3" = upload to S3
 	SourceHostID     int64      `json:"source_host_id"`
 	SourceHostName   string     `json:"source_host_name"`
 	SourcePath       string     `json:"source_path"`
@@ -89,12 +91,7 @@ func (m *Manager) StartTransfer(srcHostID int64, srcPath string, dstHostID int64
 		mode = "fast"
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-
-	m.mu.Lock()
-	m.nextID++
 	job := &TransferJob{
-		ID:             m.nextID,
 		SourceHostID:   srcHostID,
 		SourceHostName: srcHost.Name,
 		SourcePath:     srcPath,
@@ -104,15 +101,191 @@ func (m *Manager) StartTransfer(srcHostID int64, srcPath string, dstHostID int64
 		Mode:           mode,
 		Status:         "queued",
 		StartedAt:      time.Now(),
-		cancelFunc:     cancel,
 	}
-	m.jobs[job.ID] = job
-	m.jobOrder = append([]int64{job.ID}, m.jobOrder...)
-	m.mu.Unlock()
+	ctx := m.register(job)
 
 	go m.runTransfer(ctx, job, srcHost, dstHost)
 
 	return job, nil
+}
+
+// register assigns an ID, makes the job visible in the job list and returns the context that CancelTransfer cancels.
+func (m *Manager) register(job *TransferJob) context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	job.cancelFunc = cancel
+	m.mu.Lock()
+	m.nextID++
+	job.ID = m.nextID
+	m.jobs[job.ID] = job
+	m.jobOrder = append([]int64{job.ID}, m.jobOrder...)
+	m.mu.Unlock()
+	return ctx
+}
+
+// inspectSource reports whether path is a directory and its size in bytes (0 when unknown).
+func inspectSource(r sshrunner.Runner, srcPath string) (isDir bool, totalBytes int64) {
+	typeOut, _, _, _ := r.Exec(fmt.Sprintf(`test -d %s && echo "DIR" || echo "FILE"`, shellQuote(srcPath)))
+	isDir = strings.TrimSpace(typeOut) == "DIR"
+
+	sizeOut, _, _, _ := r.Exec(fmt.Sprintf(`du -sb %s 2>/dev/null | cut -f1`, shellQuote(srcPath)))
+	totalBytes, _ = strconv.ParseInt(strings.TrimSpace(sizeOut), 10, 64)
+	if totalBytes <= 0 {
+		statOut, _, _, _ := r.Exec(fmt.Sprintf(`stat -c "%%s" %s 2>/dev/null`, shellQuote(srcPath)))
+		totalBytes, _ = strconv.ParseInt(strings.TrimSpace(statOut), 10, 64)
+	}
+	return isDir, totalBytes
+}
+
+// reportProgress publishes throughput, percentage and ETA of job every 500ms until ctx ends.
+func (m *Manager) reportProgress(ctx context.Context, job *TransferJob, transferred *int64) {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	lastBytes := int64(0)
+	lastTime := time.Now()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			current := atomic.LoadInt64(transferred)
+			now := time.Now()
+			elapsedSec := now.Sub(lastTime).Seconds()
+			if elapsedSec <= 0 {
+				elapsedSec = 0.5
+			}
+			speed := int64(float64(current-lastBytes) / elapsedSec)
+			lastBytes = current
+			lastTime = now
+
+			m.mu.Lock()
+			job.TransferredBytes = current
+			job.SpeedBytesPerSec = speed
+			if job.TotalBytes > 0 {
+				job.Percentage = min(float64(current)/float64(job.TotalBytes)*100.0, 100.0)
+				remaining := job.TotalBytes - current
+				if remaining > 0 && speed > 0 {
+					job.ETASeconds = remaining / speed
+				} else {
+					job.ETASeconds = 0
+				}
+			}
+			m.mu.Unlock()
+		}
+	}
+}
+
+// StartS3Upload uploads a file (as is) or a folder (as <name>.tar.gz) from srcHostID to the bucket of S3 account
+// accountID. prefix overrides the account's default key prefix when non-nil ("" = bucket root).
+func (m *Manager) StartS3Upload(srcHostID int64, srcPath string, accountID int64, prefix *string) (*TransferJob, error) {
+	acct, err := m.db.GetS3Account(accountID)
+	if err != nil {
+		return nil, err
+	}
+	if acct == nil {
+		return nil, fmt.Errorf("S3 account %d not found; add one in Settings > S3 Storage", accountID)
+	}
+	cfg := s3.NewConfig(acct.Endpoint, acct.Region, acct.Bucket, acct.AccessKey, acct.SecretKey, acct.PathStyle)
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("S3 account %q: %w", acct.Name, err)
+	}
+	srcPath = path.Clean(srcPath)
+	if !path.IsAbs(srcPath) || srcPath == "/" {
+		return nil, fmt.Errorf("source must be an absolute path other than /")
+	}
+	srcHost, err := m.db.GetHost(srcHostID)
+	if err != nil || srcHost == nil {
+		return nil, fmt.Errorf("source host %d not found", srcHostID)
+	}
+	keyPrefix := s3.NormalizePrefix(acct.Prefix)
+	if prefix != nil {
+		keyPrefix = s3.NormalizePrefix(*prefix)
+	}
+
+	job := &TransferJob{
+		Kind:           "s3",
+		SourceHostID:   srcHostID,
+		SourceHostName: srcHost.Name,
+		SourcePath:     srcPath,
+		DestHostName:   acct.Name,
+		DestPath:       "s3://" + cfg.Bucket + "/" + keyPrefix,
+		Mode:           "fast",
+		Status:         "queued",
+		StartedAt:      time.Now(),
+	}
+	ctx := m.register(job)
+	go m.runS3Upload(ctx, job, srcHost, cfg, keyPrefix)
+	return job, nil
+}
+
+func (m *Manager) runS3Upload(ctx context.Context, job *TransferJob, srcHost *store.Host, cfg s3.Config, keyPrefix string) {
+	srcRunner, err := m.getRunnerForHost(srcHost)
+	if err != nil {
+		m.failJob(job, fmt.Sprintf("connect source host failed: %v", err))
+		return
+	}
+	defer srcRunner.Close()
+
+	if _, _, code, _ := srcRunner.Exec(fmt.Sprintf(`test -r %s`, shellQuote(job.SourcePath))); code != 0 {
+		m.failJob(job, "source path does not exist or is not readable by the SSH user")
+		return
+	}
+	isDir, total := inspectSource(srcRunner, job.SourcePath)
+
+	key := keyPrefix + path.Base(job.SourcePath)
+	cmd := fmt.Sprintf(`cat %s`, shellQuote(job.SourcePath))
+	if isDir {
+		key += ".tar.gz"
+		// tar exits 1 when a file changed while it was read (live logs); that archive is still usable, only 2+ is fatal.
+		cmd = "sh -c " + shellQuote(fmt.Sprintf(`tar -czf - -C %s %s; rc=$?; [ $rc -le 1 ]`,
+			shellQuote(path.Dir(job.SourcePath)), shellQuote(path.Base(job.SourcePath))))
+	}
+
+	m.mu.Lock()
+	job.Status = "transferring"
+	job.IsDirectory = isDir
+	job.TotalBytes = total
+	job.DestPath = "s3://" + cfg.Bucket + "/" + key
+	m.mu.Unlock()
+
+	pr, pw := io.Pipe()
+	var sent int64
+	cw := &countingWriter{w: pw, onWrite: func(n int) { atomic.AddInt64(&sent, int64(n)) }}
+
+	pctx, stop := context.WithCancel(ctx)
+	defer stop()
+	go m.reportProgress(pctx, job, &sent)
+
+	srcErr := make(chan error, 1)
+	go func() {
+		err := srcRunner.PipeCommand(cmd, nil, cw)
+		_ = pw.CloseWithError(err) // nil -> EOF
+		srcErr <- err
+	}()
+
+	upErr := s3.New(cfg).Upload(ctx, key, pr, total)
+	_ = pr.CloseWithError(context.Canceled)
+	if upErr != nil {
+		_ = srcRunner.Close() // unblock a remote cat/tar still writing into the closed pipe
+	}
+	<-srcErr
+
+	if ctx.Err() != nil { // CancelTransfer already marked the job cancelled
+		return
+	}
+	if upErr != nil {
+		m.failJob(job, fmt.Sprintf("S3 upload failed: %v", upErr))
+		return
+	}
+
+	m.mu.Lock()
+	job.Status = "completed"
+	job.Percentage = 100.0
+	job.TransferredBytes = atomic.LoadInt64(&sent)
+	job.SpeedBytesPerSec = 0
+	job.ETASeconds = 0
+	now := time.Now()
+	job.CompletedAt = &now
+	m.mu.Unlock()
 }
 
 func (m *Manager) runTransfer(ctx context.Context, job *TransferJob, srcHost, dstHost *store.Host) {
@@ -131,18 +304,7 @@ func (m *Manager) runTransfer(ctx context.Context, job *TransferJob, srcHost, ds
 	defer dstRunner.Close()
 
 	// 1. Inspect source: check if directory and calculate total size
-	checkDirCmd := fmt.Sprintf(`test -d %s && echo "DIR" || echo "FILE"`, shellQuote(job.SourcePath))
-	typeOut, _, _, _ := srcRunner.Exec(checkDirCmd)
-	isDir := strings.TrimSpace(typeOut) == "DIR"
-
-	sizeCmd := fmt.Sprintf(`du -sb %s 2>/dev/null | cut -f1`, shellQuote(job.SourcePath))
-	sizeOut, _, _, _ := srcRunner.Exec(sizeCmd)
-	totalBytes, _ := strconv.ParseInt(strings.TrimSpace(sizeOut), 10, 64)
-	if totalBytes <= 0 {
-		statCmd := fmt.Sprintf(`stat -c "%%s" %s 2>/dev/null`, shellQuote(job.SourcePath))
-		statOut, _, _, _ := srcRunner.Exec(statCmd)
-		totalBytes, _ = strconv.ParseInt(strings.TrimSpace(statOut), 10, 64)
-	}
+	isDir, totalBytes := inspectSource(srcRunner, job.SourcePath)
 
 	m.mu.Lock()
 	job.Status = "transferring"
@@ -150,14 +312,23 @@ func (m *Manager) runTransfer(ctx context.Context, job *TransferJob, srcHost, ds
 	job.TotalBytes = totalBytes
 	m.mu.Unlock()
 
-	// 2. Ensure destination directory exists
+	// 2. Resolve destination. A file sent to an existing directory (or a path ending in "/") lands inside it under its own name.
 	var destDir string
 	var destFile string
 	if isDir {
 		destDir = job.DestPath
 	} else {
-		destDir = path.Dir(job.DestPath)
 		destFile = job.DestPath
+		destTypeOut, _, _, _ := dstRunner.Exec(fmt.Sprintf(`test -d %s && echo "DIR" || echo "FILE"`, shellQuote(job.DestPath)))
+		if strings.HasSuffix(job.DestPath, "/") || strings.TrimSpace(destTypeOut) == "DIR" {
+			destFile = path.Join(job.DestPath, path.Base(job.SourcePath))
+			destDir = job.DestPath
+			m.mu.Lock()
+			job.DestPath = destFile
+			m.mu.Unlock()
+		} else {
+			destDir = path.Dir(job.DestPath)
+		}
 	}
 	_, _, _, _ = dstRunner.Exec(fmt.Sprintf(`mkdir -p %s`, shellQuote(destDir)))
 
@@ -172,49 +343,9 @@ func (m *Manager) runTransfer(ctx context.Context, job *TransferJob, srcHost, ds
 		},
 	}
 
-	// Metrics reporter loop
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-
-	go func() {
-		lastBytes := int64(0)
-		lastTime := time.Now()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				current := atomic.LoadInt64(&transferred)
-				now := time.Now()
-				elapsedSec := now.Sub(lastTime).Seconds()
-				if elapsedSec <= 0 {
-					elapsedSec = 0.5
-				}
-
-				speed := int64(float64(current-lastBytes) / elapsedSec)
-				lastBytes = current
-				lastTime = now
-
-				m.mu.Lock()
-				job.TransferredBytes = current
-				job.SpeedBytesPerSec = speed
-				if job.TotalBytes > 0 {
-					job.Percentage = (float64(current) / float64(job.TotalBytes)) * 100.0
-					if job.Percentage > 100.0 {
-						job.Percentage = 100.0
-					}
-					remaining := job.TotalBytes - current
-					if remaining > 0 && speed > 0 {
-						job.ETASeconds = remaining / speed
-					} else {
-						job.ETASeconds = 0
-					}
-				}
-				m.mu.Unlock()
-			}
-		}
-	}()
+	pctx, stopProgress := context.WithCancel(ctx)
+	defer stopProgress()
+	go m.reportProgress(pctx, job, &transferred)
 
 	// 4. Source command & Destination command
 	var srcCmd string

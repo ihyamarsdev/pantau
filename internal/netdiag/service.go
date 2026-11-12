@@ -56,27 +56,68 @@ func ValidateTarget(target string) error {
 
 // PingProbeCommand builds the ping probe command with portable timeout and Darwin compatibility.
 // Linux uses -W 2 (seconds timeout per packet). Darwin uses -t 14 (total seconds timeout deadline).
+// Every probe runs under `sh -c` so non-POSIX login shells (fish, csh) cannot break the if/then syntax.
 func PingProbeCommand(quotedTarget string) string {
-	return PortableTimeoutPrelude + fmt.Sprintf(
+	return "sh -c " + shellQuote(PortableTimeoutPrelude+fmt.Sprintf(
 		`if [ "$(uname -s)" = "Darwin" ]; then timeout 14 ping -c 4 -t 14 %[1]s 2>&1; else timeout 14 ping -c 4 -W 2 %[1]s 2>&1; fi`,
 		quotedTarget,
-	)
+	))
 }
 
-// PortProbeCommand builds the port probe command using bash /dev/tcp wrapped in the portable timeout helper.
+// PortProbeCommand builds the TCP port probe: bash /dev/tcp when bash exists, else `nc -z` (BusyBox/Alpine).
+// targetAddress must already pass ValidateTarget.
 func PortProbeCommand(targetAddress string, port int) string {
-	return PortableTimeoutPrelude + fmt.Sprintf(
-		"timeout 3 bash -c '</dev/tcp/%s/%d' 2>/dev/null && echo 'PORT_OPEN' || echo 'PORT_CLOSED'",
+	return "sh -c " + shellQuote(PortableTimeoutPrelude+fmt.Sprintf(
+		`if command -v bash >/dev/null 2>&1; then `+
+			`if timeout 3 bash -c '</dev/tcp/%[1]s/%[2]d' 2>/dev/null; then echo PORT_OPEN; else echo PORT_CLOSED; fi; `+
+			`elif command -v nc >/dev/null 2>&1; then `+
+			`if timeout 4 nc -z -w 3 %[1]s %[2]d >/dev/null 2>&1; then echo PORT_OPEN; else echo PORT_CLOSED; fi; `+
+			`else echo "no bash or nc available for TCP probe"; fi`,
 		targetAddress, port,
-	)
+	))
 }
 
-// DNSProbeCommand builds the DNS probe command supporting macOS dscacheutil, Linux getent, and nslookup/host fallbacks.
+// dnsPublicFallbackMarker is echoed when the system resolver gave no answer and a public resolver is queried.
+const dnsPublicFallbackMarker = ";; system resolver returned no answer, querying public resolver 1.1.1.1"
+
+// DNSProbeCommand resolves via the system resolver (macOS dscacheutil, getent ahosts for IPv4+IPv6, or nslookup),
+// then falls back to the public resolver 1.1.1.1 (dig/nslookup/host) so global domains resolve even when local DNS is broken.
 func DNSProbeCommand(quotedTarget string) string {
-	return PortableTimeoutPrelude + fmt.Sprintf(
-		`if command -v dscacheutil >/dev/null 2>&1; then timeout 5 dscacheutil -q host -a name %[1]s 2>&1 || timeout 5 nslookup %[1]s 2>&1 || timeout 5 host %[1]s 2>&1; else timeout 5 getent hosts %[1]s 2>&1 || timeout 5 nslookup %[1]s 2>&1 || timeout 5 host %[1]s 2>&1; fi`,
-		quotedTarget,
-	)
+	return "sh -c " + shellQuote(PortableTimeoutPrelude+fmt.Sprintf(
+		`d=%[1]s; r=""; `+
+			`if command -v dscacheutil >/dev/null 2>&1; then r=$(timeout 4 dscacheutil -q host -a name "$d" 2>/dev/null); `+
+			`elif command -v getent >/dev/null 2>&1; then r=$(timeout 4 getent ahosts "$d" 2>/dev/null); `+
+			`elif command -v nslookup >/dev/null 2>&1; then if r=$(timeout 4 nslookup "$d" 2>&1); then :; else echo "$r"; r=""; fi; fi; `+
+			`if [ -n "$r" ]; then echo "$r"; else echo "%[2]s"; `+
+			`if command -v dig >/dev/null 2>&1; then timeout 3 dig +short +time=2 +tries=1 @1.1.1.1 "$d" A 2>&1; timeout 3 dig +short +time=2 +tries=1 @1.1.1.1 "$d" AAAA 2>&1; `+
+			`elif command -v nslookup >/dev/null 2>&1; then timeout 5 nslookup "$d" 1.1.1.1 2>&1; `+
+			`elif command -v host >/dev/null 2>&1; then timeout 5 host "$d" 1.1.1.1 2>&1; `+
+			`else echo "no DNS lookup tool available"; fi; fi`,
+		quotedTarget, dnsPublicFallbackMarker,
+	))
+}
+
+// digMissingMarker is echoed when dig is not installed on the source host.
+const digMissingMarker = "PANTAU_DIG_MISSING"
+
+// DigRecordTypes lists the record types the dig tool accepts.
+var DigRecordTypes = map[string]bool{"A": true, "AAAA": true, "CNAME": true, "MX": true, "NS": true, "TXT": true, "SOA": true, "PTR": true}
+
+// DigProbeCommand builds a dig query. PTR uses reverse lookup (-x <ip>). An empty server uses the host's resolver.
+// Inputs must already pass ValidateTarget and the DigRecordTypes allowlist.
+func DigProbeCommand(quotedTarget, recordType, server string) string {
+	at := ""
+	if server != "" {
+		at = "@" + shellQuote(server) + " "
+	}
+	query := quotedTarget + " " + recordType
+	if recordType == "PTR" {
+		query = "-x " + quotedTarget
+	}
+	return "sh -c " + shellQuote(PortableTimeoutPrelude+fmt.Sprintf(
+		`if command -v dig >/dev/null 2>&1; then timeout 10 dig +noall +answer +comments +stats +time=3 +tries=2 %s%s 2>&1; else echo %s; fi`,
+		at, query, digMissingMarker,
+	))
 }
 
 // ExecuteProbe runs the requested diagnostic probe and streams events in real-time.
@@ -90,6 +131,21 @@ func (s *Service) ExecuteProbe(ctx context.Context, req ProbeRequest, eventSink 
 	if req.Type == ProbeTypePort {
 		if req.Port < 1 || req.Port > 65535 {
 			return errors.New("port must be between 1 and 65535")
+		}
+	}
+	if req.Type == ProbeTypeDig {
+		req.RecordType = strings.ToUpper(strings.TrimSpace(req.RecordType))
+		if req.RecordType == "" {
+			req.RecordType = "A"
+		}
+		if !DigRecordTypes[req.RecordType] {
+			return fmt.Errorf("unsupported DNS record type: %s", req.RecordType)
+		}
+		req.DNSServer = strings.TrimSpace(req.DNSServer)
+		if req.DNSServer != "" {
+			if err := ValidateTarget(req.DNSServer); err != nil {
+				return fmt.Errorf("DNS server: %w", err)
+			}
 		}
 	}
 
@@ -167,12 +223,19 @@ func (s *Service) ExecuteProbe(ctx context.Context, req ProbeRequest, eventSink 
 
 	case ProbeTypePort:
 		probeTimeout = 8 * time.Second
-		// ponytail: Bash built-in /dev/tcp gives zero-dependency TCP socket probe without requiring nc or nmap.
+		// ponytail: bash /dev/tcp needs no extra tools; nc -z covers hosts without bash.
 		cmd = PortProbeCommand(req.TargetAddress, req.Port)
 
 	case ProbeTypeDNS:
-		probeTimeout = 8 * time.Second
+		probeTimeout = 12 * time.Second
 		cmd = DNSProbeCommand(quotedTarget)
+
+	case ProbeTypeDig:
+		if req.RecordType == "PTR" && net.ParseIP(req.TargetAddress) == nil {
+			return errors.New("PTR (reverse) lookup needs an IP address as target")
+		}
+		probeTimeout = 12 * time.Second
+		cmd = DigProbeCommand(quotedTarget, req.RecordType, req.DNSServer)
 
 	default:
 		return fmt.Errorf("unsupported probe type: %s", req.Type)
@@ -209,6 +272,8 @@ func (s *Service) ExecuteProbe(ctx context.Context, req ProbeRequest, eventSink 
 	var hops []*HopInfo
 	hopsMap := make(map[int]*HopInfo)
 	targetReached := false
+	// traceroute -n prints hop IPs only; a domain target is matched through the IP from its header line.
+	traceTarget := req.TargetAddress
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -226,7 +291,10 @@ func (s *Service) ExecuteProbe(ctx context.Context, req ProbeRequest, eventSink 
 			if strings.Contains(strings.ToLower(line), "reached") {
 				targetReached = true
 			}
-			hop := ParseTracepathOrTracerouteLine(line, req.TargetAddress)
+			if m := tracerouteHeaderRegex.FindStringSubmatch(line); m != nil {
+				traceTarget = m[1]
+			}
+			hop := ParseTracepathOrTracerouteLine(line, traceTarget)
 			if hop != nil {
 				// Keep best / latest hop reading
 				existing, exists := hopsMap[hop.Hop]
@@ -244,6 +312,9 @@ func (s *Service) ExecuteProbe(ctx context.Context, req ProbeRequest, eventSink 
 	execErr := <-runErrChan
 	if probeCtx.Err() != nil && !targetReached && len(hopsMap) == 0 && fullOutput.Len() == 0 {
 		return errors.New("probe timed out after " + probeTimeout.String())
+	}
+	if execErr != nil && fullOutput.Len() == 0 {
+		return fmt.Errorf("probe command failed: %w", execErr)
 	}
 
 	// 8. Finalize statistics & automated analysis
@@ -270,7 +341,7 @@ func (s *Service) ExecuteProbe(ctx context.Context, req ProbeRequest, eventSink 
 				})
 			}
 		}
-		analysis := AnalyzeHops(hops, req.TargetAddress, targetReached)
+		analysis := AnalyzeHops(hops, traceTarget, targetReached)
 		eventSink(ProbeEvent{
 			Type:     "hop_analysis",
 			Analysis: analysis,
@@ -296,6 +367,12 @@ func (s *Service) ExecuteProbe(ctx context.Context, req ProbeRequest, eventSink 
 			Type: "dns_stats",
 			DNS:  stats,
 		})
+
+	case ProbeTypeDig:
+		eventSink(ProbeEvent{
+			Type: "dig_stats",
+			Dig:  ParseDigOutput(fullOutput.String(), req.TargetAddress, req.RecordType),
+		})
 	}
 
 	eventSink(ProbeEvent{
@@ -303,7 +380,6 @@ func (s *Service) ExecuteProbe(ctx context.Context, req ProbeRequest, eventSink 
 		Message: "Probe completed successfully",
 	})
 
-	_ = execErr
 	return nil
 }
 

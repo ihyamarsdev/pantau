@@ -16,9 +16,23 @@ var (
 	// Traceroute regex: e.g. " 1  192.168.1.1  1.234 ms" or " 3  *" or " 2  gateway (10.0.0.1)  2.34 ms"
 	tracerouteHopRegex = regexp.MustCompile(`^\s*(\d+)\s+([^\s]+)(?:\s+\(([0-9a-fA-F.:]+)\))?(?:\s+([0-9.]+)\s*ms|\s+\*|\s+no reply)?`)
 
+	// Traceroute header: "traceroute to google.com (142.250.4.100), 20 hops max" — captures the resolved destination IP.
+	tracerouteHeaderRegex = regexp.MustCompile(`^traceroute6? to \S+ \(([0-9a-fA-F.:]+)\)`)
+
 	// Ping regexes
 	pingStatsRegex = regexp.MustCompile(`(\d+)\s+packets transmitted,\s+(\d+)\s+(?:packets\s+)?received,.*?(?:([0-9.]+)%\s+packet loss)`)
-	pingRTTRegex   = regexp.MustCompile(`(?:rtt|round-trip)\s+min/avg/max/(?:mdev|stddev)\s*=\s*([0-9.]+)/([0-9.]+)/([0-9.]+)(?:/([0-9.]+|nan|-))?\s*ms`)
+	pingRTTRegex   = regexp.MustCompile(`(?:rtt|round-trip)\s+min/avg/max(?:/(?:mdev|stddev))?\s*=\s*([0-9.]+)/([0-9.]+)/([0-9.]+)(?:/([0-9.]+|nan|-))?\s*ms`)
+
+	// DNS answer regexes. IPv6 candidates are confirmed with net.ParseIP.
+	dnsIPv4Regex      = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
+	dnsIPv6Regex      = regexp.MustCompile(`(?:^|[\s(])([0-9a-fA-F]{0,4}(?::[0-9a-fA-F]{0,4}){2,7})(?:[\s)]|$)`)
+	dnsResolverLineRe = regexp.MustCompile(`(?i)^\s*(?:server:|name:|using domain server|;;|.*#53\b)`)
+
+	// dig regexes: answer record "google.com.  22  IN  MX  10 smtp.google.com." and comment/stat lines.
+	digRecordRegex    = regexp.MustCompile(`^(\S+)\s+(\d+)\s+IN\s+(\S+)\s+(.+)$`)
+	digStatusRegex    = regexp.MustCompile(`status:\s*([A-Z]+)`)
+	digQueryTimeRegex = regexp.MustCompile(`;; Query time:\s*(\d+)\s*msec`)
+	digServerRegex    = regexp.MustCompile(`;; SERVER:\s*([^#\s]+)`)
 
 	// IP CIDRs for private/internal classification
 	privateCIDRs []*net.IPNet
@@ -324,11 +338,12 @@ func ParsePortOutput(output string, port int) *PortStats {
 	return stats
 }
 
-// ParseDNSOutput parses DNS resolution results across multiple platform tools:
-// - macOS dscacheutil: structured output where records contain "name: <domain>\nip_address: <a.b.c.d>"
-// - Linux getent: "<ip> <domain> [aliases...]"
-// - nslookup: "Address: <ip>" (under Non-authoritative answer)
-// - host: "<domain> has address <ip>"
+// ParseDNSOutput parses DNS resolution results across multiple platform tools, IPv4 and IPv6:
+// - macOS dscacheutil: "ip_address: <v4>" / "ipv6_address: <v6>"
+// - Linux getent ahosts: "<ip> STREAM <domain>"
+// - nslookup: "Address: <ip>" (resolver "Server:" / "Address: x#53" lines are skipped)
+// - host: "<domain> has address <ip>" / "has IPv6 address <ip>"
+// - dig +short: one IP per line (CNAME targets ignored)
 func ParseDNSOutput(output string, target string) *DNSStats {
 	stats := &DNSStats{
 		Target: target,
@@ -336,43 +351,93 @@ func ParseDNSOutput(output string, target string) *DNSStats {
 	}
 
 	seen := make(map[string]bool)
-
-	// 1. macOS dscacheutil -q host -a name <target>
-	// Format:
-	//   name: x
-	//   ip_address: a.b.c.d
-	dscacheutilRegex := regexp.MustCompile(`(?m)^\s*ip_address:\s*(\b(?:\d{1,3}\.){3}\d{1,3}\b)`)
-	for _, m := range dscacheutilRegex.FindAllStringSubmatch(output, -1) {
-		ip := m[1]
-		if ip != "0.0.0.0" && ip != "127.0.0.53" && !seen[ip] {
-			seen[ip] = true
-			stats.ResolvedIPs = append(stats.ResolvedIPs, ip)
+	add := func(ip string) {
+		parsed := net.ParseIP(ip)
+		if parsed == nil || parsed.IsUnspecified() || ip == "127.0.0.53" || seen[ip] {
+			return
 		}
+		seen[ip] = true
+		stats.ResolvedIPs = append(stats.ResolvedIPs, ip)
 	}
 
-	// 2. If dscacheutil did not match, fallback to getent/nslookup/host or generic IP scanning
-	if len(stats.ResolvedIPs) == 0 {
-		ipRegex := regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
-		rawIPs := ipRegex.FindAllString(output, -1)
-		for _, ip := range rawIPs {
-			// Filter out 0.0.0.0 or 127.0.0.53 (systemd-resolved local listener)
-			if ip == "0.0.0.0" || ip == "127.0.0.53" {
+	// nslookup prints the resolver as "Server:" plus "Address: <ip>#53" before the answer.
+	afterServer := false
+	for _, line := range strings.Split(output, "\n") {
+		if dnsResolverLineRe.MatchString(line) {
+			afterServer = strings.HasPrefix(strings.ToLower(strings.TrimSpace(line)), "server:")
+			continue
+		}
+		if afterServer {
+			afterServer = false
+			if strings.HasPrefix(strings.TrimSpace(line), "Address") {
 				continue
 			}
-			if !seen[ip] {
-				seen[ip] = true
-				stats.ResolvedIPs = append(stats.ResolvedIPs, ip)
-			}
+		}
+		for _, ip := range dnsIPv4Regex.FindAllString(line, -1) {
+			add(ip)
+		}
+		for _, m := range dnsIPv6Regex.FindAllStringSubmatch(line, -1) {
+			add(m[1])
 		}
 	}
+
 	if len(stats.ResolvedIPs) > 0 {
 		stats.Status = "healthy"
-		stats.Summary = fmt.Sprintf("Successfully resolved %s to: %s", target, strings.Join(stats.ResolvedIPs, ", "))
-		stats.SummaryID = fmt.Sprintf("Berhasil me-resolve %s ke: %s", target, strings.Join(stats.ResolvedIPs, ", "))
+		via := ""
+		viaID := ""
+		if strings.Contains(output, dnsPublicFallbackMarker) {
+			via = " (via public resolver 1.1.1.1; the host's system resolver returned no answer)"
+			viaID = " (via resolver publik 1.1.1.1; resolver sistem host tidak memberi jawaban)"
+		}
+		stats.Summary = fmt.Sprintf("Successfully resolved %s to: %s%s", target, strings.Join(stats.ResolvedIPs, ", "), via)
+		stats.SummaryID = fmt.Sprintf("Berhasil me-resolve %s ke: %s%s", target, strings.Join(stats.ResolvedIPs, ", "), viaID)
 	} else {
 		stats.Status = "down"
-		stats.Summary = fmt.Sprintf("Failed to resolve domain name '%s'. Check local DNS configuration.", target)
-		stats.SummaryID = fmt.Sprintf("Gagal me-resolve nama domain '%s'. Periksa konfigurasi DNS lokal.", target)
+		stats.Summary = fmt.Sprintf("Failed to resolve domain name '%s' (system resolver and public resolver 1.1.1.1). Check the domain name and the host's DNS/outbound UDP 53.", target)
+		stats.SummaryID = fmt.Sprintf("Gagal me-resolve nama domain '%s' (resolver sistem dan resolver publik 1.1.1.1). Periksa nama domain serta DNS/akses UDP 53 keluar dari host.", target)
+	}
+	return stats
+}
+
+// ParseDigOutput parses `dig +noall +answer +comments +stats` output.
+func ParseDigOutput(output, target, recordType string) *DigStats {
+	stats := &DigStats{Target: target, RecordType: recordType, Status: "down", Answers: []DigRecord{}}
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if m := digStatusRegex.FindStringSubmatch(line); m != nil && strings.HasPrefix(line, ";;") {
+			stats.RCode = m[1]
+		} else if m := digQueryTimeRegex.FindStringSubmatch(line); m != nil {
+			stats.QueryTimeMs, _ = strconv.Atoi(m[1])
+		} else if m := digServerRegex.FindStringSubmatch(line); m != nil {
+			stats.Server = m[1]
+		} else if m := digRecordRegex.FindStringSubmatch(line); m != nil && !strings.HasPrefix(line, ";") {
+			ttl, _ := strconv.Atoi(m[2])
+			stats.Answers = append(stats.Answers, DigRecord{Name: m[1], TTL: ttl, Type: m[3], Value: strings.TrimSpace(m[4])})
+		}
+	}
+
+	server := stats.Server
+	if server == "" {
+		server = "system resolver"
+	}
+	switch {
+	case strings.Contains(output, digMissingMarker):
+		stats.Summary = "dig is not installed on the source host. Install it (dnsutils / bind-utils / bind-tools) or use DNS Resolve instead."
+		stats.SummaryID = "dig belum terpasang di host sumber. Pasang paket dnsutils / bind-utils / bind-tools, atau gunakan DNS Resolve."
+	case stats.RCode == "":
+		stats.Summary = fmt.Sprintf("No response from DNS server for %s %s (timeout or server unreachable).", target, recordType)
+		stats.SummaryID = fmt.Sprintf("Tidak ada respons dari server DNS untuk %s %s (timeout atau server tidak terjangkau).", target, recordType)
+	case stats.RCode != "NOERROR":
+		stats.Summary = fmt.Sprintf("DNS query %s %s failed with %s (server %s).", target, recordType, stats.RCode, server)
+		stats.SummaryID = fmt.Sprintf("Query DNS %s %s gagal dengan %s (server %s).", target, recordType, stats.RCode, server)
+	case len(stats.Answers) == 0:
+		stats.Status = "degraded"
+		stats.Summary = fmt.Sprintf("%s exists but has no %s records (server %s, %d ms).", target, recordType, server, stats.QueryTimeMs)
+		stats.SummaryID = fmt.Sprintf("%s ada tetapi tidak memiliki record %s (server %s, %d ms).", target, recordType, server, stats.QueryTimeMs)
+	default:
+		stats.Status = "healthy"
+		stats.Summary = fmt.Sprintf("%d %s record(s) for %s from %s in %d ms.", len(stats.Answers), recordType, target, server, stats.QueryTimeMs)
+		stats.SummaryID = fmt.Sprintf("%d record %s untuk %s dari %s dalam %d ms.", len(stats.Answers), recordType, target, server, stats.QueryTimeMs)
 	}
 	return stats
 }

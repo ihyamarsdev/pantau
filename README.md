@@ -192,9 +192,10 @@ Pantau inspects remote hosts via non-interactive SSH commands, continuously vali
 - **Dedicated Packages Tab & Guardrails**: Integrated package exploration tab in the Workspace Modal with instant text search, category filters (`⭐ Manual Install`, `💤 Dormant Packages`, `📋 All Packages`), on-demand rescan button with a 30-second anti-flood cooldown timer (`HTTP 429`), and background concurrency locking (`HTTP 409`).
 
 ### 20. 🌐 Agentless Network Diagnostics & Hop Analysis
-- **On-Demand Diagnostic Probes**: Real-time interactive Ping, Traceroute (with tracepath auto-fallback), zero-dependency TCP Port Probe (`/dev/tcp`), and DNS Resolve streamed directly over Server-Sent Events (SSE).
+- **On-Demand Diagnostic Probes**: Real-time interactive Ping, Traceroute (with tracepath auto-fallback), zero-dependency TCP Port Probe (`/dev/tcp`), DNS Resolve, and Dig (A/AAAA/CNAME/MX/NS/TXT/SOA/PTR records against any DNS server) streamed directly over Server-Sent Events (SSE).
 - **Automated Hop Analysis**: Categorizes network hops into Local/Private VPC, ISP Transit, and Destination zones, with automated blackhole packet drop detection and latency jump alerts (>60ms).
 - **Concurrency & Human-Error Protection**: Singleflight guard prevents concurrent diagnostic tasks per source host, while target selection automatically disables unreachable/offline hosts.
+- **Upload to S3**: send a file or folder from the File Manager to any S3-compatible bucket (AWS S3, MinIO, Cloudflare R2, ...) using any of several S3 accounts kept in Settings; streamed, no temporary disk use on the Pantau server.
 
 ### 21. ⚖️ Multi-Host Side-by-Side Comparison & Scoring Matrix
 - **Head-to-Head Comparative Matrix**: Side-by-side interactive evaluation comparing 2 to 4 hosts inside a dedicated Workspace Modal using client-side inspection telemetry.

@@ -502,6 +502,18 @@ func (d *DB) migrate() error {
 		api_token TEXT NOT NULL DEFAULT '',
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+	CREATE TABLE IF NOT EXISTS s3_accounts (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+		endpoint TEXT NOT NULL DEFAULT '',
+		region TEXT NOT NULL DEFAULT '',
+		bucket TEXT NOT NULL DEFAULT '',
+		access_key TEXT NOT NULL DEFAULT '',
+		secret_key TEXT NOT NULL DEFAULT '',
+		prefix TEXT NOT NULL DEFAULT '',
+		path_style TEXT NOT NULL DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
 	CREATE TABLE IF NOT EXISTS ansible_projects (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL DEFAULT '',
@@ -880,7 +892,7 @@ func (d *DB) initDefaults() error {
 		}
 	}
 
-	return nil
+	return d.migrateLegacyS3Settings()
 }
 
 // GenerateRSAKeyPair creates a new PEM-encoded RSA private key and OpenSSH-formatted authorized public key.
@@ -1587,6 +1599,18 @@ type SnapshotCloudflareAccount struct {
 	APIToken  string    `json:"api_token"`
 	CreatedAt time.Time `json:"created_at"`
 }
+type SnapshotS3Account struct {
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	Endpoint  string    `json:"endpoint"`
+	Region    string    `json:"region"`
+	Bucket    string    `json:"bucket"`
+	AccessKey string    `json:"access_key"`
+	SecretKey string    `json:"secret_key"`
+	Prefix    string    `json:"prefix"`
+	PathStyle string    `json:"path_style"`
+	CreatedAt time.Time `json:"created_at"`
+}
 type SnapshotAnsiblePlaybook struct {
 	ID             int64      `json:"id"`
 	Name           string     `json:"name"`
@@ -1748,6 +1772,7 @@ type SnapshotPayload struct {
 	SSHKeys                []SnapshotSSHKey            `json:"ssh_keys,omitempty"`
 	KubeClusters           []SnapshotKubeCluster       `json:"kube_clusters,omitempty"`
 	CloudflareAccounts     []SnapshotCloudflareAccount `json:"cloudflare_accounts,omitempty"`
+	S3Accounts             []SnapshotS3Account         `json:"s3_accounts,omitempty"`
 	AnsiblePlaybooks       []SnapshotAnsiblePlaybook   `json:"ansible_playbooks,omitempty"`
 	AnsibleProjects        []SnapshotAnsibleProject    `json:"ansible_projects,omitempty"` // read-only legacy, see SnapshotAnsibleProject
 	AnsibleSchedules       []AnsibleSchedule           `json:"ansible_schedules,omitempty"`
@@ -1876,6 +1901,16 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 			var a SnapshotCloudflareAccount
 			if err := cfRows.Scan(&a.ID, &a.Name, &a.AccountID, &a.APIToken, &a.CreatedAt); err == nil {
 				allCFAccounts = append(allCFAccounts, a)
+			}
+		}
+	}
+	var allS3Accounts []SnapshotS3Account
+	s3Rows, err := d.Query("SELECT " + s3AccountCols + " FROM s3_accounts ORDER BY id ASC")
+	if err == nil {
+		defer s3Rows.Close()
+		for s3Rows.Next() {
+			if a, err := scanS3Account(s3Rows); err == nil {
+				allS3Accounts = append(allS3Accounts, SnapshotS3Account(*a))
 			}
 		}
 	}
@@ -2019,6 +2054,7 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 		SSHKeys:                allSSHKeys,
 		KubeClusters:           allClusters,
 		CloudflareAccounts:     allCFAccounts,
+		S3Accounts:             allS3Accounts,
 		AnsiblePlaybooks:       allPlaybooks,
 		AnsibleSchedules:       allSchedules,
 		AnsibleAssets:          allAssets,
@@ -2046,7 +2082,7 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 
 	tables := []string{
 		"alerts", "incidents", "actual_items", "desired_rules", "hosts", "terminal_presets",
-		"ssh_keys", "kube_clusters", "cloudflare_accounts",
+		"ssh_keys", "kube_clusters", "cloudflare_accounts", "s3_accounts",
 		"ansible_runs", "ansible_schedules", "ansible_playbooks", "ansible_assets",
 		"tf_output_links", "tf_runs", "tf_state_versions", "tf_variables", "tf_varset_workspaces", "tf_varsets", "tf_policies", "tf_module_versions", "tf_modules", "tf_workspaces", "tf_cloud_accounts",
 	}
@@ -2080,6 +2116,13 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 			a.ID, a.Name, a.AccountID, a.APIToken, a.CreatedAt)
 		if err != nil {
 			return fmt.Errorf("insert cloudflare account %d: %w", a.ID, err)
+		}
+	}
+	for _, a := range payload.S3Accounts {
+		_, err := tx.Exec(`INSERT INTO s3_accounts (id, name, endpoint, region, bucket, access_key, secret_key, prefix, path_style, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			a.ID, a.Name, a.Endpoint, a.Region, a.Bucket, a.AccessKey, a.SecretKey, a.Prefix, a.PathStyle, a.CreatedAt)
+		if err != nil {
+			return fmt.Errorf("insert s3 account %d: %w", a.ID, err)
 		}
 	}
 	// Snapshots made while imported folders were ZIP bundles keep the archive on the playbook or in a project:
@@ -2287,7 +2330,11 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 
 	_, _ = tx.Exec(`INSERT INTO settings (key, value) VALUES ('bootstrap_completed', '1') ON CONFLICT(key) DO UPDATE SET value = '1'`)
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// A snapshot made before multi-account S3 carries the single-account settings: turn them into an account.
+	return d.migrateLegacyS3Settings()
 }
 
 func (d *DB) GetFilePins(hostID int64) ([]FilePin, error) {
