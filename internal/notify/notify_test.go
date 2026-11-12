@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"pantau/internal/store"
 )
@@ -320,4 +321,162 @@ func TestNotify_TestNotification_PerChannelResults(t *testing.T) {
 	if !fakeSMTP.called {
 		t.Errorf("expected fakeSMTPSender to be called")
 	}
+}
+
+// layaServer is a fake laya-serve that answers with fixed labels.
+func layaServer(t *testing.T, body string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, body)
+	}))
+}
+
+func TestNotify_LayaLabelsInWebhookAndTelegram(t *testing.T) {
+	laya := layaServer(t, `{"answers":{
+		"category":{"type":"choice","choice":"service_down","answer_confidence":0.9},
+		"urgency":{"type":"score","score":2.1},
+		"escalate":{"type":"noul","noul":0.7}}}`)
+	defer laya.Close()
+
+	var webhookBody string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		webhookBody = string(raw)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	_ = db.SetSetting("laya_url", laya.URL)
+	_ = db.SetSetting("webhook_url", ts.URL+"/hook")
+	_ = db.SetSetting("telegram_token", "tok")
+	_ = db.SetSetting("telegram_chat_id", "chat")
+
+	var telegramBody string
+	d := New(db)
+	d.SetHTTPClient(&http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if strings.Contains(r.URL.Host, "api.telegram.org") {
+			raw, _ := io.ReadAll(r.Body)
+			telegramBody = string(raw)
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("")), Request: r}, nil
+		}
+		return http.DefaultTransport.RoundTrip(r)
+	})})
+
+	d.SendAlert(&store.Host{ID: 1, Name: "web-01", Host: "10.0.0.1"},
+		&store.DesiredRule{Kind: "service", Target: "nginx", Expected: "active"},
+		"Service nginx down", "Unit nginx.service is inactive")
+
+	waitFor(t, func() bool { return webhookBody != "" })
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(webhookBody), &payload); err != nil {
+		t.Fatalf("invalid webhook json: %v", err)
+	}
+	if payload["triage_category"] != "service_down" {
+		t.Errorf("triage_category = %v, want service_down", payload["triage_category"])
+	}
+	if payload["triage_urgency"] != float64(2) {
+		t.Errorf("triage_urgency = %v, want 2", payload["triage_urgency"])
+	}
+	if payload["triage_escalate"] != true {
+		t.Errorf("triage_escalate = %v, want true", payload["triage_escalate"])
+	}
+
+	waitFor(t, func() bool { return telegramBody != "" })
+	if !strings.Contains(telegramBody, "service_down") {
+		t.Errorf("telegram message is missing the category: %s", telegramBody)
+	}
+}
+
+func TestNotify_LayaUnreachableStillAlerts(t *testing.T) {
+	var webhookBody string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		webhookBody = string(raw)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	_ = db.SetSetting("laya_url", "http://127.0.0.1:1")
+	_ = db.SetSetting("webhook_url", ts.URL+"/hook")
+
+	d := New(db)
+	d.SendAlert(&store.Host{ID: 1, Name: "web-01", Host: "10.0.0.1"},
+		&store.DesiredRule{Kind: "service", Target: "nginx", Expected: "active"},
+		"Service nginx down", "Unit nginx.service is inactive")
+
+	waitFor(t, func() bool { return webhookBody != "" })
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(webhookBody), &payload); err != nil {
+		t.Fatalf("invalid webhook json: %v", err)
+	}
+	if _, present := payload["triage_category"]; present {
+		t.Errorf("expected no triage labels when Laya is unreachable, got %v", payload["triage_category"])
+	}
+	if payload["summary"] != "Service nginx down" {
+		t.Errorf("summary = %v", payload["summary"])
+	}
+}
+
+func TestNotify_NoLayaURLSkipsSidecar(t *testing.T) {
+	var webhookBody string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		webhookBody = string(raw)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	_ = db.SetSetting("webhook_url", ts.URL+"/hook")
+
+	var hosts []string
+	d := New(db)
+	d.SetHTTPClient(&http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		hosts = append(hosts, r.URL.Host)
+		raw, _ := io.ReadAll(r.Body)
+		webhookBody = string(raw)
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("")), Request: r}, nil
+	})})
+
+	d.SendAlert(&store.Host{ID: 1, Name: "web-01", Host: "10.0.0.1"},
+		&store.DesiredRule{Kind: "service", Target: "nginx", Expected: "active"},
+		"Service nginx down", "Unit nginx.service is inactive")
+
+	waitFor(t, func() bool { return webhookBody != "" })
+	if !strings.Contains(webhookBody, "Service nginx down") {
+		t.Errorf("unexpected webhook body: %s", webhookBody)
+	}
+	// Only the webhook host may be contacted; no sidecar request is made.
+	for _, h := range hosts {
+		if h != strings.TrimPrefix(ts.URL, "http://") {
+			t.Errorf("unexpected request to %s, want only the webhook host", h)
+		}
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("condition not met before timeout")
 }

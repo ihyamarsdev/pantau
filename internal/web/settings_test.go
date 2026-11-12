@@ -194,3 +194,81 @@ func TestSettings_URLValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestSettings_LayaURLValidation(t *testing.T) {
+	srv, _, cleanup := setupSettingsTestServer(t)
+	defer cleanup()
+
+	for _, bad := range []string{"ftp://example.com", "javascript:alert(1)", "not-a-url", "file:///etc/passwd"} {
+		bodyBytes, _ := json.Marshal(map[string]string{"laya_url": bad})
+		req := httptest.NewRequest(http.MethodPost, "/api/settings", bytes.NewReader(bodyBytes))
+		w := httptest.NewRecorder()
+		srv.handleSettings(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 for laya_url %q, got %d", bad, w.Code)
+		}
+	}
+
+	for _, good := range []string{"http://laya:8000", "https://laya.example.com"} {
+		bodyBytes, _ := json.Marshal(map[string]string{"laya_url": good})
+		req := httptest.NewRequest(http.MethodPost, "/api/settings", bytes.NewReader(bodyBytes))
+		w := httptest.NewRecorder()
+		srv.handleSettings(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("expected 200 for laya_url %q, got %d", good, w.Code)
+		}
+	}
+}
+
+func TestSettings_LayaTimeoutClamped(t *testing.T) {
+	srv, _, cleanup := setupSettingsTestServer(t)
+	defer cleanup()
+
+	cases := map[string]string{
+		"0":     "15000",
+		"-5":    "15000",
+		"abc":   "15000",
+		"499":   "15000",
+		"500":   "500",
+		"99999": "60000",
+		"2500":  "2500",
+	}
+	for in, want := range cases {
+		bodyBytes, _ := json.Marshal(map[string]string{"laya_timeout_ms": in})
+		req := httptest.NewRequest(http.MethodPost, "/api/settings", bytes.NewReader(bodyBytes))
+		w := httptest.NewRecorder()
+		srv.handleSettings(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 for laya_timeout_ms %q, got %d", in, w.Code)
+		}
+
+		getReq := httptest.NewRequest(http.MethodGet, "/api/settings", nil)
+		getW := httptest.NewRecorder()
+		srv.handleSettings(getW, getReq)
+		var out map[string]interface{}
+		json.Unmarshal(getW.Body.Bytes(), &out)
+		if out["laya_timeout_ms"] != want {
+			t.Errorf("laya_timeout_ms for input %q = %v, want %s", in, out["laya_timeout_ms"], want)
+		}
+	}
+}
+
+func TestSettings_LayaDefaultsWhenUnset(t *testing.T) {
+	srv, _, cleanup := setupSettingsTestServer(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/settings", nil)
+	w := httptest.NewRecorder()
+	srv.handleSettings(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /api/settings failed: %d", w.Code)
+	}
+	var out map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &out)
+	if out["laya_url"] != "" {
+		t.Errorf("laya_url = %v, want empty", out["laya_url"])
+	}
+	if out["laya_timeout_ms"] != "15000" {
+		t.Errorf("laya_timeout_ms = %v, want 15000", out["laya_timeout_ms"])
+	}
+}

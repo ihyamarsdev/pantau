@@ -727,3 +727,19 @@ _Avoid_: du scan, storage audit, disk report
 **Domain Inventory**:
 Daftar domain yang dilayani reverse proxy di sebuah Host (nginx, Caddy, Traefik, termasuk yang berjalan di container Docker), lengkap dengan TLS, port listen, upstream tujuan, dan lokasi konfigurasinya; dikumpulkan on-demand lewat SSH lalu disimpan agar bisa dilihat per Host dan lintas Host tanpa koneksi ulang.
 _Avoid_: DNS records, vhost list, site map
+
+**Laya Sidecar**:
+Proses terpisah opsional yang menjalankan mesin keputusan [Laya](https://github.com/NandhaKishorM/laya) (`laya-serve`) sebagai peladen HTTP di samping Pantau; dikonfigurasi lewat pengaturan *Laya Sidecar URL* (`laya_url`) dan dimatikan secara bawaan. Pantau sendiri tetap satu binary Go tanpa dependensi runtime.
+_Avoid_: LLM, AI assistant, Pantau AI
+
+**Incident Category**:
+Label kategori drift yang dihasilkan Laya: `service_down`, `resource_exhaustion`, `network_connectivity`, `security_exposure`, `package_drift`, `backup_failure`, atau `unknown`. Bersifat advisory; Desired Rule dan diagnosis regex tetap satu-satunya penentu Drift.
+_Avoid_: Severity, priority, error class
+
+**Urgency Level**:
+Tingkat urgensi insiden hasil klasifikasi Laya, berupa skor 0 (low) sampai 3 (critical), yang menyertai notifikasi drift sebagai saran.
+_Avoid_: Severity, priority, SLA level
+
+**Escalation Flag**:
+Penanda bahwa sebuah insiden diperkirakan membutuhkan tindakan manusia sebelum Inspection berikutnya, dihitung dari probabilitas Laya; tidak pernah menahan atau membatalkan alert.
+_Avoid_: Auto-fix, retry, block

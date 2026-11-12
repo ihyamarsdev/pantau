@@ -2268,6 +2268,11 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		slackURL, _ := s.db.GetSetting("slack_webhook_url")
 		discordURL, _ := s.db.GetSetting("discord_webhook_url")
 
+		layaURL, _ := s.db.GetSetting("laya_url")
+		layaTimeout, _ := s.db.GetSetting("laya_timeout_ms")
+		if layaTimeout == "" {
+			layaTimeout = "15000"
+		}
 		smtpHost, _ := s.db.GetSetting("smtp_host")
 		smtpPort, _ := s.db.GetSetting("smtp_port")
 		if smtpPort == "" {
@@ -2317,6 +2322,8 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			"smtp_security":                smtpSecurity,
 			"alert_debounce_runs":          debounceRuns,
 			vulnIntelSetting:               vulnIntel,
+			"laya_url":                     layaURL,
+			"laya_timeout_ms":              layaTimeout,
 		})
 	case http.MethodPost:
 		var req map[string]interface{}
@@ -2335,6 +2342,17 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 						writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid URL for %s: must be http:// or https://", urlKey)})
 						return
 					}
+				}
+			}
+		}
+
+		if raw, ok := req["laya_url"]; ok {
+			val := strings.TrimSpace(fmt.Sprint(raw))
+			if val != "" {
+				u, err := url.Parse(val)
+				if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid URL for laya_url: must be http:// or https://"})
+					return
 				}
 			}
 		}
@@ -2361,6 +2379,16 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 					v = "0"
 				} else if val > 720 {
 					v = "720"
+				} else {
+					v = strconv.Itoa(val)
+				}
+			}
+			if k == "laya_timeout_ms" {
+				val, err := strconv.Atoi(strings.TrimSpace(v))
+				if err != nil || val < 500 {
+					v = "15000"
+				} else if val > 60000 {
+					v = "60000"
 				} else {
 					v = strconv.Itoa(val)
 				}
