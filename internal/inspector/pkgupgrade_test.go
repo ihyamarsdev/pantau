@@ -3,6 +3,9 @@ package inspector
 import (
 	"context"
 	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -340,5 +343,75 @@ func TestGetUpgradePreviewHonorsContextCancel(t *testing.T) {
 	}
 	if elapsed > 2*time.Second {
 		t.Fatalf("GetUpgradePreview returned after %v; expected prompt cancellation", elapsed)
+	}
+}
+
+func TestParsePackageNamesRejectsShellAndOptionInput(t *testing.T) {
+	got, err := ParsePackageNames("nginx, htop libssl3:amd64\tg++")
+	if err != nil || len(got) != 4 || got[2] != "libssl3:amd64" || got[3] != "g++" {
+		t.Fatalf("valid list parsed wrong: %v %v", got, err)
+	}
+	for _, bad := range []string{"", "  ,", "nginx;reboot", "$(id)", "-y", "--allow-remove-essential", "a`b`", "a|b", "x\"y", strings.Repeat("a", 129)} {
+		if _, err := ParsePackageNames(bad); err == nil {
+			t.Errorf("%q must be rejected", bad)
+		}
+	}
+	if _, err := ParsePackageNames(strings.Repeat("a ", 21)); err == nil {
+		t.Error("more than 20 packages must be rejected")
+	}
+}
+
+// runPackageCommand executes the generated wrapper as root-less sh with fake apt-get/dnf/yum/sudo/id, and returns
+// the argv the package manager received (one arg per line) plus the wrapper's output.
+func runPackageCommand(t *testing.T, mgr, action string, pkgs []string) (argv, out string) {
+	t.Helper()
+	cmd, err := BuildPackageCommand(mgr, action, pkgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	rec := filepath.Join(bin, "argv")
+	fake := "#!/bin/sh\nfor a in \"$@\"; do echo \"$a\" >> " + rec + "; done\n"
+	for _, n := range []string{"apt-get", "dnf", "yum"} {
+		os.WriteFile(filepath.Join(bin, n), []byte(fake), 0o755)
+	}
+	os.WriteFile(filepath.Join(bin, "id"), []byte("#!/bin/sh\necho 0\n"), 0o755) // root: no sudo needed
+	c := exec.Command("sh", "-c", cmd)
+	c.Env = []string{"PATH=" + bin + ":/usr/bin:/bin"}
+	b, err := c.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%s %s: %v\n%s", mgr, action, err, b)
+	}
+	r, _ := os.ReadFile(rec)
+	return string(r), string(b)
+}
+
+func TestBuildPackageCommand(t *testing.T) {
+	cases := []struct{ mgr, action, want string }{
+		{"apt", "upgrade", "-y\n-o\nDpkg::Options::=--force-confold\ninstall\n--only-upgrade\nnginx\nhtop\n"},
+		{"apt", "install", "-y\n-o\nDpkg::Options::=--force-confold\ninstall\nnginx\nhtop\n"},
+		{"apt", "remove", "-y\nremove\nnginx\nhtop\n"},
+		{"dnf", "upgrade", "-y\nupgrade\nnginx\nhtop\n"},
+		{"dnf", "install", "-y\ninstall\nnginx\nhtop\n"},
+		{"yum", "remove", "-y\nremove\nnginx\nhtop\n"},
+	}
+	for _, c := range cases {
+		argv, out := runPackageCommand(t, c.mgr, c.action, []string{"nginx", "htop"})
+		if !strings.HasSuffix(argv, c.want) {
+			t.Errorf("%s %s: package manager got argv\n%s\nwant suffix\n%s", c.mgr, c.action, argv, c.want)
+		}
+		if !strings.Contains(out, "[pantau] exit=0") {
+			t.Errorf("%s %s: exit marker missing: %s", c.mgr, c.action, out)
+		}
+	}
+	for _, bad := range []struct {
+		mgr, action string
+		pkgs        []string
+	}{
+		{"apt", "purge", []string{"a"}}, {"pacman", "install", []string{"a"}}, {"apt", "install", nil}, {"apt", "install", []string{"a;b"}}, {"dnf", "remove", []string{"-y"}},
+	} {
+		if _, err := BuildPackageCommand(bad.mgr, bad.action, bad.pkgs); err == nil {
+			t.Errorf("%+v must be rejected", bad)
+		}
 	}
 }

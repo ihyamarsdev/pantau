@@ -1141,6 +1141,10 @@ var dockerStackActions = map[string][]string{
 	"update":   {"pull", "up -d"},
 }
 
+// Actions on existing containers must see profile-gated services too (compose ignores them otherwise, so `down`
+// silently does nothing). up/pull/recreate/update keep the default profiles so they never start extra services.
+var dockerStackAllProfiles = map[string]bool{"down": true, "start": true, "stop": true, "restart": true}
+
 // composePrelude selects `docker compose` (v2) or `docker-compose` (v1) as $C.
 const composePrelude = `exec 2>&1
 if docker compose version >/dev/null 2>&1; then C="docker compose"
@@ -1181,11 +1185,31 @@ func composeStackScript(st *DockerStack, action string) (string, error) {
 	}
 	// The -f flags are written inline (each path single-quoted): a variable holding them would not be re-parsed.
 	base := `$C -p ` + shellQuote(st.Name) + flags
+	if dockerStackAllProfiles[action] {
+		base = `$C --profile '*' -p ` + shellQuote(st.Name) + flags
+	}
 	cmds := make([]string, len(subs))
 	for i, s := range subs {
 		cmds[i] = base + " " + s
 	}
-	return composePrelude + cd + "\n" + strings.Join(cmds, " && ") + "\n", nil
+	return composePrelude + composeSudoProbe(st.ConfigFiles) + cd + "\n" + strings.Join(cmds, " && ") + "\n", nil
+}
+
+// composeSudoProbe makes `docker` run through passwordless sudo when the SSH user cannot read a compose file,
+// traverse its directory or read the sibling .env. Compose parses these client-side, so being in the docker
+// group (socket access) is not enough; dockerSudoPrelude only covers a refused socket. Without sudo the plain
+// run goes ahead and reports the real permission error.
+func composeSudoProbe(files []string) string {
+	var b strings.Builder
+	for _, f := range files {
+		q := shellQuote(f)
+		b.WriteString(`f=` + q + `; d=${f%/*}; d=${d:-/}
+if [ ! -r "$f" ] || [ ! -x "$d" ] || { [ -e "$d/.env" ] && [ ! -r "$d/.env" ]; }; then
+  if sudo -n true 2>/dev/null; then docker() { sudo -n docker "$@"; }; fi
+fi
+`)
+	}
+	return b.String()
 }
 
 // DockerStackOp runs a Compose action (up, down, start, stop, restart, pull, recreate, update) on a project. A

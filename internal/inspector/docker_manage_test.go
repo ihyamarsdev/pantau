@@ -417,3 +417,32 @@ func TestParseDockerImageRefs(t *testing.T) {
 		t.Errorf("untagged images must have no names or digests: %+v %+v", refs[1], refs[2])
 	}
 }
+
+func TestComposeStackScriptEnablesAllProfilesOnlyForExistingContainerActions(t *testing.T) {
+	st := &DockerStack{Name: "soc", ConfigFiles: []string{"/srv/soc/docker-compose.yml"}}
+	for action, want := range map[string]bool{"down": true, "stop": true, "start": true, "restart": true, "up": false, "update": false} {
+		script, err := composeStackScript(st, action)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Contains(script, "--profile '*'"); got != want {
+			t.Errorf("%s: all-profiles=%v, want %v", action, got, want)
+		}
+	}
+}
+
+func TestComposeStackScriptFallsBackToSudoWhenProjectFilesUnreadable(t *testing.T) {
+	st := &DockerStack{Name: "app", ConfigFiles: []string{"/home/bob/app/docker-compose.yml"}}
+	script, err := composeStackScript(st, "down")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`f='/home/bob/app/docker-compose.yml'`, `[ ! -r "$f" ]`, `[ ! -x "$d" ]`, `"$d/.env"`, `docker() { sudo -n docker "$@"; }`} {
+		if !strings.Contains(script, want) {
+			t.Errorf("script lacks %q:\n%s", want, script)
+		}
+	}
+	if strings.Index(script, "sudo -n docker") > strings.Index(script, "$C --profile") {
+		t.Errorf("sudo probe must run before the compose command:\n%s", script)
+	}
+}

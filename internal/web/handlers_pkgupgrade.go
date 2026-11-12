@@ -41,7 +41,8 @@ func (s *Server) handlePackagesUpgradePreview(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, preview)
 }
 
-// handleWSPkgUpgrade handles WebSocket /ws/pkg/upgrade?host_id=&mode=security|all
+// handleWSPkgUpgrade handles WebSocket /ws/pkg/upgrade?host_id=&mode=security|all, or, to act on specific
+// packages, ?host_id=&action=upgrade|install|remove&packages=a,b.
 func (s *Server) handleWSPkgUpgrade(w http.ResponseWriter, r *http.Request) {
 	hostIDStr := r.URL.Query().Get("host_id")
 	mode := strings.TrimSpace(r.URL.Query().Get("mode"))
@@ -49,6 +50,7 @@ func (s *Server) handleWSPkgUpgrade(w http.ResponseWriter, r *http.Request) {
 		mode = "all"
 	}
 
+	action := strings.TrimSpace(r.URL.Query().Get("action"))
 	hostID, err := strconv.ParseInt(hostIDStr, 10, 64)
 	if err != nil || hostID <= 0 {
 		http.Error(w, "invalid host_id", http.StatusBadRequest)
@@ -91,7 +93,18 @@ func (s *Server) handleWSPkgUpgrade(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build upgrade command
-	cmd, err := inspector.BuildUpgradeCommand(preview.Manager, mode)
+	var cmd string
+	if action != "" {
+		names, perr := inspector.ParsePackageNames(r.URL.Query().Get("packages"))
+		if perr != nil {
+			sendTextErr(fmt.Sprintf("Invalid packages: %v", perr))
+			return
+		}
+		cmd, err = inspector.BuildPackageCommand(preview.Manager, action, names)
+		mode = action + " " + strings.Join(names, " ")
+	} else {
+		cmd, err = inspector.BuildUpgradeCommand(preview.Manager, mode)
+	}
 	if err != nil {
 		sendTextErr(fmt.Sprintf("Invalid upgrade configuration: %v", err))
 		return

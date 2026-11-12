@@ -6427,6 +6427,24 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
   </div>
 </div>
 
+<!-- Package Install Modal -->
+<div id="pkgInstallModal" class="modal">
+  <div class="modal-content modal-dialog" style="max-width: 460px;">
+    <div class="modal-header">
+      <h3 data-i18n="pkg_install_title">Install Packages</h3>
+      <button class="btn btn-sm btn-ghost btn-icon" onclick="closeModal('pkgInstallModal')" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
+      <input type="text" id="pkgInstallInput" class="input" autocomplete="off" spellcheck="false" placeholder="nginx htop" onkeydown="if (event.key === 'Enter') submitPkgInstall()">
+      <div style="font-size: var(--fs-xs); color: var(--text-muted);" data-i18n="pkg_install_hint">Package names, separated by space or comma (max 20)</div>
+      <div style="display: flex; justify-content: flex-end; gap: 10px;">
+        <button class="btn btn-ghost" onclick="closeModal('pkgInstallModal')" data-i18n="cancel">Cancel</button>
+        <button class="btn btn-primary" onclick="submitPkgInstall()" data-i18n="pkg_install_btn">Install</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Package Upgrade Preview Modal (Action Dialog) -->
 <div id="pkgUpgradePreviewModal" class="modal">
   <div class="modal-content modal-dialog-lg" style="max-width: 680px; display: flex; flex-direction: column; max-height: 85vh;">
@@ -7960,6 +7978,16 @@ const I18N = {
     "bulk_confirm_msg": "Execute command across {count} host(s)? Command: {cmd}",
     "pkg_upgrade_title": "Upgrade Packages",
     "pkg_upgrade_btn": "Upgrade packages",
+    "pkg_install_btn": "Install",
+    "pkg_install_title": "Install Packages",
+    "pkg_install_hint": "Package names, separated by space or comma (max 20)",
+    "pkg_install_confirm_msg": "Install these packages on this host? Remote services may restart automatically. There is NO automatic rollback.",
+    "pkg_upgrade_one": "Upgrade",
+    "pkg_upgrade_confirm_msg": "Upgrade these packages on this host? Remote services may restart automatically. There is NO automatic rollback.",
+    "pkg_remove_one": "Delete",
+    "pkg_remove_title": "Delete Package",
+    "pkg_remove_btn": "Delete",
+    "pkg_remove_confirm_msg": "Remove these packages from this host? Packages that depend on them may be removed too. There is NO automatic rollback.",
     "pkg_pending_total": "Total Pending",
     "pkg_pending_sec": "Security Pending",
     "pkg_upgrade_mode": "Upgrade Scope / Mode",
@@ -9601,6 +9629,16 @@ const I18N = {
     "bulk_confirm_msg": "Jalankan perintah pada {count} host? Perintah: {cmd}",
     "pkg_upgrade_title": "Pembaruan Paket",
     "pkg_upgrade_btn": "Perbarui paket",
+    "pkg_install_btn": "Pasang",
+    "pkg_install_title": "Pasang Paket",
+    "pkg_install_hint": "Nama paket, pisahkan dengan spasi atau koma (maks. 20)",
+    "pkg_install_confirm_msg": "Pasang paket ini di host? Layanan remote dapat restart otomatis. TIDAK ADA rollback otomatis.",
+    "pkg_upgrade_one": "Perbarui",
+    "pkg_upgrade_confirm_msg": "Perbarui paket ini di host? Layanan remote dapat restart otomatis. TIDAK ADA rollback otomatis.",
+    "pkg_remove_one": "Hapus",
+    "pkg_remove_title": "Hapus Paket",
+    "pkg_remove_btn": "Hapus",
+    "pkg_remove_confirm_msg": "Hapus paket ini dari host? Paket lain yang bergantung padanya dapat ikut terhapus. TIDAK ADA rollback otomatis.",
     "pkg_pending_total": "Total Tertunda",
     "pkg_pending_sec": "Keamanan Tertunda",
     "pkg_upgrade_mode": "Cakupan / Mode Pembaruan",
@@ -13062,6 +13100,9 @@ async function renderPackagesTab() {
         <button id="btnUpgradePkgs" class="btn btn-sm btn-primary" onclick="openHostPackageUpgradePreview(${d.host.id})" style="display: inline-flex; align-items: center; gap: 4px;" ${d.host.os_info && d.host.os_info.toLowerCase().includes('darwin') ? 'disabled title="Package upgrade unsupported on macOS"' : ''}>
           ${svgIcon('package', 'icon-sm')} <span>${t('pkg_upgrade_btn', 'Upgrade packages')}</span>
         </button>
+        <button id="btnInstallPkg" class="btn btn-sm" onclick="openPkgInstallModal(${d.host.id})" style="display: inline-flex; align-items: center; gap: 4px;" ${d.host.os_info && d.host.os_info.toLowerCase().includes('darwin') ? 'disabled title="Package install unsupported on macOS"' : ''}>
+          ${svgIcon('plus', 'icon-sm')} <span>${t('pkg_install_btn', 'Install')}</span>
+        </button>
         <button id="btnRescanPkgs" class="btn btn-sm" onclick="rescanHostPackages(${d.host.id})" style="display: inline-flex; align-items: center; gap: 4px;">
           ${svgIcon('refresh-cw', 'icon-sm')} <span>${t('rescan_packages', 'Rescan Packages')}</span>
         </button>
@@ -13240,8 +13281,11 @@ function displayPackagesTable(hostID) {
                   <td>${typeBadge}</td>
                   <td>${svcBadge}</td>
                   <td style="text-align: right;">
-                    <button class="btn btn-sm btn-ghost btn-icon" onclick="openTerminalForHost(${hostID}, null, true)" title="Open in Terminal">
-                      ${svgIcon('terminal', 'icon-sm')}
+                    <button class="btn btn-sm btn-ghost btn-icon" data-pkg="${escapeHtml(p.name)}" onclick="pkgAction(${hostID}, 'upgrade', this.dataset.pkg)" title="${t('pkg_upgrade_one', 'Upgrade')}">
+                      ${svgIcon('arrow-up', 'icon-sm')}
+                    </button>
+                    <button class="btn btn-sm btn-ghost btn-icon" data-pkg="${escapeHtml(p.name)}" onclick="pkgAction(${hostID}, 'remove', this.dataset.pkg)" title="${t('pkg_remove_one', 'Delete')}" style="color: var(--danger);">
+                      ${svgIcon('trash-2', 'icon-sm')}
                     </button>
                   </td>
                 </tr>
@@ -25047,7 +25091,7 @@ function stopPkgUpgradeLogs() {
   }
 }
 
-function openPkgUpgradeLogs(hostId, mode) {
+function openPkgUpgradeLogs(hostId, mode, extra) {
   stopPkgUpgradeLogs();
   const host = (allRawHosts || []).find(h => h.id === hostId) || currentHost;
   const hostName = host ? host.name : ('Host #' + hostId);
@@ -25066,7 +25110,8 @@ function openPkgUpgradeLogs(hostId, mode) {
   openModal('pkgUpgradeLogsModal');
 
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const ws = new WebSocket(`${protocol}//${location.host}/ws/pkg/upgrade?host_id=${hostId}&mode=${encodeURIComponent(mode)}`);
+  const query = extra || `mode=${encodeURIComponent(mode)}`;
+  const ws = new WebSocket(`${protocol}//${location.host}/ws/pkg/upgrade?host_id=${hostId}&${query}`);
   ws.binaryType = 'arraybuffer';
   pkgUpgradeSocket = ws;
 
@@ -25114,6 +25159,37 @@ function openPkgUpgradeLogs(hostId, mode) {
       status.className = 'badge badge-unknown';
     }
   };
+}
+
+// Run upgrade / install / remove for specific packages and stream the output in the upgrade log modal.
+async function pkgAction(hostId, action, rawNames) {
+  const names = String(rawNames || '').split(/[\s,]+/).filter(Boolean);
+  if (!names.length) return;
+  const list = names.join(' ');
+  const label = { upgrade: 'Upgrade', install: 'Install', remove: 'Remove' }[action];
+  const confirmed = await showConfirm({
+    title: `${t('pkg_' + action + '_title', label)}: ${list}`,
+    message: t('pkg_' + action + '_confirm_msg', label + ' ' + list + ' on this host? Remote services may restart automatically. There is NO automatic rollback.'),
+    confirmText: t('pkg_' + action + '_btn', label),
+    danger: action === 'remove'
+  });
+  if (!confirmed) return;
+  openPkgUpgradeLogs(hostId, `${action} ${list}`, `action=${action}&packages=${encodeURIComponent(names.join(','))}`);
+}
+
+function openPkgInstallModal(hostId) {
+  currentPkgUpgradeHostId = hostId;
+  const input = document.getElementById('pkgInstallInput');
+  if (input) input.value = '';
+  openModal('pkgInstallModal');
+  if (input) input.focus();
+}
+
+function submitPkgInstall() {
+  const names = (document.getElementById('pkgInstallInput')?.value || '').trim();
+  if (!names) return;
+  closeModal('pkgInstallModal');
+  pkgAction(currentPkgUpgradeHostId, 'install', names);
 }
 
 // ============================================================================

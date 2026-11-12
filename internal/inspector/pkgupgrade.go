@@ -3,6 +3,7 @@ package inspector
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -367,10 +368,77 @@ func BuildUpgradeCommand(manager, mode string) (string, error) {
 		return "", fmt.Errorf("unsupported package manager: %s", manager)
 	}
 
-	// Wrapper:
-	// - timeout 900
-	// - privilege fallback: if id -u != 0, prefix sudo -n if available, else error
-	// - exit marker at the end
+	return wrapPrivilegedCommand(innerCmd), nil
+}
+
+// pkgNameRe accepts distro package names (letters, digits, + . _ -, and ":arch" qualifiers). The leading
+// alphanumeric keeps a name from ever being read as a package-manager option.
+var pkgNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9+._:-]{0,127}$`)
+
+// ParsePackageNames splits a space/comma separated list and validates every name (at most 20).
+func ParsePackageNames(raw string) ([]string, error) {
+	names := strings.FieldsFunc(raw, func(r rune) bool { return r == ' ' || r == ',' || r == '\t' || r == '\n' })
+	if len(names) == 0 {
+		return nil, fmt.Errorf("no package name given")
+	}
+	if len(names) > 20 {
+		return nil, fmt.Errorf("too many packages (max 20)")
+	}
+	for _, n := range names {
+		if !pkgNameRe.MatchString(n) {
+			return nil, fmt.Errorf("invalid package name: %q", n)
+		}
+	}
+	return names, nil
+}
+
+// BuildPackageCommand builds the wrapped command for acting on specific packages: "upgrade" (only upgrade the
+// named packages, never install them), "install" or "remove". Same privilege fallback as BuildUpgradeCommand.
+func BuildPackageCommand(manager, action string, pkgs []string) (string, error) {
+	if len(pkgs) == 0 {
+		return "", fmt.Errorf("no package name given")
+	}
+	quoted := make([]string, len(pkgs))
+	for i, p := range pkgs {
+		if !pkgNameRe.MatchString(p) {
+			return "", fmt.Errorf("invalid package name: %q", p)
+		}
+		quoted[i] = shellQuote(p)
+	}
+	list := strings.Join(quoted, " ")
+
+	var innerCmd string
+	switch manager {
+	case "apt":
+		const apt = "DEBIAN_FRONTEND=noninteractive "
+		switch action {
+		case "upgrade":
+			innerCmd = apt + "apt-get update && " + apt + "apt-get -y -o Dpkg::Options::=--force-confold install --only-upgrade " + list
+		case "install":
+			innerCmd = apt + "apt-get update && " + apt + "apt-get -y -o Dpkg::Options::=--force-confold install " + list
+		case "remove":
+			innerCmd = apt + "apt-get -y remove " + list
+		}
+	case "dnf", "yum":
+		switch action {
+		case "upgrade", "install":
+			innerCmd = manager + " -y " + action + " " + list
+		case "remove":
+			innerCmd = manager + " -y remove " + list
+		}
+	default:
+		return "", fmt.Errorf("unsupported package manager: %s", manager)
+	}
+	if innerCmd == "" {
+		return "", fmt.Errorf("invalid package action %q (must be 'upgrade', 'install' or 'remove')", action)
+	}
+	return wrapPrivilegedCommand(innerCmd), nil
+}
+
+// wrapPrivilegedCommand runs innerCmd with a 900 s timeout. If the SSH user is not root it uses passwordless
+// `sudo -n` (never a password) and fails with a clear error when that is unavailable. It prints a
+// "[pantau] exit=N" marker at the end.
+func wrapPrivilegedCommand(innerCmd string) string {
 	script := fmt.Sprintf(`T=""
 if command -v timeout >/dev/null 2>&1; then
   T="timeout 900"
@@ -391,7 +459,7 @@ echo "[pantau] exit=$rc"
 exit $rc
 `, shellQuote(innerCmd))
 
-	return "sh -c " + shellQuote(script), nil
+	return "sh -c " + shellQuote(script)
 }
 
 // upgradeExecResult carries one ExecTimeout outcome for the ctx-aware wrapper.
