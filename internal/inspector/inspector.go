@@ -578,9 +578,14 @@ func parseNetworkMetrics(h *store.Host, netDevSec, pingSec, pubIPSec, estSec, li
 	h.TopConnections = string(topBytes)
 
 	// 5. Listening Ports & Public Exposure
+	// Services that should never face the internet directly (databases, caches, admin/control planes, legacy cleartext, file sharing, remote desktop).
 	sensitivePorts := map[string]bool{
-		"3306": true, "5432": true, "6379": true, "27017": true,
-		"9200": true, "2375": true, "11211": true,
+		"21": true, "23": true, "69": true, "111": true, "135": true, "139": true, "161": true,
+		"389": true, "445": true, "512": true, "513": true, "514": true, "873": true,
+		"1433": true, "1521": true, "2049": true, "2375": true, "2376": true, "2379": true, "2380": true,
+		"3306": true, "3389": true, "5000": true, "5432": true, "5601": true, "5900": true, "5984": true,
+		"6379": true, "8086": true, "9042": true, "9200": true, "9300": true, "10250": true,
+		"11211": true, "15672": true, "27017": true, "50070": true,
 	}
 	listening := []store.ListeningPort{}
 	for _, line := range strings.Split(listenSec, "\n") {
@@ -633,8 +638,12 @@ func parseNetworkMetrics(h *store.Host, netDevSec, pingSec, pubIPSec, estSec, li
 	listenBytes, _ := json.Marshal(listening)
 	h.ListeningPorts = string(listenBytes)
 
-	// 6. Failed Logins Count
-	h.FailedLoginsCount, _ = strconv.Atoi(strings.TrimSpace(failedSec))
+	// 6. Failed Logins Count (sshd, last 24h via journald; whole auth.log/secure otherwise). "NA" = no readable log → -1.
+	if v := strings.TrimSpace(failedSec); v == "NA" {
+		h.FailedLoginsCount = -1
+	} else {
+		h.FailedLoginsCount, _ = strconv.Atoi(v)
+	}
 }
 
 func parseDiskIOMetrics(h *store.Host, diskStatsSec string) {

@@ -539,8 +539,8 @@ Status: active
 	if scanAlpine.Status != "unsupported" {
 		t.Errorf("expected status 'unsupported', got %q", scanAlpine.Status)
 	}
-	if len(scanAlpine.Hardening) != 4 {
-		t.Errorf("expected 4 hardening checks even on unsupported distro, got %d", len(scanAlpine.Hardening))
+	if len(scanAlpine.Hardening) != 12 {
+		t.Errorf("expected 12 hardening checks even on unsupported distro, got %d", len(scanAlpine.Hardening))
 	}
 	if len(scanAlpine.Notes) == 0 || !strings.Contains(scanAlpine.Notes[0], "not supported") {
 		t.Errorf("expected unsupported note, got %v", scanAlpine.Notes)
@@ -676,8 +676,8 @@ Status: active
 	if len(saved.Findings) != 1 || saved.Findings[0].Package != "libssl3" {
 		t.Errorf("unexpected findings: %+v", saved.Findings)
 	}
-	if len(saved.Hardening) != 4 {
-		t.Errorf("expected 4 hardening checks, got %d", len(saved.Hardening))
+	if len(saved.Hardening) != 12 {
+		t.Errorf("expected 12 hardening checks, got %d", len(saved.Hardening))
 	}
 
 	// 3. Concurrency guard test
@@ -1036,12 +1036,18 @@ Firewall is enabled. (State = 1)
 	if scan.PendingSecurity != 0 || scan.PendingTotal != 0 {
 		t.Errorf("expected 0 pending, got sec=%d tot=%d", scan.PendingSecurity, scan.PendingTotal)
 	}
-	if len(scan.Hardening) != 4 {
-		t.Fatalf("expected 4 hardening checks, got %d", len(scan.Hardening))
+	if len(scan.Hardening) != 8 {
+		t.Fatalf("expected 8 hardening checks (no Linux-only extras on macOS), got %d", len(scan.Hardening))
+	}
+	want := map[string]string{
+		"sshd_permit_root_login": "pass", "auto_security_updates": "pass", "firewall_active": "pass",
+		"sshd_empty_passwords": "pass", "sshd_x11_forwarding": "pass",
+		"sshd_max_auth_tries": "warn",    // unset → OpenSSH default 6
+		"sshd_weak_crypto":    "unknown", // file mode, compiled-in defaults
 	}
 	for _, h := range scan.Hardening {
-		if h.Status != "pass" && h.ID != "sshd_password_auth" {
-			t.Errorf("expected pass for %s, got %s", h.ID, h.Status)
+		if w, ok := want[h.ID]; ok && h.Status != w {
+			t.Errorf("expected %s for %s, got %s", w, h.ID, h.Status)
 		}
 	}
 
@@ -1089,9 +1095,9 @@ func TestParseHardeningChecks_MacOS_Fixtures(t *testing.T) {
 	fwSecA := "Firewall is disabled. (State = 0)\n"
 	sshdSecA := "FILE:/etc/ssh/sshd_config\nUsePAM yes\n"
 
-	checksA, _ := parseHardeningChecks("macos", sshdSecA, autoSecA, fwSecA)
-	if len(checksA) != 4 {
-		t.Fatalf("expected 4 checks, got %d", len(checksA))
+	checksA, _ := parseHardeningChecks("macos", sshdSecA, autoSecA, fwSecA, "")
+	if len(checksA) != 8 {
+		t.Fatalf("expected 8 checks, got %d", len(checksA))
 	}
 	mA := make(map[string]store.HardeningCheck)
 	for _, c := range checksA {
@@ -1118,7 +1124,7 @@ func TestParseHardeningChecks_MacOS_Fixtures(t *testing.T) {
 	fwSecB := "Firewall is enabled. (State = 1)\n"
 	sshdSecB := "FILE:/etc/ssh/sshd_config\nUsePAM yes\n"
 
-	checksB, _ := parseHardeningChecks("macos", sshdSecB, autoSecB, fwSecB)
+	checksB, _ := parseHardeningChecks("macos", sshdSecB, autoSecB, fwSecB, "")
 	mB := make(map[string]store.HardeningCheck)
 	for _, c := range checksB {
 		mB[c.ID] = c
@@ -1145,5 +1151,54 @@ func TestParseHardeningChecks_MacOS_Fixtures(t *testing.T) {
 	}
 	if len(notesFw) == 0 {
 		t.Error("expected note for unreadable firewall")
+	}
+}
+
+// New checks must not turn green on missing data, and must flag the weak values right at their boundary.
+func TestExtendedHardening_NoFalsePass(t *testing.T) {
+	byID := func(cs []store.HardeningCheck) map[string]string {
+		m := map[string]string{}
+		for _, c := range cs {
+			m[c.ID] = c.Status
+		}
+		return m
+	}
+	sshCases := []struct{ name, content, id, want string }{
+		{"empty passwords allowed", "FILE:/etc/ssh/sshd_config\nPermitEmptyPasswords yes", "sshd_empty_passwords", "fail"},
+		{"MaxAuthTries 5 above CIS limit", "FILE:/etc/ssh/sshd_config\nMaxAuthTries 5", "sshd_max_auth_tries", "warn"},
+		{"MaxAuthTries 4 at CIS limit", "FILE:/etc/ssh/sshd_config\nMaxAuthTries 4", "sshd_max_auth_tries", "pass"},
+		{"X11 forwarding on", "FILE:/etc/ssh/sshd_config\nX11Forwarding yes", "sshd_x11_forwarding", "warn"},
+		{"crypto defaults unknown from files", "FILE:/etc/ssh/sshd_config\nCiphers aes256-gcm@openssh.com", "sshd_weak_crypto", "unknown"},
+		{"CBC cipher", "FILE:/etc/ssh/sshd_config\nCiphers aes128-ctr,aes256-cbc\nMACs hmac-sha2-256\nKexAlgorithms curve25519-sha256", "sshd_weak_crypto", "warn"},
+		{"sha1 kex in effective dump", "SSHD_EFFECTIVE\nciphers aes128-ctr\nmacs hmac-sha2-256-etm@openssh.com\nkexalgorithms curve25519-sha256,diffie-hellman-group14-sha1", "sshd_weak_crypto", "warn"},
+		{"clean effective dump", "SSHD_EFFECTIVE\nciphers aes128-ctr\nmacs hmac-sha2-256-etm@openssh.com\nkexalgorithms curve25519-sha256", "sshd_weak_crypto", "pass"},
+		{"unreadable", "SSHD_UNREADABLE", "sshd_empty_passwords", "unknown"},
+	}
+	for _, c := range sshCases {
+		if got := byID(parseSshdExtraChecks(c.content))[c.id]; got != c.want {
+			t.Errorf("%s: %s = %s, want %s", c.name, c.id, got, c.want)
+		}
+	}
+
+	hardened := "---MAC---\nAPPARMOR_ENABLED:Y\n---SYSCTL---\nkernel/randomize_va_space=2\nkernel/kptr_restrict=1\nnet/ipv4/tcp_syncookies=1\nnet/ipv4/conf/all/accept_redirects=0\nnet/ipv4/conf/all/accept_source_route=0\n---SERVICES---\nfail2ban:active\nsshguard:inactive\ncrowdsec:inactive\nauditd:active"
+	for id, st := range byID(parseExtraHardening(hardened)) {
+		if st != "pass" {
+			t.Errorf("hardened host: %s = %s, want pass", id, st)
+		}
+	}
+	extraCases := []struct{ name, content, id, want string }{
+		{"section absent (old output)", "", "mac_enforced", "unknown"},
+		{"SELinux permissive", "SELINUX_ENFORCE:0", "mac_enforced", "warn"},
+		{"no MAC at all", "---MAC---\n---SYSCTL---", "mac_enforced", "warn"},
+		{"ICMP redirects accepted", "kernel/randomize_va_space=2\nnet/ipv4/conf/all/accept_redirects=1", "kernel_sysctl", "warn"},
+		{"sysctl partly unreadable", "kernel/randomize_va_space=2", "kernel_sysctl", "unknown"},
+		{"no brute-force service", "fail2ban:inactive\nsshguard:inactive\ncrowdsec:inactive", "bruteforce_protection", "warn"},
+		{"no probe available", "fail2ban:noprobe\nauditd:noprobe", "bruteforce_protection", "unknown"},
+		{"auditd unit missing", "auditd:unknown", "auditd_active", "warn"},
+	}
+	for _, c := range extraCases {
+		if got := byID(parseExtraHardening(c.content))[c.id]; got != c.want {
+			t.Errorf("%s: %s = %s, want %s", c.name, c.id, got, c.want)
+		}
 	}
 }

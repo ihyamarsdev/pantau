@@ -203,6 +203,26 @@ if command -v iptables >/dev/null 2>&1; then
     echo "---IPTABLES---"
     $S iptables -S 2>&1 || $S iptables -L -n 2>&1
 fi
+
+echo "===EXTRA_HARDENING==="
+echo "---MAC---"
+[ -r /sys/fs/selinux/enforce ] && echo "SELINUX_ENFORCE:$(cat /sys/fs/selinux/enforce 2>/dev/null)"
+[ -r /sys/module/apparmor/parameters/enabled ] && echo "APPARMOR_ENABLED:$(cat /sys/module/apparmor/parameters/enabled 2>/dev/null)"
+echo "---SYSCTL---"
+for k in kernel/randomize_va_space kernel/kptr_restrict kernel/dmesg_restrict net/ipv4/tcp_syncookies net/ipv4/conf/all/accept_redirects net/ipv4/conf/all/accept_source_route; do
+    [ -r "/proc/sys/$k" ] && echo "$k=$(cat "/proc/sys/$k" 2>/dev/null)"
+done
+echo "---SERVICES---"
+for u in fail2ban sshguard crowdsec auditd; do
+    if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+        echo "$u:$(systemctl is-active "$u" 2>/dev/null)"
+    elif command -v pgrep >/dev/null 2>&1; then
+        p=$u; [ "$u" = "fail2ban" ] && p=fail2ban-server
+        if pgrep -x "$p" >/dev/null 2>&1; then echo "$u:active"; else echo "$u:inactive"; fi
+    else
+        echo "$u:noprobe"
+    fi
+done
 fi`
 
 // IsSecurityScanning reports whether a security scan is currently running for hostID.
@@ -316,7 +336,8 @@ func parseSecurityScanOutput(stdout string, hostID int64) *store.SecurityScan {
 	updatesSec := extractSection(stdout, "===UPDATES===", "===SSHD_CONFIG===")
 	sshdSec := extractSection(stdout, "===SSHD_CONFIG===", "===AUTO_UPDATES===")
 	autoSec := extractSection(stdout, "===AUTO_UPDATES===", "===FIREWALL===")
-	firewallSec := extractSection(stdout, "===FIREWALL===", "")
+	firewallSec := extractSection(stdout, "===FIREWALL===", "===EXTRA_HARDENING===")
+	extraSec := extractSection(stdout, "===EXTRA_HARDENING===", "")
 
 	osFamily, detectedMgr := parseOSFamily(osSec)
 
@@ -391,7 +412,7 @@ func parseSecurityScanOutput(stdout string, hostID int64) *store.SecurityScan {
 	notes = append(notes, cacheNotes...)
 
 	// Hardening checks
-	hardening, hardeningNotes := parseHardeningChecks(osFamily, sshdSec, autoSec, firewallSec)
+	hardening, hardeningNotes := parseHardeningChecks(osFamily, sshdSec, autoSec, firewallSec, extraSec)
 	notes = append(notes, hardeningNotes...)
 
 	// Severity tally
@@ -792,10 +813,11 @@ func parseRepoCacheAge(content, mgr string) (ageHours int, notes []string) {
 	return ageHours, notes
 }
 
-// parseHardeningChecks parses sshd, automatic updates, and firewall checks.
-func parseHardeningChecks(osFamily, sshdSec, autoSec, firewallSec string) (checks []store.HardeningCheck, notes []string) {
+// parseHardeningChecks parses sshd, automatic updates, firewall and (Linux only) extended hardening checks.
+func parseHardeningChecks(osFamily, sshdSec, autoSec, firewallSec, extraSec string) (checks []store.HardeningCheck, notes []string) {
 	permitRoot, passAuth, sshdNotes := parseSshdConfig(sshdSec, osFamily)
 	checks = append(checks, permitRoot, passAuth)
+	checks = append(checks, parseSshdExtraChecks(sshdSec)...)
 	notes = append(notes, sshdNotes...)
 
 	autoCheck, autoNotes := parseAutoUpdates(autoSec)
@@ -805,6 +827,11 @@ func parseHardeningChecks(osFamily, sshdSec, autoSec, firewallSec string) (check
 	firewallCheck, fwNotes := parseFirewall(firewallSec)
 	checks = append(checks, firewallCheck)
 	notes = append(notes, fwNotes...)
+
+	// MAC/sysctl/systemd probes are Linux concepts; macOS has no equivalent section.
+	if osFamily != "macos" {
+		checks = append(checks, parseExtraHardening(extraSec)...)
+	}
 
 	return checks, notes
 }
@@ -955,6 +982,172 @@ func parseSshdConfig(content, osFamily string) (permitRoot, passAuth store.Harde
 	}
 
 	return permitRoot, passAuth, notes
+}
+
+// parseSshdExtraChecks evaluates CIS-style sshd settings beyond root login and password auth.
+func parseSshdExtraChecks(content string) []store.HardeningCheck {
+	empty := store.HardeningCheck{ID: "sshd_empty_passwords", Title: "SSH Empty Passwords"}
+	tries := store.HardeningCheck{ID: "sshd_max_auth_tries", Title: "SSH MaxAuthTries"}
+	x11 := store.HardeningCheck{ID: "sshd_x11_forwarding", Title: "SSH X11 Forwarding"}
+	crypto := store.HardeningCheck{ID: "sshd_weak_crypto", Title: "SSH Weak Ciphers/MACs/Kex"}
+	if strings.Contains(content, "SSHD_UNREADABLE") || strings.TrimSpace(content) == "" {
+		for _, c := range []*store.HardeningCheck{&empty, &tries, &x11, &crypto} {
+			c.Status, c.Detail = "unknown", "unable to read sshd_config (permission denied)"
+		}
+		return []store.HardeningCheck{empty, tries, x11, crypto}
+	}
+	cfg := sshdSettings(content)
+	effective := strings.HasPrefix(content, "SSHD_EFFECTIVE")
+
+	if cfg["permitemptypasswords"] == "yes" {
+		empty.Status, empty.Detail = "fail", "PermitEmptyPasswords is enabled ('yes')"
+	} else {
+		empty.Status, empty.Detail = "pass", "PermitEmptyPasswords is disabled (OpenSSH default: no)"
+	}
+
+	// CIS: MaxAuthTries <= 4; OpenSSH default is 6.
+	if v, ok := cfg["maxauthtries"]; !ok {
+		tries.Status, tries.Detail = "warn", "MaxAuthTries is unset (OpenSSH default: 6; recommended <= 4)"
+	} else if n, err := strconv.Atoi(v); err != nil {
+		tries.Status, tries.Detail = "warn", fmt.Sprintf("MaxAuthTries has an unparsable value '%s'", v)
+	} else if n > 4 {
+		tries.Status, tries.Detail = "warn", fmt.Sprintf("MaxAuthTries is %d (recommended <= 4)", n)
+	} else {
+		tries.Status, tries.Detail = "pass", fmt.Sprintf("MaxAuthTries is %d", n)
+	}
+
+	if cfg["x11forwarding"] == "yes" {
+		x11.Status, x11.Detail = "warn", "X11Forwarding is enabled ('yes')"
+	} else {
+		x11.Status, x11.Detail = "pass", "X11Forwarding is disabled (OpenSSH default: no)"
+	}
+
+	weakMarkers := map[string][]string{
+		"ciphers":       {"cbc", "3des", "arcfour", "blowfish", "cast128", "rijndael"},
+		"macs":          {"md5", "sha1", "-96", "umac-64"},
+		"kexalgorithms": {"sha1"},
+	}
+	var weak, unset []string
+	for _, key := range []string{"ciphers", "macs", "kexalgorithms"} {
+		v, ok := cfg[key]
+		// A '-' list only removes algorithms from the compiled-in defaults, which stay unknown from files.
+		if !ok || strings.HasPrefix(v, "-") {
+			unset = append(unset, key)
+			continue
+		}
+		for _, alg := range strings.Split(strings.TrimLeft(v, "+^"), ",") {
+			for _, m := range weakMarkers[key] {
+				if strings.Contains(alg, m) {
+					weak = append(weak, alg)
+					break
+				}
+			}
+		}
+	}
+	switch {
+	case len(weak) > 0:
+		crypto.Status, crypto.Detail = "warn", "weak algorithms enabled: "+strings.Join(weak, ", ")
+	case len(unset) > 0 && !effective:
+		// Older OpenSSH builds still ship hmac-sha1/umac-64 in their defaults: never claim pass from files alone.
+		crypto.Status, crypto.Detail = "unknown", "unset in sshd_config ("+strings.Join(unset, ", ")+"), so compiled-in defaults apply; root or passwordless sudo lets Pantau read them with sshd -T"
+	default:
+		crypto.Status, crypto.Detail = "pass", "no weak ciphers, MACs or key exchange algorithms enabled"
+	}
+	return []store.HardeningCheck{empty, tries, x11, crypto}
+}
+
+// parseExtraHardening evaluates the Linux ===EXTRA_HARDENING=== section: MAC, kernel sysctls,
+// brute-force protection and auditd. An absent section yields unknown, never pass.
+func parseExtraHardening(content string) []store.HardeningCheck {
+	mac := store.HardeningCheck{ID: "mac_enforced", Title: "Mandatory Access Control (SELinux/AppArmor)"}
+	sysctl := store.HardeningCheck{ID: "kernel_sysctl", Title: "Kernel Network & Memory Hardening"}
+	brute := store.HardeningCheck{ID: "bruteforce_protection", Title: "SSH Brute-Force Protection"}
+	audit := store.HardeningCheck{ID: "auditd_active", Title: "Audit Daemon (auditd)"}
+	if strings.TrimSpace(content) == "" {
+		for _, c := range []*store.HardeningCheck{&mac, &sysctl, &brute, &audit} {
+			c.Status, c.Detail = "unknown", "extended hardening data was not collected"
+		}
+		return []store.HardeningCheck{mac, sysctl, brute, audit}
+	}
+	kv := map[string]string{}
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if k, v, ok := strings.Cut(line, "="); ok {
+			kv[k] = strings.TrimSpace(v)
+		} else if k, v, ok := strings.Cut(line, ":"); ok {
+			kv[k] = strings.TrimSpace(v)
+		}
+	}
+
+	selinux, hasSELinux := kv["SELINUX_ENFORCE"]
+	switch {
+	case selinux == "1":
+		mac.Status, mac.Detail = "pass", "SELinux is enforcing"
+	case kv["APPARMOR_ENABLED"] == "Y":
+		mac.Status, mac.Detail = "pass", "AppArmor is enabled"
+	case hasSELinux:
+		mac.Status, mac.Detail = "warn", "SELinux is permissive"
+	default:
+		mac.Status, mac.Detail = "warn", "neither SELinux nor AppArmor is active"
+	}
+
+	// want: /proc/sys key, required value ("" = any non-zero), label.
+	want := []struct{ key, val, label string }{
+		{"kernel/randomize_va_space", "2", "kernel.randomize_va_space=2"},
+		{"kernel/kptr_restrict", "", "kernel.kptr_restrict>=1"},
+		{"net/ipv4/tcp_syncookies", "1", "net.ipv4.tcp_syncookies=1"},
+		{"net/ipv4/conf/all/accept_redirects", "0", "net.ipv4.conf.all.accept_redirects=0"},
+		{"net/ipv4/conf/all/accept_source_route", "0", "net.ipv4.conf.all.accept_source_route=0"},
+	}
+	var bad []string
+	read := 0
+	for _, w := range want {
+		v, ok := kv[w.key]
+		if !ok {
+			continue
+		}
+		read++
+		if (w.val == "" && (v == "" || v == "0")) || (w.val != "" && v != w.val) {
+			bad = append(bad, w.label+" (is "+v+")")
+		}
+	}
+	switch {
+	case len(bad) > 0:
+		sysctl.Status, sysctl.Detail = "warn", "not hardened: "+strings.Join(bad, "; ")
+	case read < len(want):
+		sysctl.Status, sysctl.Detail = "unknown", fmt.Sprintf("only %d of %d kernel parameters readable under /proc/sys", read, len(want))
+	default:
+		sysctl.Status, sysctl.Detail = "pass", "ASLR, kptr_restrict, SYN cookies and ICMP redirect/source-route hardening are set"
+	}
+
+	var active []string
+	probed := false
+	for _, s := range []string{"fail2ban", "sshguard", "crowdsec"} {
+		if v, ok := kv[s]; ok && v != "noprobe" {
+			probed = true
+			if v == "active" {
+				active = append(active, s)
+			}
+		}
+	}
+	switch {
+	case len(active) > 0:
+		brute.Status, brute.Detail = "pass", strings.Join(active, ", ")+" active"
+	case !probed:
+		brute.Status, brute.Detail = "unknown", "no service manager or process listing available"
+	default:
+		brute.Status, brute.Detail = "warn", "no fail2ban, sshguard or crowdsec service is active"
+	}
+
+	switch v := kv["auditd"]; v {
+	case "active":
+		audit.Status, audit.Detail = "pass", "auditd is active"
+	case "", "noprobe":
+		audit.Status, audit.Detail = "unknown", "no service manager or process listing available"
+	default:
+		audit.Status, audit.Detail = "warn", "auditd is not active ("+v+")"
+	}
+	return []store.HardeningCheck{mac, sysctl, brute, audit}
 }
 
 // parseAutoUpdates checks if automatic updates are enabled / active.

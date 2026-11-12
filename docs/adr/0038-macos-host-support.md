@@ -92,7 +92,7 @@ Sebelum arsitektur ini diterapkan, seluruh mekanisme pengumpulan telemetri dan i
      - Menjalankan `/usr/sbin/softwareupdate -l` secara pasif tanpa root.
      - Menggunakan heuristik cerdas: pembaruan yang memuat kata kunci `macOS` atau `Safari` dikelompokkan sebagai pembaruan patch keamanan (*Security Updates*), sementara pembaruan lainnya dihitung dalam total pembaruan yang tersedia.
      - **Prinsip Kejujuran (Honest Coverage)**: Apabila server Apple tidak dapat dihubungi atau perintah mengalami kegagalan koneksi/timeout, hasil pemindaian secara transparan dilaporkan berstatus `partial` (bukan 0 temuan palsu).
-   - **Empat Pemeriksaan Pengerasan Sistem (Hardening Checks) macOS**:
+   - **Pemeriksaan Pengerasan Sistem (Hardening Checks) macOS** (empat di bawah, ditambah pemeriksaan sshd `sshd_empty_passwords`, `sshd_max_auth_tries`, `sshd_x11_forwarding`, `sshd_weak_crypto` yang sama dengan Linux; pemeriksaan khusus Linux dari ADR 0036 tidak dilaporkan):
      1. `sshd_permit_root_login`: Membaca `/etc/ssh/sshd_config` dan direktori `/etc/ssh/sshd_config.d/`.
      2. `sshd_password_auth`: Memeriksa konfigurasi autentikasi password OpenSSH.
      3. `auto_security_updates`: Mengevaluasi preferensi pembaruan otomatis macOS melalui pembacaan kunci `defaults read /Library/Preferences/com.apple.SoftwareUpdate` (`AutomaticDownload`, `AutomaticallyInstallMacOSUpdates`, `CriticalUpdateInstall`, dan `ConfigDataInstall`).

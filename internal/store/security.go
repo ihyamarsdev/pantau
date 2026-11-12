@@ -26,7 +26,7 @@ type SecurityFinding struct {
 }
 
 type HardeningCheck struct {
-	ID     string `json:"id"`     // sshd_permit_root_login, sshd_password_auth, auto_security_updates, firewall_active
+	ID     string `json:"id"`     // sshd_permit_root_login, sshd_password_auth, sshd_empty_passwords, sshd_max_auth_tries, sshd_x11_forwarding, sshd_weak_crypto, auto_security_updates, firewall_active; Linux only: mac_enforced, kernel_sysctl, bruteforce_protection, auditd_active
 	Title  string `json:"title"`  // English title; UI shows it as-is
 	Status string `json:"status"` // pass|warn|fail|unknown
 	Detail string `json:"detail"`

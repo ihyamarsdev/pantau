@@ -6751,7 +6751,8 @@ const I18N = {
     "established": "Established",
     "ext_ips_active": "External IPs Active",
     "security_bruteforce": "Security & Brute-Force",
-    "failed_logins": "Failed Logins",
+    "failed_logins": "failed SSH logins (24h journald; full log otherwise)",
+    "failed_logins_unreadable": "Not readable (needs journal/auth log access)",
     "high_failed": "High failed attempts",
     "normal_auth": "Normal authentication state",
     "top_remote_ips": "Top Connected Remote IPs (Active Sockets)",
@@ -6764,7 +6765,7 @@ const I18N = {
     "binding": "Binding",
     "no_listening_ports": "No listening ports detected",
     "high_risk": "HIGH RISK",
-    "safe_low": "Safe / Low",
+    "safe_low": "Not flagged",
     "public_internet": "Public Internet",
     "localhost_only": "Localhost Only",
     "conn_suffix": "conn",
@@ -7218,6 +7219,14 @@ const I18N = {
     "hardening_sshd_password_auth": "SSH Password Authentication",
     "hardening_auto_security_updates": "Automatic Security Updates",
     "hardening_firewall_active": "Firewall Active",
+    "hardening_sshd_empty_passwords": "SSH Empty Passwords",
+    "hardening_sshd_max_auth_tries": "SSH MaxAuthTries",
+    "hardening_sshd_x11_forwarding": "SSH X11 Forwarding",
+    "hardening_sshd_weak_crypto": "SSH Weak Ciphers/MACs/Kex",
+    "hardening_mac_enforced": "Mandatory Access Control (SELinux/AppArmor)",
+    "hardening_kernel_sysctl": "Kernel Hardening (sysctl)",
+    "hardening_bruteforce_protection": "SSH Brute-Force Protection",
+    "hardening_auditd_active": "Audit Daemon (auditd)",
     "vuln_intel_label": "CISA KEV and EPSS",
     "vuln_intel_desc": "mark security findings whose CVEs are exploited in the wild and show their probability of exploitation. The Pantau server downloads these public feeds once a day (needs internet; dnf/yum hosts report CVE IDs).",
     "sec_chip_pending": "{n} security update(s) pending",
@@ -8345,7 +8354,8 @@ const I18N = {
     "established": "Established",
     "ext_ips_active": "IP Eksternal Aktif",
     "security_bruteforce": "Keamanan & Brute-Force",
-    "failed_logins": "Login Gagal",
+    "failed_logins": "login SSH gagal (24 jam journald; seluruh log bila tanpa journald)",
+    "failed_logins_unreadable": "Tidak terbaca (butuh akses journal/auth log)",
     "high_failed": "Percobaan gagal tinggi",
     "normal_auth": "Status autentikasi normal",
     "top_remote_ips": "IP Remote Teratas Terhubung (Socket Aktif)",
@@ -8358,7 +8368,7 @@ const I18N = {
     "binding": "Binding",
     "no_listening_ports": "Tidak ada listening port terdeteksi",
     "high_risk": "RISIKO TINGGI",
-    "safe_low": "Aman / Rendah",
+    "safe_low": "Tidak ditandai",
     "public_internet": "Internet Publik",
     "localhost_only": "Hanya Localhost",
     "conn_suffix": "koneksi",
@@ -8811,6 +8821,14 @@ const I18N = {
     "hardening_sshd_password_auth": "Autentikasi Password SSH",
     "hardening_auto_security_updates": "Pembaruan Keamanan Otomatis",
     "hardening_firewall_active": "Firewall Aktif",
+    "hardening_sshd_empty_passwords": "Password Kosong SSH",
+    "hardening_sshd_max_auth_tries": "MaxAuthTries SSH",
+    "hardening_sshd_x11_forwarding": "X11 Forwarding SSH",
+    "hardening_sshd_weak_crypto": "Cipher/MAC/Kex Lemah SSH",
+    "hardening_mac_enforced": "Mandatory Access Control (SELinux/AppArmor)",
+    "hardening_kernel_sysctl": "Hardening Kernel (sysctl)",
+    "hardening_bruteforce_protection": "Proteksi Brute-Force SSH",
+    "hardening_auditd_active": "Audit Daemon (auditd)",
     "vuln_intel_label": "CISA KEV dan EPSS",
     "vuln_intel_desc": "tandai temuan keamanan yang CVE-nya sedang dieksploitasi dan tampilkan peluang eksploitasinya. Server Pantau mengunduh feed publik ini sekali sehari (butuh internet; host dnf/yum melaporkan ID CVE).",
     "sec_chip_pending": "{n} pembaruan keamanan tertunda",
@@ -13408,14 +13426,15 @@ function securityExposureHtml() {
     if (Array.isArray(parsed)) ports = parsed;
   } catch (e) {}
   const failed = h.failed_logins_count || 0;
-  const authNA = /^macos/i.test(h.os_info || '');
+  const authMac = /^macos/i.test(h.os_info || '');
+  const authNA = authMac || failed < 0;
   const authColor = authNA ? 'var(--text-muted)' : (failed > 10 ? 'var(--danger)' : 'var(--success)');
-  const authValue = authNA ? t('failed_logins_na') : `${failed} ${t('failed_logins')}`;
+  const authValue = authMac ? t('failed_logins_na') : (failed < 0 ? t('failed_logins_unreadable') : `${failed} ${t('failed_logins')}`);
   const authNote = authNA ? '' : (failed > 10 ? t('high_failed') : t('normal_auth'));
   const portRows = ports.map(p => {
     const riskBadge = p.risk === 'high'
       ? '<span class="badge badge-danger">' + t('high_risk') + '</span>'
-      : '<span class="badge badge-healthy">' + t('safe_low') + '</span>';
+      : '<span class="badge" style="background: var(--surface-3); color: var(--text-muted);">' + t('safe_low') + '</span>';
     const expBadge = p.public
       ? '<span class="badge badge-warning">' + t('public_internet') + '</span>'
       : '<span class="badge" style="background: var(--surface-3); color: var(--text-muted);">' + t('localhost_only') + '</span>';
@@ -20580,8 +20599,9 @@ function calculateHostComparison(hosts) {
           id: 'auth_safety',
           label: t('auth_fails', 'Failed Auth Attempts'),
           polarity: -1,
-          extract: h => h.failed_logins_count || 0,
-          format: (v, h) => `${v} failed`
+          // Unreadable logs (-1) must never win "fewest failures".
+          extract: h => (h.failed_logins_count < 0 ? Number.MAX_SAFE_INTEGER : (h.failed_logins_count || 0)),
+          format: (v, h) => (v === Number.MAX_SAFE_INTEGER ? 'N/A' : `${v} failed`)
         },
         {
           id: 'net_egress_status',

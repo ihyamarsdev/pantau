@@ -39,12 +39,22 @@ Sebelum arsitektur ini diterapkan, Pantau belum memiliki visibilitas terpadu men
      - `dnf` / `yum`: Memeriksa mtime direktori `/var/cache/dnf` atau `/var/cache/yum`.
      - Jika usia cache lebih dari 168 jam (7 hari), sistem menambahkan catatan: `"package metadata is N days old; results may miss recent advisories"` dan menurunkan status keseluruhan pemindaian menjadi `partial`.
 
-4. **Empat Pemeriksaan Hardening Pasif (Read-Only)**:
+4. **Pemeriksaan Hardening Pasif (Read-Only)** (semula empat; diperluas menjadi 8 lintas-OS + 4 khusus Linux):
    - Evaluasi menghasilkan status `pass`, `warn`, `fail`, atau `unknown`. Sebuah check hanya boleh `pass` bila kondisi yang benar-benar berlaku terverifikasi; keberadaan berkas atau aturan saja tidak cukup.
      1. `sshd_permit_root_login`: Sumber utama adalah konfigurasi efektif `sshd -G` (OpenSSH ≥ 9.3, tanpa root) atau `sshd -T` (root/sudo), yang sudah menerapkan `Include`, `Match`, dan default bawaan build distro. Bila keduanya gagal, berkas `/etc/ssh/sshd_config` dibaca dengan `Include` disisipkan di baris tempatnya berada (drop-in yang di-include di atas mengalahkan berkas utama; drop-in yang tidak di-include diabaikan), *first-match-wins*, dan blok `Match` dilewati. `no`/`prohibit-password`/`forced-commands-only` → `pass`, `yes` → `fail`. Bila tidak diatur, default upstream (`prohibit-password`) hanya dipakai untuk Debian/Ubuntu/Alpine/Arch/macOS; distro lain (RHEL/CentOS ≤ 8 ber-default `yes`) → `unknown`.
      2. `sshd_password_auth`: `PasswordAuthentication no` → `pass`, kecuali `UsePAM yes` dengan `KbdInteractiveAuthentication` (alias lama `ChallengeResponseAuthentication`) yang tidak `no`, karena prompt PAM keyboard-interactive tetap menerima kata sandi → `warn`. Nilai `yes` atau tidak diatur → `warn`.
      3. `auto_security_updates`: Debian/Ubuntu memakai nilai efektif `apt-config dump`: `pass` hanya bila `APT::Periodic::Unattended-Upgrade` bukan `0`, paket `unattended-upgrades` terpasang, dan `apt-daily-upgrade.timer` tidak `disabled`/`masked` (`Update-Package-Lists` saja tidak memasang apa pun → `warn`). RHEL: `dnf-automatic-install.timer` aktif → `pass`; `dnf-automatic.timer` / `yum-cron` aktif hanya `pass` bila `apply_updates = yes` di `/etc/dnf/automatic.conf` / `/etc/yum/yum-cron.conf` (default-nya hanya mengunduh → `warn`).
      4. `firewall_active`: `pass` bila ufw aktif, firewalld aktif, atau rantai input benar-benar memfilter: chain nft ber-hook `input` dengan `policy drop` atau aturan `drop`/`reject` tanpa syarat, atau rantai iptables `INPUT` dengan kebijakan `DROP` atau aturan `-j DROP|REJECT` tanpa syarat. Tabel/aturan buatan Docker, kube-proxy, atau fail2ban (kebijakan `accept`) menghasilkan `warn`. Jika aturan tidak dapat dibaca tanpa root, status `unknown` disertai rincian.
+     5. `sshd_empty_passwords`: `PermitEmptyPasswords yes` → `fail`, selain itu `pass` (default OpenSSH `no`).
+     6. `sshd_max_auth_tries`: `pass` bila `MaxAuthTries` ≤ 4 (CIS); lebih besar atau tidak diatur (default OpenSSH 6) → `warn`.
+     7. `sshd_x11_forwarding`: `X11Forwarding yes` → `warn`, selain itu `pass`.
+     8. `sshd_weak_crypto`: `Ciphers`/`MACs`/`KexAlgorithms` yang memuat CBC, 3DES, arcfour, blowfish, MD5, SHA-1, `-96`, atau `umac-64` → `warn`. Bila salah satu daftar tidak diatur di berkas (default bawaan build tidak terlihat) → `unknown`; `pass` hanya bila ketiga daftar terbaca (dari `sshd -G/-T` atau berkas) tanpa algoritma lemah.
+     9. Khusus Linux (seksi `===EXTRA_HARDENING===`, tanpa root):
+        - `mac_enforced`: SELinux enforcing (`/sys/fs/selinux/enforce`) atau AppArmor aktif (`/sys/module/apparmor/parameters/enabled`) → `pass`; permissive/tidak ada → `warn`.
+        - `kernel_sysctl`: dari `/proc/sys`: `kernel.randomize_va_space=2`, `kernel.kptr_restrict≥1`, `net.ipv4.tcp_syncookies=1`, `net.ipv4.conf.all.accept_redirects=0`, `net.ipv4.conf.all.accept_source_route=0`. Nilai menyimpang → `warn`; sebagian tak terbaca → `unknown`.
+        - `bruteforce_protection`: fail2ban, sshguard, atau crowdsec aktif (`systemctl is-active`, atau `pgrep` tanpa systemd) → `pass`; tidak ada → `warn`; tidak bisa diperiksa → `unknown`.
+        - `auditd_active`: auditd aktif → `pass`; tidak aktif → `warn`; tidak bisa diperiksa → `unknown`.
+        - Seksi tidak ada di keluaran → keempatnya `unknown`.
 
 5. **Prinsip Kejujuran Cakupan (*Honesty Rule / Honest Coverage*)**:
    - Pantau pantang menampilkan status "aman / hijau" palsu jika pemeriksaan tidak memiliki cakupan penuh.
