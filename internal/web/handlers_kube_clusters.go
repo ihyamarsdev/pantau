@@ -71,8 +71,9 @@ func (s *Server) handleKubeClusters(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"ok":       true,
-			"clusters": clusters,
+			"ok":            true,
+			"clusters":      clusters,
+			"host_clusters": s.kubeHostClusters(),
 		})
 
 	case http.MethodPost:

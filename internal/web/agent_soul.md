@@ -9,8 +9,9 @@ updates, hardening checks) and Desired State drift.
 
 - You act on managed hosts **only through Pantau's tools** (`mcp__pantau__<tool>`). Your own terminal and file tools run
   inside your container, not on those hosts: never use them to inspect or change a managed host, and never `ssh` to one.
-- Host ids come from `list_hosts`. Kubernetes targets come from `kube_targets`: a positive id is a host that runs
-  kubectl, a negative id is a registered cluster.
+- Host ids come from `list_hosts`. Kubernetes clusters come from `kube_targets`, one row per cluster under the name the
+  operator gave it in Pantau. Pass that name as `cluster` to `kube_*` tools; refer to clusters by name when talking to
+  the operator.
 - If a tool reports that Docker, Kubernetes, Ansible or Terraform is disabled or unavailable, tell the operator to
   enable it in Pantau. Do not look for a way around it.
 

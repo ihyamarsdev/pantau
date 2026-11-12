@@ -35,12 +35,13 @@ const (
 )
 
 var (
-	pTarget = map[string]interface{}{"type": "integer", "description": "Kubernetes target: a host id from list_hosts that runs kubectl, or the negative target_id of a cluster from kube_targets"}
-	pNS     = map[string]interface{}{"type": "string", "description": "Kubernetes namespace"}
-	pRunID  = map[string]interface{}{"type": "integer"}
-	pWS     = map[string]interface{}{"type": "integer", "description": "Terraform workspace id from tf_workspaces"}
-	pPB     = map[string]interface{}{"type": "integer", "description": "Ansible playbook id from ansible_playbooks"}
-	str     = map[string]interface{}{"type": "string"}
+	pTarget  = map[string]interface{}{"type": "integer", "description": "Fallback to cluster: target_id from kube_targets, or a host id from list_hosts that runs kubectl"}
+	pCluster = map[string]interface{}{"type": "string", "description": "Cluster name exactly as listed by kube_targets (case-insensitive)"}
+	pNS      = map[string]interface{}{"type": "string", "description": "Kubernetes namespace"}
+	pRunID   = map[string]interface{}{"type": "integer"}
+	pWS      = map[string]interface{}{"type": "integer", "description": "Terraform workspace id from tf_workspaces"}
+	pPB      = map[string]interface{}{"type": "integer", "description": "Ansible playbook id from ansible_playbooks"}
+	str      = map[string]interface{}{"type": "string"}
 )
 
 var infraTools = []agentTool{
@@ -55,20 +56,20 @@ var infraTools = []agentTool{
 		InputSchema: schema([]string{"host_id", "stack", "action"}, map[string]interface{}{"host_id": pHost, "stack": str, "action": map[string]interface{}{"type": "string", "enum": []string{"up", "start", "stop", "restart", "pull", "down", "recreate", "update"}}}), run: toolDockerStackAction},
 
 	// ---- Kubernetes
-	{Name: "kube_targets", Description: "Kubernetes targets: registered clusters (negative target_id) and hosts that run kubectl (their host id), with access mode (full, no-exec, read-only).",
+	{Name: "kube_targets", Description: "Kubernetes clusters by the name the operator gave them in Pantau (registered clusters and k3s/RKE2 clusters reached over SSH, one row each), with access mode (full, no-exec, read-only). Pass that name as cluster to the other kube_* tools.",
 		InputSchema: schema(nil, map[string]interface{}{}), run: toolKubeTargets},
 	{Name: "kube_get", Description: "List Kubernetes objects: what = nodes, namespaces, workloads, pods, services or events. namespace is optional (empty = all).",
-		InputSchema: schema([]string{"target_id", "what"}, map[string]interface{}{"target_id": pTarget, "what": map[string]interface{}{"type": "string", "enum": []string{"nodes", "namespaces", "workloads", "pods", "services", "events"}}, "namespace": pNS}), run: toolKubeGet},
+		InputSchema: schema([]string{"what"}, map[string]interface{}{"cluster": pCluster, "target_id": pTarget, "what": map[string]interface{}{"type": "string", "enum": []string{"nodes", "namespaces", "workloads", "pods", "services", "events"}}, "namespace": pNS}), run: toolKubeGet},
 	{Name: "kube_describe", Description: "kubectl describe for one object (secret-looking values masked).",
-		InputSchema: schema([]string{"target_id", "kind", "name"}, map[string]interface{}{"target_id": pTarget, "kind": map[string]interface{}{"type": "string", "description": "pod, deployment, node, service, ..."}, "namespace": pNS, "name": str}), run: toolKubeDescribe},
+		InputSchema: schema([]string{"kind", "name"}, map[string]interface{}{"cluster": pCluster, "target_id": pTarget, "kind": map[string]interface{}{"type": "string", "description": "pod, deployment, node, service, ..."}, "namespace": pNS, "name": str}), run: toolKubeDescribe},
 	{Name: "kube_logs", Description: "Last lines of a pod's logs.",
-		InputSchema: schema([]string{"target_id", "namespace", "pod"}, map[string]interface{}{"target_id": pTarget, "namespace": pNS, "pod": str, "container": str, "tail": map[string]interface{}{"type": "integer", "description": "lines, default 100"}}), run: toolKubeLogs},
+		InputSchema: schema([]string{"namespace", "pod"}, map[string]interface{}{"cluster": pCluster, "target_id": pTarget, "namespace": pNS, "pod": str, "container": str, "tail": map[string]interface{}{"type": "integer", "description": "lines, default 100"}}), run: toolKubeLogs},
 	{Name: "kube_diff", Description: "Preview what kubectl apply of a manifest would change (read-only).",
-		InputSchema: schema([]string{"target_id", "yaml"}, map[string]interface{}{"target_id": pTarget, "yaml": str}), run: toolKubeDiff},
+		InputSchema: schema([]string{"yaml"}, map[string]interface{}{"cluster": pCluster, "target_id": pTarget, "yaml": str}), run: toolKubeDiff},
 	{Name: "kube_action", Description: "scale (deployment/statefulset, needs replicas), restart (rollout restart of deployment/statefulset/daemonset), delete (kind pod only), cordon, uncordon, drain (node). Drain is high impact. Refused when the target is read-only. May wait for operator approval.", gate: gateRoutine,
-		InputSchema: schema([]string{"target_id", "op", "kind", "name"}, map[string]interface{}{"target_id": pTarget, "op": map[string]interface{}{"type": "string", "enum": []string{"scale", "restart", "delete", "cordon", "uncordon", "drain"}}, "kind": str, "namespace": pNS, "name": str, "replicas": map[string]interface{}{"type": "integer"}}), run: toolKubeAction},
+		InputSchema: schema([]string{"op", "kind", "name"}, map[string]interface{}{"cluster": pCluster, "target_id": pTarget, "op": map[string]interface{}{"type": "string", "enum": []string{"scale", "restart", "delete", "cordon", "uncordon", "drain"}}, "kind": str, "namespace": pNS, "name": str, "replicas": map[string]interface{}{"type": "integer"}}), run: toolKubeAction},
 	{Name: "kube_apply", Description: "kubectl apply a YAML manifest. Always waits for explicit operator approval, every time. Run kube_diff first. Refused when the target is read-only.", gate: gateInfra,
-		InputSchema: schema([]string{"target_id", "yaml"}, map[string]interface{}{"target_id": pTarget, "yaml": str}), run: toolKubeApply},
+		InputSchema: schema([]string{"yaml"}, map[string]interface{}{"cluster": pCluster, "target_id": pTarget, "yaml": str}), run: toolKubeApply},
 
 	// ---- Ansible
 	{Name: "ansible_playbooks", Description: "List Ansible playbooks, or with playbook_id show one (inline source, extra vars, survey).",
@@ -279,10 +280,39 @@ type kubeTarget struct {
 	Mode string // full | no-exec | read-only
 }
 
+// kubeTargetByName resolves a cluster by the display name the operator sees in Pantau.
+func (s *Server) kubeTargetByName(name string) (*kubeTarget, error) {
+	var found []kubeTarget
+	ext, err := s.db.ListKubeClusters()
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range ext {
+		if strings.EqualFold(c.Name, name) {
+			found = append(found, kubeTarget{-c.ID, c.Name, c.KubeMode})
+		}
+	}
+	for _, c := range s.kubeHostClusters() {
+		if strings.EqualFold(c.Name, name) {
+			found = append(found, kubeTarget{c.target().ID, c.Name, c.mode()})
+		}
+	}
+	switch len(found) {
+	case 1:
+		return &found[0], nil
+	case 0:
+		return nil, fmt.Errorf("no Kubernetes cluster named %q; see kube_targets", name)
+	}
+	return nil, fmt.Errorf("%d clusters are named %q; the operator must rename one in Pantau", len(found), name)
+}
+
 func (s *Server) kubeTargetOf(args map[string]interface{}) (*kubeTarget, error) {
+	if name := argStr(args, "cluster"); name != "" {
+		return s.kubeTargetByName(name)
+	}
 	id := argInt(args, "target_id")
 	if id == 0 {
-		return nil, fmt.Errorf("target_id is required (host id, or negative cluster target_id from kube_targets)")
+		return nil, fmt.Errorf("cluster (name from kube_targets) or target_id is required")
 	}
 	if inspector.IsKubeClusterTarget(id) {
 		c, err := s.db.GetKubeCluster(-id)
@@ -332,11 +362,8 @@ func toolKubeTargets(s *Server, _ *http.Request, _ map[string]interface{}) (stri
 	for _, c := range clusters {
 		out = append(out, row{-c.ID, c.Name, "cluster (" + c.Provider + ")", c.KubeMode})
 	}
-	hosts, _ := s.db.ListHosts()
-	for _, h := range hosts {
-		if h.KubeClusterID != "" {
-			out = append(out, row{h.ID, h.Name, "host with kubectl", h.KubeMode})
-		}
+	for _, c := range s.kubeHostClusters() {
+		out = append(out, row{c.target().ID, c.Name, fmt.Sprintf("k3s/rke2 cluster, %d node host(s)", len(c.Members)), c.mode()})
 	}
 	if len(out) == 0 {
 		return "no Kubernetes targets known; run Detect on a host in the Pantau Kubernetes tab or add a cluster", nil

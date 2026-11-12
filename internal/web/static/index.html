@@ -3917,7 +3917,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
             <button id="btnKubeAddCluster" class="btn btn-sm header-btn" onclick="openKubeClusterModal()" title="Add cluster" data-i18n-title="kube_ext_add_cluster" style="height:34px;display:inline-flex;align-items:center;gap:6px;">
               <svg class="icon icon-sm"><use href="#i-plus"/></svg> <span data-i18n="kube_ext_add_cluster">Add cluster</span>
             </button>
-            <button id="btnKubeEditCluster" class="btn btn-sm header-btn" onclick="openKubeClusterModal(selectedKubeHostId)" title="Edit cluster" data-i18n-title="kube_ext_edit" style="height:34px;display:none;align-items:center;gap:6px;">
+            <button id="btnKubeEditCluster" class="btn btn-sm header-btn" onclick="editKubeCurrentCluster()" title="Edit cluster" data-i18n-title="kube_ext_edit" style="height:34px;display:none;align-items:center;gap:6px;">
               <svg class="icon icon-sm"><use href="#i-pencil"/></svg> <span data-i18n="kube_ext_edit">Edit</span>
             </button>
             <button id="btnKubeDeleteCluster" class="btn btn-sm header-btn btn-danger" onclick="deleteKubeCluster(selectedKubeHostId)" title="Delete cluster" data-i18n-title="kube_ext_delete" style="height:34px;display:none;align-items:center;gap:6px;">
@@ -4543,6 +4543,30 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
     <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end; align-items: center;">
       <button type="button" class="btn btn-sm" onclick="closeModal('kubeClusterModal')" data-i18n="cancel">Cancel</button>
       <button type="button" class="btn btn-sm btn-primary" id="btnKubeClusterSubmit" onclick="submitKubeClusterModal()"><span id="btnKubeClusterSubmitText" data-i18n="kube_ext_btn_test_save">Test &amp; Save</span></button>
+    </div>
+  </div>
+</div>
+<!-- Kubernetes Host Cluster Rename Modal (Action Dialog) -->
+<div id="kubeHostClusterModal" class="modal">
+  <div class="modal-content modal-dialog" style="max-width: 460px;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <svg class="icon icon-sm text-accent"><use href="#i-pencil"/></svg>
+        <h3 style="font-size: var(--fs-md); margin: 0;" data-i18n="kube_host_cluster_edit_title">Rename cluster</h3>
+      </div>
+      <button class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('kubeHostClusterModal')" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px; padding: 16px 20px;">
+      <div class="dk-field">
+        <label for="kubeHostClusterName" data-i18n="kube_ext_name_label">Display Name</label>
+        <input type="text" id="kubeHostClusterName" class="form-input" maxlength="64" style="width: 100%; box-sizing: border-box;" onkeydown="if(event.key==='Enter'){event.preventDefault();submitKubeHostClusterModal();}" />
+        <div class="dk-hint" style="font-size: var(--fs-xs); color: var(--text-faint); margin-top: 3px;" data-i18n="kube_host_cluster_name_hint">Used in Pantau and by the AI Agent. Leave empty for the default name.</div>
+      </div>
+      <div id="kubeHostClusterError" role="alert" style="display: none; background: var(--danger-soft); border: 1px solid var(--danger-border); border-radius: var(--radius-sm); padding: 8px 12px; font-size: var(--fs-xs); color: var(--danger);"></div>
+    </div>
+    <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end; align-items: center;">
+      <button type="button" class="btn btn-sm" onclick="closeModal('kubeHostClusterModal')" data-i18n="cancel">Cancel</button>
+      <button type="button" class="btn btn-sm btn-primary" onclick="submitKubeHostClusterModal()" data-i18n="kube_ext_btn_save">Save</button>
     </div>
   </div>
 </div>
@@ -7879,6 +7903,8 @@ const I18N = {
     "kube_ext_kubeconfig_hint": "Paste kubeconfig content or click 'Load file'. In edit mode, leave empty to keep saved credentials.",
     "kube_ext_context_label": "Context",
     "kube_ext_name_label": "Display Name",
+    "kube_host_cluster_edit_title": "Rename cluster",
+    "kube_host_cluster_name_hint": "Used in Pantau and by the AI Agent. Leave empty for the default name.",
     "kube_ext_hint_title": "Credentials note",
     "kube_ext_hint_body": "Exec credential plugins (aws, gke-gcloud-auth-plugin, kubelogin) run on the Pantau server and need cloud credentials in its environment. File-path credentials and auth-provider are rejected; use inline data or an exec plugin.",
     "kube_ext_btn_test_save": "Test & Save",
@@ -9530,6 +9556,8 @@ const I18N = {
     "kube_ext_kubeconfig_hint": "Tempel isi kubeconfig atau klik 'Muat berkas'. Dalam mode edit, biarkan kosong untuk mempertahankan kredensial tersimpan.",
     "kube_ext_context_label": "Konteks",
     "kube_ext_name_label": "Nama Tampilan",
+    "kube_host_cluster_edit_title": "Ganti nama klaster",
+    "kube_host_cluster_name_hint": "Dipakai di Pantau dan oleh AI Agent. Kosongkan untuk memakai nama bawaan.",
     "kube_ext_hint_title": "Catatan kredensial",
     "kube_ext_hint_body": "Plugin kredensial exec (aws, gke-gcloud-auth-plugin, kubelogin) berjalan di server Pantau dan membutuhkan kredensial cloud di lingkungannya. Kredensial berupa path berkas dan auth-provider tidak didukung; gunakan data inline atau plugin exec.",
     "kube_ext_btn_test_save": "Uji & Simpan",
@@ -22890,6 +22918,11 @@ const kubeIsCluster = id => Number(id) < 0;
 function kubeApiBase(id = selectedKubeHostId) { return kubeIsCluster(id) ? `/api/kube/clusters/${-id}` : `/api/hosts/${id}/kube`; }
 function kubeWsParam(id = selectedKubeHostId) { return kubeIsCluster(id) ? `cluster_id=${-id}` : `host_id=${id}`; }
 let kubeClusters = [];
+let kubeHostClusters = []; // SSH-reached k3s/RKE2 clusters: {cluster_id, name, custom}
+function kubeHostClusterName(cid, fallback) {
+  const c = (kubeHostClusters || []).find(x => x.cluster_id === cid);
+  return c ? c.name : fallback;
+}
 function kubeProviderLabel(p) {
   const map = { eks: t('kube_ext_provider_eks', 'EKS'), gke: t('kube_ext_provider_gke', 'GKE'), aks: t('kube_ext_provider_aks', 'AKS'), generic: t('kube_ext_provider_generic', 'Generic') };
   return map[(p || '').toLowerCase()] || (p ? String(p).toUpperCase() : t('kube_ext_provider_generic', 'Generic'));
@@ -22900,11 +22933,14 @@ async function loadKubeClusters() {
     const data = await res.json();
     if (data && data.ok && Array.isArray(data.clusters)) {
       kubeClusters = data.clusters;
+      kubeHostClusters = Array.isArray(data.host_clusters) ? data.host_clusters : [];
     } else {
       kubeClusters = [];
+      kubeHostClusters = [];
     }
   } catch(e) {
     kubeClusters = [];
+    kubeHostClusters = [];
   }
   populateKubeHostSelect();
 }
@@ -22956,7 +22992,7 @@ function updateKubeModeChip() {
   const btnEdit = document.getElementById('btnKubeEditCluster');
   const btnDelete = document.getElementById('btnKubeDeleteCluster');
   const isExt = kubeIsCluster(selectedKubeHostId);
-  if (btnEdit) btnEdit.style.display = isExt ? 'inline-flex' : 'none';
+  if (btnEdit) btnEdit.style.display = (isExt || currentKubeHostClusterId()) ? 'inline-flex' : 'none';
   if (btnDelete) btnDelete.style.display = isExt ? 'inline-flex' : 'none';
 
   const chip = document.getElementById('kubeModeChip');
@@ -23022,7 +23058,7 @@ async function detectKubeClusters() {
     next();
   });
   await loadHosts();
-  populateKubeHostSelect();
+  await loadKubeClusters();
   if (btn) btn.disabled = false;
   showToast(t('kube_detect_complete', 'Cluster detection complete'), 'success');
 }
@@ -23100,8 +23136,7 @@ function updateKubeHostPickerBtn() {
     const cid = (h.kube_cluster_id || '').trim();
     if (cid) {
       const members = (allRawHosts || []).filter(x => (x.kube_cluster_id || '').trim() === cid);
-      const commonGroup = (members.length > 0 && members.every(m => m.group_name && m.group_name.trim() === members[0].group_name.trim())) ? members[0].group_name.trim() : '';
-      const clusterName = commonGroup || members[0]?.name || h.name;
+      const clusterName = kubeHostClusterName(cid, members[0]?.name || h.name);
       const combinedStatus = members.every(m => m.status === 'healthy') ? 'healthy' : (members.some(m => m.status === 'healthy' || m.status === 'degraded') ? 'degraded' : 'down');
       const countText = members.length + ' ' + (members.length === 1 ? t('kube_node_single', 'node') : t('kube_node_multi', 'nodes'));
       label.innerHTML = `<span class="status-dot ${combinedStatus}"></span> <span style="font-weight:600;">${escapeHtml(clusterName)}</span> <span class="badge" style="font-size:10px;padding:1px 6px;">${countText}</span>`;
@@ -23214,8 +23249,7 @@ function renderKubeHostPickerList() {
 
   const clusterItems = Object.keys(clusterMap).map(cid => {
     const members = clusterMap[cid];
-    const commonGroup = (members.length > 0 && members.every(m => m.group_name && m.group_name.trim() === members[0].group_name.trim())) ? members[0].group_name.trim() : '';
-    const clusterName = commonGroup || members[0].name;
+    const clusterName = kubeHostClusterName(cid, members[0].name);
     const combinedStatus = members.every(m => m.status === 'healthy') ? 'healthy' : (members.some(m => m.status === 'healthy' || m.status === 'degraded') ? 'degraded' : 'down');
     const matches = !q || clusterName.toLowerCase().includes(q) || members.some(m => (m.name || '').toLowerCase().includes(q) || (m.host || '').toLowerCase().includes(q));
     const isSelected = selectedKubeHostId && members.some(m => String(m.id) === String(selectedKubeHostId));
@@ -23289,6 +23323,7 @@ document.addEventListener('click', e => {
 async function onSelectKubeHost(hostId) {
   selectedKubeHostId = hostId ? parseInt(hostId, 10) : null;
   updateKubeHostPickerBtn();
+  updateKubeModeChip();
   renderKubeHostPickerList();
   const hostSel = document.getElementById('kubeHostSelect');
   if (hostSel) hostSel.value = selectedKubeHostId ? String(selectedKubeHostId) : '';
@@ -23315,8 +23350,11 @@ async function onSelectKubeHost(hostId) {
     updateKubeModeChip();
     if (!kubeIsCluster(selectedKubeHostId) && data.cluster && data.cluster.cluster_id) {
       const curH = (allRawHosts || []).find(x => x.id === selectedKubeHostId);
+      const isNewCid = curH && curH.kube_cluster_id !== data.cluster.cluster_id;
       if (curH) curH.kube_cluster_id = data.cluster.cluster_id;
+      if (isNewCid) await loadKubeClusters();
       updateKubeHostPickerBtn();
+      updateKubeModeChip();
     }
     if (!data.ok || !data.cluster) {
       if (noClusterEl) {
@@ -24711,6 +24749,54 @@ async function submitKubeClusterModal() {
   } finally {
     if (submitBtn) submitBtn.disabled = false;
     if (submitText) submitText.textContent = origBtnText;
+  }
+}
+
+function editKubeCurrentCluster() {
+  if (kubeIsCluster(selectedKubeHostId)) openKubeClusterModal(selectedKubeHostId);
+  else openKubeHostClusterModal();
+}
+
+function currentKubeHostClusterId() {
+  if (kubeIsCluster(selectedKubeHostId)) return '';
+  const h = (allRawHosts || []).find(x => String(x.id) === String(selectedKubeHostId));
+  return ((h && h.kube_cluster_id) || '').trim();
+}
+
+let kubeHostClusterEditId = '';
+function openKubeHostClusterModal() {
+  const cid = currentKubeHostClusterId();
+  if (!cid) return;
+  kubeHostClusterEditId = cid;
+  const c = (kubeHostClusters || []).find(x => x.cluster_id === cid);
+  const input = document.getElementById('kubeHostClusterName');
+  input.value = c && c.custom ? c.name : '';
+  document.getElementById('kubeHostClusterError').style.display = 'none';
+  openModal('kubeHostClusterModal');
+  setTimeout(() => input.focus(), 50);
+}
+
+async function submitKubeHostClusterModal() {
+  const errEl = document.getElementById('kubeHostClusterError');
+  errEl.style.display = 'none';
+  try {
+    const res = await fetch(`/api/kube/host-clusters/${encodeURIComponent(kubeHostClusterEditId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: document.getElementById('kubeHostClusterName').value.trim() })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      errEl.textContent = data.error || 'Failed to rename cluster';
+      errEl.style.display = 'block';
+      return;
+    }
+    closeModal('kubeHostClusterModal');
+    showToast(t('kube_ext_saved', 'Cluster saved successfully'), 'success');
+    await loadKubeClusters();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.style.display = 'block';
   }
 }
 

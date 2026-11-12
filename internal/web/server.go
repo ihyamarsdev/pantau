@@ -343,6 +343,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/kube/clusters/contexts", s.authMiddleware(s.handleKubeClustersContexts))
 	s.mux.HandleFunc("/api/kube/clusters", s.authMiddleware(s.handleKubeClusters))
 	s.mux.HandleFunc("/api/kube/clusters/", s.authMiddleware(s.handleKubeClusterRoute))
+	s.mux.HandleFunc("/api/kube/host-clusters/", s.authMiddleware(s.handleKubeHostCluster))
 	s.mux.HandleFunc("/api/cloudflare/accounts", s.authMiddleware(s.handleCloudflareAccounts))
 	s.mux.HandleFunc("/api/cloudflare/accounts/", s.authMiddleware(s.handleCloudflareAccountRoute))
 	s.mux.HandleFunc("/api/dockerhub/", s.authMiddleware(s.handleDockerHub))
