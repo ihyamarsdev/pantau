@@ -11,7 +11,7 @@ import (
 // SystemdService is one systemd service unit with its runtime and boot-time state.
 type SystemdService struct {
 	Name        string `json:"name"`
-	Load        string `json:"load"`    // loaded, not-found, masked, error
+	Load        string `json:"load"`    // loaded, not-found, masked, error; unloaded = a unit file systemd has not loaded
 	Active      string `json:"active"`  // active, inactive, failed, activating, deactivating, reloading
 	Sub         string `json:"sub"`     // running, exited, dead, failed, ...
 	Enabled     string `json:"enabled"` // enabled, disabled, static, masked, indirect, generated, alias, "" (unknown)
@@ -34,8 +34,8 @@ echo "` + systemdSectionFiles + `"
 systemctl list-unit-files --type=service --no-pager --no-legend 2>/dev/null
 `
 
-// ListSystemdServices returns every service unit known to systemd. supported is false when the host does not
-// run systemd.
+// ListSystemdServices returns every service unit known to systemd: the loaded ones and the installed unit files
+// that are not loaded. supported is false when the host does not run systemd.
 func (ins *Inspector) ListSystemdServices(hostID int64) (services []SystemdService, supported bool, err error) {
 	runner, err := ins.dockerRunner(hostID)
 	if err != nil {
@@ -60,8 +60,9 @@ func (ins *Inspector) ListSystemdServices(hostID int64) (services []SystemdServi
 
 var systemdTemplateInstanceRe = regexp.MustCompile(`^(.+@)[^.]+(\.service)$`)
 
-// parseSystemdServices merges `list-units` (runtime state) with `list-unit-files` (enabled state) and orders
-// problems first: failed, then activating, active, and finally inactive units.
+// parseSystemdServices merges `list-units` (runtime state) with `list-unit-files` (enabled state, and the units
+// that are installed but not loaded) and orders problems first: failed, then activating, active, and finally
+// inactive units.
 func parseSystemdServices(out string) ([]SystemdService, bool) {
 	if strings.Contains(out, systemdUnsupported) {
 		return []SystemdService{}, false
@@ -85,6 +86,7 @@ func parseSystemdServices(out string) ([]SystemdService, bool) {
 	}
 
 	services := []SystemdService{}
+	seen := map[string]bool{}
 	for _, line := range strings.Split(unitsPart, "\n") {
 		f := strings.Fields(line)
 		// Older systemd marks problem units with a leading bullet even with --plain.
@@ -107,6 +109,19 @@ func parseSystemdServices(out string) ([]SystemdService, bool) {
 			s.Enabled = enabled[m[1]+m[2]]
 		}
 		services = append(services, s)
+		seen[s.Name] = true
+	}
+	// list-units only knows units in memory: a stopped service that nothing pulls in exists as a unit file alone.
+	// A template (name@.service) cannot run without an instance, and an alias is a second name of a listed unit.
+	for name, st := range enabled {
+		if seen[name] || strings.Contains(name, "@.") || st == "alias" {
+			continue
+		}
+		load := "unloaded"
+		if strings.HasPrefix(st, "masked") {
+			load = "masked"
+		}
+		services = append(services, SystemdService{Name: name, Load: load, Active: "inactive", Sub: "dead", Enabled: st})
 	}
 
 	rank := func(s SystemdService) int {

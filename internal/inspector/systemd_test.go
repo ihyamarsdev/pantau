@@ -18,15 +18,19 @@ cron.service                      enabled         enabled
 getty@.service                    enabled         enabled
 apt-daily.service                 static          -
 docker.service                    enabled         enabled
+aicare-api.service                disabled        enabled
+aicare-old.service                masked          enabled
+dbus-org.freedesktop.login1.service alias         -
 `
 	services, supported := parseSystemdServices(out)
 	if !supported {
 		t.Fatal("expected supported=true")
 	}
-	if len(services) != 7 {
-		t.Fatalf("expected 7 services, got %d: %+v", len(services), services)
+	// The two aicare unit files are not loaded, so only list-unit-files knows them; the template and the alias stay out.
+	if len(services) != 9 {
+		t.Fatalf("expected 9 services, got %d: %+v", len(services), services)
 	}
-	wantOrder := []string{"backup.service", "docker.service", "cron.service", "getty@tty1.service", "ssh.service", "apt-daily.service", "ghost.service"}
+	wantOrder := []string{"backup.service", "docker.service", "cron.service", "getty@tty1.service", "ssh.service", "aicare-api.service", "aicare-old.service", "apt-daily.service", "ghost.service"}
 	for i, name := range wantOrder {
 		if services[i].Name != name {
 			t.Fatalf("position %d: expected %s, got %s (%+v)", i, name, services[i].Name, services)
@@ -44,6 +48,12 @@ docker.service                    enabled         enabled
 	}
 	if s := byName["apt-daily.service"]; s.Enabled != "static" {
 		t.Errorf("apt-daily.service enabled state = %q, want static", s.Enabled)
+	}
+	if s := byName["aicare-api.service"]; s.Load != "unloaded" || s.Active != "inactive" || s.Enabled != "disabled" {
+		t.Errorf("a unit file that is not loaded must be listed as inactive: %+v", s)
+	}
+	if s := byName["aicare-old.service"]; s.Load != "masked" {
+		t.Errorf("a masked unit file must not be offered for start: %+v", s)
 	}
 	if s := byName["ghost.service"]; s.Load != "not-found" || s.Enabled != "" {
 		t.Errorf("ghost.service parsed wrong: %+v", s)
