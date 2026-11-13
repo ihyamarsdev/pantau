@@ -638,6 +638,19 @@ func (d *DB) migrate() error {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+	CREATE TABLE IF NOT EXISTS git_repos (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+		url TEXT NOT NULL,
+		branch TEXT NOT NULL DEFAULT '',
+		group_name TEXT NOT NULL DEFAULT '',
+		dir TEXT NOT NULL UNIQUE,
+		auth TEXT NOT NULL DEFAULT 'none',
+		token TEXT NOT NULL DEFAULT '',
+		key_id INTEGER NOT NULL DEFAULT 0,
+		synced_at DATETIME,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
 	CREATE TABLE IF NOT EXISTS tf_cloud_accounts (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -771,6 +784,7 @@ func (d *DB) migrate() error {
 	_ = d.alterAddColumn("tf_workspaces", "cloud_account_ids", "TEXT NOT NULL DEFAULT '[]'")
 	_ = d.alterAddColumn("tf_workspaces", "plan_interval_minutes", "INTEGER NOT NULL DEFAULT 0")
 	_ = d.alterAddColumn("tf_workspaces", "auto_apply", "INTEGER NOT NULL DEFAULT 0")
+	_ = d.alterAddColumn("git_repos", "group_name", "TEXT NOT NULL DEFAULT ''")
 	if err := d.migrateAnsibleBundles(); err != nil {
 		return fmt.Errorf("migrate ansible bundles: %w", err)
 	}

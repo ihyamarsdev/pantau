@@ -1,0 +1,90 @@
+/* Repositories tab + Git editor modal — scoped under .rp*. */
+.rp { display: flex; flex-direction: column; gap: 16px; }
+.rp-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.rp-hint { font-size: var(--fs-xs); color: var(--text-muted); max-width: 70ch; }
+.rp-folder { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-xs); color: var(--text-muted); }
+.rp-folder .mono { color: var(--text); overflow-wrap: anywhere; }
+.rp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(380px, 100%), 1fr)); gap: 16px; align-items: start; }
+.rp-card { display: flex; flex-direction: column; gap: 10px; padding: 16px; min-width: 0; }
+.rp-name { font-size: var(--fs-md); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-url { font-size: var(--fs-xs); color: var(--text-muted); overflow-wrap: anywhere; }
+.rp-badges { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.rp-meta { font-size: var(--fs-xs); color: var(--text-muted); }
+.rp-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.rp-actions [data-rp-del] { margin-left: auto; }
+.rp-actions .spinner { display: inline-flex; }
+.rp-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding: 48px 16px; color: var(--text-muted); border: 1px dashed var(--card-border); border-radius: var(--radius-lg); }
+.rp-empty .icon { width: 32px; height: 32px; color: var(--text-faint); }
+.rp-empty-title { font-size: var(--fs-md); font-weight: 600; color: var(--text); }
+.rp-empty-desc { font-size: var(--fs-xs); max-width: 60ch; }
+
+/* Git editor (Workspace Modal) */
+#repoModal .modal-workspace { display: flex; flex-direction: column; overflow: hidden; }
+.rp-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 18px; background: var(--surface-2); border-bottom: 1px solid var(--card-border); flex-shrink: 0; }
+.rp-head h3 { margin: 0; font-size: var(--fs-md); }
+.rp-gap { flex: 1; }
+.rp-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.rp-tools .spinner { display: inline-flex; }
+.rp-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); }
+.rp-side { display: flex; flex-direction: column; gap: 8px; min-height: 0; min-width: 0; overflow: hidden; padding: 10px; border-right: 1px solid var(--card-border); }
+.rp-add { display: flex; gap: 6px; }
+.rp-add .form-input { flex: 1; min-width: 0; }
+/* The sidebar is a column: flex:1 here would stretch the filter over the whole height. */
+.rp-add .form-input, .rp-filter { box-sizing: border-box; height: 30px; padding: 0 8px; font-family: var(--font-mono); font-size: var(--fs-xs); }
+.rp-filter { flex: none; width: 100%; min-width: 0; }
+.rp-add button { flex: none; }
+.rp-tree { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 1px; }
+.rp-row { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 4px 8px; background: transparent; border: 0; border-radius: var(--radius-sm); color: var(--text); font: inherit; font-size: var(--fs-xs); font-family: var(--font-mono); cursor: pointer; text-align: left; width: 100%; }
+.rp-row:hover { background: var(--surface-2); }
+.rp-row.active { background: var(--surface-3); font-weight: 600; }
+.rp-row .rp-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.rp-row.deleted .rp-n { text-decoration: line-through; color: var(--text-muted); }
+.rp-kids { margin-left: 12px; border-left: 1px solid var(--card-border); }
+.rp-mark { flex: none; font-size: var(--fs-xs); font-weight: 700; }
+.rp-mark.new { color: var(--success, #34d399); }
+.rp-mark.modified { color: var(--warning); }
+.rp-mark.deleted { color: var(--danger); }
+.rp-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
+.rp-trunc { font-size: var(--fs-xs); color: var(--warning); }
+.rp-main { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; padding: 10px; }
+.rp-fbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rp-fname { font-size: var(--fs-sm); font-weight: 600; overflow-wrap: anywhere; }
+.rp-edbox { flex: 1; min-height: 0; border: 1px solid var(--card-border); border-radius: var(--radius); overflow: hidden; }
+.rp-edbox .CodeMirror { height: 100%; font-family: var(--font-mono); font-size: var(--fs-xs); }
+.rp-note { padding: 24px; text-align: center; color: var(--text-muted); font-size: var(--fs-xs); }
+.rp-changes { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow: auto; padding: 8px 10px; border: 1px solid var(--card-border); border-radius: var(--radius-sm); background: var(--code-bg); }
+.rp-changes label { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); font-family: var(--font-mono); cursor: pointer; }
+@media (max-width: 900px) { .rp-body { grid-template-columns: 1fr; grid-template-rows: 200px minmax(0, 1fr); } .rp-side { border-right: 0; border-bottom: 1px solid var(--card-border); } }
+
+/* Clone progress */
+.rp-prog { display: flex; flex-direction: column; gap: 10px; }
+.rp-prog-head { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.rp-prog-head .spinner { display: inline-flex; }
+.rp-log { margin: 0; height: 260px; overflow: auto; padding: 10px 12px; background: var(--code-bg); border: 1px solid var(--card-border); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: var(--fs-xs); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.rp-dir { color: var(--text-muted); font-weight: 400; }
+.rp-row { min-width: 0; }
+
+/* Token colors the shared vscode-dark theme leaves out (markdown, diff, toml/ini, dockerfile, sql, go, python). */
+#repoModal .cm-s-vscode-dark span.cm-builtin { color: #f0abfc !important; }
+#repoModal .cm-s-vscode-dark span.cm-meta { color: #94a3b8 !important; }
+#repoModal .cm-s-vscode-dark span.cm-type { color: #5eead4 !important; }
+#repoModal .cm-s-vscode-dark span.cm-bracket { color: #cbd5e1 !important; }
+#repoModal .cm-s-vscode-dark span.cm-header { color: #818cf8 !important; font-weight: 700; }
+#repoModal .cm-s-vscode-dark span.cm-quote { color: #94a3b8 !important; font-style: italic; }
+#repoModal .cm-s-vscode-dark span.cm-link { color: #38bdf8 !important; text-decoration: underline; }
+#repoModal .cm-s-vscode-dark span.cm-url { color: #38bdf8 !important; }
+#repoModal .cm-s-vscode-dark span.cm-hr { color: #6b7280 !important; }
+#repoModal .cm-s-vscode-dark span.cm-positive { color: #34d399 !important; }
+#repoModal .cm-s-vscode-dark span.cm-negative { color: #f87171 !important; }
+#repoModal .cm-s-vscode-dark span.cm-error { color: #f87171 !important; }
+#repoModal .cm-s-vscode-dark span.cm-strong { font-weight: 700; }
+#repoModal .cm-s-vscode-dark span.cm-em { font-style: italic; }
+
+/* Folders (groups) */
+.rp-bar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rp-filter-sel { width: auto; min-width: 150px; height: 30px; padding: 0 8px; font-size: var(--fs-xs); }
+.rp-group { display: flex; flex-direction: column; gap: 12px; }
+.rp-group-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 4px; background: transparent; border: 0; border-bottom: 1px solid var(--card-border); color: var(--text); font: inherit; cursor: pointer; text-align: left; }
+.rp-group-head:hover { background: var(--surface-2); }
+.rp-group-name { font-weight: 600; font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

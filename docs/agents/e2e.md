@@ -15,6 +15,8 @@ e2e/
 │   ├── kube-workspaces.e2e.ts # Kubernetes: saved workspace cards, open/back, reload (kube API stubbed with browser.route)
 │   ├── terraform.e2e.ts # Terraform drawer: gate, workspace, runs, tabs
 │   ├── terraform-edit.e2e.ts # Configuration/Settings tabs: in-place editing, unsaved-changes guard
+│   ├── repos.e2e.ts # Repositories section: clone validation + folder setting (real server), editor save/commit/push (repos API stubbed with browser.route)
+│   ├── hosts-import.e2e.ts # Import hosts dialog sends the chosen SSH key (key library and import API stubbed with browser.route)
 │   └── terraform-helpers.ts  # shared Terraform workspace/runner helpers
 └── package.json
 ```

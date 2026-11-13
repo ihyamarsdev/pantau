@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="/vendor/nord.min.css" />
 <link rel="stylesheet" href="/app/ansible.css" />
 <link rel="stylesheet" href="/app/terraform.css" />
+<link rel="stylesheet" href="/app/repos.css" />
 <link rel="stylesheet" href="/app/dockerhub.css" />
 <link rel="stylesheet" href="/app/vulnintel.css" />
 <link rel="stylesheet" href="/app/palette.css" />
@@ -3684,6 +3685,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 <symbol id="i-timer" viewBox="0 0 24 24"><line x1="10" x2="14" y1="2" y2="2" /><line x1="12" x2="15" y1="14" y2="11" /><circle cx="12" cy="14" r="8" /></symbol>
 <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z" /><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12" /><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17" /></symbol>
 <symbol id="i-boxes" viewBox="0 0 24 24"><path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z" /><path d="m7 16.5-4.74-2.85" /><path d="m7 16.5 5-3" /><path d="M7 16.5v5.17" /><path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z" /><path d="m17 16.5-5-3" /><path d="m17 16.5 4.74-2.85" /><path d="M17 16.5v5.17" /><path d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z" /><path d="M12 8 7.26 5.15" /><path d="m12 8 4.74-2.85" /><path d="M12 13.5V8" /></symbol>
+<symbol id="i-git-branch" viewBox="0 0 24 24"><line x1="6" x2="6" y1="3" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></symbol>
 <symbol id="i-git-compare" viewBox="0 0 24 24"><circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M13 6h3a2 2 0 0 1 2 2v7" /><path d="M11 18H8a2 2 0 0 1-2-2V9" /></symbol>
 <symbol id="i-panel-bottom-open" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" /><path d="M3 15h18" /><path d="m9 10 3-3 3 3" /></symbol>
 <symbol id="i-panel-top" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" /><path d="M3 9h18" /></symbol>
@@ -3811,6 +3813,10 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
       <button type="button" class="side-panel-item" id="navItemTerraform" onclick="switchSideNav('terraform')" role="tab" aria-selected="false" title="Terraform" data-i18n-title="nav_terraform">
         <svg class="icon"><use href="#i-terraform"/></svg>
         <span class="side-panel-label" data-i18n="nav_terraform">Terraform</span>
+      </button>
+      <button type="button" class="side-panel-item" id="navItemRepos" onclick="switchSideNav('repos')" role="tab" aria-selected="false" title="Repositories" data-i18n-title="nav_repos">
+        <svg class="icon"><use href="#i-git-branch"/></svg>
+        <span class="side-panel-label" data-i18n="nav_repos">Repositories</span>
       </button>
     </div>
     <div class="side-panel-footer">
@@ -4052,6 +4058,20 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
       </div>
     </div>
     <div id="sectionAnsible" class="app-section" style="display:none;"></div>
+    <div id="sectionRepos" class="app-section" style="display:none;">
+      <div class="section-header" style="margin-bottom:20px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <div>
+            <h2 style="margin:0 0 4px 0;font-size:var(--fs-xl);font-weight:600;" data-i18n="rp_section_title">Repositories</h2>
+            <p style="margin:0;color:var(--text-muted);font-size:var(--fs-sm);" data-i18n="rp_section_desc">Git repositories cloned on this server: browse, edit, commit and push.</p>
+          </div>
+          <button type="button" class="btn btn-sm header-btn" onclick="Repos.refresh()" title="Refresh" data-i18n-title="refresh" style="height:34px;display:inline-flex;align-items:center;gap:6px;">
+            <svg class="icon icon-sm"><use href="#i-refresh-cw"/></svg> <span data-i18n="refresh">Refresh</span>
+          </button>
+        </div>
+      </div>
+      <div id="reposRoot"></div>
+    </div>
     <div id="sectionTerraform" class="app-section" style="display:none;">
       <div class="section-header" style="margin-bottom:20px;position:relative;z-index:20;">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
@@ -4640,6 +4660,29 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
   </aside>
 </div>
 
+<!-- Repositories: Git editor (Workspace Modal) and action dialog -->
+<div id="repoModal" class="modal">
+  <div class="modal-content modal-workspace">
+    <div class="modal-header rp-head">
+      <svg class="icon icon-sm text-accent"><use href="#i-git-branch"/></svg>
+      <h3 id="rpTitle"></h3>
+      <div id="rpTools" class="rp-tools"></div>
+      <span class="rp-gap"></span>
+      <button type="button" class="btn btn-icon btn-sm btn-ghost" data-act="close" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+    </div>
+    <div id="rpBody" class="rp-body"></div>
+  </div>
+</div>
+<div id="repoDlg" class="modal">
+  <div id="repoDlgContent" class="modal-content modal-dialog" style="max-width: 560px;">
+    <div class="modal-header"><h3 id="repoDlgTitle" style="font-size: var(--fs-md); margin: 0;"></h3>
+      <button class="btn btn-icon btn-sm btn-ghost" onclick="Repos.dlgClose()" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button></div>
+    <div id="repoDlgBody" class="modal-body" style="padding: 16px 20px; overflow: auto;"></div>
+    <div id="repoDlgErr" role="alert" style="display: none; margin: 0 20px 12px; background: var(--danger-soft); border: 1px solid var(--danger-border); border-radius: var(--radius-sm); padding: 8px 12px; font-size: var(--fs-xs); color: var(--danger); white-space: pre-wrap; word-break: break-all;"></div>
+    <div id="repoDlgFooter" class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end; align-items: center;"></div>
+  </div>
+</div>
+
 <!-- Terraform Action Dialogs (level 1 and stacked level 2) -->
 <div id="tfDlg1" class="modal">
   <div id="tfDlg1Content" class="modal-content modal-dialog" style="max-width: 560px;">
@@ -5086,6 +5129,11 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
               </thead>
               <tbody id="importPreviewBody"></tbody>
             </table>
+          </div>
+          <div class="form-group" style="margin: 0;">
+            <label class="form-label" for="importKeyId" data-i18n="import_key_label">SSH key for the imported hosts</label>
+            <select id="importKeyId"><option value="0" data-i18n="ssh_key_global">Global key (default)</option></select>
+            <span class="form-hint" data-i18n="import_key_hint">Pantau does not read the IdentityFile lines of your ssh config. Pick the key these hosts accept (from the SSH Key Library); with the global key, a host that needs its own key is marked down at its first inspection. Change it later per host with Edit.</span>
           </div>
           <div style="display: flex; justify-content: flex-end; gap: 10px;">
             <button class="btn btn-ghost" onclick="closeModal('importHostsModal')" data-i18n="cancel">Cancel</button>
@@ -6602,6 +6650,17 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 <script src="/vendor/mode/php.min.js"></script>
 <script src="/vendor/mode/shell.min.js"></script>
 <script src="/vendor/mode/yaml.min.js"></script>
+<script src="/vendor/mode/meta.min.js"></script>
+<script src="/vendor/mode/simple.min.js"></script>
+<script src="/vendor/mode/markdown.min.js"></script>
+<script src="/vendor/mode/python.min.js"></script>
+<script src="/vendor/mode/go.min.js"></script>
+<script src="/vendor/mode/toml.min.js"></script>
+<script src="/vendor/mode/properties.min.js"></script>
+<script src="/vendor/mode/dockerfile.min.js"></script>
+<script src="/vendor/mode/nginx.min.js"></script>
+<script src="/vendor/mode/sql.min.js"></script>
+<script src="/vendor/mode/diff.min.js"></script>
 
 <script>
 function svgIcon(name, cls) { return '<svg class="icon' + (cls ? ' ' + cls : '') + '" aria-hidden="true"><use href="#i-' + name + '"/></svg>'; }
@@ -6705,7 +6764,9 @@ const I18N = {
     "import_dup_exists": "Already in Pantau as \"{name}\"",
     "import_dup_file": "Same server as \"{name}\" above",
     "import_invalid": "Invalid entry",
-    "import_identity_note": "Has its own key in ssh config; Pantau uses the global key",
+    "import_identity_note": "Has its own key in ssh config; choose that key below (Pantau does not read IdentityFile)",
+    "import_key_label": "SSH key for the imported hosts",
+    "import_key_hint": "Pantau does not read the IdentityFile lines of your ssh config. Pick the key these hosts accept (from the SSH Key Library); with the global key, a host that needs its own key is marked down at its first inspection. Change it later per host with Edit.",
     "import_empty": "Paste or load an SSH config first",
     "import_none_found": "No importable hosts found",
     "import_nothing_selected": "Select at least one host",
@@ -8145,6 +8206,9 @@ const I18N = {
     "cf_manage_zone": "Manage Zone",
     "nav_ansible": "Ansible",
     "nav_terraform": "Terraform",
+    "nav_repos": "Repositories",
+    "rp_section_title": "Repositories",
+    "rp_section_desc": "Git repositories cloned on this server: browse, edit, commit and push.",
     "tf_section_title": "Terraform Management",
     "tf_section_desc": "Manage workspaces, state versions, runs, variables, modules, and drift detection.",
     "tf_tab_workspaces": "Workspaces",
@@ -8362,7 +8426,9 @@ const I18N = {
     "import_dup_exists": "Sudah ada di Pantau sebagai \"{name}\"",
     "import_dup_file": "Server sama dengan \"{name}\" di atas",
     "import_invalid": "Entri tidak valid",
-    "import_identity_note": "Punya key sendiri di ssh config; Pantau memakai key global",
+    "import_identity_note": "Punya key sendiri di ssh config; pilih key itu di bawah (Pantau tidak membaca IdentityFile)",
+    "import_key_label": "Key SSH untuk host yang diimpor",
+    "import_key_hint": "Pantau tidak membaca baris IdentityFile di ssh config Anda. Pilih key yang diterima host ini (dari SSH Key Library); dengan key global, host yang butuh key sendiri ditandai down pada inspeksi pertamanya. Ubah nanti per host lewat Edit.",
     "import_empty": "Tempel atau muat SSH config terlebih dahulu",
     "import_none_found": "Tidak ada host yang bisa diimpor",
     "import_nothing_selected": "Pilih minimal satu host",
@@ -9802,6 +9868,9 @@ const I18N = {
     "cf_manage_zone": "Kelola Zone",
     "nav_ansible": "Ansible",
     "nav_terraform": "Terraform",
+    "nav_repos": "Repositori",
+    "rp_section_title": "Repositori",
+    "rp_section_desc": "Repositori Git yang di-clone di server ini: jelajahi, sunting, commit, dan push.",
     "tf_section_title": "Terraform Management",
     "tf_section_desc": "Kelola workspace, state version, run, variabel, modul, dan deteksi drift.",
     "tf_tab_workspaces": "Workspace",
@@ -11647,7 +11716,40 @@ function importReadServer() {
   importRequestPreview({ source: 'server' });
 }
 
+// Key choice for the whole import: the global key, or one of the SSH Key Library (kept while the list refreshes).
+async function populateImportKeySelect() {
+  const sel = document.getElementById('importKeyId');
+  if (!sel) return;
+  const render = (keys) => {
+    const cur = sel.value || '0';
+    sel.innerHTML = `<option value="0">${escapeHtml(t('ssh_key_global', 'Global key (default)'))}</option>` +
+      (keys || []).map(k => `<option value="${Number(k.id)}">${escapeHtml(k.name)}</option>`).join('');
+    sel.value = Array.from(sel.options).some(o => o.value === cur) ? cur : '0';
+  };
+  render(cachedSSHKeys);
+  try {
+    const res = await fetch('/api/ssh-keys');
+    if (res.ok) { cachedSSHKeys = await res.json() || []; render(cachedSSHKeys); }
+  } catch (err) {
+    console.error('Failed to load ssh keys for import:', err);
+  }
+}
+
+// A new host stays "unknown" until its first inspection; run it now (3 at a time, no toasts) so the import shows the real state.
+async function importInspectCreated(hosts) {
+  const queue = hosts.map(h => h.id);
+  const worker = async () => {
+    while (queue.length) {
+      const id = queue.shift();
+      try { await fetch('/api/hosts/' + id + '/inspect', { method: 'POST' }); } catch (e) { /* the inspection run records the failure */ }
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  loadHosts();
+}
+
 function renderImportPreview(data) {
+  populateImportKeySelect();
   importEntries = data.entries || [];
   const warns = data.warnings || [];
   const warnEl = document.getElementById('importWarnings');
@@ -11718,11 +11820,12 @@ async function importSubmit() {
     const res = await fetch('/api/hosts/import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hosts })
+      body: JSON.stringify({ hosts, key_id: parseInt(document.getElementById('importKeyId').value, 10) || 0 })
     });
     const data = await res.json().catch(() => ({}));
     importedHosts = data.created || [];
     if (importedHosts.length) await loadHosts();
+    if (importedHosts.length) importInspectCreated(importedHosts);
     if (!res.ok) {
       showToast(t('import_failed', 'Import failed: ') + (data.error || res.status), 'error');
       // Hosts created before the failure still need their groups.
@@ -19296,7 +19399,7 @@ async function loadTransfers() {
           <div class="transfer-job-header">
             <div style="display: flex; align-items: center; gap: 8px;">
               <span style="font-weight: 600; font-size: var(--fs-sm);">${t('job')} #${j.id}</span>
-              <span class="badge badge-subtle" style="display: inline-flex; align-items: center; gap: 4px;">${j.kind === 's3' ? svgIcon('cloud', 'icon-xs') + ' <span>S3</span>' : j.mode === 'verified' ? svgIcon('shield-check', 'icon-xs') + ' <span>Verified</span>' : svgIcon('zap', 'icon-xs') + ' <span>Fast Stream</span>'}</span>
+              <span class="badge badge-subtle" style="display: inline-flex; align-items: center; gap: 4px;">${j.kind === 's3' ? svgIcon('cloud', 'icon-xs') + ' <span>S3</span>' : j.kind === 'repo' ? svgIcon('git-branch', 'icon-xs') + ' <span>Repository</span>' : j.mode === 'verified' ? svgIcon('shield-check', 'icon-xs') + ' <span>Verified</span>' : svgIcon('zap', 'icon-xs') + ' <span>Fast Stream</span>'}</span>
               <span class="badge ${statusBadgeCls}">${escapeHtml(j.status)}</span>
             </div>
             <div>
@@ -19315,6 +19418,7 @@ async function loadTransfers() {
             <span>${t('transferred')} <b class="mono">${transferredStr}</b>${totalStr ? ' / <span class="mono">' + totalStr + '</span> (' + pct + '%)' : ''}</span>
             <span style="display:inline-flex;align-items:center;gap:6px;">${speedStr ? svgIcon('zap', 'icon-xs') + ' <span class="mono">' + speedStr + '</span>' : ''} ${etaStr ? '<span class="mono">ETA: ' + etaStr + '</span>' : ''}</span>
           </div>
+          ${j.note ? '<div style="margin-top: 6px; font-size: var(--fs-xs); color: var(--text-muted);">' + escapeHtml(j.note) + '</div>' : ''}
           ${j.error ? '<div class="sec-banner sec-banner-danger" style="margin-top: 8px; padding: 6px 10px; font-size: var(--fs-xs); display: flex; align-items: center; gap: 6px;"><svg class="icon icon-sm" style="color:var(--danger);"><use href="#i-circle-alert"/></svg> <span>' + escapeHtml(j.error) + '</span></div>' : ''}
         </div>
       `;
@@ -22894,6 +22998,8 @@ function switchSideNav(section) {
   if (secAns) secAns.style.display = section === 'ansible' ? 'block' : 'none';
   const secTf = document.getElementById('sectionTerraform');
   if (secTf) secTf.style.display = section === 'terraform' ? 'block' : 'none';
+  const secRepos = document.getElementById('sectionRepos');
+  if (secRepos) secRepos.style.display = section === 'repos' ? 'block' : 'none';
   toggleSidePanelMobile(false);
   if (section !== 'kube') stopKubeAutorefresh();
   if (section === 'docker') renderDockerSection();
@@ -22901,6 +23007,7 @@ function switchSideNav(section) {
   else if (section === 'cloudflare') { loadCfAccounts(); }
   else if (section === 'ansible') { refreshAnsibleSection(); }
   else if (section === 'terraform') { refreshTfSection(); }
+  else if (section === 'repos') { if (window.Repos) Repos.refresh(); }
 }
 function updateSideNavData() {
   if (currentSideNav === 'docker') renderDockerSection();
@@ -27800,6 +27907,7 @@ langRerenderHooks.push(renderTfWorkspaces, tfRenderWsHead, () => {
 });
 </script>
 <script src="/app/terraform.js"></script>
+<script src="/app/repos.js"></script>
 <script src="/app/ansible.js"></script>
 <script src="/app/firewall.js"></script>
 <script src="/app/dockerhub.js"></script>

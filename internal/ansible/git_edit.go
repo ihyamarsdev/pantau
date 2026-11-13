@@ -200,31 +200,37 @@ func readRepoFile(ctx context.Context, g GitSource, relPath string, protocols st
 		return "", "", sanitizeGitError(err, log.String(), g.URL)
 	}
 
-	fullPath := filepath.Join(repo, filepath.FromSlash(relPath))
-	if err := checkNoSymlinks(repo, relPath); err != nil {
+	data, err := readTextFile(repo, relPath)
+	if err != nil {
 		return "", "", err
 	}
+	return data, sha, nil
+}
 
+// readTextFile reads a regular, non-symlink, <= 1 MiB UTF-8 file at relPath (already validated) inside repo.
+func readTextFile(repo, relPath string) (string, error) {
+	if err := checkNoSymlinks(repo, relPath); err != nil {
+		return "", err
+	}
+	fullPath := filepath.Join(repo, filepath.FromSlash(relPath))
 	fi, err := os.Lstat(fullPath)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 	if !fi.Mode().IsRegular() {
-		return "", "", invalidf("not a regular file")
+		return "", invalidf("not a regular file")
 	}
 	if fi.Size() > maxFileSize {
-		return "", "", tooLargef("file size %d exceeds 1 MiB limit", fi.Size())
+		return "", tooLargef("file size %d exceeds 1 MiB limit", fi.Size())
 	}
-
 	data, err := os.ReadFile(fullPath)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 	if bytes.IndexByte(data, 0) != -1 || !utf8.Valid(data) {
-		return "", "", ErrNotText
+		return "", ErrNotText
 	}
-
-	return string(data), sha, nil
+	return string(data), nil
 }
 
 // CommitAndPush validates spec, clones g, applies file changes, commits, and pushes to remote.
@@ -467,7 +473,8 @@ func checkNoSymlinks(root, relPath string) error {
 	return nil
 }
 
-func validateCommitSpec(spec *CommitSpec) error {
+// validateCommitMeta normalizes and checks message, author and new branch (shared with local-clone commits).
+func validateCommitMeta(spec *CommitSpec) error {
 	spec.Message = strings.TrimSpace(spec.Message)
 	if spec.Message == "" {
 		return invalidf("commit message is required")
@@ -498,7 +505,13 @@ func validateCommitSpec(spec *CommitSpec) error {
 			return invalidf("invalid new branch: %v", err)
 		}
 	}
+	return nil
+}
 
+func validateCommitSpec(spec *CommitSpec) error {
+	if err := validateCommitMeta(spec); err != nil {
+		return err
+	}
 	if len(spec.Changes) == 0 {
 		return ErrNothingToCommit
 	}

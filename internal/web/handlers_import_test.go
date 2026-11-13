@@ -271,3 +271,39 @@ func TestHostGroupsBulkAssignAndRollback(t *testing.T) {
 		t.Errorf("group should be cleared, got %q", hb.GroupName)
 	}
 }
+
+func TestImportCommitAppliesTheChosenLibraryKey(t *testing.T) {
+	e := newImportTestEnv(t)
+	keyID, err := e.db.CreateSSHKey(&store.SSHKey{Name: "deploy", PrivateKey: "PRIV", PublicKey: "ssh-ed25519 AAAA", Fingerprint: "SHA256:x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hosts := []map[string]interface{}{{"name": "a", "host": "10.1.0.1"}, {"name": "b", "host": "10.1.0.2"}}
+	w := e.do("POST", "/api/hosts/import", mustJSON(t, map[string]interface{}{"hosts": hosts, "key_id": keyID}), true)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+	list, _ := e.db.ListHosts()
+	if len(list) != 2 || list[0].KeyID != keyID || list[1].KeyID != keyID {
+		t.Fatalf("every imported host must use key %d: %+v", keyID, list)
+	}
+	if key, _ := e.db.ResolveHostPrivateKey(&list[0]); key != "PRIV" {
+		t.Errorf("inspection would use %q, want the chosen key", key)
+	}
+
+	// Without a choice the hosts keep using the global key; a bad choice creates nothing.
+	if w := e.do("POST", "/api/hosts/import", mustJSON(t, map[string]interface{}{"hosts": []map[string]interface{}{{"name": "c", "host": "10.1.0.3"}}}), true); w.Code != http.StatusOK {
+		t.Fatalf("no key: %d", w.Code)
+	}
+	for name, id := range map[string]int64{"unknown key": 9999, "negative": -1} {
+		w := e.do("POST", "/api/hosts/import", mustJSON(t, map[string]interface{}{"hosts": []map[string]interface{}{{"name": "d", "host": "10.1.0.4"}}, "key_id": id}), true)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("%s: got %d, want 400", name, w.Code)
+		}
+	}
+	list, _ = e.db.ListHosts()
+	if len(list) != 3 || list[2].Name != "c" || list[2].KeyID != 0 {
+		t.Errorf("hosts after the rejected imports: %+v", list)
+	}
+}

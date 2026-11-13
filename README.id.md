@@ -292,6 +292,10 @@ Pantau menginspeksi Host remote melalui perintah SSH non-interaktif, memvalidasi
 - **Terraform Gate & Perlindungan Snapshot**: Dilindungi saklar opt-in administrator (`terraform_enabled`). Konfigurasi workspace, variabel, variable set, policy, modul, dan state terbaru dicadangkan ke dalam System Snapshot terenkripsi.
 - **Pengelompokan Workspace**: Kelola workspace ke dalam bagian visual yang dapat dilipat dan filter berdasarkan grup memakai `group_name` teks bebas (dimodelkan dari Host Group, kosmetik murni, tersimpan di System Snapshot).
 
+### 32. 📁 Repositori (Folder Git ter-clone)
+- **Clone & Kelola**: Clone repositori Git lewat SSH (kunci dari SSH Key Library), token HTTPS, atau anonim ke folder di server Pantau (dapat diatur, bawaan `<data>/repos`). Setiap repositori punya subfolder dan kartu berisi branch, commit, perubahan tertunda, dan jumlah ahead/behind. Ini bagian tersendiri: tidak memerlukan gate Terraform atau Ansible.
+- **Jelajah, Sunting, Commit & Push**: Pohon berkas dengan filter dan penanda perubahan, editor CodeMirror (simpan ke clone dengan `Ctrl+S`, baru/hapus/buang), lalu **Commit & Push** berkas yang dicentang ke branch aktif atau branch baru, tanpa force. **Sync** hanya fast-forward branch aktif; push yang ditolak mempertahankan commit lokal untuk dicoba ulang. Kredensial bersifat write-only dan wajib berizin tulis di remote.
+
 ---
 
 ## 🚀 Panduan Memulai Cepat (Quick Start)

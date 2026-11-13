@@ -158,6 +158,7 @@ func (s *Server) handleHostImportCommit(w http.ResponseWriter, r *http.Request) 
 	r.Body = http.MaxBytesReader(w, r.Body, maxImportBody)
 	var req struct {
 		Hosts []importHostInput `json:"hosts"`
+		KeyID int64             `json:"key_id"` // SSH Key Library key for every imported host; 0 = the global key
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
@@ -166,6 +167,22 @@ func (s *Server) handleHostImportCommit(w http.ResponseWriter, r *http.Request) 
 	if len(req.Hosts) > maxImportHosts {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("too many hosts (max %d)", maxImportHosts)})
 		return
+	}
+
+	// ssh config IdentityFile paths are not read, so a host that logs in with its own key only works in Pantau when that
+	// key is chosen here; checked before anything is created.
+	if req.KeyID < 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid key_id"})
+		return
+	}
+	if req.KeyID > 0 {
+		if k, err := s.db.GetSSHKey(req.KeyID); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		} else if k == nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("ssh key %d not found", req.KeyID)})
+			return
+		}
 	}
 
 	// Duplicates are re-checked here: the preview may be stale or hand-edited.
@@ -179,10 +196,11 @@ func (s *Server) handleHostImportCommit(w http.ResponseWriter, r *http.Request) 
 	skipped := []importSkipped{}
 	for _, in := range req.Hosts {
 		h := store.Host{
-			Name: strings.TrimSpace(in.Name),
-			Host: strings.TrimSpace(in.Host),
-			Port: in.Port,
-			User: strings.TrimSpace(in.User),
+			Name:  strings.TrimSpace(in.Name),
+			Host:  strings.TrimSpace(in.Host),
+			Port:  in.Port,
+			User:  strings.TrimSpace(in.User),
+			KeyID: req.KeyID,
 		}
 		if h.Port == 0 {
 			h.Port = 22

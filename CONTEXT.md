@@ -724,6 +724,22 @@ _Avoid_: Save file, repo patch, sync commit
 Pengenal SHA commit repositori yang sedang dilihat pengguna saat membuka atau memuat ulang Git Editor; digunakan untuk validasi *optimistic concurrency* agar perubahan ditolak jika commit remote telah berganti (409 Conflict).
 _Avoid_: Parent commit, last commit, head commit
 
+**Cloned Repository**:
+Repositori Git yang di-clone penuh (SSH atau HTTPS) ke subfolder di **Repositories Folder** pada server Pantau dan dikelola dari bagian Repositories (navigasi utama): dijelajahi, diedit langsung di working tree, lalu di-commit dan di-push. Berbeda dari **Git Editor** yang clone dangkalnya sementara per request. Tanpa gate opt-in; kredensial (kunci SSH Library atau token) wajib berizin tulis untuk push.
+_Avoid_: Git sync, checkout, workspace source, repo mirror
+
+**Repository Folder**:
+Pengelompokan opsional untuk Cloned Repository (dimodelkan dari Workspace Group) yang juga direktori sungguhan `<Repositories Folder>/<folder>/<repo>`: daftar menampilkan satu bagian yang dapat dilipat per folder dengan jumlah repo; memindahkan repositori ke folder lain memindahkan direktorinya.
+_Avoid_: Repo group tag, project, subfolder label
+
+**Repositories Folder** (lokasi):
+Folder induk di server Pantau (pengaturan `repos_dir`, bawaan `<data>/repos`) tempat setiap Cloned Repository dibuat sebagai subfolder bernama repositori; mengubahnya hanya berlaku untuk clone baru.
+_Avoid_: Workspace folder, repo root, data dir
+
+**Repository Sync**:
+Aksi **Sync** pada Cloned Repository: `fetch` branch aktif lalu `merge --ff-only`; tidak pernah merge atau rebase, dan gagal bila riwayat lokal dan remote bercabang.
+_Avoid_: Git Sync (verifikasi playbook Ansible), pull
+
 **Local Port Forward**:
 Penerusan port TCP dari Host ke komputer operator (setara `ssh -L`): Pantau mendengarkan di port lokal dari rentang `-forward-ports` dan meneruskan setiap koneksi lewat channel SSH `direct-tcpip` ke `remote_host:remote_port` dilihat dari Host. Untuk klien non-browser (DBeaver, `psql`, `redis-cli`); hanya di memori, hilang saat Pantau restart.
 _Avoid_: Tunnel, Remote Web Port Tunnel, SSH proxy

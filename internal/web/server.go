@@ -119,6 +119,10 @@ type Server struct {
 	gitEditTree       func(ctx context.Context, g ansible.GitSource) (*ansible.RepoTree, error)
 	gitEditFile       func(ctx context.Context, g ansible.GitSource, path string) (string, string, error)
 	gitEditCommit     func(ctx context.Context, g ansible.GitSource, spec ansible.CommitSpec) (*ansible.CommitResult, error)
+	reposDir          string // default folder for new repository clones (<data>/repos); the repos_dir setting overrides it
+	gitProtocols      string // GIT_ALLOW_PROTOCOL for repository fetch/push; "" = https:ssh (tests: file)
+	repoClone         func(ctx context.Context, g ansible.GitSource, dir string, log io.Writer) (branch, sha string, err error)
+	repoJobs          repoJobSet
 }
 
 func (s *Server) prepareHTML(raw []byte) {
@@ -199,6 +203,9 @@ func (s *Server) SetTerraformRunManager(mgr *TerraformRunManager) {
 	s.wireTFEvents()
 }
 
+// SetReposDir sets the default folder new repository clones are created in.
+func (s *Server) SetReposDir(dir string) { s.reposDir = dir }
+
 func (s *Server) SetTerraformDataDir(dataDir string) {
 	if s.db != nil {
 		s.tfMgr = NewTerraformRunManager(s.db, dataDir, nil, nil)
@@ -237,6 +244,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/app/ansible.css", serveAppBundle("ansible", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/terraform.css", serveAppBundle("terraform", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/terraform.js", serveAppBundle("terraform", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/repos.js", serveAppBundle("repos", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/repos.css", serveAppBundle("repos", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/firewall.js", serveAppBundle("firewall", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/dockerhub.js", serveAppBundle("dockerhub", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/dockerhub.css", serveAppBundle("dockerhub", ".css", "text/css; charset=utf-8"))
@@ -372,6 +381,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/ansible/hosts/", s.authMiddleware(s.handleAnsibleHostFacts))
 	s.mux.HandleFunc("/api/ansible/explorer", s.authMiddleware(s.handleAnsibleExplorer))
 	// Terraform Management
+	s.mux.HandleFunc("/api/repos", s.authMiddleware(s.handleRepos))
+	s.mux.HandleFunc("/api/repos/", s.authMiddleware(s.handleRepoRoute))
 	s.mux.HandleFunc("/api/terraform/status", s.authMiddleware(s.handleTerraformStatus))
 	s.mux.HandleFunc("/api/terraform/templates", s.authMiddleware(s.handleTerraformTemplates))
 	s.mux.HandleFunc("/api/terraform/workspaces", s.authMiddleware(s.handleTerraformWorkspaces))

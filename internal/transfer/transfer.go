@@ -22,7 +22,8 @@ func shellQuote(s string) string {
 
 type TransferJob struct {
 	ID               int64      `json:"id"`
-	Kind             string     `json:"kind,omitempty"` // "" = host-to-host copy, "s3" = upload to S3
+	Kind             string     `json:"kind,omitempty"` // "" = host-to-host copy, "s3" = upload to S3, "repo" = repository copy to a host
+	Note             string     `json:"note,omitempty"` // non-fatal remark shown with the job (e.g. skipped symlinks)
 	SourceHostID     int64      `json:"source_host_id"`
 	SourceHostName   string     `json:"source_host_name"`
 	SourcePath       string     `json:"source_path"`

@@ -411,6 +411,7 @@ func main() {
 	server.SetUpdaterManager(updaterMgr)
 	server.SetAnsibleLibraryDir(filepath.Join(filepath.Dir(dbPath), "ansible-library"))
 	server.StartAnsibleScheduler(ctx)
+	server.SetReposDir(filepath.Join(filepath.Dir(dbPath), "repos"))
 	tfDataDir := filepath.Join(filepath.Dir(dbPath), "terraform")
 	server.SetTerraformDataDir(tfDataDir)
 	_, _ = db.MarkTFRunsInterrupted()

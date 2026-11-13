@@ -293,6 +293,10 @@ Pantau inspects remote hosts via non-interactive SSH commands, continuously vali
 - **Administrative Terraform Gate & Snapshot Safety**: Guarded by an explicit opt-in switch (`terraform_enabled`). Workspaces, variables, variable sets, policies, modules, and latest states are backed up inside encrypted System Snapshots.
 - **Workspace Grouping**: Organize workspaces into collapsible visual sections and filter them by group using a free-text `group_name` (modeled after Host Groups, cosmetic only, saved in System Snapshots).
 
+### 32. 📁 Repositories (Cloned Git Folders)
+- **Clone & Organize**: Clone Git repositories over SSH (key from the SSH Key Library), HTTPS token, or anonymously into a folder on the Pantau server (configurable, default `<data>/repos`). Each repository gets its own subfolder and a card with branch, commit, pending changes and ahead/behind counts. It is a separate section: no Terraform or Ansible gate is needed.
+- **Browse, Edit, Commit & Push**: A file tree with filter and change markers, a CodeMirror editor (save to the clone with `Ctrl+S`, new/delete/discard), then **Commit & Push** the files you tick to the current or a new branch, never with force. **Sync** only fast-forwards the current branch; a rejected push keeps the commit locally for a retry. Credentials are write-only and need write permission on the remote.
+
 ---
 
 ## 🤖 AI Agent (optional, Hermes Agent)
