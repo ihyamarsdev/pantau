@@ -120,7 +120,7 @@ When authenticating against a host for background inspection, interactive termin
 ### Organizing with Host Groups & Manual Host Order
 
 As your fleet grows:
-- **Host Group**: Categorize hosts by functional tiers or environments (e.g., `Database Cluster`, `Edge Proxies`, `Staging`). Groups render as distinct visual partitions in both Grid and List **View Mode**.
+- **Host Group**: Categorize hosts by functional tiers or environments (e.g., `Database Cluster`, `Edge Proxies`, `Staging`). Groups render as distinct visual partitions in both Grid and List **View Mode**. To rename a group, hover its header and click the pencil: the new name is applied to every host of the group at once (typing the name of another group, even with different letter case, merges into that group). Ansible schedules that target the group follow the new name; playbooks that name the group in `hosts:` do not and must be edited.
 - **Manual Host Order**: Click and drag or prioritize mission-critical hosts to the top of the dashboard.
 - **Host Note & Global Note**: Use **Host Note** for server-specific maintenance checklists (e.g., `"Primary PostgreSQL; failover standby is db-02"`). Use **Global Note** for cluster-wide operational announcements and shift handovers.
 - **Delete several hosts at once**: click **Select** in the dashboard toolbar, tick hosts (checkbox, a card's empty area, or a list row) or use **Select all shown** (it follows the current search, group and status filters), then **Delete selected**. Pantau asks once, listing the names, and removes the hosts with their rules, history and stored scan data; nothing changes on the servers. Hosts that could not be deleted stay selected so you can retry. **Done** leaves selection mode.

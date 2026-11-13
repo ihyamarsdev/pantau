@@ -1719,6 +1719,9 @@ header {
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+.host-group-edit { opacity: 0; transition: opacity .12s; }
+.host-group-divider:hover .host-group-edit, .host-list-group-row:hover .host-group-edit, .host-group-edit:focus-visible { opacity: 1; }
+@media (hover: none) { .host-group-edit { opacity: 1; } }
 .host-group-divider.collapsible {
   cursor: pointer;
   user-select: none;
@@ -5086,6 +5089,27 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
   </div>
 </div>
 
+<!-- Rename Host Group Modal -->
+<div id="hostGroupModal" class="modal">
+  <div class="modal-content modal-dialog" style="max-width: 480px;">
+    <div class="modal-header">
+      <h3 style="font-size: var(--fs-md); margin: 0;" data-i18n="host_group_rename">Rename group</h3>
+      <button class="btn btn-sm btn-ghost" onclick="closeModal('hostGroupModal')" aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body" style="display: flex; flex-direction: column; gap: 10px;">
+      <div class="form-group" style="margin: 0;">
+        <label class="form-label" for="hostGroupNewName" data-i18n="host_group_rename_label">Group name</label>
+        <input type="text" id="hostGroupNewName" maxlength="100" autocomplete="off" onkeydown="if (event.key === 'Enter') saveHostGroupRename()" />
+        <span class="form-hint" id="hostGroupRenameHint"></span>
+      </div>
+    </div>
+    <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end;">
+      <button class="btn btn-ghost" onclick="closeModal('hostGroupModal')" data-i18n="cancel">Cancel</button>
+      <button class="btn btn-primary" id="hostGroupSaveBtn" onclick="saveHostGroupRename()" data-i18n="save">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- Import Hosts from SSH Config Modal -->
 <div id="importHostsModal" class="modal">
   <div class="modal-content modal-dialog-lg" style="max-width: 740px;">
@@ -6903,6 +6927,11 @@ const I18N = {
     "host_group": "Host Group",
     "host_group_ph": "e.g. Primary Server, Testing, DB Cluster",
     "group_ungrouped": "Ungrouped",
+    "host_group_rename": "Rename group",
+    "host_group_rename_label": "Group name",
+    "host_group_rename_hint": "Renames the group on all {n} hosts. Ansible schedules that target this group follow the new name; playbooks that name the group in `hosts:` do not and must be edited.",
+    "host_group_rename_empty": "Enter a group name",
+    "host_group_renamed": "Group renamed to \"{name}\" ({n} hosts)",
     "edit_host": "Edit Host",
     "edit_host_title": "Edit Host",
     "confirm_delete_host": "Delete this host?",
@@ -8565,6 +8594,11 @@ const I18N = {
     "host_group": "Grup Host",
     "host_group_ph": "mis. Server Utama, Testing, DB Cluster",
     "group_ungrouped": "Tanpa Grup",
+    "host_group_rename": "Ubah nama grup",
+    "host_group_rename_label": "Nama grup",
+    "host_group_rename_hint": "Mengubah nama grup pada semua {n} host. Jadwal Ansible yang menargetkan grup ini mengikuti nama baru; playbook yang menyebut nama grup di `hosts:` tidak dan harus diedit.",
+    "host_group_rename_empty": "Isi nama grup",
+    "host_group_renamed": "Grup diubah menjadi \"{name}\" ({n} host)",
     "edit_host": "Ubah Host",
     "edit_host_title": "Ubah Host",
     "confirm_delete_host": "Hapus host ini?",
@@ -10750,6 +10784,47 @@ function renderHosts() {
   renderHostSelectBar();
 }
 
+// Rename a Host Group on all of its hosts (and the Ansible schedules that target it).
+let renamingHostGroup = '';
+function openHostGroupRename(name, ev) {
+  if (ev) ev.stopPropagation();
+  renamingHostGroup = name;
+  const n = allRawHosts.filter(h => (h.group_name || '').trim() === name).length;
+  const input = document.getElementById('hostGroupNewName');
+  input.value = name;
+  document.getElementById('hostGroupRenameHint').textContent = t('host_group_rename_hint', 'Renames the group on all {n} hosts. Ansible schedules that target this group follow the new name; playbooks that name the group in `hosts:` do not and must be edited.').replace('{n}', n);
+  openModal('hostGroupModal');
+  input.focus();
+  input.select();
+}
+
+async function saveHostGroupRename() {
+  const to = document.getElementById('hostGroupNewName').value.trim();
+  if (!to) { showToast(t('host_group_rename_empty', 'Enter a group name'), 'warning'); return; }
+  if (to === renamingHostGroup) { closeModal('hostGroupModal'); return; }
+  const btn = document.getElementById('hostGroupSaveBtn');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/hosts/groups/rename', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: renamingHostGroup, to })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(t('error_prefix', 'Error: ') + (data.error || res.status), 'error');
+      return;
+    }
+    closeModal('hostGroupModal');
+    showToast(t('host_group_renamed', 'Group renamed to "{name}" ({n} hosts)').replace('{name}', data.name).replace('{n}', data.hosts), 'success');
+    await loadHosts();
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function groupHosts(hosts) {
   const groupsMap = new Map();
   const ungrouped = [];
@@ -10812,7 +10887,10 @@ function renderGridView(grid, isManualSort) {
           <svg class="icon icon-sm"><use href="#i-folder"/></svg>
           ${escapeHtml(grp.name)}
         </span>
-        <span class="badge" style="font-size: var(--fs-xs); background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--card-border);">${grp.hosts.length}</span>
+        <span style="display: inline-flex; align-items: center; gap: 6px;">
+          <span class="badge" style="font-size: var(--fs-xs); background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--card-border);">${grp.hosts.length}</span>
+          ${grp.isUngrouped ? '' : `<button type="button" class="btn btn-icon btn-sm btn-ghost host-group-edit" onclick="openHostGroupRename(${jsArg(grp.name)}, event)" title="${escapeHtml(t('host_group_rename', 'Rename group'))}" aria-label="${escapeHtml(t('host_group_rename', 'Rename group'))}">${svgIcon('pencil', 'icon-xs')}</button>`}
+        </span>
       `;
       grid.appendChild(divider);
     }
@@ -11083,6 +11161,7 @@ function renderListView(listContainer, isManualSort) {
             <svg class="icon icon-sm"><use href="#i-folder"/></svg>
             <span>${escapeHtml(grp.name)}</span>
             <span class="badge" style="font-size: var(--fs-xs); background: var(--card-bg); color: var(--text-muted); border: 1px solid var(--card-border);">${grp.hosts.length}</span>
+            ${grp.isUngrouped ? '' : `<button type="button" class="btn btn-icon btn-sm btn-ghost host-group-edit" onclick="openHostGroupRename(${jsArg(grp.name)}, event)" title="${escapeHtml(t('host_group_rename', 'Rename group'))}" aria-label="${escapeHtml(t('host_group_rename', 'Rename group'))}">${svgIcon('pencil', 'icon-xs')}</button>`}
           </div>
         </td>
       `;

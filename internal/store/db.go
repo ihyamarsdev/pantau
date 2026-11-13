@@ -37,9 +37,10 @@ type SSHKey struct {
 }
 
 var (
-	ErrSSHKeyNotFound = errors.New("ssh key not found")
-	ErrSSHKeyInUse    = errors.New("ssh key is in use")
-	ErrHostNotFound   = errors.New("host not found")
+	ErrSSHKeyNotFound    = errors.New("ssh key not found")
+	ErrSSHKeyInUse       = errors.New("ssh key is in use")
+	ErrHostNotFound      = errors.New("host not found")
+	ErrHostGroupNotFound = errors.New("host group not found")
 )
 
 type Host struct {
@@ -1166,6 +1167,47 @@ func (d *DB) UpdateHostGroups(assignments []HostGroupAssignment) error {
 		}
 	}
 	return tx.Commit()
+}
+
+// RenameHostGroup renames a Host Group on every host that has it, and on the Ansible schedules that target it by
+// name, in one transaction. A new name that matches another existing group only in letter case takes that group's
+// spelling (the groups merge instead of showing twice). It returns the final name and how many hosts moved.
+func (d *DB) RenameHostGroup(from, to string) (string, int64, error) {
+	from, to = strings.TrimSpace(from), strings.TrimSpace(to)
+	tx, err := d.Begin()
+	if err != nil {
+		return "", 0, err
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.Query(`SELECT DISTINCT group_name FROM hosts WHERE group_name <> ''`)
+	if err != nil {
+		return "", 0, err
+	}
+	for rows.Next() {
+		var g string
+		if err := rows.Scan(&g); err != nil {
+			rows.Close()
+			return "", 0, err
+		}
+		if g != from && strings.EqualFold(g, to) {
+			to = g
+		}
+	}
+	rows.Close()
+
+	res, err := tx.Exec(`UPDATE hosts SET group_name=? WHERE group_name=?`, to, from)
+	if err != nil {
+		return "", 0, err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return "", 0, ErrHostGroupNotFound
+	}
+	if _, err := tx.Exec(`UPDATE ansible_schedules SET group_name=? WHERE group_name=?`, to, from); err != nil {
+		return "", 0, err
+	}
+	return to, n, tx.Commit()
 }
 
 func (d *DB) GetGlobalNotes() (string, error) {

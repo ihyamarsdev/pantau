@@ -242,6 +242,10 @@ func (s *Server) handleHostGroups(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if strings.HasSuffix(strings.TrimRight(r.URL.Path, "/"), "/rename") {
+		s.handleHostGroupRename(w, r)
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxImportBody)
 	var req struct {
 		Assignments []store.HostGroupAssignment `json:"assignments"`
@@ -263,4 +267,32 @@ func (s *Server) handleHostGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "updated": len(req.Assignments)})
+}
+
+// handleHostGroupRename serves PUT/POST /api/hosts/groups/rename {from, to}: rename one Host Group on all its hosts.
+func (s *Server) handleHostGroupRename(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxImportBody)
+	var req struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
+		return
+	}
+	req.From, req.To = strings.TrimSpace(req.From), strings.TrimSpace(req.To)
+	if req.From == "" || req.To == "" || len(req.To) > 100 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "from and to are required (to: at most 100 characters)"})
+		return
+	}
+	name, n, err := s.db.RenameHostGroup(req.From, req.To)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, store.ErrHostGroupNotFound) {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "name": name, "hosts": n})
 }

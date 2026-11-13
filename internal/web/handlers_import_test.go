@@ -307,3 +307,79 @@ func TestImportCommitAppliesTheChosenLibraryKey(t *testing.T) {
 		t.Errorf("hosts after the rejected imports: %+v", list)
 	}
 }
+
+func TestHostGroupRenameMovesHostsAndScheduleTargets(t *testing.T) {
+	e := newImportTestEnv(t)
+	mk := func(name, group string) {
+		id, err := e.db.CreateHost(&store.Host{Name: name, Host: "10.2.0." + name, Port: 22, User: "root"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if group != "" {
+			if err := e.db.UpdateHostGroups([]store.HostGroupAssignment{{ID: id, GroupName: group}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	mk("1", "Torcons")
+	mk("2", "Torcons")
+	mk("3", "Staging")
+	mk("4", "")
+	pbID, err := e.db.CreateAnsiblePlaybook(&store.AnsiblePlaybook{Name: "pb", Source: "inline", Content: "---"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc := &store.AnsibleSchedule{PlaybookID: pbID, Name: "nightly", Cron: "0 3 * * *", Mode: "run", Group: "Torcons", Enabled: true}
+	if _, err := e.db.CreateAnsibleSchedule(sc); err != nil {
+		t.Fatal(err)
+	}
+
+	w := e.do("PUT", "/api/hosts/groups/rename", mustJSON(t, map[string]string{"from": "Torcons", "to": " Production "}), true)
+	if w.Code != http.StatusOK {
+		t.Fatalf("rename: %d %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Name  string `json:"name"`
+		Hosts int    `json:"hosts"`
+	}
+	decodeBody(t, w, &resp)
+	if resp.Name != "Production" || resp.Hosts != 2 {
+		t.Errorf("response = %+v", resp)
+	}
+	groups := map[string]int{}
+	list, _ := e.db.ListHosts()
+	for _, h := range list {
+		groups[h.GroupName]++
+	}
+	if groups["Production"] != 2 || groups["Torcons"] != 0 || groups["Staging"] != 1 || groups[""] != 1 {
+		t.Errorf("groups after rename = %v", groups)
+	}
+	if scs, _ := e.db.ListAnsibleSchedules(pbID); len(scs) != 1 || scs[0].Group != "Production" {
+		t.Errorf("a schedule targeting the group must follow the new name: %+v", scs)
+	}
+
+	// Renaming onto another group that differs only in case merges into that group's spelling.
+	w = e.do("PUT", "/api/hosts/groups/rename", mustJSON(t, map[string]string{"from": "Production", "to": "staging"}), true)
+	decodeBody(t, w, &resp)
+	if w.Code != http.StatusOK || resp.Name != "Staging" || resp.Hosts != 2 {
+		t.Errorf("merge by case: %d %+v", w.Code, resp)
+	}
+	// Changing only the case of the group itself is a real rename.
+	w = e.do("PUT", "/api/hosts/groups/rename", mustJSON(t, map[string]string{"from": "Staging", "to": "STAGING"}), true)
+	decodeBody(t, w, &resp)
+	if w.Code != http.StatusOK || resp.Name != "STAGING" || resp.Hosts != 3 {
+		t.Errorf("case-only rename: %d %+v", w.Code, resp)
+	}
+
+	for name, body := range map[string]map[string]string{"empty to": {"from": "STAGING", "to": " "}, "empty from": {"from": "", "to": "x"}, "too long": {"from": "STAGING", "to": strings.Repeat("x", 101)}} {
+		if w := e.do("PUT", "/api/hosts/groups/rename", mustJSON(t, body), true); w.Code != http.StatusBadRequest {
+			t.Errorf("%s: got %d, want 400", name, w.Code)
+		}
+	}
+	if w := e.do("PUT", "/api/hosts/groups/rename", mustJSON(t, map[string]string{"from": "Nope", "to": "x"}), true); w.Code != http.StatusNotFound {
+		t.Errorf("unknown group: got %d, want 404", w.Code)
+	}
+	if w := e.do("PUT", "/api/hosts/groups/rename", mustJSON(t, map[string]string{"from": "STAGING", "to": "x"}), false); w.Code != http.StatusUnauthorized && w.Code != http.StatusForbidden && w.Code != http.StatusFound {
+		t.Errorf("unauthenticated rename must be refused, got %d", w.Code)
+	}
+}

@@ -16,6 +16,7 @@ e2e/
 │   ├── terraform.e2e.ts # Terraform drawer: gate, workspace, runs, tabs
 │   ├── terraform-edit.e2e.ts # Configuration/Settings tabs: in-place editing, unsaved-changes guard
 │   ├── repos.e2e.ts # Repositories section: clone validation + folder setting (real server), editor save/commit/push (repos API stubbed with browser.route)
+│   ├── host-groups.e2e.ts # Host group rename from the dashboard header
 │   ├── hosts-import.e2e.ts # Import hosts dialog sends the chosen SSH key (key library and import API stubbed with browser.route)
 │   └── terraform-helpers.ts  # shared Terraform workspace/runner helpers
 └── package.json
