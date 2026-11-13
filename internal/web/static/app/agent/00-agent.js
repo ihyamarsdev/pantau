@@ -29,6 +29,9 @@
       ag_q_unit: 'Service {unit} on host "{host}" (id {id}) has a problem. Find the root cause and propose a fix. Check its status and journal first. Do not change anything until I confirm the plan.',
       ag_q_container: 'Container {name} on host "{host}" (id {id}) has a problem. Read its logs and state, find the root cause and propose a fix. Do not change anything until I confirm the plan.',
       ag_q_alert: 'Alert on host "{host}" (id {id}): {msg}\nRoot cause excerpt:\n{rc}\nInvestigate and propose a fix. Do not change anything until I confirm the plan.',
+      ag_m_title: 'Agent memory', ag_m_desc: 'Durable notes the agent saves about your infrastructure and re-reads at the start of every chat. Review them: delete anything wrong. Notes are sent to your LLM provider with every chat.',
+      ag_m_empty: 'No notes yet. The agent adds them as it learns your setup; you can add your own below.', ag_m_fleet: 'Whole fleet', ag_m_ph: 'e.g. Backups run at 02:00 via /opt/backup.sh',
+      ag_m_add: 'Add', ag_m_forget: 'Forget', ag_m_forget_confirm: 'Delete this note?', ag_m_by_agent: 'agent', ag_m_by_you: 'you',
       ag_q_security: 'Review the latest security scan of host "{host}" (id {id}): pending security updates and failing hardening checks. Rank what matters and propose safe fixes. Do not change anything until I confirm the plan.'
     },
     id: {
@@ -51,6 +54,9 @@
       ag_q_unit: 'Service {unit} di host "{host}" (id {id}) bermasalah. Cari akar masalahnya dan usulkan perbaikan. Cek status dan journal dulu. Jangan ubah apa pun sebelum saya setujui rencananya.',
       ag_q_container: 'Container {name} di host "{host}" (id {id}) bermasalah. Baca log dan statusnya, cari akar masalah, lalu usulkan perbaikan. Jangan ubah apa pun sebelum saya setujui rencananya.',
       ag_q_alert: 'Alert di host "{host}" (id {id}): {msg}\nCuplikan root cause:\n{rc}\nSelidiki dan usulkan perbaikan. Jangan ubah apa pun sebelum saya setujui rencananya.',
+      ag_m_title: 'Memori agent', ag_m_desc: 'Catatan permanen yang disimpan agent tentang infrastruktur Anda dan dibaca ulang di awal setiap chat. Tinjau: hapus yang salah. Catatan dikirim ke penyedia LLM Anda di setiap chat.',
+      ag_m_empty: 'Belum ada catatan. Agent menambahkannya saat memahami setup Anda; Anda juga bisa menambah sendiri di bawah.', ag_m_fleet: 'Seluruh fleet', ag_m_ph: 'misal: Backup jalan jam 02:00 lewat /opt/backup.sh',
+      ag_m_add: 'Tambah', ag_m_forget: 'Lupakan', ag_m_forget_confirm: 'Hapus catatan ini?', ag_m_by_agent: 'agent', ag_m_by_you: 'Anda',
       ag_q_security: 'Tinjau scan keamanan terakhir host "{host}" (id {id}): update keamanan tertunda dan hardening yang gagal. Urutkan yang penting dan usulkan perbaikan aman. Jangan ubah apa pun sebelum saya setujui rencananya.'
     }
   };
@@ -337,7 +343,9 @@
         <div class="form-label">${esc(t('ag_s_hermes_env'))}</div><pre class="ag-snippet">${esc(envSnip)}</pre>
         <div class="form-label">~/.hermes/config.yaml</div><pre class="ag-snippet">${esc(snippet)}</pre>
         <div><button class="btn btn-sm btn-ghost" onclick="AG.rotateToken()">${esc(t('ag_s_rotate'))}</button></div>
-      </div>`;
+      </div>
+      <div id="agMemory"></div>`;
+    AG.loadMemory();
   };
 
   AG.resetSoul = async function () {
@@ -369,5 +377,48 @@
     if (!(await showConfirm({ message: t('ag_s_rotate_confirm') }))) return;
     await post('/api/agent/rotate-token');
     AG.loadSettings();
+  };
+
+  /* ---------- Settings → AI Agent → Memory ---------- */
+  AG.loadMemory = async function () {
+    const box = $('agMemory');
+    if (!box) return;
+    const r = await api('/api/agent/memory');
+    if (!r.ok) { box.innerHTML = `<div class="ag-err">HTTP ${r.status}</div>`; return; }
+    const hosts = typeof allRawHosts !== 'undefined' ? allRawHosts : [];
+    const name = (id) => (hosts.find((h) => h.id === id) || {}).name || '#' + id;
+    const notes = r.data.notes || [];
+    const rows = notes.map((n) => `<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-top:1px solid var(--card-border);">
+        <span class="badge ${n.host_id ? 'badge-info' : ''}" style="flex:none;">${esc(n.host_id ? name(n.host_id) : t('ag_m_fleet'))}</span>
+        <span style="flex:1;font-size:var(--fs-sm);white-space:pre-wrap;word-break:break-word;">${esc(n.content)}</span>
+        <span style="flex:none;font-size:var(--fs-xs);color:var(--text-muted);">${esc(n.source === 'agent' ? t('ag_m_by_agent') : t('ag_m_by_you'))}</span>
+        <button class="btn btn-sm btn-icon btn-ghost" aria-label="${esc(t('ag_m_forget'))}" title="${esc(t('ag_m_forget'))}" onclick="AG.delMemory(${n.id})">${svgIcon('trash-2', 'icon-sm')}</button></div>`).join('');
+    box.innerHTML = `
+      <div class="set-card">
+        <div class="set-header"><div><h4 class="set-title">${svgIcon('bookmark')} <span>${esc(t('ag_m_title'))} (${notes.length}/${r.data.max})</span></h4>
+          <p class="set-desc">${esc(t('ag_m_desc'))}</p></div></div>
+        ${rows || `<div style="font-size:var(--fs-sm);color:var(--text-muted);">${esc(t('ag_m_empty'))}</div>`}
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <select id="agMemHost" style="width:auto;max-width:160px;"><option value="">${esc(t('ag_m_fleet'))}</option>${hosts.map((h) => `<option value="${h.id}">${esc(h.name)}</option>`).join('')}</select>
+          <input type="text" id="agMemText" maxlength="${r.data.max_len}" placeholder="${esc(t('ag_m_ph'))}" style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();AG.addMemory();}">
+          <button class="btn btn-primary btn-sm" onclick="AG.addMemory()">${svgIcon('plus', 'icon-sm')} <span>${esc(t('ag_m_add'))}</span></button>
+        </div>
+      </div>`;
+  };
+
+  AG.addMemory = async function () {
+    const text = $('agMemText').value.trim();
+    if (!text) return;
+    const host = $('agMemHost').value;
+    const r = await post('/api/agent/memory', { content: text, host_id: host ? Number(host) : null });
+    if (r.ok) AG.loadMemory();
+    else showToast(r.data.error || 'error', 'error');
+  };
+
+  AG.delMemory = async function (id) {
+    if (!(await showConfirm({ message: t('ag_m_forget_confirm') }))) return;
+    const r = await api('/api/agent/memory?id=' + id, { method: 'DELETE' });
+    if (r.ok) AG.loadMemory();
+    else showToast(r.data.error || 'error', 'error');
   };
 })();

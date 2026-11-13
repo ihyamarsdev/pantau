@@ -71,6 +71,10 @@ _Avoid_: Plugin, skill, command
 Keputusan operator (setujui/tolak) atas satu aksi pengubah yang diminta AI Agent, ditampilkan sebagai kartu persetujuan. Mode `ask` meminta untuk semua perubahan; mode `auto` melewati aksi service/container/scan/inspeksi, tetapi `exec_command` selalu meminta.
 _Avoid_: Confirmation dialog, permission prompt
 
+**Agent Memory**:
+Kumpulan catatan permanen (maks. 200, masing-masing maks. 500 karakter; lingkup seluruh fleet atau satu Host) yang disimpan AI Agent lewat `memory_save` dan operator lewat Settings, lalu disisipkan ke pesan sistem setiap chat agar agent makin memahami infrastruktur dari waktu ke waktu. Catatan diperlakukan sebagai data, bukan instruksi.
+_Avoid_: Chat history, knowledge base, agent training
+
 **Disk I/O Rate**:
 Kecepatan transfer data baca dan tulis pada disk fisik/virtual utama Host (dihitung dalam bytes per detik) yang diekstrak secara berkala dari `/proc/diskstats`.
 _Avoid_: Disk speed, disk activity, raw io count

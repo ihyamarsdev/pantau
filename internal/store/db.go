@@ -395,6 +395,15 @@ func (d *DB) migrate() error {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
+	CREATE TABLE IF NOT EXISTS agent_memory (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		host_id INTEGER REFERENCES hosts(id) ON DELETE CASCADE,
+		content TEXT NOT NULL,
+		source TEXT NOT NULL DEFAULT 'agent',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
 	CREATE TABLE IF NOT EXISTS inspection_runs (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
@@ -1769,6 +1778,7 @@ type SnapshotPayload struct {
 	Hosts                  []Host                      `json:"hosts"`
 	DesiredRules           []DesiredRule               `json:"desired_rules"`
 	TerminalPresets        []TerminalPreset            `json:"terminal_presets,omitempty"`
+	AgentMemory            []AgentMemory               `json:"agent_memory,omitempty"`
 	SSHKeys                []SnapshotSSHKey            `json:"ssh_keys,omitempty"`
 	KubeClusters           []SnapshotKubeCluster       `json:"kube_clusters,omitempty"`
 	CloudflareAccounts     []SnapshotCloudflareAccount `json:"cloudflare_accounts,omitempty"`
@@ -1865,6 +1875,11 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 				allPresets = append(allPresets, p)
 			}
 		}
+	}
+
+	allMemory, err := d.ListAgentMemory(0, "")
+	if err != nil {
+		return nil, fmt.Errorf("export agent memory: %w", err)
 	}
 
 	var allSSHKeys []SnapshotSSHKey
@@ -2051,6 +2066,7 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 		Hosts:                  hosts,
 		DesiredRules:           allRules,
 		TerminalPresets:        allPresets,
+		AgentMemory:            allMemory,
 		SSHKeys:                allSSHKeys,
 		KubeClusters:           allClusters,
 		CloudflareAccounts:     allCFAccounts,
@@ -2081,7 +2097,7 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 	defer tx.Rollback()
 
 	tables := []string{
-		"alerts", "incidents", "actual_items", "desired_rules", "hosts", "terminal_presets",
+		"alerts", "incidents", "actual_items", "desired_rules", "hosts", "terminal_presets", "agent_memory",
 		"ssh_keys", "kube_clusters", "cloudflare_accounts", "s3_accounts",
 		"ansible_runs", "ansible_schedules", "ansible_playbooks", "ansible_assets",
 		"tf_output_links", "tf_runs", "tf_state_versions", "tf_variables", "tf_varset_workspaces", "tf_varsets", "tf_policies", "tf_module_versions", "tf_modules", "tf_workspaces", "tf_cloud_accounts",
@@ -2219,6 +2235,18 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 		}
 		_, _ = tx.Exec(`INSERT INTO terminal_presets (id, host_id, name, command, sort_order, use_tmux) VALUES (?, ?, ?, ?, ?, ?)`,
 			p.ID, hid, p.Name, p.Command, p.SortOrder, useTmuxInt)
+	}
+
+	for _, m := range payload.AgentMemory {
+		var hid interface{} = nil
+		if m.HostID != nil {
+			hid = *m.HostID
+		}
+		_, err := tx.Exec(`INSERT INTO agent_memory (id, host_id, content, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+			m.ID, hid, m.Content, m.Source, m.CreatedAt, m.UpdatedAt)
+		if err != nil {
+			return fmt.Errorf("insert agent memory %d: %w", m.ID, err)
+		}
 	}
 
 	for _, a := range payload.TerraformCloudAccounts {

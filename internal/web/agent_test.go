@@ -90,6 +90,14 @@ func TestAgentMCPToolValidation(t *testing.T) {
 	if out := call("read_file", `{"host_id":1,"path":"/etc/shadow"}`); !strings.Contains(out, "secret file") {
 		t.Fatalf("shadow must be refused: %s", out)
 	}
+	for _, a := range []string{`{"query":"x"}`, `{"query":"nginx","kind":"nope"}`, `{"query":"nginx","limit":0}`} {
+		if out := call("fleet_search", a); !strings.Contains(out, `"isError":true`) {
+			t.Fatalf("fleet_search %s must be an error: %s", a, out)
+		}
+	}
+	if out := call("fleet_search", `{"query":"nginx","kind":"container"}`); strings.Contains(out, `"isError":true`) || !strings.Contains(out, "groups") {
+		t.Fatalf("fleet_search on empty inventory: %s", out)
+	}
 	if out := call("nope", `{}`); !strings.Contains(out, "unknown tool") {
 		t.Fatalf("unknown tool: %s", out)
 	}

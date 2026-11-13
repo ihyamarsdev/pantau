@@ -10,9 +10,11 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"pantau/internal/inspector"
 	"pantau/internal/logger"
+	"pantau/internal/store"
 )
 
 // Pantau as an MCP server (Model Context Protocol, streamable HTTP, JSON responses only) for Hermes Agent.
@@ -69,6 +71,7 @@ var agentTools = []agentTool{
 	{Name: "docker_logs", Description: "Last lines of a container's logs.", InputSchema: schema([]string{"host_id", "container"}, map[string]interface{}{"host_id": pHost, "container": pName, "tail": map[string]interface{}{"type": "integer", "description": "lines, 1-1000, default 100"}}), run: toolDockerLogs},
 	{Name: "security_status", Description: "Latest security scan: pending security updates by severity, reboot required, failing hardening checks.", InputSchema: schema(hostReq, map[string]interface{}{"host_id": pHost}), run: toolSecurityStatus},
 	{Name: "read_file", Description: "Read a text file on a host (absolute path, first 64 KiB). Private keys, /etc/shadow and similar secret files are refused.", InputSchema: schema([]string{"host_id", "path"}, map[string]interface{}{"host_id": pHost, "path": map[string]interface{}{"type": "string"}}), run: toolReadFile},
+	{Name: "fleet_search", Description: "Search packages, containers (name or image) and domains across ALL hosts at once, from Pantau's stored inventory (no SSH, so data may be stale: see data_age). Returns each match with the hosts that have it. Use it to find which hosts run a package/version, container or domain; hosts_without_* counts hosts never scanned.", InputSchema: schema([]string{"query"}, map[string]interface{}{"query": map[string]interface{}{"type": "string", "description": "2-100 characters, case-insensitive substring"}, "kind": map[string]interface{}{"type": "string", "enum": []string{"all", "package", "container", "domain"}, "description": "default all"}, "limit": map[string]interface{}{"type": "integer", "description": "max matched items, 1-200, default 50"}}), run: toolFleetSearch},
 
 	{Name: "systemd_action", Description: "Run a systemctl action on one unit (start, stop, restart, reload, enable, disable, mask, unmask, reset-failed) or daemon-reload (no unit). May wait for operator approval. Stopping or disabling the SSH daemon is refused.", gate: 1,
 		InputSchema: schema([]string{"host_id", "action"}, map[string]interface{}{"host_id": pHost, "unit": pUnit, "action": map[string]interface{}{"type": "string", "enum": []string{"start", "stop", "restart", "reload", "enable", "disable", "mask", "unmask", "reset-failed", "daemon-reload"}}}), run: toolSystemdAction},
@@ -243,6 +246,35 @@ func toolListAlerts(s *Server, _ *http.Request, _ map[string]interface{}) (strin
 		a = a[:50]
 	}
 	return jsonText(a)
+}
+
+// toolFleetSearch answers from stored inventory only (no SSH), the same data as GET /api/search.
+func toolFleetSearch(s *Server, _ *http.Request, args map[string]interface{}) (string, error) {
+	q := argStr(args, "query")
+	if n := utf8.RuneCountInString(q); n < 2 || n > 100 {
+		return "", fmt.Errorf("query must be 2 to 100 characters")
+	}
+	kind := argStr(args, "kind")
+	if kind == "" {
+		kind = store.FleetSearchAll
+	}
+	switch kind {
+	case store.FleetSearchAll, store.FleetSearchPackage, store.FleetSearchContainer, store.FleetSearchDomain:
+	default:
+		return "", fmt.Errorf("kind must be all, package, container or domain")
+	}
+	limit := 50
+	if f, ok := args["limit"].(float64); ok {
+		if f < 1 {
+			return "", fmt.Errorf("limit must be a positive number")
+		}
+		limit = int(min(f, 200))
+	}
+	res, err := s.db.SearchFleet(q, kind, limit)
+	if err != nil {
+		return "", err
+	}
+	return jsonText(res)
 }
 
 func toolSystemdList(s *Server, _ *http.Request, args map[string]interface{}) (string, error) {

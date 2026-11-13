@@ -166,6 +166,7 @@ func (s *Server) registerAgentRoutes() {
 	s.mux.HandleFunc("/api/agent/approvals", s.authMiddleware(s.handleAgentApprovals))
 	s.mux.HandleFunc("/api/agent/approvals/", s.authMiddleware(s.handleAgentApprovalDecide))
 	s.mux.HandleFunc("/api/agent/grants", s.authMiddleware(s.handleAgentGrants))
+	s.mux.HandleFunc("/api/agent/memory", s.authMiddleware(s.handleAgentMemory))
 }
 
 func (s *Server) handleAgentSettings(w http.ResponseWriter, r *http.Request) {
@@ -295,7 +296,7 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	}
 	body, _ := json.Marshal(map[string]interface{}{
 		"model": c.Model, "stream": true,
-		"messages": []map[string]string{{"role": "system", "content": c.Soul}, {"role": "user", "content": req.Message}},
+		"messages": []map[string]string{{"role": "system", "content": c.Soul + "\n\n" + s.agentMemoryPrompt()}, {"role": "user", "content": req.Message}},
 	})
 	hreq, _ := http.NewRequestWithContext(r.Context(), http.MethodPost, c.URL+"/v1/chat/completions", bytes.NewReader(body))
 	hreq.Header.Set("Content-Type", "application/json")
