@@ -25,7 +25,7 @@ func pendingCount(srv *Server) int {
 }
 
 func TestAgentInfraToolsListed(t *testing.T) {
-	want := []string{"docker_inspect", "docker_info", "docker_stack_file", "docker_stack_action", "kube_targets", "kube_get", "kube_describe", "kube_logs", "kube_diff", "kube_action", "kube_apply", "ansible_playbooks", "ansible_run", "ansible_runs", "tf_workspaces", "tf_runs", "tf_plan", "tf_apply", "cf_accounts", "cf_zones", "cf_dns_list", "cf_zone_settings", "cf_dns_change", "cf_purge_cache", "cf_zone_setting_set"}
+	want := []string{"docker_inspect", "docker_info", "docker_stack_file", "docker_stack_action", "kube_targets", "kube_get", "kube_describe", "kube_logs", "kube_diff", "kube_action", "kube_apply", "ansible_playbooks", "ansible_run", "ansible_runs", "tf_workspaces", "tf_runs", "tf_plan", "tf_apply", "cf_accounts", "cf_zones", "cf_dns_list", "cf_zone_settings", "cf_dns_change", "cf_purge_cache", "cf_zone_setting_set", "repo_list", "repo_commit", "repo_copy_to_host"}
 	have := map[string]agentTool{}
 	for _, tl := range agentTools {
 		if _, dup := have[tl.Name]; dup {

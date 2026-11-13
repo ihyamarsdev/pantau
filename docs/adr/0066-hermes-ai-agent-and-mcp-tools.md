@@ -43,6 +43,12 @@ Pantau stays a single Go binary with no runtime dependency (ADR-0002), so Hermes
   purge mode, setting allowlist) is the UI's. Accounts and zones are addressed by name; a zone name is resolved inside
   the account. Every change is **gate 2** and host-less: it always asks, even in `auto` mode, and cannot be covered by
   a session grant. `update` starts from the current record because the API replaces the whole record.
+- **Repository tools** (`agent_mcp_repo.go`, [ADR-0067](0067-cloned-git-repositories.md)): `repo_list`, `repo_status`,
+  `repo_tree`, `repo_search`, `repo_read_file` (read; secret-looking values masked, 20 KiB per call) and `repo_sync`,
+  `repo_write_file` (gate 1), `repo_discard`, `repo_commit`, `repo_push`, `repo_copy_to_host` (gate 2). They call the
+  Repositories handlers in-process, so path, symlink and protected-path checks are the UI's. Repository scopes have no
+  host, so they are never covered by a session grant. `repo_commit` and `repo_push` publish to the remote and always
+  ask; commits use the author `Pantau AI agent`. Clone, delete, credentials and folders stay with the operator.
 - **Gate 3.** Besides gate 1 (routine) and 2 (shell, drain, compose down), gate 3 is infrastructure change:
   `tf_apply`, `ansible_run` mode `run` and `kube_apply`. It is never auto-approved and never covered by a session
   grant, and host-less scopes (Terraform, Ansible) cannot be granted at all. The agent cannot override a policy
