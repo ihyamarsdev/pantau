@@ -3821,6 +3821,10 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <svg class="icon"><use href="#i-git-branch"/></svg>
         <span class="side-panel-label" data-i18n="nav_repos">Repositories</span>
       </button>
+      <button type="button" class="side-panel-item" id="navItemShortcuts" onclick="switchSideNav('shortcuts')" role="tab" aria-selected="false" title="Shortcuts" data-i18n-title="nav_shortcuts">
+        <svg class="icon"><use href="#i-link"/></svg>
+        <span class="side-panel-label" data-i18n="nav_shortcuts">Shortcuts</span>
+      </button>
     </div>
     <div class="side-panel-footer">
       <button type="button" class="side-panel-collapse-btn" id="btnSidePanelCollapse" onclick="toggleSidePanelCollapse()" title="Collapse navigation" data-i18n-title="nav_collapse_title" aria-label="Collapse navigation">
@@ -3847,6 +3851,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
     <div id="alertBannerArea"></div>
     <!-- New KPI Strip -->
     <div id="kpiStrip" class="kpi-strip"></div>
+    <div id="domainShortcuts" class="dm-tiles"></div>
     <!-- Dashboard Toolbar (Search, Filter, Sort, View Mode) -->
     <div class="dashboard-toolbar">
       <div class="search-box">
@@ -4061,6 +4066,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
       </div>
     </div>
     <div id="sectionAnsible" class="app-section" style="display:none;"></div>
+    <div id="sectionShortcuts" class="app-section" style="display:none;"></div>
     <div id="sectionRepos" class="app-section" style="display:none;">
       <div class="section-header" style="margin-bottom:20px;">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
@@ -8236,6 +8242,7 @@ const I18N = {
     "nav_ansible": "Ansible",
     "nav_terraform": "Terraform",
     "nav_repos": "Repositories",
+    "nav_shortcuts": "Shortcuts",
     "rp_section_title": "Repositories",
     "rp_section_desc": "Git repositories cloned on this server: browse, edit, commit and push.",
     "tf_section_title": "Terraform Management",
@@ -9903,6 +9910,7 @@ const I18N = {
     "nav_ansible": "Ansible",
     "nav_terraform": "Terraform",
     "nav_repos": "Repositori",
+    "nav_shortcuts": "Pintasan",
     "rp_section_title": "Repositori",
     "rp_section_desc": "Repositori Git yang di-clone di server ini: jelajahi, sunting, commit, dan push.",
     "tf_section_title": "Terraform Management",
@@ -23079,6 +23087,8 @@ function switchSideNav(section) {
   if (secTf) secTf.style.display = section === 'terraform' ? 'block' : 'none';
   const secRepos = document.getElementById('sectionRepos');
   if (secRepos) secRepos.style.display = section === 'repos' ? 'block' : 'none';
+  const secShortcuts = document.getElementById('sectionShortcuts');
+  if (secShortcuts) secShortcuts.style.display = section === 'shortcuts' ? 'block' : 'none';
   toggleSidePanelMobile(false);
   if (section !== 'kube') stopKubeAutorefresh();
   if (section === 'docker') renderDockerSection();
@@ -23087,6 +23097,7 @@ function switchSideNav(section) {
   else if (section === 'ansible') { refreshAnsibleSection(); }
   else if (section === 'terraform') { refreshTfSection(); }
   else if (section === 'repos') { if (window.Repos) Repos.refresh(); }
+  else if (section === 'shortcuts') { if (window.Shortcuts) Shortcuts.refresh(); }
 }
 function updateSideNavData() {
   if (currentSideNav === 'docker') renderDockerSection();
@@ -27996,6 +28007,7 @@ langRerenderHooks.push(renderTfWorkspaces, tfRenderWsHead, () => {
 <script src="/app/fleetsearch.js"></script>
 <script src="/app/diskusage.js"></script>
 <script src="/app/domains.js"></script>
+<script src="/app/shortcuts.js"></script>
 <script src="/app/dbbackup.js"></script>
 <script src="/app/agent.js"></script>
 </body>

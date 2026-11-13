@@ -13,6 +13,8 @@ e2e/
 │   ├── smoke.e2e.ts     # app opens, starts fresh, login, dashboard
 │   ├── ansible.e2e.ts   # gate blocked state, enable gate, create playbook, invalid YAML
 │   ├── kube-workspaces.e2e.ts # Kubernetes: saved workspace cards, open/back, reload (kube API stubbed with browser.route)
+│   ├── domain-shortcuts.e2e.ts # Domain Shortcuts: star in the fleet dialog, dashboard tile, reload, remove (fleet domains API stubbed with browser.route)
+│   ├── shortcuts.e2e.ts # Shortcuts section: add, refused address, reload, edit, cross-origin favicon, delete (real /api/shortcuts)
 │   ├── terraform.e2e.ts # Terraform drawer: gate, workspace, runs, tabs
 │   ├── terraform-edit.e2e.ts # Configuration/Settings tabs: in-place editing, unsaved-changes guard
 │   ├── repos.e2e.ts # Repositories section: clone validation + folder setting (real server), editor save/commit/push (repos API stubbed with browser.route)

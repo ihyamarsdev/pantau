@@ -1,11 +1,12 @@
 /* Domains: the domains served by nginx / Caddy / Traefik on one host (Host Detail tab)
- * and across the whole fleet (dialog).
+ * and across the whole fleet (dialog), plus Domain Shortcuts: starred domains shown as
+ * tiles above the host dashboard (#domainShortcuts).
  * Discovery is on demand: GET /api/domains?host_id= returns the stored result, an empty
  * scanned_at means "never scanned" and triggers one automatic POST /api/domains/scan.
  * Backed by GET /api/domains, GET /api/domains?host_id=, POST /api/domains/scan.
  * Relies on index.html globals: svgIcon, escapeHtml, t, I18N, showToast, formatRelativeTime,
  * copyTextToClipboard, openModal, closeModal, openEditor, openHostDetail, switchTab,
- * setHostActiveTab, currentHost, currentTab. */
+ * setHostActiveTab, currentHost, currentTab, langRerenderHooks. */
 (function () {
   'use strict';
 
@@ -39,6 +40,8 @@
       dm_copy: 'Copy domain',
       dm_copied: 'Copied to clipboard',
       dm_open: 'Open in editor',
+      dm_shortcut: 'Shortcut on the dashboard',
+      dm_shortcut_remove: 'Remove shortcut',
       dm_remove: 'Remove config file',
       dm_remove_confirm: 'Delete {path} from this host? Every domain defined in it stops being served. nginx is tested and reloaded; if the test fails the file is restored.',
       dm_removed: 'Config removed, nginx reloaded',
@@ -82,6 +85,8 @@
       dm_copy: 'Salin domain',
       dm_copied: 'Disalin ke clipboard',
       dm_open: 'Buka di editor',
+      dm_shortcut: 'Pintasan di dashboard',
+      dm_shortcut_remove: 'Hapus pintasan',
       dm_remove: 'Hapus berkas konfigurasi',
       dm_remove_confirm: 'Hapus {path} dari host ini? Semua domain di dalamnya berhenti dilayani. nginx diuji dan di-reload; jika pengujian gagal, berkas dikembalikan.',
       dm_removed: 'Konfigurasi dihapus, nginx di-reload',
@@ -159,6 +164,58 @@
     return `<a class="dm-domain" href="${esc(scheme + d)}" target="_blank" rel="noopener noreferrer" title="${esc(d)}">${esc(d)}</a>`;
   }
 
+  /* ---------- shortcuts ---------- */
+  // Domain Shortcuts: the domains the operator starred, one tile each above the host dashboard.
+  // shortcut: saved in this browser's localStorage, so another browser starts empty; move to a server setting when
+  // shortcuts must follow the operator across devices.
+  let shortcuts = [];
+  try { shortcuts = JSON.parse(localStorage.getItem('pantau_domain_shortcuts') || '[]').filter((x) => x && typeof x.domain === 'string'); } catch (e) { /* ignore */ }
+  const isShortcut = (d) => shortcuts.some((x) => x.domain === d);
+
+  // Wildcard and regex domains have no address to open, so they get no star.
+  function starBtn(s, host) {
+    if (!s.domain || s.wildcard || s.regex) return '';
+    const on = isShortcut(s.domain);
+    return `<button class="btn btn-sm btn-icon btn-ghost dm-star${on ? ' active' : ''}" data-dm-star="${esc(s.domain)}"${s.tls ? ' data-dm-tls' : ''} data-dm-shost="${esc(host)}" aria-pressed="${on}" title="${esc(t('dm_shortcut'))}">${icon('star')}</button>`;
+  }
+
+  // Tile icon: the favicon of the site, replaced by the first letter of the label when it cannot be
+  // loaded (no /favicon.ico, offline). no-referrer keeps Pantau's address out of the request.
+  D.tileIcon = function (url, label) {
+    const letter = (Array.from(label)[0] || '').toUpperCase();
+    let src = '';
+    try { src = new URL('/favicon.ico', url).href; } catch (e) { /* not an address: letter only */ }
+    return `<span class="dm-tile-icon">${src ? `<img src="${esc(src)}" alt="" data-l="${esc(letter)}" referrerpolicy="no-referrer" onerror="this.replaceWith(this.dataset.l)">` : esc(letter)}</span>`;
+  };
+
+  function renderShortcuts() {
+    const box = document.getElementById('domainShortcuts');
+    if (!box) return;
+    box.innerHTML = shortcuts.map((x) => `<div class="dm-tile">
+      <a class="dm-tile-link" href="${esc((x.tls ? 'https://' : 'http://') + x.domain)}" target="_blank" rel="noopener noreferrer" title="${esc(x.domain)}">
+        ${D.tileIcon((x.tls ? 'https://' : 'http://') + x.domain, x.domain)}
+        <span class="dm-tile-text"><span class="dm-tile-name">${esc(x.domain)}</span><span class="dm-tile-host">${esc(x.host)}</span></span>
+      </a>
+      <button class="btn btn-sm btn-icon btn-ghost" data-dm-star="${esc(x.domain)}" title="${esc(t('dm_shortcut_remove'))}" aria-label="${esc(t('dm_shortcut_remove') + ': ' + x.domain)}">${icon('x')}</button>
+    </div>`).join('');
+  }
+
+  // One shortcut per domain: a domain served by two hosts opens the same address.
+  function toggleShortcut(domain, tls, host) {
+    const i = shortcuts.findIndex((x) => x.domain === domain);
+    if (i >= 0) shortcuts.splice(i, 1); else shortcuts.push({ domain, tls, host });
+    try { localStorage.setItem('pantau_domain_shortcuts', JSON.stringify(shortcuts)); } catch (e) { /* quota */ }
+    renderShortcuts();
+    document.querySelectorAll('.dm-star').forEach((b) => {
+      const on = isShortcut(b.getAttribute('data-dm-star'));
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on);
+    });
+  }
+
+  renderShortcuts();
+  if (typeof langRerenderHooks !== 'undefined') langRerenderHooks.push(renderShortcuts);
+
   function sourceCell(s) {
     const src = s.source || '';
     const m = s.where === 'host' ? /^(\/[^\s:]*):(\d+)$/.exec(src) : null;
@@ -176,7 +233,7 @@
 
   function siteRow(s) {
     return `<tr>
-      <td class="dm-domain-cell"><span class="dm-domain-wrap">${domainCell(s)}<button class="btn btn-sm btn-icon btn-ghost dm-copy" data-dm-copy="${esc(s.domain || '')}" title="${esc(t('dm_copy'))}">${icon('copy')}</button></span></td>
+      <td class="dm-domain-cell"><span class="dm-domain-wrap">${domainCell(s)}<button class="btn btn-sm btn-icon btn-ghost dm-copy" data-dm-copy="${esc(s.domain || '')}" title="${esc(t('dm_copy'))}">${icon('copy')}</button>${starBtn(s, S.hostName)}</span></td>
       <td>${esc(s.proxy)}${s.container ? ` <span class="dm-container">${esc(s.container)}</span>` : ''}</td>
       <td>${s.tls ? `<span class="badge badge-success">${esc(t('dm_tls_yes'))}</span>` : `<span class="badge">${esc(t('dm_tls_no'))}</span>`}</td>
       <td class="mono">${esc((s.listen || []).join(', '))}</td>
@@ -325,6 +382,7 @@
     if (!hostId) return;
     S.seq++; // drop any request still in flight for the previous host
     S.hostId = hostId;
+    S.hostName = host.name || '';
     S.filter = '';
     S.data = null;
     S.error = '';
@@ -420,7 +478,7 @@
         <th>${esc(t('dm_col_tls'))}</th><th>${esc(t('dm_col_upstreams'))}</th>
       </tr></thead>
       <tbody>${shown.map((s) => `<tr>
-        <td>${domainCell(s)}</td>
+        <td class="dm-domain-cell"><span class="dm-domain-wrap">${domainCell(s)}${starBtn(s, s.host_name || '')}</span></td>
         <td><button class="btn btn-sm btn-ghost dm-hostlink" data-dm-host="${esc(s.host_id)}">${icon('server')} ${esc(s.host_name || s.host_id)}</button>${s.group ? ` <span class="dm-group">${esc(s.group)}</span>` : ''}</td>
         <td>${esc(s.proxy)}${s.container ? ` <span class="dm-container">${esc(s.container)}</span>` : ''}</td>
         <td>${s.tls ? `<span class="badge badge-success">${esc(t('dm_tls_yes'))}</span>` : `<span class="badge">${esc(t('dm_tls_no'))}</span>`}</td>
@@ -525,6 +583,12 @@
     if (allBtn) {
       e.preventDefault();
       D.openAll();
+      return;
+    }
+    const starEl = e.target.closest('[data-dm-star]');
+    if (starEl) {
+      e.preventDefault();
+      toggleShortcut(starEl.getAttribute('data-dm-star'), starEl.hasAttribute('data-dm-tls'), starEl.getAttribute('data-dm-shost') || '');
       return;
     }
     const copyBtn = e.target.closest('[data-dm-copy]');

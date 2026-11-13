@@ -759,3 +759,11 @@ _Avoid_: du scan, storage audit, disk report
 **Domain Inventory**:
 Daftar domain yang dilayani reverse proxy di sebuah Host (nginx, Caddy, Traefik, termasuk yang berjalan di container Docker), lengkap dengan TLS, port listen, upstream tujuan, dan lokasi konfigurasinya; dikumpulkan on-demand lewat SSH lalu disimpan agar bisa dilihat per Host dan lintas Host tanpa koneksi ulang.
 _Avoid_: DNS records, vhost list, site map
+
+**Domain Shortcut**:
+Pintasan satu klik ke sebuah domain dari Domain Inventory yang ditandai bintang oleh administrator, ditampilkan sebagai tile (domain dan Host-nya) di atas dashboard Host dan membuka domain tersebut di tab browser baru; disimpan di browser administrator, bukan di basis data Pantau.
+_Avoid_: Bookmark, favorite domain, pinned site, service tile
+
+**Custom Shortcut**:
+Tautan buatan administrator ke alamat web eksternal (nama, alamat `http(s)`, dan grup opsional) yang ditampilkan sebagai tile per grup pada bagian Shortcuts di Side Panel dan dibuka di tab browser baru; disimpan di basis data Pantau sehingga berlaku untuk semua browser dan ikut System Snapshot. Berbeda dari Domain Shortcut, yang berasal dari Domain Inventory dan disimpan per browser.
+_Avoid_: Bookmark, external link, service tile, homepage entry

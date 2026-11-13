@@ -31,9 +31,10 @@ Dalam skenario deployment server produksi korporat, server pemantau sering kali 
 3. **Penegakan Protokol Keamanan Ketat (Content Security Policy)**:
    - Server menyisipkan header HTTP keamanan pada handler antarmuka root `/`:
      ```http
-     Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; font-src 'self' data:; img-src 'self' data:;
+     Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; font-src 'self' data:; img-src 'self' data: http: https:;
      ```
    - Browser secara aktif akan menolak koneksi keluar apa pun ke CDN atau domain pihak ketiga jika ada skrip liar yang mencoba memuat aset eksternal.
+   - Pengecualian (2026-11): `img-src` mengizinkan `http:` dan `https:` agar tile Domain Shortcut dan Custom Shortcut dapat memuat favicon situs tujuannya. Aset milik Pantau sendiri tetap seluruhnya lokal; pada lingkungan airgapped favicon gagal dimuat dan tile menampilkan huruf pertama. Konsekuensi yang diterima: browser administrator menghubungi situs-situs tersebut saat tile ditampilkan (tanpa header `Referer`), dan `img-src` tidak lagi menahan permintaan gambar ke domain pihak ketiga.
 
 4. **Preservasi 8 Mode Sintaksis CodeMirror**:
    - Seluruh 8 mode syntax (`xml`, `javascript`, `css`, `htmlmixed`, `clike`, `php`, `shell`, `yaml`) dipertahankan secara lokal untuk memastikan pengalaman editing konfigurasi Linux (Nginx, PHP-FPM, Docker compose, bash script, config C) tetap utuh tanpa degradasi fitur.

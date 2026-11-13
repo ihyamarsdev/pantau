@@ -261,6 +261,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/app/diskusage.css", serveAppBundle("diskusage", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/domains.js", serveAppBundle("domains", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/domains.css", serveAppBundle("domains", ".css", "text/css; charset=utf-8"))
+	s.mux.HandleFunc("/app/shortcuts.js", serveAppBundle("shortcuts", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/dbbackup.js", serveAppBundle("dbbackup", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/dbbackup.css", serveAppBundle("dbbackup", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/agent.js", serveAppBundle("agent", ".js", "text/javascript; charset=utf-8"))
@@ -428,6 +429,7 @@ func (s *Server) routes() {
 	s.registerFleetSearchRoutes()
 	s.registerDiskUsageRoutes()
 	s.registerDomainRoutes()
+	s.registerShortcutRoutes()
 	s.registerDatabaseRoutes()
 	s.registerAgentRoutes()
 }
@@ -2878,8 +2880,9 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("ETag", s.htmlETag)
-	// ponytail: strict CSP to guarantee 100% offline airgapped operation with no external CDN/font leaks
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; font-src 'self' data:; img-src 'self' data:;")
+	// Everything Pantau itself needs is served locally (ADR-0013). The one exception is img-src: shortcut tiles
+	// load the favicon of the site they point to, and fall back to a letter when it cannot be loaded (offline).
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; font-src 'self' data:; img-src 'self' data: http: https:;")
 
 	if match := r.Header.Get("If-None-Match"); match != "" && match == s.htmlETag {
 		w.WriteHeader(http.StatusNotModified)

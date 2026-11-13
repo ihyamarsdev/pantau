@@ -34,3 +34,18 @@
 .dm-all-filters input { flex: 1; min-width: 180px; }
 .dm-progress { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-muted); padding: 4px 0; }
 .dm-hostlink { padding: 0; font-size: var(--fs-sm); }
+/* Domain Shortcuts: starred domains as tiles above the host dashboard (#domainShortcuts). */
+.dm-star.active { color: var(--warning); }
+.dm-star.active .icon { fill: currentColor; }
+.dm-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.dm-tiles:empty { display: none; }
+.dm-tile { display: flex; align-items: center; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: var(--radius-md); padding-right: 6px; min-width: 0; }
+.dm-tile:hover { background: var(--hover); }
+.dm-tile-link { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding: 8px 10px; color: var(--text); text-decoration: none; border-radius: var(--radius-md); }
+.dm-tile-link:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: -2px; }
+.dm-tile-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 32px; height: 32px; border-radius: var(--radius); background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+.dm-tile-text { display: flex; flex-direction: column; min-width: 0; }
+.dm-tile-name, .dm-tile-host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-tile-name { font-size: var(--fs-sm); font-weight: 600; }
+.dm-tile-host { font-size: var(--fs-xs); color: var(--text-muted); }
+.dm-tile-icon img { width: 20px; height: 20px; object-fit: contain; }
