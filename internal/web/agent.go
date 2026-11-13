@@ -34,7 +34,7 @@ var defaultAgentSoul string
 const (
 	agentDefaultURL   = "http://127.0.0.1:8642"
 	agentDefaultModel = "hermes-agent"
-	agentApprovalWait = 240 * time.Second // below Hermes' default 300 s tool timeout
+	agentApprovalWait = 170 * time.Second // plus mcpExecTimeout (120 s) stays below Hermes' default 300 s tool timeout
 	agentMaxPending   = 20
 	agentGrantTTL     = 2 * time.Hour // "approve for this session" lapses after this, or on New chat / Pantau restart
 )

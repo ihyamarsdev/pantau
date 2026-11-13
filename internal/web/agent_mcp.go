@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -23,13 +24,15 @@ import (
 //	mcp_servers:
 //	  pantau: {url: "http://127.0.0.1:<port>/mcp", headers: {Authorization: "Bearer <token>"}, timeout: 300}
 //
-// Tool gates: 0 read-only, 1 mutating with a dedicated validated tool (auto-approvable), 2 arbitrary shell
-// (always needs the operator).
+// Tool gates: 0 never asks, 1 routine change with a dedicated validated tool (auto-approvable), 2 high impact or
+// arbitrary shell (always needs the operator), 3 infrastructure change (agent_mcp_infra.go).
 
 const (
 	mcpProtocolVersion = "2025-03-26"
 	mcpMaxResultBytes  = 24 << 10
 	mcpExecTimeout     = 120 * time.Second
+	agentReadChunk     = 20 << 10 // read_file bytes per call; below mcpMaxResultBytes so a chunk is never clipped
+	agentSummaryMax    = 64 << 10 // an approval card shows the whole action: a larger one is refused, never cut
 )
 
 type rpcReq struct {
@@ -43,7 +46,7 @@ type agentTool struct {
 	Name        string                 `json:"name"`
 	Description string                 `json:"description"`
 	InputSchema map[string]interface{} `json:"inputSchema"`
-	gate        int
+	gate        int                    // highest gate the tool can ask for; run calls agentGate with the gate of the concrete action
 	run         func(s *Server, r *http.Request, args map[string]interface{}) (string, error)
 }
 
@@ -70,7 +73,7 @@ var agentTools = []agentTool{
 	{Name: "docker_list", Description: "List all Docker containers on a host with state and status.", InputSchema: schema(hostReq, map[string]interface{}{"host_id": pHost}), run: toolDockerList},
 	{Name: "docker_logs", Description: "Last lines of a container's logs.", InputSchema: schema([]string{"host_id", "container"}, map[string]interface{}{"host_id": pHost, "container": pName, "tail": map[string]interface{}{"type": "integer", "description": "lines, 1-1000, default 100"}}), run: toolDockerLogs},
 	{Name: "security_status", Description: "Latest security scan: pending security updates by severity, reboot required, failing hardening checks.", InputSchema: schema(hostReq, map[string]interface{}{"host_id": pHost}), run: toolSecurityStatus},
-	{Name: "read_file", Description: "Read a text file on a host (absolute path, first 64 KiB). Private keys, /etc/shadow and similar secret files are refused.", InputSchema: schema([]string{"host_id", "path"}, map[string]interface{}{"host_id": pHost, "path": map[string]interface{}{"type": "string"}}), run: toolReadFile},
+	{Name: "read_file", Description: "Read a text file on a host (absolute path), 20 KiB per call starting at byte offset (default 0); the result says when more follows. Secret-looking values are masked; private keys, /etc/shadow, kubeconfigs and similar secret files are refused.", InputSchema: schema([]string{"host_id", "path"}, map[string]interface{}{"host_id": pHost, "path": map[string]interface{}{"type": "string"}, "offset": map[string]interface{}{"type": "integer", "description": "byte offset, default 0"}}), run: toolReadFile},
 	{Name: "fleet_search", Description: "Search packages, containers (name or image) and domains across ALL hosts at once, from Pantau's stored inventory (no SSH, so data may be stale: see data_age). Returns each match with the hosts that have it. Use it to find which hosts run a package/version, container or domain; hosts_without_* counts hosts never scanned.", InputSchema: schema([]string{"query"}, map[string]interface{}{"query": map[string]interface{}{"type": "string", "description": "2-100 characters, case-insensitive substring"}, "kind": map[string]interface{}{"type": "string", "enum": []string{"all", "package", "container", "domain"}, "description": "default all"}, "limit": map[string]interface{}{"type": "integer", "description": "max matched items, 1-200, default 50"}}), run: toolFleetSearch},
 
 	{Name: "systemd_action", Description: "Run a systemctl action on one unit (start, stop, restart, reload, enable, disable, mask, unmask, reset-failed) or daemon-reload (no unit). May wait for operator approval. Stopping or disabling the SSH daemon is refused.", gate: 1,
@@ -143,9 +146,17 @@ func (s *Server) handleAgentMCP(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, rpcErr(req.ID, -32602, "unknown tool: "+p.Name))
 			return
 		}
-		out, err := tool.run(s, r, p.Arguments)
+		// The gate mark lets loopback refuse a change that skipped agentGate. Every call is audited, reads included.
+		args, _ := json.Marshal(p.Arguments)
+		out, err := "", checkArgs(tool.InputSchema, p.Arguments)
+		if err == nil {
+			out, err = tool.run(s, r.WithContext(context.WithValue(r.Context(), gateKey{}, new(bool))), p.Arguments)
+		}
 		res := map[string]interface{}{"content": []map[string]string{{"type": "text", "text": clip(out)}}}
-		if err != nil {
+		if err == nil {
+			logger.Info("agent", "mcp", fmt.Sprintf("%s %s", p.Name, clipTo(string(args), 300)))
+		} else {
+			logger.Warn("agent", "mcp", fmt.Sprintf("%s %s: %v", p.Name, clipTo(string(args), 300), err))
 			res["isError"] = true
 			res["content"] = []map[string]string{{"type": "text", "text": clip(strings.TrimSpace(out + "\nERROR: " + err.Error()))}}
 		}
@@ -171,6 +182,48 @@ func clip(s string) string {
 }
 
 // ---------------------------------------------------------------- argument helpers
+
+// checkArgs enforces the advertised schema (required, unknown names, basic types, enum), so a wrong call gets a
+// clear error instead of a silently ignored or zero-valued argument. null counts as omitted.
+func checkArgs(sc, args map[string]interface{}) error {
+	req, _ := sc["required"].([]string)
+	for _, k := range req {
+		if args[k] == nil {
+			return fmt.Errorf("%s is required", k)
+		}
+	}
+	props, _ := sc["properties"].(map[string]interface{})
+	for k, v := range args {
+		p, known := props[k].(map[string]interface{})
+		if !known {
+			return fmt.Errorf("unknown argument %q", k)
+		}
+		if v == nil {
+			continue
+		}
+		ok := true
+		switch p["type"] {
+		case "string":
+			_, ok = v.(string)
+		case "boolean":
+			_, ok = v.(bool)
+		case "integer":
+			f, isNum := v.(float64)
+			ok = isNum && f == float64(int64(f))
+		case "array":
+			_, ok = v.([]interface{})
+		case "object":
+			_, ok = v.(map[string]interface{})
+		}
+		if !ok {
+			return fmt.Errorf("%s must be of type %s", k, p["type"])
+		}
+		if enum, isEnum := p["enum"].([]string); isEnum && !slices.Contains(enum, v.(string)) {
+			return fmt.Errorf("%s must be one of: %s", k, strings.Join(enum, ", "))
+		}
+	}
+	return nil
+}
 
 func argHost(args map[string]interface{}) (int64, error) {
 	f, ok := args["host_id"].(float64)
@@ -330,7 +383,8 @@ func toolDockerLogs(s *Server, _ *http.Request, args map[string]interface{}) (st
 		return "", err
 	}
 	tail, _ := args["tail"].(float64)
-	return s.inspector.DockerLogs(id, argStr(args, "container"), int(tail))
+	out, err := s.inspector.DockerLogs(id, argStr(args, "container"), int(tail))
+	return tailOf(out, mcpMaxResultBytes-8), err // the newest lines matter
 }
 
 func toolSecurityStatus(s *Server, _ *http.Request, args map[string]interface{}) (string, error) {
@@ -364,7 +418,7 @@ func toolSecurityStatus(s *Server, _ *http.Request, args map[string]interface{})
 
 // agentSecretPathRe matches files whose content is a credential. shortcut: name based, so a secret stored under
 // an unremarkable name can still be read; exec_command is gated by the operator for anything beyond this.
-var agentSecretPathRe = regexp.MustCompile(`(?i)(^/etc/(shadow|gshadow|sudoers)(\.|$|/)|/\.ssh/|/id_(rsa|dsa|ecdsa|ed25519)|\.(pem|key|p12|pfx|kdbx)$|/\.(env|netrc|pgpass|git-credentials)$|/\.aws/|/\.docker/config\.json$|/\.gnupg/)`)
+var agentSecretPathRe = regexp.MustCompile(`(?i)(^/etc/(shadow|gshadow|sudoers)(\.|$|/)|/\.ssh/|/id_(rsa|dsa|ecdsa|ed25519)|\.(pem|key|p12|pfx|kdbx)$|/\.env(\.(local|prod|production|dev|development|staging|stage|test))?$|/\.(netrc|pgpass|git-credentials|my\.cnf|htpasswd|vault-token)$|/\.aws/|/\.docker/config\.json$|/\.gnupg/|/\.kube/|^/etc/rancher/[^/]+/[^/]+\.yaml$|^/etc/kubernetes/[^/]+\.conf$|^/proc/[^/]+/environ$|^/etc/wireguard/)`)
 
 func toolReadFile(s *Server, _ *http.Request, args map[string]interface{}) (string, error) {
 	id, err := argHost(args)
@@ -374,6 +428,10 @@ func toolReadFile(s *Server, _ *http.Request, args map[string]interface{}) (stri
 	p := argStr(args, "path")
 	if !strings.HasPrefix(p, "/") || strings.ContainsAny(p, "\x00\n") {
 		return "", fmt.Errorf("path must be absolute")
+	}
+	off := argInt(args, "offset")
+	if off < 0 {
+		return "", fmt.Errorf("offset must be 0 or more")
 	}
 	if agentSecretPathRe.MatchString(path.Clean(p)) {
 		return "", fmt.Errorf("refusing to read a secret file")
@@ -387,19 +445,33 @@ func toolReadFile(s *Server, _ *http.Request, args map[string]interface{}) (stri
 	if agentSecretPathRe.MatchString(real) {
 		return "", fmt.Errorf("refusing to read a secret file")
 	}
-	stdout, stderr, code, err = s.inspector.ExecShell(id, "head -c 65536 -- "+shq(real), 20*time.Second)
+	stdout, stderr, code, err = s.inspector.ExecShell(id, fmt.Sprintf("tail -c +%d -- %s | head -c %d", off+1, shq(real), agentReadChunk), 20*time.Second)
 	if err != nil {
 		return "", err
 	}
-	if code != 0 {
+	// The pipe's status is head's, so a tail that could not read shows only as empty output plus stderr.
+	if code != 0 || (stdout == "" && strings.TrimSpace(stderr) != "") {
 		return "", fmt.Errorf("%s", strings.TrimSpace(stderr))
 	}
-	return stdout, nil
+	out := redactSecrets(stdout)
+	if len(stdout) == agentReadChunk {
+		out += fmt.Sprintf("\n…[more: call again with offset=%d]", off+agentReadChunk)
+	}
+	return out, nil
 }
 
 func shq(s string) string { return shellQuote(s) }
 
 // ---------------------------------------------------------------- mutating tools
+
+// gateKey marks, per tool call, that agentGate let a change through. loopback refuses every non-GET request
+// without it, so a tool that forgets its gate cannot change anything through the UI handlers.
+type gateKey struct{}
+
+func gatePassed(ctx context.Context) bool {
+	p, _ := ctx.Value(gateKey{}).(*bool)
+	return p != nil && *p
+}
 
 func (s *Server) agentGate(r *http.Request, hostID int64, tool, summary string, gate int) error {
 	h, err := s.db.GetHost(hostID)
@@ -412,6 +484,9 @@ func (s *Server) agentGate(r *http.Request, hostID int64, tool, summary string, 
 // agentGateAs asks (or skips, per mode and grants) for one action. hostID 0 means a scope without a host
 // (Terraform, Ansible); label is what the approval card shows.
 func (s *Server) agentGateAs(r *http.Request, hostID int64, label, tool, summary string, gate int) error {
+	if len(summary) > agentSummaryMax {
+		return fmt.Errorf("this action is too large to show the operator in full (%d bytes, max %d): split it", len(summary), agentSummaryMax)
+	}
 	ap := &agentApproval{HostID: hostID, HostName: label, Tool: tool, Summary: summary}
 	ok, why := s.agentApprove(r, ap, gate)
 	if !ok {
@@ -419,6 +494,9 @@ func (s *Server) agentGateAs(r *http.Request, hostID int64, label, tool, summary
 		return fmt.Errorf("%s", why)
 	}
 	logger.Info("agent", label, fmt.Sprintf("running %s: %s", tool, summary))
+	if p, _ := r.Context().Value(gateKey{}).(*bool); p != nil {
+		*p = true
+	}
 	return nil
 }
 
@@ -508,7 +586,8 @@ func toolExec(s *Server, r *http.Request, args map[string]interface{}) (string, 
 	if err != nil {
 		return "", err
 	}
-	out := fmt.Sprintf("exit code: %d\n--- stdout ---\n%s\n--- stderr ---\n%s", code, stdout, stderr)
+	half := mcpMaxResultBytes/2 - 64 // both streams keep their end: that is where the failure is
+	out := fmt.Sprintf("exit code: %d\n--- stdout ---\n%s\n--- stderr ---\n%s", code, tailOf(stdout, half), tailOf(stderr, half))
 	if code != 0 {
 		return out, fmt.Errorf("command exited %d", code)
 	}

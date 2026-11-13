@@ -974,6 +974,18 @@ func (ins *Inspector) FirewallState(hostID int64) (*FirewallState, error) {
 }
 
 // FirewallApply validates and runs one firewall change, and writes it to the activity log.
+// ValidateFirewallRequest reports, without connecting, whether FirewallApply would accept req on a host whose SSH
+// port is sshPort: a caller that asks for approval first checks here.
+func ValidateFirewallRequest(req FirewallRequest, sshPort int) error {
+	if _, _, err := buildFirewallSteps(req, sshPort); err != nil {
+		return err
+	}
+	if firewallProtected(req, sshPort) {
+		return ErrFirewallProtected
+	}
+	return nil
+}
+
 func (ins *Inspector) FirewallApply(hostID int64, req FirewallRequest) (*FirewallActionResult, error) {
 	host, exec, closeFn, err := ins.firewallHost(hostID)
 	if err != nil {

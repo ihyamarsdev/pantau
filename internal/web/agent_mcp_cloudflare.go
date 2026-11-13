@@ -274,7 +274,7 @@ func toolCFPurge(s *Server, r *http.Request, args map[string]interface{}) (strin
 	if len(body) != 1 {
 		return "", fmt.Errorf("exactly one purge mode must be given: everything, files, hosts, tags or prefixes")
 	}
-	if err := s.agentGateAs(r, 0, "Cloudflare", "cf_purge_cache", fmt.Sprintf("Cloudflare %s: purge cache (%s)", z.zoneName, clipTo(what, 600)), gateHigh); err != nil {
+	if err := s.agentGateAs(r, 0, "Cloudflare", "cf_purge_cache", fmt.Sprintf("Cloudflare %s: purge cache (%s)", z.zoneName, what), gateHigh); err != nil {
 		return "", err
 	}
 	if _, err := s.loopJSON(r.Context(), http.MethodPost, z.path("/purge"), body); err != nil {

@@ -23,11 +23,11 @@ func init() { agentTools = append(agentTools, memoryTools...) }
 const agentMemoryBudget = 6000 // bytes of notes put into the prompt; the rest stays reachable via memory_list
 
 var memoryTools = []agentTool{
-	{Name: "memory_save", Description: "Remember one durable fact about this infrastructure for future conversations: topology, conventions, quirks, what is normal, a past root cause and its fix. One fact per note, at most 500 characters, never a secret. host_id scopes the note to a host (omit = whole fleet). replaces = id of an existing note to rewrite instead of adding a new one. Notes are shown to you at the start of every chat.",
+	{Name: "memory_save", Description: "Remember one durable fact about this infrastructure for future conversations: topology, conventions, quirks, what is normal, a past root cause and its fix. One fact per note, at most 500 characters, never a secret. host_id scopes the note to a host (omit = whole fleet). replaces = id of one of your own notes to rewrite instead of adding a new one (notes with source operator are the operator's). Notes are shown to you at the start of every chat.",
 		InputSchema: schema([]string{"content"}, map[string]interface{}{"content": str, "host_id": pHost, "replaces": map[string]interface{}{"type": "integer", "description": "note id from your memory"}}), run: toolMemorySave},
 	{Name: "memory_list", Description: "List your saved notes, optionally for one host (its notes plus fleet-wide ones) and/or containing a text. Use it when the Memory section of your prompt says more notes exist.",
 		InputSchema: schema(nil, map[string]interface{}{"host_id": pHost, "query": str}), run: toolMemoryList},
-	{Name: "memory_forget", Description: "Delete a note that is wrong or outdated.",
+	{Name: "memory_forget", Description: "Delete one of your own notes that is wrong or outdated.",
 		InputSchema: schema([]string{"id"}, map[string]interface{}{"id": map[string]interface{}{"type": "integer", "description": "note id"}}), run: toolMemoryForget},
 }
 
@@ -51,6 +51,24 @@ func argID(args map[string]interface{}, k string) (int64, bool, error) {
 	return int64(f), true, nil
 }
 
+// agentNote refuses a note the operator wrote: the agent may only rewrite or delete its own, so text it picked up
+// from a log or file cannot replace what the operator stated.
+func (s *Server) agentNote(id int64) error {
+	notes, err := s.db.ListAgentMemory(0, "")
+	if err != nil {
+		return err
+	}
+	for _, n := range notes {
+		if n.ID == id {
+			if n.Source != "agent" {
+				return fmt.Errorf("note #%d was written by the operator; ask them to change it in Settings", id)
+			}
+			return nil
+		}
+	}
+	return store.ErrAgentMemoryNotFound
+}
+
 func toolMemorySave(s *Server, _ *http.Request, args map[string]interface{}) (string, error) {
 	content := argStr(args, "content")
 	if looksSecret(content) {
@@ -70,6 +88,9 @@ func toolMemorySave(s *Server, _ *http.Request, args map[string]interface{}) (st
 	if id, ok, err := argID(args, "replaces"); err != nil {
 		return "", err
 	} else if ok {
+		if err := s.agentNote(id); err != nil {
+			return "", err
+		}
 		if err := s.db.UpdateAgentMemory(id, content); err != nil {
 			return "", err
 		}
@@ -100,6 +121,9 @@ func toolMemoryForget(s *Server, _ *http.Request, args map[string]interface{}) (
 	id, ok, err := argID(args, "id")
 	if err != nil || !ok {
 		return "", fmt.Errorf("id (integer) is required")
+	}
+	if err := s.agentNote(id); err != nil {
+		return "", err
 	}
 	if err := s.db.DeleteAgentMemory(id); err != nil {
 		return "", err

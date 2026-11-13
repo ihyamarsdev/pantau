@@ -48,25 +48,25 @@ var infraTools = []agentTool{
 	// ---- Docker
 	{Name: "docker_inspect", Description: "Detailed state of one container: exit code, OOM, restarts, health, ports, mounts, networks. Secret-looking env values are masked.",
 		InputSchema: schema([]string{"host_id", "container"}, map[string]interface{}{"host_id": pHost, "container": pName}), run: toolDockerInspect},
-	{Name: "docker_info", Description: "Docker overview of a host: what = stats (CPU/memory per container), images, or stacks (Compose projects with status).",
-		InputSchema: schema([]string{"host_id", "what"}, map[string]interface{}{"host_id": pHost, "what": map[string]interface{}{"type": "string", "enum": []string{"stats", "images", "stacks"}}}), run: toolDockerInfo},
+	{Name: "docker_info", Description: "Docker overview of a host: what = stats (CPU/memory per container), images, stacks (Compose projects with status), volumes or networks.",
+		InputSchema: schema([]string{"host_id", "what"}, map[string]interface{}{"host_id": pHost, "what": map[string]interface{}{"type": "string", "enum": []string{"stats", "images", "stacks", "volumes", "networks"}}}), run: toolDockerInfo},
 	{Name: "docker_stack_file", Description: "The compose file of a Compose stack (from docker_info stacks). Secret-looking values are masked.",
 		InputSchema: schema([]string{"host_id", "stack"}, map[string]interface{}{"host_id": pHost, "stack": str}), run: toolDockerStackFile},
-	{Name: "docker_stack_action", Description: "Compose action on a stack: up, start, stop, restart, pull (routine) or down, recreate, update (high impact). May wait for operator approval.", gate: gateRoutine,
+	{Name: "docker_stack_action", Description: "Compose action on a stack: up, start, stop, restart, pull (routine) or down, recreate, update (high impact). May wait for operator approval.", gate: gateHigh,
 		InputSchema: schema([]string{"host_id", "stack", "action"}, map[string]interface{}{"host_id": pHost, "stack": str, "action": map[string]interface{}{"type": "string", "enum": []string{"up", "start", "stop", "restart", "pull", "down", "recreate", "update"}}}), run: toolDockerStackAction},
 
 	// ---- Kubernetes
 	{Name: "kube_targets", Description: "Kubernetes clusters by the name the operator gave them in Pantau (registered clusters and k3s/RKE2 clusters reached over SSH, one row each), with access mode (full, no-exec, read-only). Pass that name as cluster to the other kube_* tools.",
 		InputSchema: schema(nil, map[string]interface{}{}), run: toolKubeTargets},
-	{Name: "kube_get", Description: "List Kubernetes objects: what = nodes, namespaces, workloads, pods, services or events. namespace is optional (empty = all).",
-		InputSchema: schema([]string{"what"}, map[string]interface{}{"cluster": pCluster, "target_id": pTarget, "what": map[string]interface{}{"type": "string", "enum": []string{"nodes", "namespaces", "workloads", "pods", "services", "events"}}, "namespace": pNS}), run: toolKubeGet},
+	{Name: "kube_get", Description: "List Kubernetes objects: what = nodes, namespaces, workloads, pods, services, events, ingresses, configmaps, pvcs, pvs, jobs or cronjobs. namespace is optional (empty = all).",
+		InputSchema: schema([]string{"what"}, map[string]interface{}{"cluster": pCluster, "target_id": pTarget, "what": map[string]interface{}{"type": "string", "enum": []string{"nodes", "namespaces", "workloads", "pods", "services", "events", "ingresses", "configmaps", "pvcs", "pvs", "jobs", "cronjobs"}}, "namespace": pNS}), run: toolKubeGet},
 	{Name: "kube_describe", Description: "kubectl describe for one object (secret-looking values masked).",
 		InputSchema: schema([]string{"kind", "name"}, map[string]interface{}{"cluster": pCluster, "target_id": pTarget, "kind": map[string]interface{}{"type": "string", "description": "pod, deployment, node, service, ..."}, "namespace": pNS, "name": str}), run: toolKubeDescribe},
 	{Name: "kube_logs", Description: "Last lines of a pod's logs.",
 		InputSchema: schema([]string{"namespace", "pod"}, map[string]interface{}{"cluster": pCluster, "target_id": pTarget, "namespace": pNS, "pod": str, "container": str, "tail": map[string]interface{}{"type": "integer", "description": "lines, default 100"}}), run: toolKubeLogs},
 	{Name: "kube_diff", Description: "Preview what kubectl apply of a manifest would change (read-only).",
 		InputSchema: schema([]string{"yaml"}, map[string]interface{}{"cluster": pCluster, "target_id": pTarget, "yaml": str}), run: toolKubeDiff},
-	{Name: "kube_action", Description: "scale (deployment/statefulset, needs replicas), restart (rollout restart of deployment/statefulset/daemonset), delete (kind pod only), cordon, uncordon, drain (node). Drain is high impact. Refused when the target is read-only. May wait for operator approval.", gate: gateRoutine,
+	{Name: "kube_action", Description: "scale (deployment/statefulset, needs replicas), restart (rollout restart of deployment/statefulset/daemonset), delete (kind pod only), cordon, uncordon, drain (node). Drain is high impact. Refused when the target is read-only. May wait for operator approval.", gate: gateHigh,
 		InputSchema: schema([]string{"op", "kind", "name"}, map[string]interface{}{"cluster": pCluster, "target_id": pTarget, "op": map[string]interface{}{"type": "string", "enum": []string{"scale", "restart", "delete", "cordon", "uncordon", "drain"}}, "kind": str, "namespace": pNS, "name": str, "replicas": map[string]interface{}{"type": "integer"}}), run: toolKubeAction},
 	{Name: "kube_apply", Description: "kubectl apply a YAML manifest. Always waits for explicit operator approval, every time. Run kube_diff first. Refused when the target is read-only.", gate: gateInfra,
 		InputSchema: schema([]string{"yaml"}, map[string]interface{}{"cluster": pCluster, "target_id": pTarget, "yaml": str}), run: toolKubeApply},
@@ -74,7 +74,7 @@ var infraTools = []agentTool{
 	// ---- Ansible
 	{Name: "ansible_playbooks", Description: "List Ansible playbooks, or with playbook_id show one (inline source, extra vars, survey).",
 		InputSchema: schema(nil, map[string]interface{}{"playbook_id": pPB}), run: toolAnsiblePlaybooks},
-	{Name: "ansible_run", Description: "Run a playbook on hosts. mode: syntax, check (dry run), diff (dry run with diff) or run (changes hosts). Real runs always wait for explicit operator approval, every time: do a check run first. Returns a run id; read progress with ansible_runs.", gate: gateRoutine,
+	{Name: "ansible_run", Description: "Run a playbook on hosts. mode: syntax, check (dry run), diff (dry run with diff) or run (changes hosts). Real runs always wait for explicit operator approval, every time: do a check run first. Returns a run id; read progress with ansible_runs.", gate: gateInfra,
 		InputSchema: schema([]string{"playbook_id", "mode"}, map[string]interface{}{"playbook_id": pPB, "mode": map[string]interface{}{"type": "string", "enum": []string{"syntax", "check", "diff", "run"}}, "host_ids": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "integer"}}, "group": str, "limit": str, "tags": str, "skip_tags": str, "extra_vars": map[string]interface{}{"type": "object"}, "become": map[string]interface{}{"type": "boolean"}}), run: toolAnsibleRun},
 	{Name: "ansible_runs", Description: "Recent Ansible runs, or with run_id the status, recap and the end of the log of one run.",
 		InputSchema: schema(nil, map[string]interface{}{"run_id": pRunID, "playbook_id": pPB, "limit": map[string]interface{}{"type": "integer"}}), run: toolAnsibleRuns},
@@ -106,6 +106,9 @@ func (m *memResp) WriteHeader(c int)           { m.code = c }
 // loopback runs a request through the real router with a short-lived session, so every handler rule applies.
 // Paths are built by the tools from integers and url-encoded values only.
 func (s *Server) loopback(ctx context.Context, method, path string, body interface{}) (int, []byte) {
+	if method != http.MethodGet && !gatePassed(ctx) {
+		return http.StatusForbidden, []byte("internal error: this tool tried to change something without the approval gate")
+	}
 	tok := randHex(16)
 	s.sessions.Store(tok, time.Now().Add(2*time.Minute))
 	defer s.sessions.Delete(tok)
@@ -228,8 +231,12 @@ func toolDockerInfo(s *Server, _ *http.Request, args map[string]interface{}) (st
 		v, err = s.inspector.DockerListImages(id)
 	case "stacks":
 		v, err = s.inspector.DockerListStacks(id)
+	case "volumes":
+		v, err = s.inspector.ListDockerVolumes(id)
+	case "networks":
+		v, err = s.inspector.ListDockerNetworks(id)
 	default:
-		return "", fmt.Errorf("what must be stats, images or stacks")
+		return "", fmt.Errorf("what must be stats, images, stacks, volumes or networks")
 	}
 	if err != nil {
 		return "", err
@@ -328,6 +335,17 @@ func (s *Server) kubeTargetOf(args map[string]interface{}) (*kubeTarget, error) 
 	return &kubeTarget{id, h.Name, h.KubeMode}, nil
 }
 
+// kubeGrantBase keeps the session grant of a cluster reached over SSH apart from the grant of the member host whose
+// id addresses it: "approve for this session" on a host must not cover cluster-wide actions, nor the reverse.
+const kubeGrantBase = 1 << 40
+
+func (t *kubeTarget) grantID() int64 {
+	if t.ID > 0 {
+		return kubeGrantBase + t.ID
+	}
+	return t.ID // registered clusters are negative already
+}
+
 func (s *Server) kubeWritable(args map[string]interface{}) (*kubeTarget, error) {
 	t, err := s.kubeTargetOf(args)
 	if err != nil {
@@ -377,18 +395,24 @@ func toolKubeGet(s *Server, r *http.Request, args map[string]interface{}) (strin
 		return "", err
 	}
 	what := argStr(args, "what")
+	sub, q := what, url.Values{}
 	switch what {
 	case "nodes", "namespaces", "workloads", "pods", "services", "events":
+	case "ingresses", "configmaps", "pvcs", "pvs", "jobs", "cronjobs": // the UI's generic resource table
+		sub = "resources"
+		q.Set("kind", what)
 	default:
-		return "", fmt.Errorf("what must be nodes, namespaces, workloads, pods, services or events")
+		return "", fmt.Errorf("unsupported what %q", what)
 	}
-	q := url.Values{}
 	if ns := argStr(args, "namespace"); ns != "" && what != "nodes" && what != "namespaces" {
 		q.Set("ns", ns)
 	}
-	m, err := s.loopJSON(r.Context(), http.MethodGet, kubePath(t, what, q), nil)
+	m, err := s.loopJSON(r.Context(), http.MethodGet, kubePath(t, sub, q), nil)
 	if err != nil {
 		return "", err
+	}
+	if sub == "resources" {
+		return jsonText(pick(m, "columns", "rows"))
 	}
 	return jsonText(m[what])
 }
@@ -422,7 +446,7 @@ func toolKubeLogs(s *Server, r *http.Request, args map[string]interface{}) (stri
 		return "", err
 	}
 	out, _ := m["output"].(string)
-	return out, nil
+	return tailOf(out, mcpMaxResultBytes-8), nil
 }
 
 func toolKubeDiff(s *Server, r *http.Request, args map[string]interface{}) (string, error) {
@@ -430,7 +454,8 @@ func toolKubeDiff(s *Server, r *http.Request, args map[string]interface{}) (stri
 	if err != nil {
 		return "", err
 	}
-	m, err := s.loopJSON(r.Context(), http.MethodPost, kubePath(t, "diff", nil), map[string]string{"yaml": argStr(args, "yaml")})
+	preview := true // a POST, but a server-side dry run: no gate
+	m, err := s.loopJSON(context.WithValue(r.Context(), gateKey{}, &preview), http.MethodPost, kubePath(t, "diff", nil), map[string]string{"yaml": argStr(args, "yaml")})
 	if err != nil {
 		return "", err
 	}
@@ -465,7 +490,7 @@ func toolKubeAction(s *Server, r *http.Request, args map[string]interface{}) (st
 	if req.Replicas != nil {
 		summary += fmt.Sprintf(" --replicas=%d", *req.Replicas)
 	}
-	if err := s.agentGateAs(r, t.ID, t.Name, "kube_action", summary, gate); err != nil {
+	if err := s.agentGateAs(r, t.grantID(), t.Name, "kube_action", summary, gate); err != nil {
 		return "", err
 	}
 	m, err := s.loopJSON(r.Context(), http.MethodPost, kubePath(t, "action", nil), req)
@@ -485,7 +510,7 @@ func toolKubeApply(s *Server, r *http.Request, args map[string]interface{}) (str
 	if err := inspector.ValidateKubeApply(y); err != nil {
 		return "", err
 	}
-	if err := s.agentGateAs(r, t.ID, t.Name, "kube_apply", "kubectl apply -f - on "+t.Name+":\n"+clipTo(y, 3000), gateInfra); err != nil {
+	if err := s.agentGateAs(r, t.grantID(), t.Name, "kube_apply", "kubectl apply -f - on "+t.Name+":\n"+y, gateInfra); err != nil {
 		return "", err
 	}
 	m, err := s.loopJSON(r.Context(), http.MethodPost, kubePath(t, "apply", nil), map[string]string{"yaml": y})
@@ -557,7 +582,7 @@ func toolAnsibleRun(s *Server, r *http.Request, args map[string]interface{}) (st
 	}
 	b, _ := json.Marshal(body)
 	name, _ := pb["name"].(string)
-	if err := s.agentGateAs(r, 0, "Ansible", "ansible_run", fmt.Sprintf("ansible playbook %q (id %d), mode %s\n%s", name, id, mode, clipTo(string(b), 1500)), gate); err != nil {
+	if err := s.agentGateAs(r, 0, "Ansible", "ansible_run", fmt.Sprintf("ansible playbook %q (id %d), mode %s\n%s", name, id, mode, b), gate); err != nil {
 		return "", err
 	}
 	m, err := s.loopJSON(r.Context(), http.MethodPost, fmt.Sprintf("/api/ansible/playbooks/%d/run", id), body)

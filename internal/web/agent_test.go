@@ -104,7 +104,8 @@ func TestAgentMCPToolValidation(t *testing.T) {
 }
 
 func TestAgentSecretPathRe(t *testing.T) {
-	for _, p := range []string{"/etc/shadow", "/etc/sudoers.d/x", "/root/.ssh/id_ed25519", "/home/a/.ssh/authorized_keys", "/srv/app/.env", "/etc/ssl/private/site.key", "/home/a/.aws/credentials", "/home/a/.docker/config.json"} {
+	for _, p := range []string{"/etc/shadow", "/etc/sudoers.d/x", "/root/.ssh/id_ed25519", "/home/a/.ssh/authorized_keys", "/srv/app/.env", "/etc/ssl/private/site.key", "/home/a/.aws/credentials", "/home/a/.docker/config.json",
+		"/srv/app/.env.production", "/root/.kube/config", "/etc/rancher/k3s/k3s.yaml", "/etc/kubernetes/admin.conf", "/proc/1234/environ", "/etc/wireguard/wg0.conf", "/root/.my.cnf"} {
 		if !agentSecretPathRe.MatchString(p) {
 			t.Errorf("%s must be treated as secret", p)
 		}
