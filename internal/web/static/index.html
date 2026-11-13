@@ -2038,7 +2038,7 @@ header {
   top: 52px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--card-border);
-  padding: 10px 12px;
+  padding: 10px 8px;
   font-size: var(--fs-xs);
   font-weight: 600;
   text-transform: uppercase;
@@ -2071,14 +2071,22 @@ header {
   opacity: 0.35;
 }
 .host-list-table td {
-  padding: 8px 12px;
+  padding: 8px;
   vertical-align: middle;
   white-space: nowrap;
 }
-@media (max-width: 1100px) {
-  .host-list-view { overflow-x: auto; }
-  .host-list-table thead th { position: static; }
+.host-list-view.hlv-scroll .host-list-table thead th:last-child,
+.host-list-view.hlv-scroll .host-list-table tbody tr:not(.host-list-group-row) > td:last-child { border-left: 1px solid var(--card-border); padding-left: 12px; }
+/* Toggled by fitHostList() when the table is wider than the view: scroll sideways, keep the actions column (⋮ menu) pinned. */
+.host-list-view.hlv-scroll { overflow-x: auto; }
+.host-list-view.hlv-scroll .host-list-table thead th { position: static; }
+.host-list-view.hlv-scroll .host-list-table thead th:last-child,
+.host-list-view.hlv-scroll .host-list-table tbody tr:not(.host-list-group-row) > td:last-child {
+  position: sticky; right: 0; z-index: 11; box-shadow: -8px 0 8px -8px rgba(0, 0, 0, 0.5);
 }
+.host-list-view.hlv-scroll .host-list-table tbody tr:not(.host-list-group-row) > td:last-child { z-index: 1; background: var(--card-bg); }
+.host-list-view.hlv-scroll .host-list-table tbody tr:not(.host-list-group-row):hover > td:last-child { background: linear-gradient(var(--hover), var(--hover)), var(--card-bg); }
+.host-list-view.hlv-scroll .host-list-table tbody tr.host-selected > td:last-child { background: linear-gradient(var(--accent-soft), var(--accent-soft)), var(--card-bg); }
 .host-list-group-row td {
   background: var(--surface-2) !important;
   padding: 8px 12px;
@@ -11158,6 +11166,17 @@ function renderListView(listContainer, isManualSort) {
     });
   });
   listContainer.appendChild(table);
+  fitHostList(listContainer);
+  if (!listContainer._fitObserver) {
+    listContainer._fitObserver = new ResizeObserver(() => fitHostList(listContainer));
+    listContainer._fitObserver.observe(listContainer);
+  }
+}
+
+function fitHostList(view) {
+  view.classList.remove('hlv-scroll');
+  const table = view.querySelector('.host-list-table');
+  if (table && table.offsetWidth > view.clientWidth) view.classList.add('hlv-scroll');
 }
 
 let lastEngineStatus = true;
@@ -11825,6 +11844,16 @@ function toggleDropdown(e, id) {
   closeAllDropdowns();
   if (menu && !isOpen) {
     menu.parentElement.classList.add('open');
+    // The list view clips/scrolls its content, so its menu is pinned to the viewport next to the button.
+    if (menu.closest('.host-list-table')) {
+      const b = menu.parentElement.getBoundingClientRect();
+      const h = menu.offsetHeight;
+      Object.assign(menu.style, {
+        position: 'fixed', margin: '0', bottom: 'auto', left: 'auto',
+        right: (innerWidth - b.right) + 'px',
+        top: (b.bottom + 6 + h > innerHeight ? Math.max(4, b.top - 6 - h) : b.bottom + 6) + 'px'
+      });
+    }
   }
 }
 
@@ -11832,6 +11861,7 @@ function closeAllDropdowns() {
   document.querySelectorAll('.dropdown.open').forEach(el => el.classList.remove('open'));
 }
 window.addEventListener('click', closeAllDropdowns);
+window.addEventListener('scroll', () => { if (document.querySelector('.host-list-table .dropdown.open')) closeAllDropdowns(); }, true);
 
 function openInjectKeyModal(id, name) {
   closeAllDropdowns();
