@@ -69,7 +69,15 @@ Pantau stays a single Go binary with no runtime dependency (ADR-0002), so Hermes
   mark itself).
 - **Results keep what matters.** Results are capped at 24 KiB. Logs (`docker_logs`, `kube_logs`) and both streams of
   `exec_command` keep their end, not their start. `read_file` returns 20 KiB per call from a byte `offset` and says
-  when more follows.
+  when more follows. Every result stays in the conversation and is sent again on each later model call, so results
+  are small: JSON is not indented, and the lists read most (`list_hosts`, `systemd_list`, `list_dir`) are one
+  tab- or space-separated line per entry; `systemd_list` takes a `filter`. In the compose stack `start.sh` sets
+  Hermes' `compression.threshold_tokens` to 60000, because one chat session lasts until **New chat** and the default
+  (50% of the model window) is never reached on a 1M-token model.
+- **Batches.** `systemd_action` takes `units` (max 20, one host, one action): one approval card names every unit and
+  they run one after another through `inspector.SystemdAction`, as the UI does. A failing unit does not stop the
+  batch; an SSH error or a refused unit (SSH daemon) does, and so does a 120 s limit that keeps the call inside
+  Hermes' tool timeout. The result lists what ran and names what did not.
 - **Approval.** Every change blocks in `agentApprove` until the operator decides in an approval card (polled every
   2.5 s), is denied after 170 s (so that the wait plus a 120 s `exec_command` stays below Hermes' 300 s tool
   timeout) or when the request is cancelled. The card shows the whole action (manifest, extra vars, purge list): one

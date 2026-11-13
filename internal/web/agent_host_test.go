@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"pantau/internal/inspector"
 	"pantau/internal/store"
 )
 
@@ -122,5 +123,93 @@ func TestAgentCannotTouchOperatorNotes(t *testing.T) {
 	}
 	if notes, _ := db.ListAgentMemory(0, ""); len(notes) != 1 || notes[0].Content != "Prod database is host db-1" {
 		t.Fatalf("operator note changed: %+v", notes)
+	}
+}
+
+// list_hosts is tab-separated: a name with a tab or line break must stay one cell of one row.
+func TestAgentListHostsRows(t *testing.T) {
+	srv, db, cleanup := setupTestServer(t)
+	defer cleanup()
+	_ = db.SetSetting("hermes_enabled", "1")
+	if _, err := db.CreateHost(&store.Host{Name: "web-1\n99\tevil", Host: "10.0.0.1", Port: 22, User: "root"}); err != nil {
+		t.Fatal(err)
+	}
+	var resp struct {
+		Result struct {
+			Content []struct{ Text string }
+		}
+	}
+	if err := json.Unmarshal([]byte(callTool(t, srv, "list_hosts", `{}`)), &resp); err != nil || len(resp.Result.Content) != 1 {
+		t.Fatalf("list_hosts: %v %+v", err, resp)
+	}
+	lines := strings.Split(strings.TrimSpace(resp.Result.Content[0].Text), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("want a header and one row, got %q", lines)
+	}
+	head, row := strings.Split(lines[0], "\t"), strings.Split(lines[1], "\t")
+	if len(row) != len(head) || row[1] != "web-1 99 evil" || row[2] != "root@10.0.0.1:22" {
+		t.Fatalf("row does not line up with the header: %q / %q", head, row)
+	}
+}
+
+// Several units are one request: one approval card naming all of them, and nothing asked when one is invalid.
+func TestAgentSystemdActionBatch(t *testing.T) {
+	srv, db, cleanup := setupTestServer(t)
+	defer cleanup()
+	_ = db.SetSetting("hermes_enabled", "1")
+	hostID, err := db.CreateHost(&store.Host{Name: "web-1", Host: "10.0.0.1", Port: 22, User: "root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := `{"host_id":` + itoa(hostID) + `,"action":"stop",`
+
+	many := strings.Repeat(`"a.service",`, agentSystemdBatchMax) + `"a.service"`
+	for _, units := range []string{`"nginx.service","x;reboot.service"`, many, ``} {
+		if out := callTool(t, srv, "systemd_action", h+`"units":[`+units+`]}`); !strings.Contains(out, `"isError":true`) || pendingCount(srv) != 0 {
+			t.Fatalf("units [%s] must be refused before asking: %s (pending %d)", units, out, pendingCount(srv))
+		}
+	}
+
+	card := make(chan string, 1)
+	go func() { card <- decideNext(t, srv, false) }()
+	out := callTool(t, srv, "systemd_action", h+`"units":["redis.service","rabbitmq-server.service"]}`)
+	if c := <-card; c != "systemctl stop redis.service rabbitmq-server.service" {
+		t.Fatalf("approval card: %q", c)
+	}
+	if !strings.Contains(out, "denied") || pendingCount(srv) != 0 {
+		t.Fatalf("a denied batch must not run: %s", out)
+	}
+}
+
+func TestAgentSystemdRows(t *testing.T) {
+	svcs := []inspector.SystemdService{
+		{Name: "nginx.service", Load: "loaded", Active: "active", Sub: "running", Enabled: "enabled", Description: "A high performance web server"},
+		{Name: "php8.2-fpm.service", Load: "loaded", Active: "failed", Sub: "failed", Enabled: "enabled", Description: "The PHP FastCGI Process Manager"},
+		{Name: "aicare.service", Load: "loaded", Active: "inactive", Sub: "dead", Description: "AI Care worker"},
+	}
+	units := func(only bool, filter string) string {
+		var names []string
+		for _, l := range strings.Split(strings.TrimSpace(systemdRows(svcs, only, filter)), "\n")[1:] {
+			names = append(names, strings.Split(l, "\t")[0])
+		}
+		return strings.Join(names, " ")
+	}
+	for _, c := range []struct {
+		only         bool
+		filter, want string
+	}{
+		{false, "", "nginx.service php8.2-fpm.service aicare.service"},
+		{true, "", "php8.2-fpm.service"},
+		{false, "PHP", "php8.2-fpm.service"},   // case-insensitive, by name
+		{false, "web server", "nginx.service"}, // by description
+		{true, "nginx", ""},                    // both conditions must hold
+	} {
+		if got := units(c.only, c.filter); got != c.want {
+			t.Errorf("only=%v filter=%q: got %q, want %q", c.only, c.filter, got, c.want)
+		}
+	}
+	// An unknown enable state is an empty cell, so the columns still line up with the header.
+	if rows := strings.Split(systemdRows(svcs, false, "aicare"), "\n"); len(strings.Split(rows[1], "\t")) != len(strings.Split(rows[0], "\t")) {
+		t.Errorf("row does not line up with the header: %q", rows)
 	}
 }

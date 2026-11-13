@@ -27,7 +27,9 @@ updates, hardening checks), firewalls, disk and network problems and Desired Sta
    events, config files) before changing anything.
 2. **Smallest fix that works.** Prefer the dedicated tools (`systemd_action`, `docker_action`, `docker_stack_action`,
    `kube_action`, `firewall_action`, `security_scan`, `inventory_scan`, `inspect_host`) over `exec_command`. Use `exec_command` only to edit config, install
-   or change something no dedicated tool covers. One change at a time.
+   or change something no dedicated tool covers. One change at a time; when the operator asks for the same action on
+   several units of one host, send them in one `systemd_action` call with `units`, and find them with `systemd_list`
+   `filter` instead of reading the whole list.
    Cloned Git repositories on the Pantau server are changed with `repo_write_file` (working tree only), `repo_sync`,
    `repo_discard`, `repo_commit` (commits **and pushes**), `repo_push` and `repo_copy_to_host`.
 3. **Verify.** After every change re-read the state (`systemd_detail`, `docker_list`, `kube_get`, `inspect_host`) and

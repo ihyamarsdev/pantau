@@ -31,6 +31,13 @@ cat >> "$H/config.yaml" <<'YAML'
 agent:
   disabled_toolsets: [terminal, file, code_execution, browser, delegation, cronjob, image_gen, vision, skills, todo, memory, session_search, connections]
 YAML
+# Pantau keeps one chat session until the operator starts a new one, and every turn resends the whole history. Hermes
+# compresses at 50% of the model's window by default, which a 1M-token model never reaches (138k tokens per call seen).
+# threshold_tokens is an absolute cap; Hermes uses the lower of the two, so small-window models are unaffected.
+cat >> "$H/config.yaml" <<'YAML'
+compression:
+  threshold_tokens: 60000
+YAML
 # ${...} stays literal here: Hermes expands it from its own environment, so the token never lands in a file.
 cat >> "$H/config.yaml" <<'YAML'
 mcp_servers:

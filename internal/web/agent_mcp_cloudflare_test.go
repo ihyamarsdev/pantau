@@ -82,7 +82,7 @@ func TestAgentCloudflareTools(t *testing.T) {
 	card := make(chan string, 1)
 	go func() { card <- decideNext(t, srv, true) }()
 	out := callTool(t, srv, "cf_dns_change", `{"zone":"example.com","action":"update","record_id":"`+rid+`","content":"9.9.9.9"}`)
-	if strings.Contains(out, `"isError":true`) || !strings.Contains(out, "9.9.9.9") || !strings.Contains(out, `example.com`) || !strings.Contains(out, `\"type\": \"A\"`) {
+	if strings.Contains(out, `"isError":true`) || !strings.Contains(out, "9.9.9.9") || !strings.Contains(out, `example.com`) || !strings.Contains(out, `\"type\":\"A\"`) {
 		t.Fatalf("update: %s", out)
 	}
 	if c := <-card; !strings.Contains(c, "1.2.3.4") || !strings.Contains(c, "9.9.9.9") {

@@ -65,10 +65,10 @@ var (
 )
 
 var agentTools = []agentTool{
-	{Name: "list_hosts", Description: "List managed hosts with status, OS, load and resource use.", InputSchema: schema(nil, map[string]interface{}{}), run: toolListHosts},
+	{Name: "list_hosts", Description: "List managed hosts with status, OS, load and resource use: tab-separated rows under a header line.", InputSchema: schema(nil, map[string]interface{}{}), run: toolListHosts},
 	{Name: "get_host_state", Description: "Host overview: Desired State rules, current Drift items and recent incidents with root-cause excerpts.", InputSchema: schema(hostReq, map[string]interface{}{"host_id": pHost}), run: toolHostState},
 	{Name: "list_alerts", Description: "Active (unacknowledged) alerts across all hosts, with root-cause excerpts.", InputSchema: schema(nil, map[string]interface{}{}), run: toolListAlerts},
-	{Name: "systemd_list", Description: "List systemd service units on a host. Set only_problems to show just failed units.", InputSchema: schema(hostReq, map[string]interface{}{"host_id": pHost, "only_problems": map[string]interface{}{"type": "boolean"}}), run: toolSystemdList},
+	{Name: "systemd_list", Description: "List systemd service units on a host: tab-separated rows under a header line. Narrow it with filter (part of a unit name or description) or only_problems (just failed units) instead of reading the whole list.", InputSchema: schema(hostReq, map[string]interface{}{"host_id": pHost, "only_problems": map[string]interface{}{"type": "boolean"}, "filter": map[string]interface{}{"type": "string", "description": "case-insensitive substring of the unit name or description"}}), run: toolSystemdList},
 	{Name: "systemd_detail", Description: "systemctl status, properties, recent journal and Pantau's automatic diagnosis for one unit.", InputSchema: schema([]string{"host_id", "unit"}, map[string]interface{}{"host_id": pHost, "unit": pUnit, "errors_only": map[string]interface{}{"type": "boolean", "description": "journal lines of priority error and worse"}}), run: toolSystemdDetail},
 	{Name: "docker_list", Description: "List all Docker containers on a host with state and status.", InputSchema: schema(hostReq, map[string]interface{}{"host_id": pHost}), run: toolDockerList},
 	{Name: "docker_logs", Description: "Last lines of a container's logs.", InputSchema: schema([]string{"host_id", "container"}, map[string]interface{}{"host_id": pHost, "container": pName, "tail": map[string]interface{}{"type": "integer", "description": "lines, 1-1000, default 100"}}), run: toolDockerLogs},
@@ -76,8 +76,8 @@ var agentTools = []agentTool{
 	{Name: "read_file", Description: "Read a text file on a host (absolute path), 20 KiB per call starting at byte offset (default 0); the result says when more follows. Secret-looking values are masked; private keys, /etc/shadow, kubeconfigs and similar secret files are refused.", InputSchema: schema([]string{"host_id", "path"}, map[string]interface{}{"host_id": pHost, "path": map[string]interface{}{"type": "string"}, "offset": map[string]interface{}{"type": "integer", "description": "byte offset, default 0"}}), run: toolReadFile},
 	{Name: "fleet_search", Description: "Search packages, containers (name or image) and domains across ALL hosts at once, from Pantau's stored inventory (no SSH, so data may be stale: see data_age). Returns each match with the hosts that have it. Use it to find which hosts run a package/version, container or domain; hosts_without_* counts hosts never scanned.", InputSchema: schema([]string{"query"}, map[string]interface{}{"query": map[string]interface{}{"type": "string", "description": "2-100 characters, case-insensitive substring"}, "kind": map[string]interface{}{"type": "string", "enum": []string{"all", "package", "container", "domain"}, "description": "default all"}, "limit": map[string]interface{}{"type": "integer", "description": "max matched items, 1-200, default 50"}}), run: toolFleetSearch},
 
-	{Name: "systemd_action", Description: "Run a systemctl action on one unit (start, stop, restart, reload, enable, disable, mask, unmask, reset-failed) or daemon-reload (no unit). May wait for operator approval. Stopping or disabling the SSH daemon is refused.", gate: 1,
-		InputSchema: schema([]string{"host_id", "action"}, map[string]interface{}{"host_id": pHost, "unit": pUnit, "action": map[string]interface{}{"type": "string", "enum": []string{"start", "stop", "restart", "reload", "enable", "disable", "mask", "unmask", "reset-failed", "daemon-reload"}}}), run: toolSystemdAction},
+	{Name: "systemd_action", Description: "Run a systemctl action (start, stop, restart, reload, enable, disable, mask, unmask, reset-failed) on one unit, or on up to 20 units of the host in one call with units (one approval for all, run in order), or daemon-reload (no unit). May wait for operator approval. Stopping or disabling the SSH daemon is refused.", gate: 1,
+		InputSchema: schema([]string{"host_id", "action"}, map[string]interface{}{"host_id": pHost, "unit": pUnit, "units": map[string]interface{}{"type": "array", "items": pUnit, "description": "several units for the same action, instead of one call per unit"}, "action": map[string]interface{}{"type": "string", "enum": []string{"start", "stop", "restart", "reload", "enable", "disable", "mask", "unmask", "reset-failed", "daemon-reload"}}}), run: toolSystemdAction},
 	{Name: "docker_action", Description: "start, stop or restart a container. May wait for operator approval.", gate: 1,
 		InputSchema: schema([]string{"host_id", "container", "action"}, map[string]interface{}{"host_id": pHost, "container": pName, "action": map[string]interface{}{"type": "string", "enum": []string{"start", "stop", "restart"}}}), run: toolDockerAction},
 	{Name: "inspect_host", Description: "Re-run Pantau's inspection now so Desired State/Drift and host status are fresh. Use it to verify a fix.", gate: 1, InputSchema: schema(hostReq, map[string]interface{}{"host_id": pHost}), run: toolInspect},
@@ -238,9 +238,24 @@ func argStr(args map[string]interface{}, k string) string {
 	return strings.TrimSpace(v)
 }
 
+// jsonText is compact: indentation only cost tokens, and every result stays in the conversation.
 func jsonText(v interface{}) (string, error) {
-	b, err := json.MarshalIndent(v, "", " ")
+	b, err := json.Marshal(v)
 	return string(b), err
+}
+
+var tsvClean = strings.NewReplacer("\t", " ", "\n", " ", "\r", " ")
+
+// tsvLine writes one tab-separated row. Tabs and line breaks inside a value become spaces, so a value read from a
+// host cannot forge a row.
+func tsvLine(b *strings.Builder, cols ...interface{}) {
+	for i, c := range cols {
+		if i > 0 {
+			b.WriteByte('\t')
+		}
+		b.WriteString(tsvClean.Replace(fmt.Sprint(c)))
+	}
+	b.WriteByte('\n')
 }
 
 // ---------------------------------------------------------------- read tools
@@ -250,24 +265,12 @@ func toolListHosts(s *Server, _ *http.Request, _ map[string]interface{}) (string
 	if err != nil {
 		return "", err
 	}
-	type row struct {
-		ID       int64  `json:"id"`
-		Name     string `json:"name"`
-		Address  string `json:"address"`
-		Status   string `json:"status"`
-		OS       string `json:"os"`
-		Uptime   string `json:"uptime"`
-		CPULoad  string `json:"cpu_load"`
-		RAMUsed  int64  `json:"ram_used_bytes"`
-		RAMTotal int64  `json:"ram_total_bytes"`
-		Disk     int64  `json:"disk_used_bytes"`
-		DiskTot  int64  `json:"disk_total_bytes"`
-	}
-	out := make([]row, 0, len(hosts))
+	var b strings.Builder // 40% of the indented JSON size, and this list is read in nearly every conversation
+	tsvLine(&b, "id", "name", "address", "status", "os", "uptime", "cpu_load", "ram_used_bytes", "ram_total_bytes", "disk_used_bytes", "disk_total_bytes")
 	for _, h := range hosts {
-		out = append(out, row{h.ID, h.Name, fmt.Sprintf("%s@%s:%d", h.User, h.Host, h.Port), h.Status, h.OSInfo, h.Uptime, h.CPULoad, h.RAMUsedBytes, h.RAMTotalBytes, h.DiskUsedBytes, h.DiskTotalBytes})
+		tsvLine(&b, h.ID, h.Name, fmt.Sprintf("%s@%s:%d", h.User, h.Host, h.Port), h.Status, h.OSInfo, h.Uptime, h.CPULoad, h.RAMUsedBytes, h.RAMTotalBytes, h.DiskUsedBytes, h.DiskTotalBytes)
 	}
-	return jsonText(out)
+	return b.String(), nil
 }
 
 func toolHostState(s *Server, _ *http.Request, args map[string]interface{}) (string, error) {
@@ -343,13 +346,29 @@ func toolSystemdList(s *Server, _ *http.Request, args map[string]interface{}) (s
 		return "systemd is not the init system on this host", nil
 	}
 	only, _ := args["only_problems"].(bool)
-	out := svcs[:0:0]
+	return systemdRows(svcs, only, argStr(args, "filter")), nil
+}
+
+// systemdRows renders the units that pass only (failed or in load error) and filter (name or description).
+func systemdRows(svcs []inspector.SystemdService, only bool, filter string) string {
+	filter = strings.ToLower(filter)
+	var b strings.Builder
+	tsvLine(&b, "unit", "load", "active", "sub", "enabled", "description")
+	n := 0
 	for _, v := range svcs {
-		if !only || v.Active == "failed" || v.Load == "error" {
-			out = append(out, v)
+		if only && v.Active != "failed" && v.Load != "error" {
+			continue
 		}
+		if !strings.Contains(strings.ToLower(v.Name), filter) && !strings.Contains(strings.ToLower(v.Description), filter) {
+			continue
+		}
+		tsvLine(&b, v.Name, v.Load, v.Active, v.Sub, v.Enabled, v.Description)
+		n++
 	}
-	return jsonText(out)
+	if n == 0 {
+		return "no matching units"
+	}
+	return b.String()
 }
 
 func toolSystemdDetail(s *Server, _ *http.Request, args map[string]interface{}) (string, error) {
@@ -505,24 +524,63 @@ func toolSystemdAction(s *Server, r *http.Request, args map[string]interface{}) 
 	if err != nil {
 		return "", err
 	}
-	unit, action := argStr(args, "unit"), argStr(args, "action")
-	summary := "systemctl " + action + " " + unit
-	if action != "daemon-reload" && !inspector.ValidSystemdUnit(unit) {
+	action := argStr(args, "action")
+	var units []string
+	if u := argStr(args, "unit"); u != "" {
+		units = append(units, u)
+	}
+	list, _ := args["units"].([]interface{})
+	for _, v := range list {
+		u, _ := v.(string)
+		units = append(units, strings.TrimSpace(u))
+	}
+	if action == "daemon-reload" {
+		units = []string{""}
+	}
+	if len(units) == 0 {
 		return "", inspector.ErrSystemdInvalidUnit
 	}
-	if err := s.agentGate(r, id, "systemd_action", strings.TrimSpace(summary), 1); err != nil {
+	if len(units) > agentSystemdBatchMax {
+		return "", fmt.Errorf("at most %d units per call", agentSystemdBatchMax)
+	}
+	for _, u := range units {
+		if action != "daemon-reload" && !inspector.ValidSystemdUnit(u) {
+			return "", fmt.Errorf("%q: %w", u, inspector.ErrSystemdInvalidUnit)
+		}
+	}
+	summary := strings.TrimSpace("systemctl " + action + " " + strings.Join(units, " "))
+	if err := s.agentGate(r, id, "systemd_action", summary, 1); err != nil {
 		return "", err
 	}
-	res, err := s.inspector.SystemdAction(id, unit, action)
-	if err != nil {
-		return "", err
+	// One call per unit, as in the UI. The deadline keeps a slow batch inside Hermes' tool timeout: a call that
+	// times out there would look failed to the agent while its actions still ran.
+	results, failed, deadline := []*inspector.SystemdActionResult{}, []string{}, time.Now().Add(mcpExecTimeout)
+	for i, u := range units {
+		if time.Now().After(deadline) {
+			err = fmt.Errorf("time limit reached, not run: %s", strings.Join(units[i:], " "))
+			break
+		}
+		res, e := s.inspector.SystemdAction(id, u, action)
+		if e != nil { // SSH or a refused unit: the rest would fail the same way, or must not run unseen
+			err = fmt.Errorf("%s %s: %v; not run: %s", action, u, e, strings.Join(units[i+1:], " "))
+			break
+		}
+		results = append(results, res)
+		if !res.Succeeded() {
+			failed = append(failed, u)
+		}
 	}
-	out, _ := jsonText(res)
-	if !res.Succeeded() {
-		return out, fmt.Errorf("%s %s failed", action, unit)
+	out := ""
+	if len(results) > 0 {
+		out, _ = jsonText(results)
 	}
-	return out, nil
+	if err == nil && len(failed) > 0 {
+		err = fmt.Errorf("%s failed for: %s", action, strings.TrimSpace(strings.Join(failed, " ")))
+	}
+	return out, err
 }
+
+const agentSystemdBatchMax = 20
 
 func toolDockerAction(s *Server, r *http.Request, args map[string]interface{}) (string, error) {
 	id, err := argHost(args)
