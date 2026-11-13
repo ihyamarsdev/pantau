@@ -3555,6 +3555,10 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 .kube-apply-output.success { border-color: var(--success-border); color: var(--text); }
 .kube-apply-output.error { border-color: var(--danger-border); color: var(--danger); }
 .kube-host-picker-item:hover, .kube-host-picker-item.active { background: var(--hover) !important; }
+/* A <button>: the input rules do not reach it, so it kept the browser's own border (white on dark). */
+#kubeHostPickerBtn { border: 1px solid var(--card-border); border-radius: var(--radius); color: var(--text); transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
+#kubeHostPickerBtn:hover { border-color: var(--border-strong); }
+#kubeHostPickerBtn:focus-visible, #kubeHostPickerBtn[aria-expanded="true"] { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--accent-soft); }
 </style>
 </head>
 <body>
@@ -3901,6 +3905,9 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
             <p style="margin:0;color:var(--text-muted);font-size:var(--fs-sm);" data-i18n="kube_section_desc">Manage k3s and rke2 clusters on target hosts, or external clusters (EKS, GKE, AKS) from a kubeconfig.</p>
           </div>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <button id="btnKubeBack" class="btn btn-sm header-btn" onclick="onSelectKubeHost('')" style="height:34px;display:none;align-items:center;gap:6px;">
+              <svg class="icon icon-sm"><use href="#i-chevron-left"/></svg> <span data-i18n="kube_ws_back">Workspaces</span>
+            </button>
             <div style="display:flex;align-items:center;gap:6px;">
               <label for="kubeHostPickerBtn" style="font-size:var(--fs-xs);color:var(--text-muted);font-weight:600;text-transform:uppercase;">Host:</label>
               <div class="custom-host-picker" id="kubeHostPicker" style="position:relative;z-index:100;">
@@ -3940,6 +3947,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
           </div>
         </div>
       </div>
+      <div id="kubeWorkspaceGrid" class="grid" style="display:none;"></div>
       <div id="kubeClusterBar" class="card" style="display:none;padding:12px 18px;margin-bottom:16px;flex-direction:row;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
         <div id="kubeClusterChips" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           <span class="badge badge-info" id="kubeDistroChip" style="font-family:var(--font-mono);text-transform:uppercase;">k3s</span>
@@ -3961,7 +3969,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
       </div>
       <div id="kubeSelectHostPrompt" class="card" style="display:block;padding:30px 20px;text-align:center;">
         <div style="color:var(--text-muted);margin-bottom:8px;"><svg class="icon icon-xl"><use href="#i-server"/></svg></div>
-        <div style="color:var(--text-muted);font-size:var(--fs-base);" data-i18n="kube_select_host">Select a host to manage its Kubernetes cluster.</div>
+        <div style="color:var(--text-muted);font-size:var(--fs-base);" data-i18n="kube_ws_empty">No workspace yet. Pick a host or cluster above to add one.</div>
       </div>
       <div id="kubeViewsContainer" style="display:none;flex-direction:column;gap:16px;">
         <div class="tabs" style="border-bottom:1px solid var(--card-border);margin-bottom:12px;flex-wrap:wrap;gap:4px;" role="tablist">
@@ -7891,6 +7899,10 @@ const I18N = {
     "kube_detecting_clusters": "Detecting Kubernetes clusters...",
     "kube_detect_complete": "Cluster detection complete",
     "kube_standalone": "Standalone",
+    "kube_ws_back": "Workspaces",
+    "kube_ws_open": "Open",
+    "kube_ws_remove": "Remove from workspaces",
+    "kube_ws_empty": "No workspace yet. Pick a host or cluster above to add one.",
     "kube_node_single": "node",
     "kube_node_multi": "nodes",
     "kube_ext_add_cluster": "Add cluster",
@@ -9544,6 +9556,10 @@ const I18N = {
     "kube_detecting_clusters": "Mendeteksi klaster Kubernetes...",
     "kube_detect_complete": "Deteksi klaster selesai",
     "kube_standalone": "Mandiri",
+    "kube_ws_back": "Workspace",
+    "kube_ws_open": "Buka",
+    "kube_ws_remove": "Hapus dari workspace",
+    "kube_ws_empty": "Belum ada workspace. Pilih host atau cluster di atas untuk menambahkannya.",
     "kube_node_single": "node",
     "kube_node_multi": "node",
     "kube_ext_add_cluster": "Tambah klaster",
@@ -22942,6 +22958,14 @@ function clearDockerSectionSearch() {
 let selectedKubeHostId = null, currentKubeCluster = null, currentKubeTab = 'nodes', currentKubeNamespace = '';
 let kubeNodesCache = [], kubeWorkloadsCache = [], kubePodsCache = [], kubeServicesCache = [], kubeNamespacesList = [], currentScaleTarget = null;
 let kubeGenericCache = {}, kubePickerActiveIndex = -1;
+// Cluster workspaces: the hosts and clusters the operator picked, shown as cards and kept across restarts.
+// selectedKubeHostId is the one that is open (null = the card list). While the page lives, each keeps its tab and
+// namespace (kubeWsState) and its detect answer (kubeDetected), so opening it again is instant.
+// shortcut: saved in this browser's localStorage, so another browser starts empty; move to a server setting when
+// workspaces must follow the operator across devices.
+let kubeWorkspaces = [], kubeWsState = {}, kubeDetected = {};
+try { kubeWorkspaces = JSON.parse(localStorage.getItem('pantau_kube_workspaces') || '[]').filter(Number.isInteger); } catch (e) {}
+function saveKubeWorkspaces() { localStorage.setItem('pantau_kube_workspaces', JSON.stringify(kubeWorkspaces)); }
 let lastDiffedYaml = null;
 
 const kubeIsCluster = id => Number(id) < 0;
@@ -22952,6 +22976,72 @@ let kubeHostClusters = []; // SSH-reached k3s/RKE2 clusters: {cluster_id, name, 
 function kubeHostClusterName(cid, fallback) {
   const c = (kubeHostClusters || []).find(x => x.cluster_id === cid);
   return c ? c.name : fallback;
+}
+// What a card shows for a host or cluster id; null when it no longer exists.
+function kubeTargetInfo(id) {
+  if (kubeIsCluster(id)) {
+    const c = (kubeClusters || []).find(x => x.id === -Number(id));
+    return c ? { name: c.name, detail: kubeProviderLabel(c.provider) + (c.context ? ' · ' + c.context : ''), mode: c.kube_mode || 'full' } : null;
+  }
+  const hosts = allRawHosts || [];
+  const h = hosts.find(x => String(x.id) === String(id));
+  if (!h) return null;
+  const cid = (h.kube_cluster_id || '').trim();
+  if (!cid) return { name: h.name, detail: h.host, status: h.status || 'unknown', mode: h.kube_mode || 'full' };
+  const members = hosts.filter(x => (x.kube_cluster_id || '').trim() === cid);
+  const status = members.every(m => m.status === 'healthy') ? 'healthy' : (members.some(m => m.status === 'healthy' || m.status === 'degraded') ? 'degraded' : 'down');
+  return { name: kubeHostClusterName(cid, members[0].name), detail: members.length + ' ' + (members.length === 1 ? t('kube_node_single', 'node') : t('kube_node_multi', 'nodes')), status, mode: h.kube_mode || 'full' };
+}
+// Two ids are one target when equal, or when both are hosts of the same SSH-reached cluster.
+function kubeSameTarget(a, b) {
+  if (Number(a) === Number(b)) return true;
+  if (kubeIsCluster(a) || kubeIsCluster(b)) return false;
+  const cid = id => ((allRawHosts || []).find(x => String(x.id) === String(id))?.kube_cluster_id || '').trim();
+  return cid(a) !== '' && cid(a) === cid(b);
+}
+// The card list is the Kubernetes section's home; a workspace that is open replaces it until Back.
+function renderKubeWorkspaces() {
+  const grid = document.getElementById('kubeWorkspaceGrid');
+  const back = document.getElementById('btnKubeBack');
+  const promptEl = document.getElementById('kubeSelectHostPrompt');
+  if (!grid) return;
+  const home = !selectedKubeHostId;
+  const cards = home ? kubeWorkspaces.map(id => [id, kubeTargetInfo(id)]).filter(x => x[1]) : [];
+  if (back) back.style.display = home ? 'none' : 'inline-flex';
+  if (promptEl) promptEl.style.display = home && !cards.length ? 'block' : 'none';
+  grid.style.display = cards.length ? 'grid' : 'none';
+  grid.innerHTML = cards.map(([id, w]) => {
+    const version = (kubeDetected[id] && kubeDetected[id].cluster.version) || '';
+    return `<div class="card host-card kube-ws-card" style="cursor:pointer;" onclick="onSelectKubeHost(${id})">
+      <div class="host-card-header">
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+          ${w.status ? `<span class="status-dot ${w.status}"></span>` : svgIcon('cloud', 'icon-sm')}
+          <span style="font-weight:600;font-size:var(--fs-md);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(w.name)}</span>
+        </div>
+        <button type="button" class="btn btn-icon btn-sm btn-ghost" onclick="event.stopPropagation();closeKubeWorkspace(${id})" title="${escapeHtml(t('kube_ws_remove', 'Remove from workspaces'))}" aria-label="${escapeHtml(t('kube_ws_remove', 'Remove from workspaces') + ': ' + w.name)}">${svgIcon('x', 'icon-sm')}</button>
+      </div>
+      <div class="mono text-muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(w.detail)}</div>
+      <div style="display:flex;align-items:center;gap:6px;min-height:20px;">
+        ${version ? `<span class="badge" style="font-family:var(--font-mono);background:var(--surface-2);border:1px solid var(--card-border);">${escapeHtml(version)}</span>` : ''}
+        ${w.mode === 'full' ? '' : `<span class="badge badge-warning">${escapeHtml(w.mode === 'read-only' ? t('kube_mode_read_only_badge', 'Read-Only') : t('kube_mode_no_exec_badge', 'No-Exec'))}</span>`}
+      </div>
+      <div style="margin-top:auto;display:flex;justify-content:flex-end;">
+        <button type="button" class="btn btn-sm btn-primary" onclick="event.stopPropagation();onSelectKubeHost(${id})" style="display:inline-flex;align-items:center;gap:6px;">${svgIcon('boxes', 'icon-sm')} <span>${t('kube_ws_open', 'Open')}</span></button>
+      </div>
+    </div>`;
+  }).join('');
+}
+// Removes the card only; the cluster and its registration stay.
+function closeKubeWorkspace(id) {
+  const i = kubeWorkspaces.indexOf(id);
+  if (i < 0) return;
+  kubeWorkspaces.splice(i, 1);
+  saveKubeWorkspaces();
+  delete kubeWsState[id];
+  delete kubeDetected[id];
+  if (id !== selectedKubeHostId) return renderKubeWorkspaces();
+  selectedKubeHostId = null; // so the removed one is not saved again
+  onSelectKubeHost('');
 }
 function kubeProviderLabel(p) {
   const map = { eks: t('kube_ext_provider_eks', 'EKS'), gke: t('kube_ext_provider_gke', 'GKE'), aks: t('kube_ext_provider_aks', 'AKS'), generic: t('kube_ext_provider_generic', 'Generic') };
@@ -23147,6 +23237,7 @@ function populateKubeHostSelect() {
   }
   updateKubeHostPickerBtn();
   renderKubeHostPickerList();
+  renderKubeWorkspaces();
 }
 
 function updateKubeHostPickerBtn() {
@@ -23350,32 +23441,46 @@ document.addEventListener('click', e => {
   if (!e.target.closest('#kubeHostPicker')) closeKubeHostPicker();
 });
 
+// Opens a workspace (adding its card when it is new); an empty id goes back to the card list.
 async function onSelectKubeHost(hostId) {
-  selectedKubeHostId = hostId ? parseInt(hostId, 10) : null;
+  let id = hostId ? parseInt(hostId, 10) : null;
+  if (id) id = kubeWorkspaces.find(x => kubeSameTarget(x, id)) || id;
+  if (selectedKubeHostId) kubeWsState[selectedKubeHostId] = { tab: currentKubeTab, ns: currentKubeNamespace };
+  if (id && !kubeWorkspaces.includes(id)) { kubeWorkspaces.push(id); saveKubeWorkspaces(); }
+  const st = kubeWsState[id] || { tab: currentKubeTab, ns: '' }; // a new workspace opens on the tab you are looking at
+  selectedKubeHostId = id;
+  currentKubeTab = st.tab;
+  currentKubeNamespace = st.ns;
+  renderKubeWorkspaces();
   updateKubeHostPickerBtn();
   updateKubeModeChip();
   renderKubeHostPickerList();
   const hostSel = document.getElementById('kubeHostSelect');
   if (hostSel) hostSel.value = selectedKubeHostId ? String(selectedKubeHostId) : '';
-  const promptEl = document.getElementById('kubeSelectHostPrompt');
   const noClusterEl = document.getElementById('kubeNoClusterState');
   const clusterBar = document.getElementById('kubeClusterBar');
   const viewsContainer = document.getElementById('kubeViewsContainer');
-  if (!selectedKubeHostId) {
-    if (promptEl) promptEl.style.display = 'block';
+  const gwChip = document.getElementById('kubeGatewayChip');
+  if (gwChip) gwChip.style.display = 'none'; // the previous workspace's gateway
+  if (!selectedKubeHostId) { // the card list (renderKubeWorkspaces) is on screen
+    stopKubeAutorefresh();
     if (noClusterEl) noClusterEl.style.display = 'none';
     if (clusterBar) clusterBar.style.display = 'none';
     if (viewsContainer) viewsContainer.style.display = 'none';
     return;
   }
-  if (promptEl) promptEl.style.display = 'none';
   if (noClusterEl) noClusterEl.style.display = 'none';
   if (clusterBar) clusterBar.style.display = 'none';
   if (viewsContainer) viewsContainer.style.display = 'none';
-  showToast(t('kube_loading', 'Loading cluster data...'), 'info', 1500);
   try {
-    const res = await fetch(`${kubeApiBase()}/detect`);
-    const data = await res.json();
+    let data = kubeDetected[id];
+    if (!data) {
+      showToast(t('kube_loading', 'Loading cluster data...'), 'info', 1500);
+      const res = await fetch(`${kubeApiBase()}/detect`);
+      data = await res.json();
+      if (id !== selectedKubeHostId) return; // another workspace was opened meanwhile
+      if (data.ok && data.cluster) kubeDetected[id] = data; // a failed detect is tried again next time
+    }
     handleKubeEnvelope(data);
     updateKubeModeChip();
     if (!kubeIsCluster(selectedKubeHostId) && data.cluster && data.cluster.cluster_id) {
@@ -23383,8 +23488,10 @@ async function onSelectKubeHost(hostId) {
       const isNewCid = curH && curH.kube_cluster_id !== data.cluster.cluster_id;
       if (curH) curH.kube_cluster_id = data.cluster.cluster_id;
       if (isNewCid) await loadKubeClusters();
+      if (id !== selectedKubeHostId) return;
       updateKubeHostPickerBtn();
       updateKubeModeChip();
+      renderKubeWorkspaces();
     }
     if (!data.ok || !data.cluster) {
       if (noClusterEl) {
@@ -23401,8 +23508,10 @@ async function onSelectKubeHost(hostId) {
     document.getElementById('kubeRoleChip').textContent = currentKubeCluster.role || 'server';
     if (viewsContainer) viewsContainer.style.display = 'flex';
     await loadKubeNamespaces();
-    loadKubeTabData(currentKubeTab);
+    if (id !== selectedKubeHostId) return;
+    switchKubeTab(currentKubeTab); // marks this workspace's tab and loads it
   } catch(e) {
+    if (id !== selectedKubeHostId) return;
     if (noClusterEl) {
       noClusterEl.style.display = 'block';
       const msg = document.getElementById('kubeNoClusterMsg');
@@ -23412,11 +23521,15 @@ async function onSelectKubeHost(hostId) {
 }
 async function loadKubeNamespaces() {
   if (!selectedKubeHostId) return;
+  const ws = selectedKubeHostId;
+  let list = [];
   try {
     const res = await fetch(`${kubeApiBase()}/namespaces`);
     const data = await res.json();
-    kubeNamespacesList = (data.ok && Array.isArray(data.namespaces)) ? data.namespaces : [];
-  } catch(e) { kubeNamespacesList = []; }
+    if (data.ok && Array.isArray(data.namespaces)) list = data.namespaces;
+  } catch(e) {}
+  if (ws !== selectedKubeHostId) return; // answer of a workspace that is no longer on screen
+  kubeNamespacesList = list;
   const sel = document.getElementById('kubeNamespaceSelect');
   if (sel) {
     sel.innerHTML = `<option value="">${t('kube_all_namespaces', 'All Namespaces')}</option>` +
@@ -23470,9 +23583,12 @@ async function kubeFetchTab(url, key, heads, rowFn, cacheFn) {
   const content = document.getElementById('kubeTabContent');
   if (!content || !selectedKubeHostId) return;
   content.innerHTML = `<div style="text-align:center;padding:30px;color:var(--text-muted);">${t('kube_loading')}</div>`;
+  const ws = selectedKubeHostId, tab = currentKubeTab;
+  const stale = () => ws !== selectedKubeHostId || tab !== currentKubeTab; // answer of another workspace or tab
   try {
     const res = await fetch(url);
     const data = await res.json();
+    if (stale()) return;
     handleKubeEnvelope(data);
     if (!data.ok) { content.innerHTML = kubeEmptyHtml(t('error_prefix', 'Error: '), data.error || 'Failed to load', true); return; }
     const items = data[key] || [];
@@ -23485,7 +23601,7 @@ async function kubeFetchTab(url, key, heads, rowFn, cacheFn) {
     if (items.length === 0) { content.innerHTML = kubeEmptyHtml(t('kube_no_data', 'No items found'), ''); return; }
     content.innerHTML = dockerTableHtml(heads, items.map(rowFn).join(''));
   } catch(e) {
-    content.innerHTML = kubeEmptyHtml(t('error_prefix', 'Error: '), e.message, true);
+    if (!stale()) content.innerHTML = kubeEmptyHtml(t('error_prefix', 'Error: '), e.message, true);
   }
 }
 function loadKubeNodes() {
@@ -23633,9 +23749,12 @@ async function loadKubeGenericResource(kind) {
   const isClusterScoped = (kind === 'pvs');
   const nsParam = isClusterScoped ? '' : encodeURIComponent(currentKubeNamespace);
   const url = `${kubeApiBase()}/resources?kind=${encodeURIComponent(kind)}&ns=${nsParam}`;
+  const ws = selectedKubeHostId;
+  const stale = () => ws !== selectedKubeHostId || kind !== currentKubeTab; // answer of another workspace or tab
   try {
     const res = await fetch(url);
     const data = await res.json();
+    if (stale()) return;
     handleKubeEnvelope(data);
     if (!data.ok) {
       content.innerHTML = kubeEmptyHtml(t('error_prefix', 'Error: '), data.error || 'Failed to load', true);
@@ -23679,7 +23798,7 @@ async function loadKubeGenericResource(kind) {
 
     content.innerHTML = noteHtml + dockerTableHtml(heads, bodyHtml);
   } catch(e) {
-    content.innerHTML = kubeEmptyHtml(t('error_prefix', 'Error: '), e.message, true);
+    if (!stale()) content.innerHTML = kubeEmptyHtml(t('error_prefix', 'Error: '), e.message, true);
   }
 }
 function openKubeGenericMenu(e, kind, rowIdx) {
@@ -24772,6 +24891,7 @@ async function submitKubeClusterModal() {
     await loadKubeClusters();
     const savedId = (data.cluster && data.cluster.id) || kubeClusterEditId;
     if (savedId) {
+      delete kubeDetected[-savedId]; // the kubeconfig may have changed
       pickKubeHost(-savedId);
     }
   } catch (e) {
@@ -24853,10 +24973,8 @@ async function deleteKubeCluster(clusterHostId) {
     }
     showToast(t('kube_ext_deleted', 'Cluster deleted'), 'info');
     await loadKubeClusters();
-    if (selectedKubeHostId && String(selectedKubeHostId) === String(-rawId)) {
-      pickKubeHost('');
-      updateKubeModeChip();
-    }
+    closeKubeWorkspace(-Number(rawId));
+    updateKubeModeChip();
   } catch (e) {
     showToast(t('error_prefix', 'Error: ') + e.message, 'error', 6000);
   }

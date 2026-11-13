@@ -12,6 +12,7 @@ e2e/
 │   ├── helpers.ts       # shared login + first-run modal handling
 │   ├── smoke.e2e.ts     # app opens, starts fresh, login, dashboard
 │   ├── ansible.e2e.ts   # gate blocked state, enable gate, create playbook, invalid YAML
+│   ├── kube-workspaces.e2e.ts # Kubernetes: saved workspace cards, open/back, reload (kube API stubbed with browser.route)
 │   ├── terraform.e2e.ts # Terraform drawer: gate, workspace, runs, tabs
 │   ├── terraform-edit.e2e.ts # Configuration/Settings tabs: in-place editing, unsaved-changes guard
 │   └── terraform-helpers.ts  # shared Terraform workspace/runner helpers
