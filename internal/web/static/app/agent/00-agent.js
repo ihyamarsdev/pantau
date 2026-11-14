@@ -121,8 +121,15 @@
       if (m.role === 'tool') return `<div class="ag-tool">${svgIcon('wrench', 'icon-sm')} ${esc(m.text)}</div>`;
       if (m.role === 'error') return `<div class="ag-err">${esc(m.text)}</div>`;
       if (!m.text) return `<div class="ag-msg ag-bot">${S.approvals.length ? SP.html(t('ag_waiting_approval'), S.apprT0) : SP.html(t('ag_working'), S.chatT0)}</div>`;
+      return `<div class="ag-msg ag-bot">${md(m.text)}</div>`;
     }).join('');
     log.scrollTop = log.scrollHeight;
+  }
+
+  // Streaming deltas arrive many times per frame; re-parsing the markdown of the whole chat for each is what made long answers lag.
+  let logFrame = 0;
+  function scheduleLog() {
+    if (!logFrame) logFrame = requestAnimationFrame(() => { logFrame = 0; renderLog(); });
   }
 
   AG.toggle = function (force) {
@@ -199,7 +206,7 @@
           if (c.delta && c.delta.content) bot.text += c.delta.content;
           if (c.finish_reason === 'error') S.msgs.push({ role: 'error', text: (data.error && data.error.message) || 'agent error' });
         }
-        renderLog();
+        scheduleLog();
       });
     } catch (e) {
       if (e.name !== 'AbortError') S.msgs.push({ role: 'error', text: e.message });

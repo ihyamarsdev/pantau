@@ -34,7 +34,7 @@ test('agent: button always shown, off state points to Settings, chat streams too
     await browser.locator('#agEnabled').click();
     await browser.locator('#agUrl').fill(hermes.url);
     await browser.locator('#agKey').fill('k-test');
-    await browser.locator('#agentSettingsBody .btn-primary').click();
+    await browser.locator('#agentSettingsBody .btn-primary').first().click();
     await expect(browser.locator('#agentFab')).toBeVisible();
     await expect(browser.locator('#agentSettingsBody .ag-snippet').last()).toContainText('mcp_servers:');
 

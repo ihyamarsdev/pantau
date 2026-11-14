@@ -29,7 +29,7 @@
     t0 = t0 || Date.now();
     return '<span class="spinner" style="display:inline-block; margin-right:4px;">' + svgIcon('loader-circle', 'icon-sm') + '</span>' +
       '<span>' + escapeHtml(String(text)) + '</span> ' +
-      '<span data-sp-t0="' + t0 + '" style="font-variant-numeric: tabular-nums; opacity: 0.8;">0s</span>';
+      '<span data-sp-t0="' + t0 + '" style="font-variant-numeric: tabular-nums; opacity: 0.8;">' + fmt(Math.max(0, Math.floor((Date.now() - t0) / 1000))) + '</span>';
   };
 
   // SP.busy disables a button and shows progress inside it; the returned function restores it.
