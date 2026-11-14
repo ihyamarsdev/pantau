@@ -254,24 +254,25 @@
     S.remoteHost = remoteHost ? remoteHost.value.trim() : '127.0.0.1';
     S.remotePort = String(rp);
     S.localPort = localPort ? localPort.value : '';
-    if (btn) {
-      btn.disabled = true;
-      btn.innerHTML = `${icon('loader-circle')} <span>${esc(t('pf_starting'))}</span>`;
-    }
+    const restore = SP.busy(btn, t('pf_starting'));
     const body = {
       host_id: hostID,
       remote_host: S.remoteHost || '127.0.0.1',
       remote_port: rp,
       local_port: lp
     };
-    const res = await api('/api/forwards', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = `${icon('play')} <span>${esc(t('pf_start'))}</span>`;
+    let res;
+    try {
+      res = await api('/api/forwards', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+    } catch (e) {
+      showToast((e && e.message) || t('pf_load_failed'), 'error');
+      return;
+    } finally {
+      restore();
     }
     if (!res.ok) {
       showToast((res.data && res.data.error) || t('pf_load_failed'), 'error');

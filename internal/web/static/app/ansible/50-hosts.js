@@ -10,7 +10,7 @@
       ans_hs_ungrouped: 'Ungrouped', ans_hs_hosts: '{n} hosts', ans_hs_host_one: '1 host', ans_hs_load_failed: 'Could not load the hosts', ans_hs_empty_title: 'No hosts yet', ans_hs_empty_desc: 'Add hosts in Pantau first; the Ansible inventory is generated from them.',
       ans_hs_no_match: 'No hosts match', ans_hs_pantau: 'Pantau', ans_hs_ansible: 'Ansible', ans_hs_st_healthy: 'Healthy', ans_hs_st_degraded: 'Degraded', ans_hs_st_down: 'Down', ans_hs_st_unknown: 'Unknown',
       ans_hs_a_online: 'Reachable', ans_hs_a_offline: 'Unreachable', ans_hs_a_unknown: 'Not checked', ans_hs_pinging: 'Pinging…', ans_hs_ping: 'Ping', ans_hs_facts: 'Facts', ans_hs_facts_age: 'facts {when}', ans_hs_no_facts: 'no facts',
-      ans_hs_ping_done: 'Ping finished: {ok} reachable, {bad} not', ans_hs_ping_failed: 'Ping failed', ans_hs_ping_busy: 'Too many ad-hoc runs are active; try again shortly.', ans_hs_alias: 'Inventory alias',
+      ans_hs_ping_done: 'Ping finished: {ok} reachable, {bad} not', ans_hs_ping_failed: 'Ping failed', ans_hs_ping_busy: 'Too many ad-hoc runs are active; try again shortly.', ans_hs_alias: 'Inventory alias', ans_hs_ping_timeout: 'Ping is still running after 2 minutes; check the Ad-hoc tab for its progress.',
       ans_hs_f_title: 'Facts: {name}', ans_hs_f_refresh: 'Refresh facts', ans_hs_f_refreshing: 'Gathering… (up to 90 s)', ans_hs_f_gathered: 'Gathered {when}', ans_hs_f_none: 'No facts have been gathered for this host yet.',
       ans_hs_f_gather: 'Gather facts', ans_hs_f_failed: 'Could not gather facts', ans_hs_f_load_failed: 'Could not load facts', ans_hs_f_summary: 'Summary', ans_hs_f_raw: 'Raw JSON',
       ans_hs_f_system: 'System', ans_hs_f_compute: 'Compute', ans_hs_f_network: 'Network', ans_hs_f_storage: 'Storage', ans_hs_f_os: 'OS', ans_hs_f_kernel: 'Kernel', ans_hs_f_arch: 'Architecture',
@@ -29,7 +29,7 @@
       ans_hs_ungrouped: 'Tanpa grup', ans_hs_hosts: '{n} host', ans_hs_host_one: '1 host', ans_hs_load_failed: 'Gagal memuat host', ans_hs_empty_title: 'Belum ada host', ans_hs_empty_desc: 'Tambahkan host di Pantau dulu; inventory Ansible dibuat dari host tersebut.',
       ans_hs_no_match: 'Tidak ada host yang cocok', ans_hs_pantau: 'Pantau', ans_hs_ansible: 'Ansible', ans_hs_st_healthy: 'Sehat', ans_hs_st_degraded: 'Menurun', ans_hs_st_down: 'Mati', ans_hs_st_unknown: 'Tidak diketahui',
       ans_hs_a_online: 'Terjangkau', ans_hs_a_offline: 'Tak terjangkau', ans_hs_a_unknown: 'Belum dicek', ans_hs_pinging: 'Mem-ping…', ans_hs_ping: 'Ping', ans_hs_facts: 'Facts', ans_hs_facts_age: 'facts {when}', ans_hs_no_facts: 'belum ada facts',
-      ans_hs_ping_done: 'Ping selesai: {ok} terjangkau, {bad} tidak', ans_hs_ping_failed: 'Ping gagal', ans_hs_ping_busy: 'Terlalu banyak run ad-hoc aktif; coba lagi sebentar.', ans_hs_alias: 'Alias inventory',
+      ans_hs_ping_done: 'Ping selesai: {ok} terjangkau, {bad} tidak', ans_hs_ping_failed: 'Ping gagal', ans_hs_ping_busy: 'Terlalu banyak run ad-hoc aktif; coba lagi sebentar.', ans_hs_alias: 'Alias inventory', ans_hs_ping_timeout: 'Ping masih berjalan setelah 2 menit; periksa tab Ad-hoc untuk progresnya.',
       ans_hs_f_title: 'Facts: {name}', ans_hs_f_refresh: 'Segarkan facts', ans_hs_f_refreshing: 'Mengumpulkan… (maks 90 dtk)', ans_hs_f_gathered: 'Dikumpulkan {when}', ans_hs_f_none: 'Facts belum pernah dikumpulkan untuk host ini.',
       ans_hs_f_gather: 'Kumpulkan facts', ans_hs_f_failed: 'Gagal mengumpulkan facts', ans_hs_f_load_failed: 'Gagal memuat facts', ans_hs_f_summary: 'Ringkasan', ans_hs_f_raw: 'JSON mentah',
       ans_hs_f_system: 'Sistem', ans_hs_f_compute: 'Komputasi', ans_hs_f_network: 'Jaringan', ans_hs_f_storage: 'Penyimpanan', ans_hs_f_os: 'OS', ans_hs_f_kernel: 'Kernel', ans_hs_f_arch: 'Arsitektur',
@@ -46,7 +46,7 @@
   });
 
   const MODULES = ['ping', 'command', 'shell', 'raw', 'setup', 'service', 'systemd', 'package', 'apt', 'yum', 'dnf', 'copy', 'file', 'lineinfile', 'user', 'group', 'uri', 'debug', 'git', 'pip', 'stat', 'fetch'];
-  const S = { sub: Ans.store.get('hs.sub', 'explorer'), root: null, data: null, error: '', q: '', sel: new Set(), pinging: new Set(), collapsed: Ans.store.get('hs.collapsed', {}), loading: false };
+  const S = { sub: Ans.store.get('hs.sub', 'explorer'), root: null, data: null, error: '', q: '', sel: new Set(), pinging: new Set(), collapsed: Ans.store.get('hs.collapsed', {}), loading: false, pingT0: 0 };
   const plainAnsi = function (s) { return String(s).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, ''); };
   const logHtml = function (s) { return Ans.runs && Ans.runs.util ? Ans.runs.util.ansiToHtml(s) : esc(plainAnsi(s)); };
 
@@ -60,7 +60,7 @@
   function allHosts() { const d = S.data || {}; const out = []; (d.groups || []).forEach(function (g) { (g.hosts || []).forEach(function (h) { out.push(h); }); }); (d.ungrouped || []).forEach(function (h) { out.push(h); }); return out; }
   const pantauBadge = function (st) { const m = { healthy: 'badge-healthy', degraded: 'badge-warning', down: 'badge-danger' }; return '<span class="badge ' + (m[st] || 'badge-unknown') + '">' + esc(T('ans_hs_st_' + (m[st] ? st : 'unknown'))) + '</span>'; };
   const ansibleBadge = function (h, busy) {
-    if (busy) return '<span class="badge badge-info">' + icon('loader-circle', 'icon-sm') + ' ' + esc(T('ans_hs_pinging')) + '</span>';
+    if (busy) return '<span class="badge badge-info">' + icon('loader-circle', 'icon-sm') + ' ' + esc(T('ans_hs_pinging')) + ' <span data-sp-t0="' + (S.pingT0 || Date.now()) + '" style="font-variant-numeric:tabular-nums;">0s</span></span>';
     const m = { online: ['badge-healthy', 'ans_hs_a_online'], offline: ['badge-danger', 'ans_hs_a_offline'] }[h.ansible_status] || ['badge-unknown', 'ans_hs_a_unknown'];
     return '<span class="badge ' + m[0] + '"' + (h.ansible_checked_at ? ' title="' + esc(Ans.fmt.dt(h.ansible_checked_at)) + '"' : '') + '>' + esc(T(m[1])) + '</span>' + (h.ansible_checked_at ? ' <span class="ans-muted ans-hint">' + esc(Ans.fmt.ago(h.ansible_checked_at)) + '</span>' : '');
   };
@@ -94,17 +94,21 @@
   }
   async function pingHosts(ids) {
     if (!ids.length) return;
+    S.pingT0 = Date.now();
     ids.forEach(function (i) { S.pinging.add(i); }); paintExplorer();
     try {
       const d = await Ans.api.post('/api/ansible/adhoc', { module: 'ping', host_ids: ids });
       const id = d.run.id;
+      let done = false;
       for (let i = 0; i < 120; i++) {
         await new Promise(function (r) { setTimeout(r, 1000); });
         const s = await Ans.api.get('/api/ansible/adhoc/' + id);
-        if (['queued', 'running'].indexOf(s.run.status) < 0) { const c = s.run.counts || {}; const ok = (c.success || 0) + (c.changed || 0), bad = (c.unreachable || 0) + (c.failed || 0); Ans.toast(T('ans_hs_ping_done', 'Ping finished: {ok} reachable, {bad} not', { ok: ok, bad: bad }), bad ? 'warning' : 'success'); break; }
+        if (['queued', 'running'].indexOf(s.run.status) < 0) { const c = s.run.counts || {}; const ok = (c.success || 0) + (c.changed || 0), bad = (c.unreachable || 0) + (c.failed || 0); Ans.toast(T('ans_hs_ping_done', 'Ping finished: {ok} reachable, {bad} not', { ok: ok, bad: bad }), bad ? 'warning' : 'success'); done = true; break; }
       }
+      if (!done) Ans.toast(T('ans_hs_ping_timeout', 'Ping is still running after 2 minutes; check the Ad-hoc tab for its progress.'), 'warning');
     } catch (e) { Ans.toast(e.status === 429 ? T('ans_hs_ping_busy') : T('ans_hs_ping_failed') + ': ' + e.message, 'error'); }
     ids.forEach(function (i) { S.pinging.delete(i); });
+    S.pingT0 = 0;
     await loadExplorer(true);
   }
 
@@ -128,7 +132,7 @@
       if (ctx.dead || !ctx.body) return;
       const f = ctx.facts, pane = ctx.body.querySelector('[data-f="pane"]');
       ctx.ctrl.setSubtitle(f ? '<span class="ans-muted" title="' + esc(Ans.fmt.dt(f.gathered_at)) + '">' + esc(T('ans_hs_f_gathered', 'Gathered {when}', { when: Ans.fmt.ago(f.gathered_at) })) + '</span>' : '');
-      ctx.ctrl.setActions('<button type="button" class="btn btn-sm btn-primary" data-f="refresh"' + (ctx.busy ? ' disabled' : '') + '>' + icon('refresh-cw', 'icon-sm') + ' ' + esc(ctx.busy ? T('ans_hs_f_refreshing') : T(f ? 'ans_hs_f_refresh' : 'ans_hs_f_gather')) + '</button>');
+      ctx.ctrl.setActions('<button type="button" class="btn btn-sm btn-primary" data-f="refresh"' + (ctx.busy ? ' disabled' : '') + '>' + (ctx.busy ? SP.html(T('ans_hs_f_refreshing'), ctx.busyT0) : icon('refresh-cw', 'icon-sm') + ' ' + esc(T(f ? 'ans_hs_f_refresh' : 'ans_hs_f_gather'))) + '</button>');
       const head = document.querySelector('#ansDrawerRoot .ans-drawer-actions'); if (head) head.onclick = function (e) { if (e.target.closest('[data-f="refresh"]')) refresh(); };
       ctx.body.querySelectorAll('[data-ftab]').forEach(function (b) { b.setAttribute('aria-selected', String(b.getAttribute('data-ftab') === ctx.tab)); });
       if (ctx.err) { pane.innerHTML = Ans.ui.error(ctx.err); return; }
@@ -150,10 +154,10 @@
     };
     async function refresh() {
       if (ctx.busy) return;
-      ctx.busy = true; ctx.err = ''; paint();
+      ctx.busy = true; ctx.busyT0 = Date.now(); ctx.err = ''; paint();
       try { await Ans.api.post('/api/ansible/hosts/' + hostId + '/facts'); ctx.facts = await Ans.api.get('/api/ansible/hosts/' + hostId + '/facts'); loadExplorer(true); }
       catch (e) { ctx.err = T('ans_hs_f_failed') + ': ' + e.message; }
-      ctx.busy = false; paint();
+      finally { ctx.busy = false; ctx.busyT0 = 0; paint(); }
     }
     return Ans.drawer.push({
       key: 'facts:' + hostId, title: T('ans_hs_f_title', 'Facts: {name}', { name: h.name }), subtitle: '', wide: true,

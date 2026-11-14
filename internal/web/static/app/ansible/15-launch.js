@@ -151,6 +151,7 @@
     }
 
     function render() {
+      if (restoreBusy) { restoreBusy(); restoreBusy = null; } // the button is replaced below, so its busy look is rebuilt
       container.innerHTML =
         '<div class="ans-card-title">' + icon('play', 'icon-sm') + esc(T('ans_ln_title', 'Run now')) + '</div>' +
         (gateOk() ? '' : '<div class="ans-error" role="status">' + icon('shield-alert') + '<span>' + esc(T('ans_ln_gate_off')) + '</span><button type="button" class="btn btn-sm" data-l="settings">' + esc(T('ans_ln_gate_settings')) + '</button></div>') +
@@ -174,13 +175,20 @@
       if (s.picker) { try { s.picker.destroy(); } catch (e) { /* detached */ } }
       s.picker = Ans.hostPicker.mount(q('[data-l="picker"]'), { ids: s.ids, max: 200, onChange: function (ids) { s.ids = ids; refreshSummary(); persist(); } });
       refreshSummary();
+      applyBusy(); // the panel may be re-rendered while a launch is in flight: keep the spinner and the elapsed time
     }
 
-    function setBusy(on) {
-      s.busy = on;
+    let restoreBusy = null;
+    // The launch button shows a spinner and the elapsed time: the IaC gate may scan for up to 3 minutes.
+    function applyBusy() {
       const b = q('[data-launch="submit"]');
-      if (b) { b.disabled = on; b.querySelector('span').textContent = on ? T('ans_ln_launching') : T('ans_ln_launch'); }
+      if (!b) return;
+      if (s.busy) { if (!restoreBusy) restoreBusy = SP.busy(b, T('ans_ln_launching')); return; }
+      if (restoreBusy) { restoreBusy(); restoreBusy = null; }
+      else { b.disabled = false; const sp = b.querySelector('span'); if (sp) sp.textContent = T('ans_ln_launch'); }
     }
+    function setBusy(on) { s.busy = on; applyBusy(); }
+
     function showError(msg) { const e = q('[data-l="error"]'); if (e) { e.hidden = !msg; e.textContent = msg || ''; } }
     function fieldErr(name, msg) { const e = q('[data-err="' + name + '"]'); if (e) e.textContent = msg || ''; }
     function clearErrors() {
@@ -218,10 +226,11 @@
       return body;
     }
 
-    async function submit() {
+    async function submit(force) {
       if (s.busy || !gateOk()) return;
       const body = collect();
       if (!body) return;
+      if (force) body.ignore_iac_gate = true;
       setBusy(true);
       try {
         const d = await Ans.api.post('/api/ansible/playbooks/' + pb.id + '/run', body);
@@ -232,6 +241,10 @@
         if (opts.onLaunched) opts.onLaunched(run);
         if (run && Ans.runs && Ans.runs.openViewer) Ans.runs.openViewer(run.id, { playbookId: pb.id });
       } catch (e) {
+        if (e.status === 409 && e.data && e.data.findings_summary && window.IacScan) {
+          window.IacScan.gateBlocked(e.data.findings_summary, function () { submit(true); });
+          return;
+        }
         const msg = e.status === 409 ? T('ans_ln_busy') : e.status === 429 ? T('ans_ln_limit_reached') : e.message;
         showError(T('ans_ln_failed') + ': ' + msg);
       } finally { if (!destroyed) setBusy(false); }

@@ -507,6 +507,46 @@ _Avoid_: Threat feed, CVE scan, vulnerability score, risk score
 Daftar referensi database dan feed kerentanan dunia (salinan tak diubah dari haxdoggy/vulnerability-databases, CC BY 4.0) yang disematkan di biner dan ditampilkan dari tab Security dengan atribusi serta penanda sumber yang dipakai Pantau.
 _Avoid_: CVE source list, intel catalog, feed directory
 
+**Container Misconfiguration Audit**:
+Penilaian read-only atas konfigurasi container yang berjalan di sebuah Host terhadap katalog aturan tetap (privileged, socket Docker, jalur host sensitif, kapabilitas, namespace, profil keamanan, user, port publik, tag image, batas sumber daya), menghasilkan temuan per container dengan tingkat keparahan dan perbaikan yang disarankan.
+_Avoid_: Vulnerability scan, Image scan, Container hardening, Baseline check
+
+**Image Vulnerability Scan**:
+Pemindaian kerentanan paket pada sebuah image Docker memakai pemindai yang sudah terpasang di Host (trivy atau grype; Pantau tidak pernah memasangnya), menghasilkan jumlah kerentanan per tingkat keparahan beserta daftar CVE, versi terpasang, dan versi yang sudah diperbaiki.
+_Avoid_: Container misconfiguration audit, Image update check, Package upgrade, Registry scan
+
+**File Integrity Monitoring (FIM)**:
+Aturan Desired State `file_integrity` yang membandingkan sha256 berkas terpilih di Host (path absolut, `preset:auth`, atau semua biner SUID/SGID lewat target `suid`) dengan Baseline yang secara sadar disetujui administrator; berkas berubah, hilang, atau bertambah dilaporkan sebagai drift beserta namanya, dan berkas yang tidak terbaca berstatus *not assessed*, bukan ok.
+_Avoid_: Checksum monitor, Hash watchdog, Integrity scanner
+
+**FIM Baseline**:
+Kumpulan path dan digest sha256 yang diambil dari Host lewat aksi *Capture baseline* dan dikonfirmasi administrator sebagai keadaan yang diinginkan; tidak pernah dibuat diam-diam pada evaluasi pertama.
+_Avoid_: Implicit baseline, Auto-accept, First-run baseline
+
+**Account Audit**:
+Inventaris read-only akun login lokal, berkas `authorized_keys`, status kata sandi, hak sudo, dan keanggotaan grup sebuah Host yang dicocokkan dengan SSH Key Library lewat sidik jari SHA-256; bagian yang tidak terbaca berstatus unknown, bukan bersih.
+_Avoid_: User scan, Key list, Access review
+
+**Unknown Key**:
+Kunci publik di `authorized_keys` Host yang sidik jarinya tidak ada di SSH Key Library Pantau.
+_Avoid_: Foreign key, Rogue key
+
+**Fleet Keys**:
+Tampilan lintas Host yang mengelompokkan kunci `authorized_keys` yang sama beserta Host dan akun yang memakainya, dengan filter unknown-only dan weak-only.
+_Avoid_: Global keys, Key registry
+
+**Known Package Vulnerability**:
+Kerentanan yang diketahui pada paket terpasang di sebuah Host, diperiksa (opt-in `osv_enabled`) terhadap OSV (Debian/Ubuntu/Alpine) atau Arch Linux Security Tracker (pacman) dari inventaris paket, beserta ID advisory, CVE, severity, dan versi perbaikan. Berbeda dari Security Finding (pembaruan keamanan tertunda); rilis OS yang tidak tercakup feed berstatus *not assessed*, bukan bersih.
+_Avoid_: Vulnerability scan, CVE scan, Package audit
+
+**IaC Scan**:
+Pemeriksaan statis bawaan Pantau (tanpa biner eksternal dan tanpa jaringan) atas sumber di server Pantau (repositori Git, workspace Terraform, proyek Ansible) untuk rahasia yang ter-hardcode (selalu disamarkan) dan konfigurasi Terraform, Ansible, Dockerfile/compose yang tidak aman.
+_Avoid_: SAST, Secret scanning, Vulnerability scan
+
+**IaC Gate**:
+Penjaga opsional (`iac_gate_enabled`, default mati) yang membuat apply Terraform dan run Ansible ditolak dengan HTTP 409 selama ada temuan IaC Scan critical atau high, kecuali permintaan membawa `ignore_iac_gate`.
+_Avoid_: Policy gate, Approval gate
+
 **Side Panel**:
 Bilah navigasi tetap di sisi kiri antarmuka Pantau (di bawah header, di atas footer) dengan bagian Hosts, Docker, dan Kubernetes; dapat diciutkan menjadi rel ikon, dan menjadi off-canvas pada layar sempit.
 _Avoid_: Sidebar, menu samping, navigation drawer

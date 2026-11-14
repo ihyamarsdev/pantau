@@ -194,3 +194,46 @@ func TestSettings_URLValidation(t *testing.T) {
 		}
 	}
 }
+
+// TestSettings_IacGateRoundTrip checks that the opt-in IaC gate is off by default and can be switched on.
+func TestSettings_IacGateRoundTrip(t *testing.T) {
+	srv, db, cleanup := setupSettingsTestServer(t)
+	defer cleanup()
+
+	// Default: off.
+	if v, _ := db.GetSetting("iac_gate_enabled"); v != "" && v != "0" {
+		t.Fatalf("expected the IaC gate to be off by default, got %q", v)
+	}
+
+	bodyBytes, _ := json.Marshal(map[string]string{"iac_gate_enabled": "1"})
+	req := httptest.NewRequest(http.MethodPost, "/api/settings", bytes.NewReader(bodyBytes))
+	w := httptest.NewRecorder()
+	srv.handleSettings(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if v, _ := db.GetSetting("iac_gate_enabled"); v != "1" {
+		t.Fatalf("expected iac_gate_enabled=1, got %q", v)
+	}
+
+	// GET reports the setting.
+	req = httptest.NewRequest(http.MethodGet, "/api/settings", nil)
+	w = httptest.NewRecorder()
+	srv.handleSettings(w, req)
+	var getResp map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&getResp); err != nil {
+		t.Fatal(err)
+	}
+	if getResp["iac_gate_enabled"] != "1" {
+		t.Fatalf("expected iac_gate_enabled=1 in GET, got %v", getResp["iac_gate_enabled"])
+	}
+
+	// Anything that is not "1"/"true" turns it off.
+	bodyBytes, _ = json.Marshal(map[string]string{"iac_gate_enabled": "0"})
+	req = httptest.NewRequest(http.MethodPost, "/api/settings", bytes.NewReader(bodyBytes))
+	w = httptest.NewRecorder()
+	srv.handleSettings(w, req)
+	if v, _ := db.GetSetting("iac_gate_enabled"); v != "0" {
+		t.Fatalf("expected iac_gate_enabled=0, got %q", v)
+	}
+}

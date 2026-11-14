@@ -1,7 +1,7 @@
 /* Terraform Registry browser: kind toggle, search, paged results. Detail view lives in 61-registry-detail.js. */
 (function () {
   'use strict';
-  const R = (window.TfUI = window.TfUI || {}).reg = { st: { kind: 'modules', q: '', provider: '' }, root: null, dlg: false, base: '', next: 0, seq: 0 };
+  const R = (window.TfUI = window.TfUI || {}).reg = { st: { kind: 'modules', q: '', provider: '' }, root: null, dlg: false, base: '', next: 0, seq: 0, pending: 0 };
   const PAGE = 20;
 
   R.get = (path) => tfApi('GET', '/api/terraform/registry/' + path);
@@ -59,15 +59,22 @@
     const box = R.q('#tfRegResults'), more = R.q('#tfRegMore');
     if (!box) return;
     if (!s.q) { box.innerHTML = tfEmpty(tx('tfreg_enter_query')); more.hidden = true; return; }
-    const seq = ++R.seq, kind = s.kind;
-    if (!append) box.innerHTML = tfEmpty(tx('tfreg_searching'));
+    const seq = ++R.seq, kind = s.kind, t0 = Date.now();
+    if (!append) box.innerHTML = SP.loading(tx('tfreg_searching'), t0);
     more.disabled = true;
+    R.pending++;
     const qs = 'q=' + encodeURIComponent(s.q);
-    const r = kind === 'modules'
-      ? await R.get(`modules?${qs}&provider=${encodeURIComponent(s.provider)}&offset=${R.next}&limit=${PAGE}`)
-      : await R.get(`providers?${qs}&page=${R.next || 1}`);
+    let r;
+    try {
+      r = kind === 'modules'
+        ? await R.get(`modules?${qs}&provider=${encodeURIComponent(s.provider)}&offset=${R.next}&limit=${PAGE}`)
+        : await R.get(`providers?${qs}&page=${R.next || 1}`);
+    } finally {
+      // The More button must be usable again even when the search was superseded or failed.
+      R.pending--;
+      if (more && (seq === R.seq || R.pending === 0)) more.disabled = false;
+    }
     if (seq !== R.seq || R.root !== root) return; // superseded by a newer search / re-mount
-    more.disabled = false;
     if (!r.ok) { box.innerHTML = tfEmpty(r.data.error || 'Error'); more.hidden = true; return; }
     const list = (kind === 'modules' ? r.data.modules : r.data.providers) || [];
     if (!append) box.innerHTML = '';

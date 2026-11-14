@@ -28,8 +28,16 @@ async function tfGateExtras(el) {
     showToast(tx('tfnf_saved'), 'success');
   });
   tfEl('tfNfTest').addEventListener('click', async () => {
-    msg(tx('tfnf_testing'));
-    const s = await tfApi('POST', '/api/terraform/notifications/test');
+    const btn = tfEl('tfNfTest');
+    const restore = SP.busy(btn, tx('tfnf_testing'));
+    const m = tfEl('tfNfMsg');
+    if (m) { m.textContent = ''; m.style.color = ''; m.innerHTML = SP.html(tx('tfnf_testing')); }
+    let s;
+    try {
+      s = await tfApi('POST', '/api/terraform/notifications/test');
+    } finally {
+      restore();
+    }
     if (s.ok && s.data.ok !== false) { msg(''); showToast(tx('tfnf_test_ok'), 'success'); return; }
     msg(tx('tfnf_test_fail', { err: s.data.error || 'Error' }), true);
   });

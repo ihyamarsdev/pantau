@@ -23,6 +23,7 @@
   }
   // Load the root and every expanded folder that is not cached yet.
   async function loadDirs() {
+    Ed.treeT0 = Date.now();
     await Promise.all([''].concat(Array.from(Ed.open)).filter(p => !Ed.dirs[p]).map(loadDir));
   }
   // The HEAD listing of a folder plus what only exists in the working tree (new files and folders).
@@ -56,7 +57,7 @@
       if (!e.dir) return fileRow(p, sm, R.esc(e.name));
       const open = Ed.open.has(p);
       return `<button type="button" class="rp-row" data-dir="${R.esc(p)}">${svgIcon(open ? 'chevron-down' : 'chevron-right', 'icon-xs')}${svgIcon('folder', 'icon-xs')}<span class="rp-n">${R.esc(e.name)}</span>${changedDirs.has(p) ? '<i class="rp-dot"></i>' : ''}</button>` +
-        (open ? `<div class="rp-kids">${Ed.dirs[p] ? nodeHTML(p, sm, changedDirs) : `<div class="rp-trunc">${R.esc(R.tx('rp_loading'))}</div>`}</div>` : '');
+        (open ? `<div class="rp-kids">${Ed.dirs[p] ? nodeHTML(p, sm, changedDirs) : `<div class="rp-trunc">${SP.html(R.tx('rp_loading'), Ed.treeT0 || Date.now())}</div>`}</div>` : '');
     }).join('');
     if (d && d.truncated) html += `<div class="rp-trunc">${R.esc(R.tx('rp_ed_truncated'))}</div>`;
     if (d && d.error) html += `<div class="rp-trunc">${R.esc(d.error)}</div>`;
@@ -64,7 +65,7 @@
   }
   function searchHTML(sm) {
     const s = Ed.search;
-    if (!s || s.files === null) return `<div class="rp-trunc">${R.esc(R.tx('rp_ed_searching'))}</div>`;
+    if (!s || s.files === null) return `<div class="rp-trunc">${SP.html(R.tx('rp_ed_searching'), s && s.t0 ? s.t0 : Date.now())}</div>`;
     if (s.error) return `<div class="rp-trunc">${R.esc(s.error)}</div>`;
     if (!s.files.length) return `<div class="rp-trunc">${R.esc(R.tx('rp_ed_nomatch'))}</div>`;
     return s.files.map(f => {
@@ -90,16 +91,17 @@
   async function runSearch() {
     const q = Ed.filter.trim();
     const seq = ++searchSeq;
+    const t0 = Ed.search && Ed.search.t0 ? Ed.search.t0 : Date.now();
     const r = await api('GET', '/search?q=' + encodeURIComponent(q));
     if (seq !== searchSeq) return; // a newer query replaced this one
-    Ed.search = { files: r.ok ? r.data.files || [] : [], truncated: r.ok && !!r.data.truncated, error: r.ok ? '' : (r.data.error || 'Error') };
+    Ed.search = { files: r.ok ? r.data.files || [] : [], truncated: r.ok && !!r.data.truncated, error: r.ok ? '' : (r.data.error || 'Error'), t0: t0 };
     renderTree();
   }
   function onFilter(value) {
     Ed.filter = value;
     clearTimeout(searchTimer);
     searchSeq++;
-    Ed.search = value.trim() ? { files: null } : null;
+    Ed.search = value.trim() ? { files: null, t0: Date.now() } : null;
     renderTree();
     if (value.trim()) searchTimer = setTimeout(runSearch, 250);
   }
@@ -118,12 +120,6 @@
       (d.ahead ? `<button type="button" class="btn btn-sm" data-act="push">${svgIcon('upload', 'icon-xs')} ${R.esc(R.tx('rp_ed_push'))}</button>` : '') +
       `<button type="button" class="btn btn-sm btn-primary" data-act="commit" ${has ? '' : 'disabled'}>${svgIcon('git-compare', 'icon-xs')} ${R.esc(R.tx('rp_ed_commit'))}</button>`;
   }
-  function busy(btn, label) {
-    if (!btn) return;
-    btn.disabled = true;
-    btn.innerHTML = `<span class="spinner">${svgIcon('loader-circle', 'icon-xs')}</span> ${R.esc(label)}`;
-  }
-
   /* ---- file bar + editor ---- */
   function renderFbar() {
     const el = R.el('rpFbar');
@@ -260,28 +256,40 @@
     if (Ed.cur === p) openFile(p); // reload the restored content
   }
   async function sync(btn) {
-    busy(btn, R.tx('rp_sync'));
-    const r = await api('POST', '/sync');
-    if (r.ok) showToast(R.tx('rp_sync_ok', { name: Ed.name, commit: R.short(r.data.commit) }), 'success');
-    else R.err(r);
+    const restore = SP.busy(btn, R.tx('rp_syncing'));
+    try {
+      const r = await api('POST', '/sync');
+      if (r.ok) showToast(R.tx('rp_sync_ok', { name: Ed.name, commit: R.short(r.data.commit) }), 'success');
+      else R.err(r);
+    } finally {
+      restore();
+    }
     Object.keys(Ed.docs).filter(p => !isDirty(p)).forEach(p => { delete Ed.docs[p]; }); // clean buffers reload from disk
     await load(true);
     if (Ed.cur && !Ed.docs[Ed.cur]) openFile(Ed.cur);
   }
   async function push(btn) {
-    busy(btn, R.tx('rp_ed_push'));
-    const r = await api('POST', '/push');
-    if (r.ok) showToast(R.tx('rp_ed_pushed', { commit: R.short(r.data.commit), branch: r.data.branch }), 'success');
-    else R.err(r);
+    const restore = SP.busy(btn, R.tx('rp_ed_push'));
+    try {
+      const r = await api('POST', '/push');
+      if (r.ok) showToast(R.tx('rp_ed_pushed', { commit: R.short(r.data.commit), branch: r.data.branch }), 'success');
+      else R.err(r);
+    } finally {
+      restore();
+    }
     await load();
   }
 
   /* ---- Commit & Push dialog (repoDlg) ---- */
   async function openCommit(btn) {
-    busy(btn, R.tx('rp_ed_commit'));
+    const restore = SP.busy(btn, R.tx('rp_ed_commit'));
     let ok = true;
-    for (const p of dirtyPaths()) if (!(await saveDoc(p))) { ok = false; break; }
-    if (ok) ok = await load();
+    try {
+      for (const p of dirtyPaths()) if (!(await saveDoc(p))) { ok = false; break; }
+      if (ok) ok = await load();
+    } finally {
+      restore();
+    }
     if (!ok || !Ed.d.changes.length) { renderTools(); return; }
     let a = {};
     try { a = JSON.parse(localStorage.getItem('pantau_git_author') || '{}') || {}; } catch (e) { /* ignore */ }
@@ -318,14 +326,17 @@
     const author = { name: R.val('rpCmName').trim(), email: R.val('rpCmEmail').trim() };
     try { localStorage.setItem('pantau_git_author', JSON.stringify(author)); } catch (e) { /* ignore */ }
     const btn = R.el('rpCmGo');
-    busy(btn, R.tx('rp_cm_working'));
+    const restore = SP.busy(btn, R.tx('rp_cm_working'));
     R.dlgErr('');
     // empty paths = every change, so a partial selection is the only case that sends names
-    const r = await api('POST', '/commit', { message, author_name: author.name, author_email: author.email, new_branch: newBranch, paths: sel.length === boxes.length ? [] : sel });
+    let r;
+    try {
+      r = await api('POST', '/commit', { message, author_name: author.name, author_email: author.email, new_branch: newBranch, paths: sel.length === boxes.length ? [] : sel });
+    } finally {
+      restore();
+    }
     if (!r.ok) {
       R.dlgErr((r.data.error || 'Error') + (r.status === 409 ? '\n\n' + R.tx('rp_cm_kept') : ''));
-      btn.disabled = false;
-      btn.textContent = R.tx('rp_ed_commit');
       if (r.status === 409) load();
       return;
     }
@@ -347,6 +358,7 @@
       if (d.dir) {
         if (Ed.open.has(d.dir)) { Ed.open.delete(d.dir); return renderTree(); }
         Ed.open.add(d.dir);
+        Ed.treeT0 = Date.now(); // the elapsed counter of the folder that is being fetched
         renderTree(); // shows "Loading…" until the folder arrives
         return loadDirs().then(renderTree);
       }
@@ -373,7 +385,7 @@
     Object.assign(Ed, { id, name: repo ? repo.name : '', d: null, docs: {}, gens: {}, cur: '', cm: null, filter: '', open: new Set(), dirs: {}, search: null });
     R.el('rpTitle').textContent = Ed.name;
     R.el('rpTools').innerHTML = '';
-    R.el('rpBody').innerHTML = R.empty(R.tx('rp_loading'));
+    R.el('rpBody').innerHTML = SP.loading(R.tx('rp_loading'));
     openModal('repoModal');
     await load();
   };

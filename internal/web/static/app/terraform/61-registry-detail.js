@@ -51,7 +51,7 @@
     o = o || {};
     const det = R.q('#tfRegDetail'); if (!det) return;
     const seq = ++dseq, isMod = kind === 'modules', root = R.root;
-    det.innerHTML = tfEmpty(tx('tfreg_loading'));
+    det.innerHTML = SP.loading(tx('tfreg_loading'), Date.now());
     const p = id.split('/').map(encodeURIComponent).join('/');
     const qs = new URLSearchParams();
     if (o.version) qs.set('version', o.version);

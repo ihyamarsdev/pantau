@@ -35,13 +35,17 @@
 
   async function check() {
     if (busy || !tfWs) return;
-    const root = C.root, id = tfWs.id, btn = tfEl('tfCfgRegCheck'), html = btn.innerHTML;
-    busy = true; btn.disabled = true;
-    btn.innerHTML = `<span class="spinner">${svgIcon('loader-circle', 'icon-xs')}</span> ${tfE(tx('tfregc_checking'))}`;
-    const r = await tfApi('GET', `/api/terraform/workspaces/${id}/registry/check`);
-    busy = false;
+    const root = C.root, id = tfWs.id, btn = tfEl('tfCfgRegCheck');
+    busy = true;
+    const restore = SP.busy(btn, tx('tfregc_checking'));
+    let r;
+    try {
+      r = await tfApi('GET', `/api/terraform/workspaces/${id}/registry/check`);
+    } finally {
+      busy = false;
+      restore();
+    }
     if (C.root !== root || !tfWs || tfWs.id !== id) return; // editor re-rendered meanwhile
-    btn.disabled = false; btn.innerHTML = html;
     if (!r.ok) { tfErr(r); return; }
     items = r.data.items || [];
     const errs = (r.data.errors || []).map(e => `<li class="tf-regc-err">${tfE(typeof e === 'string' ? e : JSON.stringify(e))}</li>`).join('');

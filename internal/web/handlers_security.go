@@ -117,6 +117,18 @@ func (s *Server) handleHostSecurity(w http.ResponseWriter, r *http.Request, host
 		return
 	}
 
+	// GET /api/hosts/{id}/security/accounts and POST .../security/accounts/scan
+	if len(cleaned) == 1 && cleaned[0] == "accounts" {
+		s.handleHostAccountAudit(w, r, hostID)
+		return
+	}
+
+	// GET /api/hosts/{id}/security/vulns -> known vulnerabilities of the installed packages
+	if len(cleaned) == 1 && cleaned[0] == "vulns" {
+		s.handleHostSecurityVulns(w, r, hostID)
+		return
+	}
+
 	// GET /api/hosts/{id}/security/firewall -> live ufw/firewalld/iptables state
 	if len(cleaned) == 1 && cleaned[0] == "firewall" {
 		if r.Method != http.MethodGet {

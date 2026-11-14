@@ -19,6 +19,6 @@
         <span id="tfVcsResult" style="font-size:var(--fs-xs);"></span></div>
       <div class="tf-cfg-hint">${tfE(tx('tfcfg_git_hint'))}</div></div></div>`;
     body.querySelector('#tfCfgGitEdit').addEventListener('click', () => openTfWorkspaceModal(w.id));
-    body.querySelector('#tfCfgGitTest').addEventListener('click', () => tfVcsTest());
+    body.querySelector('#tfCfgGitTest').addEventListener('click', (e) => tfVcsTest(e.currentTarget));
   };
 })();

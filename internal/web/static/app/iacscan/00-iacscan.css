@@ -1,0 +1,7 @@
+/* IaC and secret scan module. Uses the existing theme variables only. */
+.iac-findings-table { width: 100%; border-collapse: collapse; font-size: var(--fs-xs); }
+.iac-findings-table th, .iac-findings-table td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--card-border); }
+.iac-findings-table th { color: var(--text-muted); font-weight: 600; }
+.iac-findings-table td { color: var(--text); }
+.iac-findings-table .iac-snippet { font-size: var(--fs-xs); color: var(--text-muted); word-break: break-all; }
+.iac-empty { padding: 24px; text-align: center; color: var(--text-muted); }

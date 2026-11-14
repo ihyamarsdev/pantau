@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="/app/repos.css" />
 <link rel="stylesheet" href="/app/dockerhub.css" />
 <link rel="stylesheet" href="/app/vulnintel.css" />
+<link rel="stylesheet" href="/app/osvvulns.css" />
 <link rel="stylesheet" href="/app/palette.css" />
 <link rel="stylesheet" href="/app/portfwd.css" />
 <link rel="stylesheet" href="/app/fleetsearch.css" />
@@ -20,6 +21,9 @@
 <link rel="stylesheet" href="/app/domains.css" />
 <link rel="stylesheet" href="/app/dbbackup.css" />
 <link rel="stylesheet" href="/app/agent.css" />
+<link rel="stylesheet" href="/app/iacscan.css" />
+<link rel="stylesheet" href="/app/dockerprogress.css" />
+<link rel="stylesheet" href="/app/scanprogress.css" />
 <style>
 @font-face { font-family: 'Inter'; src: url('/vendor/fonts/inter-latin-var.woff2') format('woff2'); font-weight: 100 900; font-style: normal; font-display: swap; }
 @font-face { font-family: 'JetBrains Mono'; src: url('/vendor/fonts/jetbrains-mono-latin-var.woff2') format('woff2'); font-weight: 100 800; font-style: normal; font-display: swap; }
@@ -2929,6 +2933,13 @@ header {
 .terminal-pane-status.disconnected {
   color: var(--danger);
 }
+.terminal-pane-status.connecting {
+  color: var(--text-muted);
+}
+.terminal-pane-status.connecting .terminal-tab-status-dot {
+  background: var(--warning);
+  animation: spin 0.9s linear infinite;
+}
 .terminal-port-chip {
   padding: 2px 7px;
   font-size: 0.72rem;
@@ -3520,6 +3531,9 @@ header {
 .text-primary { color: var(--accent-text); }
 .input-sm { height: 30px; font-size: var(--fs-sm); }
 span.spinner > .icon { animation: spin 0.9s linear infinite; }
+/* Any loader-circle icon rotates, wrapped in span.spinner or not (a bare one used to look stuck). */
+svg.icon:has(> use[href="#i-loader-circle"]) { animation: spin 0.9s linear infinite; }
+@media (prefers-reduced-motion: reduce) { svg.icon:has(> use[href="#i-loader-circle"]) { animation-duration: 3s; } }
 div.spinner { border: 2px solid var(--card-border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
 #settingsPanelSecurity > .form-grid-2 { grid-template-columns: 1fr; }
 #settingPubKey { height: auto; min-height: 96px; }
@@ -3962,6 +3976,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         </div>
       </div>
       <div id="kubeWorkspaceGrid" class="grid" style="display:none;"></div>
+      <div id="kubeStatusArea" style="margin-bottom:12px;"></div>
       <div id="kubeClusterBar" class="card" style="display:none;padding:12px 18px;margin-bottom:16px;flex-direction:row;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
         <div id="kubeClusterChips" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           <span class="badge badge-info" id="kubeDistroChip" style="font-family:var(--font-mono);text-transform:uppercase;">k3s</span>
@@ -3976,6 +3991,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
             <option value="" data-i18n="kube_all_namespaces">All Namespaces</option>
           </select>
         </div>
+        <span class="badge" id="kubeDetectChip" style="display:none;align-items:center;gap:6px;"></span>
       </div>
       <div id="kubeNoClusterState" class="card" style="display:none;padding:30px 20px;text-align:center;">
         <div style="color:var(--text-muted);margin-bottom:8px;"><svg class="icon icon-xl"><use href="#i-boxes"/></svg></div>
@@ -3986,7 +4002,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <div style="color:var(--text-muted);font-size:var(--fs-base);" data-i18n="kube_ws_empty">No workspace yet. Pick a host or cluster above to add one.</div>
       </div>
       <div id="kubeViewsContainer" style="display:none;flex-direction:column;gap:16px;">
-        <div class="tabs" style="border-bottom:1px solid var(--card-border);margin-bottom:12px;flex-wrap:wrap;gap:4px;" role="tablist">
+        <div class="tabs" id="kubeTabsStrip" style="border-bottom:1px solid var(--card-border);margin-bottom:12px;flex-wrap:wrap;gap:4px;" role="tablist">
           <div class="tab active" id="tabKubeNodes" onclick="switchKubeTab('nodes')" role="tab" data-i18n="kube_tab_nodes">Nodes</div>
           <div class="tab" id="tabKubeWorkloads" onclick="switchKubeTab('workloads')" role="tab" data-i18n="kube_tab_workloads">Workloads</div>
           <div class="tab" id="tabKubePods" onclick="switchKubeTab('pods')" role="tab" data-i18n="kube_tab_pods">Pods</div>
@@ -4012,6 +4028,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
             </select>
           </span>
         </div>
+        <div id="kubeRefreshStatus" style="display:none;"></div>
         <div id="kubeTabContent" style="min-height:250px;"></div>
       </div>
     </div>
@@ -4035,7 +4052,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
             <button id="btnCfEditAccount" class="btn btn-sm header-btn" onclick="openCfAccountModal(selectedCfAccountId)" title="Edit account" data-i18n-title="cf_edit_account" style="height:34px;display:none;align-items:center;gap:6px;">
               <svg class="icon icon-sm"><use href="#i-pencil"/></svg> <span data-i18n="cf_edit_account">Edit</span>
             </button>
-            <button id="btnCfDeleteAccount" class="btn btn-sm header-btn btn-danger" onclick="deleteCfAccount(selectedCfAccountId)" title="Delete account" data-i18n-title="cf_delete_account" style="height:34px;display:none;align-items:center;gap:6px;">
+            <button id="btnCfDeleteAccount" class="btn btn-sm header-btn btn-danger" onclick="deleteCfAccount(selectedCfAccountId, this)" title="Delete account" data-i18n-title="cf_delete_account" style="height:34px;display:none;align-items:center;gap:6px;">
               <svg class="icon icon-sm"><use href="#i-trash-2"/></svg> <span data-i18n="cf_delete_account">Delete</span>
             </button>
             <button id="btnCfRefresh" class="btn btn-sm header-btn" onclick="refreshCfSection()" title="Refresh" data-i18n-title="refresh" style="height:34px;display:inline-flex;align-items:center;gap:6px;">
@@ -4492,7 +4509,8 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <svg class="icon icon-xs"><use href="#i-shield-alert"/></svg><span id="kubeYamlRoNoteText"></span>
       </div>
       <div style="font-size:var(--fs-xs);color:var(--text-muted);" data-i18n="kube_yaml_desc">resourceVersion is preserved: an apply failing with "object has been modified" means the object changed since it was opened; re-open the YAML. Comments are not preserved.</div>
-      <textarea id="kubeYamlEditorArea"></textarea>
+      <div id="kubeYamlEditorWrap"><textarea id="kubeYamlEditorArea"></textarea></div>
+      <div id="kubeYamlLoading" style="display:none;"></div>
       <pre id="kubeYamlOutput" class="kube-apply-output"></pre>
     </div>
     <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;align-items:center;">
@@ -4966,6 +4984,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
           <option value="tls">tls</option>
           <option value="process">process</option>
           <option value="security_updates">security_updates</option>
+          <option value="file_integrity">file_integrity</option>
         </select>
       </div>
       <div class="form-group">
@@ -4975,6 +4994,28 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
       <div class="form-group">
         <label data-i18n="rule_expected">Expected State</label>
         <input type="text" id="ruleExpected" class="input" placeholder="e.g. running, listening, <80%" data-i18n-placeholder="rule_expected_ph" value="running" onkeyup="if(event.key==='Enter') submitRuleForm()" />
+      </div>
+      <div id="fimPanel" style="display: none;">
+        <input type="hidden" id="fimCapturedExpected" />
+        <input type="hidden" id="fimCapturedTarget" />
+        <input type="hidden" id="fimCapturedCount" value="0" />
+        <div class="form-group">
+          <label data-i18n="fim_preset_label">Preset</label>
+          <select id="fimPreset" class="input" onchange="FIM.syncPresetVisibility()">
+            <option value="custom" data-i18n="fim_preset_custom">Custom paths</option>
+            <option value="auth" data-i18n="fim_preset_auth">Authentication files</option>
+            <option value="suid" data-i18n="fim_preset_suid">SUID/SGID binaries</option>
+          </select>
+        </div>
+        <div class="form-group" id="fimPathsWrap">
+          <label data-i18n="fim_paths_label">File paths</label>
+          <textarea id="fimPaths" class="input" rows="3" placeholder="/etc/passwd, /etc/ssh/sshd_config" data-i18n-placeholder="fim_paths_ph"></textarea>
+          <span class="form-hint" data-i18n="fim_target_hint">Absolute file paths (comma separated, max 20), "preset:auth", or "suid"</span>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+          <button class="btn btn-sm" id="btnFIMCapture" onclick="FIM.captureBaseline()"><svg class="icon icon-sm"><use href="#i-shield-check"/></svg> <span data-i18n="fim_capture">Capture baseline</span></button>
+        </div>
+        <div id="fimPreview" style="display: none;"></div>
       </div>
       <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px;">
         <button class="btn" onclick="closeModal('ruleModal')" data-i18n="cancel">Cancel</button>
@@ -5566,6 +5607,14 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
               <input type="checkbox" id="settingVulnIntel" style="width: auto; margin-top: 3px;" onchange="saveVulnIntelSetting(this.checked)" />
               <span><b data-i18n="vuln_intel_label">CISA KEV and EPSS</b>: <span data-i18n="vuln_intel_desc">mark security findings whose CVEs are exploited in the wild and show their probability of exploitation. The Pantau server downloads these public feeds once a day (needs internet; dnf/yum hosts report CVE IDs).</span></span>
             </label>
+            <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; font-size: var(--fs-sm); margin-top: 12px;">
+              <input type="checkbox" id="settingOsvEnabled" style="width: auto; margin-top: 3px;" onchange="saveOsvEnabledSetting(this.checked)" />
+              <span><b data-i18n="osv_enabled_label">Known vulnerabilities in installed packages</b>: <span data-i18n="osv_enabled_desc">check the packages installed on a host against the OSV database (api.osv.dev) and the Arch Linux security tracker (security.archlinux.org). The Pantau server sends the package names, the installed versions and the OS release of the host to those public services (needs internet).</span></span>
+            </label>
+            <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; font-size: var(--fs-sm); margin-top: 12px;">
+              <input type="checkbox" id="settingIacGate" style="width: auto; margin-top: 3px;" onchange="saveIacGateSetting(this.checked)" />
+              <span><b data-i18n="iac_gate_label">IaC and secret gate</b>: <span data-i18n="iac_gate_desc">scan the Terraform and Ansible sources on this server for secrets and insecure infrastructure before an apply or a run, and refuse it while a critical or high finding is open.</span></span>
+            </label>
           </div>
         </div>
 
@@ -5855,8 +5904,8 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
               </div>
             </div>
             <div style="display: flex; gap: 8px; margin-top: 6px;">
-              <button class="btn btn-primary btn-sm" onclick="saveGitHubBackupSettings()"><svg class="icon"><use href="#i-save"/></svg> <span data-i18n="save_gh_config">Save Configuration</span></button>
-              <button class="btn btn-sm btn-ghost" onclick="syncGitHubNow()"><svg class="icon"><use href="#i-refresh-cw"/></svg> <span data-i18n="sync_gh_now">Sync to GitHub Now</span></button>
+              <button class="btn btn-primary btn-sm" id="btnSaveGhConfig" onclick="saveGitHubBackupSettings()"><svg class="icon"><use href="#i-save"/></svg> <span data-i18n="save_gh_config">Save Configuration</span></button>
+              <button class="btn btn-sm btn-ghost" id="btnSyncGhNow" onclick="syncGitHubNow()"><svg class="icon"><use href="#i-refresh-cw"/></svg> <span data-i18n="sync_gh_now">Sync to GitHub Now</span></button>
             </div>
           </div>
         </div>
@@ -5932,7 +5981,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
               </div>
             </div>
             <div style="display: flex; gap: 8px;">
-              <button class="btn btn-primary btn-sm" onclick="saveS3Account()"><svg class="icon"><use href="#i-save"/></svg> <span data-i18n="s3_save">Save</span></button>
+              <button class="btn btn-primary btn-sm" id="btnSaveS3Account" onclick="saveS3Account()"><svg class="icon"><use href="#i-save"/></svg> <span data-i18n="s3_save">Save</span></button>
               <button class="btn btn-sm btn-ghost" onclick="cancelS3Form()" data-i18n="cancel">Cancel</button>
             </div>
           </div>
@@ -6053,7 +6102,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
           <label class="form-label" data-i18n="snapshot_passphrase">Snapshot Passphrase</label>
           <input type="password" id="restoreGhPass" placeholder="Secret passphrase for encryption" data-i18n-placeholder="snapshot_passphrase_ph" />
         </div>
-        <button class="btn btn-primary" onclick="doRestoreFromGitHub()"><svg class="icon"><use href="#i-download"/></svg> <span data-i18n="restore_gh_btn">Pull & Restore from GitHub</span></button>
+        <button class="btn btn-primary" id="btnRestoreFromGh" onclick="doRestoreFromGitHub()"><svg class="icon"><use href="#i-download"/></svg> <span data-i18n="restore_gh_btn">Pull & Restore from GitHub</span></button>
         <div id="restoreGhMsg" style="font-size: var(--fs-xs); margin-top: 4px;"></div>
       </div>
 
@@ -6068,7 +6117,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
           <label class="form-label" data-i18n="snapshot_passphrase">Snapshot Passphrase</label>
           <input type="password" id="restoreFilePass" placeholder="Secret passphrase for encryption" data-i18n-placeholder="snapshot_passphrase_ph" />
         </div>
-        <button class="btn btn-primary" onclick="doRestoreFromFile()"><svg class="icon"><use href="#i-upload"/></svg> <span data-i18n="restore_file_btn">Upload & Restore</span></button>
+        <button class="btn btn-primary" id="btnRestoreFromFile" onclick="doRestoreFromFile()"><svg class="icon"><use href="#i-upload"/></svg> <span data-i18n="restore_file_btn">Upload & Restore</span></button>
         <div id="restoreFileMsg" style="font-size: var(--fs-xs); margin-top: 4px;"></div>
       </div>
 
@@ -6092,7 +6141,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <span id="editorDirtyIndicator" class="editor-dirty-badge" style="display: none;" title="Unsaved changes">Unsaved</span>
       </div>
       <div class="editor-header-actions">
-        <button class="btn btn-primary btn-sm" onclick="saveEditorFile()">
+        <button class="btn btn-primary btn-sm" id="btnSaveEditorFile" onclick="saveEditorFile()">
           <svg class="icon icon-sm"><use href="#i-save"/></svg>
           <span data-i18n="save">Save</span>
         </button>
@@ -6900,6 +6949,7 @@ const I18N = {
     "updating": "Updating...",
     "restart_now": "Restart Pantau Now",
     "restarting": "Restarting...",
+    "restart_timeout": "Server did not come back online. Restart it manually and try again.",
     "docker_update_notice": "Running inside Docker container. Binary self-update is disabled for containerized deployments. Update your container image using:",
     "update_success_restart": "Update installed successfully! Restart Pantau to apply changes.",
     "preset_name": "Preset Name",
@@ -7010,6 +7060,9 @@ const I18N = {
     "run_inspect": "Run Immediate Inspection",
     "net_egress": "Internet Egress",
     "connected": "Connected",
+    "terminal_connecting": "Connecting…",
+    "terminal_disconnected": "Disconnected",
+    "inspect_all_banner": "Inspecting all hosts…",
     "no_internet": "No Internet Access",
     "public_ip": "Public IP:",
     "live_bandwidth": "Live Bandwidth Speed",
@@ -7071,6 +7124,9 @@ const I18N = {
     "docker_logs_ended": "Stream ended",
     "docker_menu_title": "Container actions",
     "docker_loading": "Loading...",
+    "docker_refreshing": "Refreshing...",
+    "docker_loading_data": "Loading Docker data...",
+    "docker_stack_loading": "Loading the compose file...",
     "docker_sub_containers": "Containers",
     "docker_sub_stats": "Stats",
     "docker_sub_volumes": "Volumes",
@@ -7134,6 +7190,7 @@ const I18N = {
     "failed_open_path": "Failed to open path: ",
     "failed_read_file": "Failed to read file",
     "confirm_delete_file": "Delete {path}?",
+    "confirm_delete_folder_recursive": "{path} is not empty. Delete the folder and everything inside it? This cannot be undone.",
     "large_folder_warn": "This folder is {size} (> 2 GB). Direct browser download may disconnect if your connection is unstable.\n\nContinue download anyway?",
     "protected_path": "Protected Path",
     "cannot_modify_protected": "Protected Path: cannot modify system location.",
@@ -7234,6 +7291,10 @@ const I18N = {
     "sync_gh_now": "Sync to GitHub Now",
     "gh_config_saved": "GitHub backup configuration saved successfully!",
     "sync_gh_failed": "Failed to sync to GitHub: ",
+    "gh_config_save_failed": "Failed to save GitHub backup configuration: ",
+    "syncing_gh": "Syncing to GitHub...",
+    "saving": "Saving...",
+    "exporting_snapshot": "Exporting...",
     "prompt_snapshot_pass": "Enter Snapshot Passphrase to encrypt backup:",
     "export_snapshot_failed": "Failed to export snapshot: ",
     "restore_modal_title": "Restore Pantau from Backup",
@@ -7339,7 +7400,6 @@ const I18N = {
     "snapshot_pass_ph": "Enter encryption password",
     "download_snapshot": "Download Snapshot",
     "snapshot_exported": "Snapshot exported successfully",
-    "docker_action_success": "Docker {action} completed successfully",
     "file_uploaded": "File uploaded successfully",
     "file_deleted": "File deleted successfully",
     "file_saved": "File saved successfully",
@@ -7537,6 +7597,10 @@ const I18N = {
     "hardening_auditd_active": "Audit Daemon (auditd)",
     "vuln_intel_label": "CISA KEV and EPSS",
     "vuln_intel_desc": "mark security findings whose CVEs are exploited in the wild and show their probability of exploitation. The Pantau server downloads these public feeds once a day (needs internet; dnf/yum hosts report CVE IDs).",
+    "osv_enabled_label": "Known vulnerabilities in installed packages",
+    "osv_enabled_desc": "check the packages installed on a host against the OSV database (api.osv.dev) and the Arch Linux security tracker (security.archlinux.org). The Pantau server sends the package names, the installed versions and the OS release of the host to those public services (needs internet).",
+    "iac_gate_label": "IaC and secret gate",
+    "iac_gate_desc": "scan the Terraform and Ansible sources on this server for secrets and insecure infrastructure before an apply or a run, and refuse it while a critical or high finding is open.",
     "sec_chip_pending": "{n} security update(s) pending",
     "sec_chip_fail": "{n} hardening check(s) failed",
     "sec_chip_warn": "{n} hardening warning(s)",
@@ -7994,6 +8058,12 @@ const I18N = {
     "kube_btn_detect_clusters": "Detect clusters",
     "kube_detecting_clusters": "Detecting Kubernetes clusters...",
     "kube_detect_complete": "Cluster detection complete",
+    "kube_detect_progress": "{done}/{total} hosts",
+    "kube_detecting_cluster": "Detecting cluster...",
+    "kube_loading_resources": "Loading resources...",
+    "kube_namespaces_loading": "Loading...",
+    "kube_refreshing": "Refreshing...",
+    "kube_stale_data": "Showing the last known data - the last refresh failed",
     "kube_standalone": "Standalone",
     "kube_ws_back": "Workspaces",
     "kube_ws_open": "Open",
@@ -8088,9 +8158,17 @@ const I18N = {
     "kube_drain_flag_ignore_ds": "Ignore DaemonSet-managed pods",
     "kube_drain_flag_emptydir": "Delete EmptyDir data",
     "kube_drain_flag_force": "Force (evict pods without a controller)",
-    "kube_drain_started": "Drain started; this can take minutes...",
     "kube_drain_done": "Drain completed",
     "kube_drain_timeout": "Drain timeout: the node stays cordoned and pods may be partially evicted. Run Uncordon to undo.",
+    "kube_action_running": "Running {op} on {name}...",
+    "kube_output_running": "Fetching {title}...",
+    "kube_exec_running": "Opening exec console on {name}...",
+    "kube_drain_starting": "Starting drain...",
+    "kube_drain_running": "Draining node {name}... this can take minutes",
+    "kube_scaling": "Scaling...",
+    "kube_applying": "Applying manifest...",
+    "kube_yaml_loading": "Loading YAML...",
+    "kube_ext_loading_contexts": "Loading contexts...",
     "kube_warning_only": "Warning only",
     "kube_pods_only_problems": "Only problems",
     "kube_pod_problem": "Problem pod",
@@ -8169,6 +8247,7 @@ const I18N = {
     "cf_account_token_label": "API Token",
     "cf_account_token_hint": "In edit mode, leave empty to keep the existing token.",
     "cf_btn_save": "Verify & Save",
+    "working": "Working...",
     "cf_tab_dns": "DNS Records",
     "cf_tab_cache": "Purge Cache",
     "cf_tab_settings": "Zone Settings",
@@ -8232,6 +8311,9 @@ const I18N = {
     "cf_record_saved": "DNS record saved successfully",
     "cf_record_deleted": "DNS record deleted",
     "cf_cache_purged": "Cache purged successfully",
+    "cf_purging": "Purging...",
+    "cf_saving_record": "Saving...",
+    "cf_deleting_record": "Deleting...",
     "cf_setting_updated": "Zone Setting updated successfully",
     "cf_err_name_token_required": "Account name and API token are required",
     "cf_err_record_validation": "Record type, name, and content are required",
@@ -8365,7 +8447,31 @@ const I18N = {
     "tf_webhook_secret_once": "Webhook Secret (shown only once):",
     "tf_module_detail_title": "Module Details",
     "tf_btn_add_version": "Add Version",
-    "tf_usage_snippet": "Usage Snippet"
+    "tf_usage_snippet": "Usage Snippet",
+    "upd_injecting": "Injecting key…",
+    "upd_inspecting": "Inspecting…",
+    "upd_testing_ssh": "Testing SSH…",
+    "upd_generating_baseline": "Generating baseline…",
+    "upd_rescanning_pkgs": "Rescanning packages…",
+    "upd_saving_file": "Saving…",
+    "upd_uploading": "Uploading…",
+    "upd_archiving": "Archiving…",
+    "upd_sync_gh": "Syncing to GitHub…",
+    "upd_restoring": "Restoring…",
+    "upd_exporting": "Exporting…",
+    "upd_importing": "Importing…",
+    "upd_updating": "Updating…",
+    "upd_restarting": "Restarting…",
+    "upd_inspecting_all": "Inspecting all hosts…",
+    "upd_working": "Working…",
+    "upd_saving": "Saving…",
+    "upd_deleting": "Deleting…",
+    "upd_purging": "Purging…",
+    "upd_toggling": "Updating…",
+    "upd_restart_failed": "Server did not come back online within 120s.",
+    "upd_uploading_n_of_m": "Uploading {n} of {m}",
+    "upd_archiving_hint": "Archiving on the host, the download starts when it is ready.",
+    "s3_starting_upload": "Starting upload…"
   },
   id: {
     "brand_subtitle": "Manajemen Server Agentless",
@@ -8568,6 +8674,7 @@ const I18N = {
     "updating": "Memperbarui...",
     "restart_now": "Restart Pantau Sekarang",
     "restarting": "Me-restart...",
+    "restart_timeout": "Server tidak kembali online. Restart secara manual lalu coba lagi.",
     "docker_update_notice": "Berjalan di dalam container Docker. Pembaruan biner mandiri dinonaktifkan pada kontainer. Perbarui image container Anda menggunakan:",
     "update_success_restart": "Pembaruan berhasil dipasang! Restart Pantau sekarang untuk menerapkan perubahan.",
     "preset_name": "Nama Preset",
@@ -8679,6 +8786,9 @@ const I18N = {
     "run_inspect": "Jalankan Inspeksi Langsung",
     "net_egress": "Internet Egress",
     "connected": "Terhubung",
+    "terminal_connecting": "Menghubungkan…",
+    "terminal_disconnected": "Terputus",
+    "inspect_all_banner": "Memeriksa semua host…",
     "no_internet": "Tidak Ada Akses Internet",
     "public_ip": "IP Publik:",
     "live_bandwidth": "Kecepatan Bandwidth Live",
@@ -8739,6 +8849,9 @@ const I18N = {
     "docker_logs_live": "Langsung",
     "docker_menu_title": "Aksi container",
     "docker_loading": "Memuat...",
+    "docker_refreshing": "Menyegarkan...",
+    "docker_loading_data": "Memuat data Docker...",
+    "docker_stack_loading": "Memuat berkas compose...",
     "docker_sub_containers": "Container",
     "docker_sub_stats": "Statistik",
     "docker_sub_volumes": "Volume",
@@ -8802,6 +8915,7 @@ const I18N = {
     "failed_open_path": "Gagal membuka path: ",
     "failed_read_file": "Gagal membaca berkas",
     "confirm_delete_file": "Hapus {path}?",
+    "confirm_delete_folder_recursive": "{path} tidak kosong. Hapus folder beserta seluruh isinya? Tindakan ini tidak dapat dibatalkan.",
     "large_folder_warn": "Folder ini berukuran {size} (> 2 GB). Unduh langsung via browser rentan putus jika koneksi tidak stabil.\n\nTetap lanjutkan unduh?",
     "protected_path": "Protected Path",
     "cannot_modify_protected": "Protected Path: tidak dapat memodifikasi lokasi sistem.",
@@ -8902,6 +9016,10 @@ const I18N = {
     "sync_gh_now": "Sync ke GitHub Sekarang",
     "gh_config_saved": "Konfigurasi backup GitHub berhasil disimpan!",
     "sync_gh_failed": "Gagal sync ke GitHub: ",
+    "gh_config_save_failed": "Gagal menyimpan konfigurasi backup GitHub: ",
+    "syncing_gh": "Sync ke GitHub...",
+    "saving": "Menyimpan...",
+    "exporting_snapshot": "Mengekspor...",
     "prompt_snapshot_pass": "Masukkan Snapshot Passphrase untuk mengenkripsi backup:",
     "export_snapshot_failed": "Gagal export snapshot: ",
     "restore_modal_title": "Restore Pantau dari Backup",
@@ -9039,7 +9157,6 @@ const I18N = {
     "snapshot_pass_ph": "Masukkan password enkripsi",
     "download_snapshot": "Unduh Snapshot",
     "snapshot_exported": "Snapshot berhasil diekspor",
-    "docker_action_success": "Docker {action} berhasil",
     "file_uploaded": "File berhasil diunggah",
     "file_deleted": "File berhasil dihapus",
     "file_saved": "File berhasil disimpan",
@@ -9205,6 +9322,10 @@ const I18N = {
     "hardening_auditd_active": "Audit Daemon (auditd)",
     "vuln_intel_label": "CISA KEV dan EPSS",
     "vuln_intel_desc": "tandai temuan keamanan yang CVE-nya sedang dieksploitasi dan tampilkan peluang eksploitasinya. Server Pantau mengunduh feed publik ini sekali sehari (butuh internet; host dnf/yum melaporkan ID CVE).",
+    "osv_enabled_label": "Kerentanan yang diketahui pada paket terpasang",
+    "osv_enabled_desc": "periksa paket yang terpasang pada sebuah host terhadap basis data OSV (api.osv.dev) dan pelacak keamanan Arch Linux (security.archlinux.org). Server Pantau mengirim nama paket, versi terpasang, dan rilis OS host ke layanan publik tersebut (butuh internet).",
+    "iac_gate_label": "Gate IaC dan rahasia",
+    "iac_gate_desc": "pindai sumber Terraform dan Ansible di server ini dari rahasia dan infrastruktur tidak aman sebelum apply atau run, dan tolak selama ada temuan kritis atau tinggi.",
     "sec_chip_pending": "{n} pembaruan keamanan tertunda",
     "sec_chip_fail": "{n} pemeriksaan hardening gagal",
     "sec_chip_warn": "{n} peringatan hardening",
@@ -9662,6 +9783,12 @@ const I18N = {
     "kube_btn_detect_clusters": "Deteksi klaster",
     "kube_detecting_clusters": "Mendeteksi klaster Kubernetes...",
     "kube_detect_complete": "Deteksi klaster selesai",
+    "kube_detect_progress": "{done}/{total} host",
+    "kube_detecting_cluster": "Mendeteksi klaster...",
+    "kube_loading_resources": "Memuat resource...",
+    "kube_namespaces_loading": "Memuat...",
+    "kube_refreshing": "Memuat ulang...",
+    "kube_stale_data": "Menampilkan data terakhir - muat ulang terakhir gagal",
     "kube_standalone": "Mandiri",
     "kube_ws_back": "Workspace",
     "kube_ws_open": "Buka",
@@ -9756,9 +9883,17 @@ const I18N = {
     "kube_drain_flag_ignore_ds": "Abaikan pod milik DaemonSet",
     "kube_drain_flag_emptydir": "Hapus data emptyDir",
     "kube_drain_flag_force": "Paksa (evict pod tanpa controller)",
-    "kube_drain_started": "Drain dimulai; ini bisa memakan waktu beberapa menit...",
     "kube_drain_done": "Drain selesai",
     "kube_drain_timeout": "Drain kehabisan waktu: node tetap cordoned dan pod mungkin sebagian tereviksi. Jalankan Uncordon untuk membatalkan.",
+    "kube_action_running": "Menjalankan {op} pada {name}...",
+    "kube_output_running": "Mengambil {title}...",
+    "kube_exec_running": "Membuka konsol exec pada {name}...",
+    "kube_drain_starting": "Memulai drain...",
+    "kube_drain_running": "Melakukan drain node {name}... ini bisa memakan waktu beberapa menit",
+    "kube_scaling": "Mengubah skala...",
+    "kube_applying": "Menerapkan manifest...",
+    "kube_yaml_loading": "Memuat YAML...",
+    "kube_ext_loading_contexts": "Memuat konteks...",
     "kube_warning_only": "Hanya Warning",
     "kube_pods_only_problems": "Hanya bermasalah",
     "kube_pod_problem": "Pod bermasalah",
@@ -9837,6 +9972,7 @@ const I18N = {
     "cf_account_token_label": "API Token",
     "cf_account_token_hint": "Dalam mode edit, biarkan kosong untuk mempertahankan token yang sudah ada.",
     "cf_btn_save": "Verifikasi & Simpan",
+    "working": "Memproses...",
     "cf_tab_dns": "Record DNS",
     "cf_tab_cache": "Purge Cache",
     "cf_tab_settings": "Pengaturan Zone",
@@ -9900,6 +10036,9 @@ const I18N = {
     "cf_record_saved": "Record DNS berhasil disimpan",
     "cf_record_deleted": "Record DNS berhasil dihapus",
     "cf_cache_purged": "Cache berhasil di-purge",
+    "cf_purging": "Menghapus cache...",
+    "cf_saving_record": "Menyimpan...",
+    "cf_deleting_record": "Menghapus...",
     "cf_setting_updated": "Pengaturan Zone berhasil diperbarui",
     "cf_err_name_token_required": "Nama akun dan API token wajib diisi",
     "cf_err_record_validation": "Tipe record, nama, dan konten wajib diisi",
@@ -10033,7 +10172,31 @@ const I18N = {
     "tf_webhook_secret_once": "Secret Webhook (hanya ditampilkan sekali):",
     "tf_module_detail_title": "Detail Modul",
     "tf_btn_add_version": "Tambah Versi",
-    "tf_usage_snippet": "Snippet Penggunaan"
+    "tf_usage_snippet": "Snippet Penggunaan",
+    "upd_injecting": "Menyuntikkan key…",
+    "upd_inspecting": "Memeriksa…",
+    "upd_testing_ssh": "Menguji SSH…",
+    "upd_generating_baseline": "Membuat baseline…",
+    "upd_rescanning_pkgs": "Memindai ulang paket…",
+    "upd_saving_file": "Menyimpan…",
+    "upd_uploading": "Mengunggah…",
+    "upd_archiving": "Membuat arsip…",
+    "upd_sync_gh": "Sinkron ke GitHub…",
+    "upd_restoring": "Memulihkan…",
+    "upd_exporting": "Mengekspor…",
+    "upd_importing": "Mengimpor…",
+    "upd_updating": "Memperbarui…",
+    "upd_restarting": "Me-restart…",
+    "upd_inspecting_all": "Memeriksa semua host…",
+    "upd_working": "Sedang bekerja…",
+    "upd_saving": "Menyimpan…",
+    "upd_deleting": "Menghapus…",
+    "upd_purging": "Menghapus cache…",
+    "upd_toggling": "Memperbarui…",
+    "upd_restart_failed": "Server tidak kembali daring dalam 120 detik.",
+    "upd_uploading_n_of_m": "Mengunggah {n} dari {m}",
+    "upd_archiving_hint": "Membuat arsip di host, unduhan dimulai setelah siap.",
+    "s3_starting_upload": "Memulai unggahan…"
   }
 };
 
@@ -10611,6 +10774,25 @@ function formatRelativeTime(isoStr) {
 }
 
 let inspectAllPollingInterval = null;
+let inspectAllStartT0 = 0;
+
+// The banner lives above the host list and carries the elapsed time: the client has no
+// done/total for a parallel inspection, so it is a spinner with a clock, not a progress bar.
+function setInspectAllBanner(on) {
+  const grid = document.getElementById('hostGrid');
+  if (!grid) return;
+  let el = document.getElementById('inspectAllBanner');
+  if (on) {
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'inspectAllBanner';
+      grid.parentNode.insertBefore(el, grid);
+    }
+    el.innerHTML = SP.banner(t('inspect_all_banner', 'Inspecting all hosts…'), inspectAllStartT0);
+  } else if (el) {
+    el.remove();
+  }
+}
 
 function setInspectAllRunning(running) {
   const btn = document.getElementById('btnInspectAll');
@@ -10619,6 +10801,13 @@ function setInspectAllRunning(running) {
   if (icon) {
     if (running) icon.classList.add('spinning');
     else icon.classList.remove('spinning');
+  }
+  if (running) {
+    if (!inspectAllStartT0) inspectAllStartT0 = Date.now();
+    setInspectAllBanner(true);
+  } else {
+    inspectAllStartT0 = 0;
+    setInspectAllBanner(false);
   }
 }
 
@@ -10673,12 +10862,14 @@ async function inspectAllHosts() {
 
   setInspectAllRunning(true);
   showToast(t('inspect_all_running', 'Starting inspection for all hosts...'), 'info');
+  let polling = false;
   try {
     const res = await fetch('/api/hosts/inspect-all', { method: 'POST' });
     const data = await res.json();
     if (res.status === 409 || (data && data.in_flight)) {
       showToast(data.error || t('inspect_in_flight', 'Inspection is already in progress for one or more hosts'), 'warning');
       setInspectAllRunning(true);
+      polling = true;
       startInspectAllPolling();
       return;
     }
@@ -10694,10 +10885,13 @@ async function inspectAllHosts() {
     }
 
     showToast(t('inspect_all_success', `Inspection triggered for ${data.count || ''} hosts`), 'success');
+    polling = true;
     startInspectAllPolling();
   } catch (e) {
     showToast(t('inspect_all_failed', 'Failed to trigger inspection: ') + e.message, 'error');
-    setInspectAllRunning(false);
+  } finally {
+    // The polling owns the spinner and the banner once it started; otherwise reset them here.
+    if (!polling) setInspectAllRunning(false);
   }
 }
 
@@ -10758,6 +10952,32 @@ async function saveVulnIntelSetting(on) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ vuln_intel_enabled: on ? '1' : '0' })
+    });
+    showToast(res.ok ? t('settings_saved', 'Settings saved successfully') : t('save_failed', 'Failed to save settings'), res.ok ? 'success' : 'error');
+  } catch (e) {
+    showToast(t('save_failed', 'Failed to save settings') + ': ' + e.message, 'error');
+  }
+}
+
+async function saveOsvEnabledSetting(on) {
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ osv_enabled: on ? '1' : '0' })
+    });
+    showToast(res.ok ? t('settings_saved', 'Settings saved successfully') : t('save_failed', 'Failed to save settings'), res.ok ? 'success' : 'error');
+  } catch (e) {
+    showToast(t('save_failed', 'Failed to save settings') + ': ' + e.message, 'error');
+  }
+}
+
+async function saveIacGateSetting(on) {
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ iac_gate_enabled: on ? '1' : '0' })
     });
     showToast(res.ok ? t('settings_saved', 'Settings saved successfully') : t('save_failed', 'Failed to save settings'), res.ok ? 'success' : 'error');
   } catch (e) {
@@ -12043,6 +12263,25 @@ function showToast(message, type = 'info', duration = 4000) {
   }, duration);
 }
 
+// A toast that stays until the caller removes it: it shows the spinner and the live elapsed
+// time of a long operation (SSH test, inspection) that has no button to spin.
+function showBusyToast(text, t0) {
+  const container = document.getElementById('toastContainer');
+  if (!container) return { close() {} };
+  const toast = document.createElement('div');
+  toast.className = 'toast toast-info';
+  toast.setAttribute('role', 'status');
+  toast.innerHTML = `<span class="toast-icon-wrap">${svgIcon('loader-circle', 'icon-sm')}</span><span class="toast-msg">${SP.html(text, t0)}</span>`;
+  container.appendChild(toast);
+  return {
+    close() {
+      if (!toast.isConnected) return;
+      toast.style.opacity = '0';
+      setTimeout(() => toast.remove(), 300);
+    }
+  };
+}
+
 function toggleDropdown(e, id) {
   if (e) e.stopPropagation();
   const menu = document.getElementById('dropdown-' + id);
@@ -12084,7 +12323,7 @@ async function submitInjectKey() {
   const pass = document.getElementById('injectKeyPasswordInput').value;
   if (!pass) return;
   const btn = document.getElementById('btnSubmitInjectKey');
-  if (btn) btn.disabled = true;
+  const restore = SP.busy(btn, t('upd_injecting'));
   showToast(t('injecting_key', 'Injecting Pantau public key...'), 'info', 2500);
   try {
     const res = await fetch('/api/hosts/' + id + '/inject-key', {
@@ -12103,7 +12342,7 @@ async function submitInjectKey() {
   } catch(err) {
     showToast(t('inject_key_failed', 'Key injection failed: ') + err.message, 'error', 6000);
   } finally {
-    if (btn) btn.disabled = false;
+    restore();
   }
 }
 
@@ -12256,9 +12495,16 @@ document.addEventListener('click', (e) => {
   toggleHostSelected(id, !selectedHostIds.has(id));
 });
 
-async function testHostSSH(id) {
+async function testHostSSH(id, btn) {
   closeAllDropdowns();
-  showToast(t('testing_ssh', 'Testing SSH connection...'), 'info', 2000);
+  // Inline onclick handlers expose the clicked element as window.event.currentTarget.
+  if (!btn && typeof window !== 'undefined' && window.event && window.event.currentTarget && window.event.currentTarget.tagName === 'BUTTON') {
+    btn = window.event.currentTarget;
+  }
+  const restore = SP.busy(btn, t('upd_testing_ssh'));
+  // The menu item lives in a dropdown that closes on click, so its spinner is not visible:
+  // a sticky toast carries the elapsed time instead.
+  const busyToast = showBusyToast(t('upd_testing_ssh'), Date.now());
   try {
     const res = await fetch('/api/hosts/' + id + '/test', { method: 'POST' });
     const data = await res.json();
@@ -12269,6 +12515,9 @@ async function testHostSSH(id) {
     }
   } catch(err) {
     showToast(t('ssh_test_failed', 'SSH Test Failed: ') + err.message, 'error', 6000);
+  } finally {
+    restore();
+    busyToast.close();
   }
 }
 
@@ -12276,10 +12525,14 @@ async function inspectHost(id, e, quietCooldown) {
   if (e) e.stopPropagation();
   const modalBtn = (currentHost && currentHost.id === id) ? document.getElementById('inspectBtnModal') : null;
   const btns = [document.getElementById('inspectBtn-' + id), document.getElementById('inspectBtnList-' + id), modalBtn].filter(Boolean);
+  // The button is a small icon-only button, so only its icon spins; the elapsed time
+  // is carried by a sticky toast (the inspection can take a minute over SSH).
+  const saved = btns.map(b => b.innerHTML);
   btns.forEach(b => {
-    b.classList.add('spinning');
+    b.innerHTML = svgIcon('loader-circle', 'icon-sm');
     b.disabled = true;
   });
+  const busyToast = showBusyToast(t('upd_inspecting'), Date.now());
   try {
     const res = await fetch('/api/hosts/' + id + '/inspect', { method: 'POST' });
     const data = await res.json();
@@ -12299,10 +12552,11 @@ async function inspectHost(id, e, quietCooldown) {
   } catch(err) {
     showToast(t('inspect_failed', 'Inspection failed: ') + err.message, 'error');
   } finally {
-    btns.forEach(b => {
-      b.classList.remove('spinning');
+    btns.forEach((b, i) => {
+      b.innerHTML = saved[i];
       b.disabled = false;
     });
+    busyToast.close();
   }
 }
 
@@ -13002,7 +13256,7 @@ function switchTab(tab, presetID) {
           ${rules.length > 0 ? `<span class="badge badge-info" style="font-size: var(--fs-xs);">${rules.length}</span>` : ''}
         </h4>
         <div style="display: flex; gap: 8px;">
-          <button class="btn btn-warning btn-sm" onclick="generateBaseline(${d.host.id})" style="display: inline-flex; align-items: center; gap: 4px;">
+          <button class="btn btn-warning btn-sm" id="btnGenerateBaseline" onclick="generateBaseline(${d.host.id}, this)" style="display: inline-flex; align-items: center; gap: 4px;">
             ${svgIcon('rotate-ccw', 'icon-sm')} <span>${t('auto_detect_baseline')}</span>
           </button>
           <button class="btn btn-primary btn-sm" onclick="addRulePrompt(${d.host.id})" style="display: inline-flex; align-items: center; gap: 4px;">
@@ -13019,7 +13273,7 @@ function switchTab(tab, presetID) {
           <div class="empty-state-title">${t('no_rules_title')}</div>
           <div class="empty-state-desc">${t('no_rules_desc')}</div>
           <div style="display: flex; gap: 8px; margin-top: 12px;">
-            <button class="btn btn-warning" onclick="generateBaseline(${d.host.id})" style="display: inline-flex; align-items: center; gap: 4px;">
+            <button class="btn btn-warning" id="btnGenerateBaseline" onclick="generateBaseline(${d.host.id}, this)" style="display: inline-flex; align-items: center; gap: 4px;">
               ${svgIcon('rotate-ccw', 'icon-sm')} <span>${t('auto_detect_baseline')}</span>
             </button>
             <button class="btn btn-primary" onclick="addRulePrompt(${d.host.id})" style="display: inline-flex; align-items: center; gap: 4px;">
@@ -13058,14 +13312,14 @@ function switchTab(tab, presetID) {
                         </span>
                       </td>
                       <td style="font-family: var(--font-mono); font-weight: 600;">${escapeHtml(r.target)}</td>
-                      <td style="font-family: var(--font-mono); color: var(--text-muted);">${escapeHtml(r.expected)}</td>
+                      <td style="font-family: var(--font-mono); color: var(--text-muted);">${escapeHtml(r.kind === 'file_integrity' && window.FIM ? FIM.expectedSummary(r.expected) : r.expected)}</td>
                       <td style="font-family: var(--font-mono);">
                         <span style="color: ${isOk ? 'var(--success)' : 'var(--danger)'}; font-weight: 600;">${escapeHtml(currentVal)}</span>
-                        ${matched && matched.details ? `<div style="font-size: 0.7rem; color: var(--text-muted); font-family: var(--font-sans); margin-top: 2px;">${escapeHtml(matched.details)}</div>` : ''}
+                        ${matched && matched.details ? `<div style="font-size: 0.7rem; color: var(--text-muted); font-family: var(--font-sans); margin-top: 2px; white-space: pre-wrap;">${escapeHtml(matched.details)}</div>` : ''}
                       </td>
                       <td>
-                        <span class="badge badge-${isOk ? 'healthy' : 'down'}">
-                          ${isOk ? t('in_desired_state', 'In Desired State') : t('drift_detected', 'Drift Detected')}
+                        <span class="badge badge-${matched && matched.status === 'not_assessed' ? 'unknown' : (isOk ? 'healthy' : 'down')}">
+                          ${matched && matched.status === 'not_assessed' ? t('fim_not_assessed', 'Not assessed') : (isOk ? t('in_desired_state', 'In Desired State') : t('drift_detected', 'Drift Detected'))}
                         </span>
                       </td>
                       <td style="text-align: right; white-space: nowrap;">
@@ -13086,14 +13340,14 @@ function switchTab(tab, presetID) {
       `}
     `;
   } else if (tab === 'docker') {
-    content.innerHTML = `<div class="empty-state"><div class="empty-state-icon">${svgIcon('container', 'icon-xl')}</div><div class="empty-state-desc">${t('docker_loading')}</div></div>`;
+    // loadDockerTab decides between the first load (spinner) and a refresh (keep the content).
     loadDockerTab();
   } else if (tab === 'domains') {
     if (window.Domains) Domains.renderTab(d.host);
   } else if (tab === 'databases') {
     if (window.DbBackup) DbBackup.renderTab(d.host);
   } else if (tab === 'systemd') {
-    content.innerHTML = `<div class="empty-state"><div class="empty-state-icon">${svgIcon('cog', 'icon-xl')}</div><div class="empty-state-desc">${t('systemd_loading', 'Reading services...')}</div></div>`;
+    content.innerHTML = SP.loading(t('systemd_loading', 'Reading services...'));
     loadSystemdTab();
   } else if (tab === 'timeline') {
     const incidents = d.incidents || [];
@@ -13384,7 +13638,7 @@ async function renderPackagesTab() {
       </div>
     </div>
     <div id="packagesContainer" style="overflow-y: auto; flex: 1;">
-      <div style="text-align: center; padding: 24px; color: var(--text-muted); font-size: var(--fs-xs);">${t('loading', 'Loading...')}</div>
+      <div style="text-align: center; padding: 24px; color: var(--text-muted); font-size: var(--fs-xs);">${SP.html(t('loading', 'Loading...'))}</div>
     </div>
   `;
   await loadHostPackages(d.host.id);
@@ -13420,11 +13674,9 @@ async function rescanHostPackages(hostID) {
     if (!ok) return;
   }
 
-  const btn = document.getElementById('btnRescanPkgs');
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('loader-circle', 'icon-sm')} <span>Scanning...</span></span>`;
-  }
+  // SP.busy shows the spinner and the elapsed time; restore() puts the button back in the finally.
+  const restore = SP.busy(document.getElementById('btnRescanPkgs'), t('upd_rescanning_pkgs'));
+  let cooldownApplied = false;
   try {
     const res = await fetch('/api/hosts/' + hostID + '/packages/scan', { method: 'POST' });
     if (res.ok) {
@@ -13432,29 +13684,26 @@ async function rescanHostPackages(hostID) {
       displayPackagesTable(hostID);
       showToast('Package scan complete', 'success');
       updatePkgCooldownUI(60, new Date().toISOString());
+      cooldownApplied = true;
     } else if (res.status === 429) {
       const errData = await res.json().catch(() => ({}));
       showToast(errData.error || 'Cooldown scan aktif, mohon tunggu sebentar', 'warning');
       updatePkgCooldownUI(errData.cooldown_remaining || 60, null);
+      cooldownApplied = true;
     } else if (res.status === 409) {
       showToast('Pemindaian paket sedang berlangsung di latar belakang', 'warning');
-      if (btn) {
-        btn.disabled = false;
-        btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('refresh-cw', 'icon-sm')} <span>` + t('rescan_packages', 'Rescan Packages') + '</span></span>';
-      }
     } else {
       const errData = await res.json().catch(() => ({}));
       showToast('Scan failed: ' + (errData.error || res.statusText), 'error');
-      if (btn) {
-        btn.disabled = false;
-        btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('refresh-cw', 'icon-sm')} <span>` + t('rescan_packages', 'Rescan Packages') + '</span></span>';
-      }
     }
   } catch(e) {
     showToast('Scan error: ' + e.message, 'error');
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('refresh-cw', 'icon-sm')} <span>` + t('rescan_packages', 'Rescan Packages') + '</span></span>';
+  } finally {
+    // The cooldown repaints the button every second: restoring the old markup would wipe it.
+    if (!cooldownApplied) restore();
+    else {
+      const b = document.getElementById('btnRescanPkgs');
+      if (b) b.disabled = true;
     }
   }
 }
@@ -13576,32 +13825,39 @@ function displayPackagesTable(hostID) {
 let currentSecurityScan = null;
 let currentSecurityIntel = null;
 let secCooldownTimer = null;
+let secCooldownRem = 0; // seconds left on the scan cooldown; re-applied after a re-render
+
+function secCooldownPaint(rem) {
+  // The button is looked up on every paint: a re-render of the tab replaces the element.
+  const btn = document.getElementById('btnScanSecurity');
+  if (!btn) return;
+  if (rem > 0) {
+    btn.disabled = true;
+    btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('loader-circle', 'icon-sm')} <span>${t('cooldown_wait', 'Wait')} (${rem}s)</span></span>`;
+  } else {
+    btn.disabled = false;
+    btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('refresh-cw', 'icon-sm')} <span>${t('sec_scan_now', 'Scan Now')}</span></span>`;
+  }
+}
 
 function updateSecCooldownUI(seconds) {
   if (secCooldownTimer) {
     clearInterval(secCooldownTimer);
     secCooldownTimer = null;
   }
-  const btn = document.getElementById('btnScanSecurity');
-  if (!btn) return;
-  let rem = Number(seconds) || 0;
-  if (rem > 0) {
-    btn.disabled = true;
-    btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('loader-circle', 'icon-sm')} <span>${t('cooldown_wait', 'Wait')} (${rem}s)</span></span>`;
+  secCooldownRem = Number(seconds) || 0;
+  if (secCooldownRem > 0) {
+    secCooldownPaint(secCooldownRem);
     secCooldownTimer = setInterval(() => {
-      rem--;
-      if (rem <= 0) {
+      secCooldownRem--;
+      if (secCooldownRem <= 0) {
         clearInterval(secCooldownTimer);
         secCooldownTimer = null;
-        btn.disabled = false;
-        btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('refresh-cw', 'icon-sm')} <span>${t('sec_scan_now', 'Scan Now')}</span></span>`;
-      } else {
-        btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('loader-circle', 'icon-sm')} <span>${t('cooldown_wait', 'Wait')} (${rem}s)</span></span>`;
       }
+      secCooldownPaint(secCooldownRem);
     }, 1000);
   } else {
-    btn.disabled = false;
-    btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('refresh-cw', 'icon-sm')} <span>${t('sec_scan_now', 'Scan Now')}</span></span>`;
+    secCooldownPaint(0);
   }
 }
 
@@ -13871,6 +14127,7 @@ function renderSecurityData(scan, hostID, intel) {
           ${svgIcon('package', 'icon-sm')} <span>${t('pkg_upgrade_btn', 'Upgrade packages')}</span>
         </button>
         ${window.AG ? AG.btnNum('askSecurity', hostID) : ''}
+        ${window.AC ? `<button class="btn btn-sm btn-ghost" onclick="AC.openFleet()" style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('key-round', 'icon-sm')} <span>${t('ac_fleet', 'Fleet keys')}</span></button>` : ''}
         <button id="btnScanSecurity" class="btn btn-sm" onclick="runHostSecurityScan(${hostID})" style="display: inline-flex; align-items: center; gap: 4px;">
           ${svgIcon('refresh-cw', 'icon-sm')} <span>${t('sec_scan_now', 'Scan Now')}</span>
         </button>
@@ -13879,20 +14136,26 @@ function renderSecurityData(scan, hostID, intel) {
     <div style="overflow-y: auto; flex: 1;">
       ${bannerHtml}
       ${cardsHtml}
-      ${findingsHtml}${window.VI ? VI.cardHtml(scan, currentSecurityIntel) : ''}
+      ${findingsHtml}${window.VI ? VI.cardHtml(scan, currentSecurityIntel) : ''}${window.OV ? OV.html() : ''}
       ${hardeningHtml}
-      ${securityExposureHtml()}${window.Fw ? Fw.html() : ''}
+      ${securityExposureHtml()}${window.Fw ? Fw.html() : ''}${window.AC ? AC.html() : ''}
       ${notesHtml}
     </div>
   `;
 
   filterSecurityFindings();
   if (window.Fw) Fw.render();
+  if (window.OV) OV.render(hostID);
+  if (window.AC) { AC.render(); AC.load(); }
+  // The re-render above replaced the scan button, so the cooldown is re-applied here.
+  if (secCooldownRem > 0) secCooldownPaint(secCooldownRem);
 }
 
 function appendSecurityFooter(content) {
-  content.insertAdjacentHTML('beforeend', securityExposureHtml() + (window.Fw ? Fw.html() : '') + (window.VI ? VI.cardHtml(null, undefined) : ''));
+  content.insertAdjacentHTML('beforeend', securityExposureHtml() + (window.Fw ? Fw.html() : '') + (window.AC ? AC.html() : '') + (window.VI ? VI.cardHtml(null, undefined) : '') + (window.OV ? OV.html() : ''));
   if (window.Fw) Fw.render();
+  if (window.AC) { AC.render(); AC.load(); }
+  if (window.OV) OV.render(currentHost ? currentHost.id : null);
 }
 
 // Owning process of a listening socket. New inspections store the bare name; older records kept the raw
@@ -14092,50 +14355,64 @@ async function runHostSecurityScan(hostID) {
   const btn = document.getElementById('btnScanSecurity');
   if (btn) {
     btn.disabled = true;
-    btn.innerHTML = `<span class="spinner" style="display:inline-block; margin-right:4px;">${svgIcon('loader-circle', 'icon-sm')}</span> <span>${t('sec_scanning', 'Scanning...')}</span>`;
+    btn.innerHTML = window.SP ? SP.html(t('sec_scanning', 'Scanning...')) : `<span class="spinner" style="display:inline-block; margin-right:4px;">${svgIcon('loader-circle', 'icon-sm')}</span> <span>${t('sec_scanning', 'Scanning...')}</span>`;
   }
+  // The button is looked up again: a re-render of the tab replaces the element, so the
+  // captured node would be a detached one.
+  const resetBtn = () => {
+    const el = document.getElementById('btnScanSecurity');
+    if (!el) return;
+    el.disabled = false;
+    el.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('refresh-cw', 'icon-sm')} <span>${t('sec_scan_now', 'Scan Now')}</span></span>`;
+  };
   try {
     const res = await fetch('/api/hosts/' + hostID + '/security/scan', { method: 'POST' });
     if (res.ok) {
       const data = await res.json();
       showToast(t('sec_scan_complete', 'Security scan complete'), 'success');
-      updateSecCooldownUI(60);
       if (currentTab === 'security' && currentHost && currentHost.id === hostID) {
         renderSecurityData(data.scan, hostID, data.intel);
       }
+      // The cooldown is applied after the re-render: renderSecurityData replaces the tab
+      // content (and with it the button), so a cooldown set before is lost.
+      updateSecCooldownUI(60);
     } else if (res.status === 429) {
       const errData = await res.json().catch(() => ({}));
       const rem = errData.cooldown_remaining || 60;
       showToast(errData.error || t('sec_scan_cooldown', 'Scan cooldown active, please wait'), 'warning');
+      resetBtn();
       updateSecCooldownUI(rem);
     } else if (res.status === 409) {
       const errData = await res.json().catch(() => ({}));
       showToast(errData.error || t('sec_scan_in_progress', 'Security scan already in progress'), 'warning');
-      if (btn) {
-        btn.disabled = false;
-        btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('refresh-cw', 'icon-sm')} <span>${t('sec_scan_now', 'Scan Now')}</span></span>`;
-      }
+      resetBtn();
     } else {
       const errData = await res.json().catch(() => ({}));
       showToast(t('sec_scan_failed', 'Security scan failed') + ': ' + (errData.error || res.statusText), 'error');
-      if (btn) {
-        btn.disabled = false;
-        btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('refresh-cw', 'icon-sm')} <span>${t('sec_scan_now', 'Scan Now')}</span></span>`;
-      }
+      resetBtn();
     }
   } catch (e) {
     showToast(t('sec_scan_failed', 'Security scan failed') + ': ' + e.message, 'error');
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('refresh-cw', 'icon-sm')} <span>${t('sec_scan_now', 'Scan Now')}</span></span>`;
-    }
+    resetBtn();
   }
 }
 
-async function generateBaseline(hostID) {
-  const res = await fetch('/api/hosts/' + hostID + '/baseline', { method: 'POST' });
-  if (res.ok) {
-    inspectHost(hostID);
+async function generateBaseline(hostID, btn) {
+  // The button is passed explicitly; window.event is not reliable in every browser.
+  if (!btn) btn = document.getElementById('btnGenerateBaseline');
+  const restore = SP.busy(btn, t('upd_generating_baseline'));
+  try {
+    const res = await fetch('/api/hosts/' + hostID + '/baseline', { method: 'POST' });
+    if (res.ok) {
+      inspectHost(hostID);
+    } else {
+      const errData = await res.json().catch(() => ({}));
+      showToast(t('failed_prefix', 'Failed: ') + (errData.error || res.statusText), 'error');
+    }
+  } catch (e) {
+    showToast(t('failed_prefix', 'Failed: ') + e.message, 'error');
+  } finally {
+    restore();
   }
 }
 
@@ -14149,7 +14426,8 @@ const ruleKindHints = {
   http: { targetPh: 'https://example.com/health', expected: '2xx,<1500ms', expectedPh: '200, 2xx, 3xx[, <1500ms]' },
   tls: { targetPh: 'example.com:443 or https://example.com', expected: '>=14d', expectedPh: '>=14d (min days until cert expiration)' },
   process: { targetPh: 'e.g. celery, supervisord', expected: 'running', expectedPh: 'e.g. running' },
-  security_updates: { targetPh: 'security', targetVal: 'security', readOnlyTarget: true, expected: 'none', expectedPh: 'none or <=N (max pending security updates)' }
+  security_updates: { targetPh: 'security', targetVal: 'security', readOnlyTarget: true, expected: 'none', expectedPh: 'none or <=N (max pending security updates)' },
+  file_integrity: { targetPh: 'e.g. /etc/passwd, preset:auth, suid', expected: '', expectedPh: 'captured baseline (sha256:<digest>|m:<manifest>)' }
 };
 
 function onRuleKindChange() {
@@ -14169,6 +14447,18 @@ function onRuleKindChange() {
       }
     }
   }
+  if (window.FIM) {
+    const fim = kind === 'file_integrity';
+    FIM.showPanel(fim);
+    if (fim) {
+      // A baseline belongs to one target; switching kinds discards it.
+      FIM.reset();
+      FIM.syncPresetVisibility();
+    }
+    // The FIM panel owns the target and the baseline; the generic inputs stay read-only.
+    if (targetEl) targetEl.readOnly = fim || !!hint.readOnlyTarget;
+    if (expectedEl) expectedEl.readOnly = fim;
+  }
   if (expectedEl) {
     expectedEl.placeholder = hint.expectedPh;
     expectedEl.value = hint.expected;
@@ -14185,6 +14475,7 @@ function openAddRuleModal(hostID) {
   const titleEl = document.getElementById('ruleModalTitle');
   if (titleEl) titleEl.innerText = t('add_rule_title', 'Add Desired State Rule');
   document.getElementById('ruleKind').value = 'container';
+  if (window.FIM) FIM.reset();
   const targetEl = document.getElementById('ruleTarget');
   if (targetEl) {
     targetEl.readOnly = false;
@@ -14208,6 +14499,7 @@ function editRulePrompt(id, kind, target, expected) {
   if (targetEl) targetEl.value = target;
   const expectedEl = document.getElementById('ruleExpected');
   if (expectedEl) expectedEl.value = expected;
+  if (window.FIM) FIM.loadRule(kind, target, expected);
   openModal('ruleModal');
   setTimeout(() => document.getElementById('ruleExpected')?.focus(), 50);
 }
@@ -14216,8 +14508,19 @@ async function submitRuleForm() {
   const hostID = document.getElementById('ruleHostId').value;
   const editId = document.getElementById('ruleEditId').value;
   const kind = document.getElementById('ruleKind').value;
-  const target = document.getElementById('ruleTarget').value.trim();
-  const expected = document.getElementById('ruleExpected').value.trim();
+  let target = document.getElementById('ruleTarget').value.trim();
+  let expected = document.getElementById('ruleExpected').value.trim();
+  if (kind === 'file_integrity' && window.FIM) {
+    const vals = FIM.ruleValues();
+    if (!vals.ok) {
+      showToast(vals.reason === 'empty'
+        ? t('fill_all_fields', 'Please fill in all fields')
+        : t('fim_need_capture', 'Capture a baseline before saving this rule.'), 'error');
+      return;
+    }
+    target = vals.target;
+    expected = vals.expected;
+  }
 
   if (!target || !expected) {
     showToast(t('fill_all_fields', 'Please fill in all fields'), 'error');
@@ -14339,7 +14642,7 @@ function setDockerSubTab(view) {
 }
 
 function dockerHeaderHtml() {
-  const views = [['containers', 'docker_sub_containers'], ['images', 'docker_sub_images'], ['volumes', 'docker_sub_volumes'], ['networks', 'docker_sub_networks'], ['stacks', 'docker_sub_stacks'], ['stats', 'docker_sub_stats'], ['system', 'docker_sub_system']];
+  const views = [['containers', 'docker_sub_containers'], ['images', 'docker_sub_images'], ['volumes', 'docker_sub_volumes'], ['networks', 'docker_sub_networks'], ['stacks', 'docker_sub_stacks'], ['stats', 'docker_sub_stats'], ['system', 'docker_sub_system'], ['security', 'ds_sub']];
   const auto = dockerSubTab === 'stats'
     ? `<label style="display: flex; align-items: center; gap: 4px; font-size: var(--fs-xs); cursor: pointer; color: var(--text-muted);"><input type="checkbox" style="width: auto;" ${dockerStatsAuto ? 'checked' : ''} onchange="toggleDockerStatsAuto(this.checked)" /> <span>${t('docker_auto_refresh')}</span></label>`
     : '';
@@ -14510,13 +14813,47 @@ function renderDockerNetworks(data) {
 
 const DOCKER_VIEW_PATH = { containers: '', images: '/images', volumes: '/volumes', networks: '/networks', stacks: '/stacks', stats: '/stats', system: '/system' };
 
+// The Docker tab. The first load shows a spinner with the elapsed time; a reload of the same
+// sub-tab keeps the current content and shows a small refresh indicator instead of blanking.
+function dockerRefreshIndicator() {
+  return `<div id="dockerRefreshBar" role="status" aria-live="polite" style="display: flex; align-items: center; gap: 6px; padding: 4px 0 10px; color: var(--text-muted); font-size: var(--fs-xs);">${SP.html(t('docker_refreshing'), Date.now())}</div>`;
+}
+
+let dockerTabSeq = 0;
+
 async function loadDockerTab() {
   stopDockerStatsTimer();
   const host = currentHost;
   const view = dockerSubTab;
   const content = document.getElementById('tabContent');
   if (!host || !content) return;
-  content.innerHTML = dockerHeaderHtml() + `<div style="text-align: center; padding: 30px; color: var(--text-muted);">${t('docker_loading')}</div>`;
+  const key = view + ':' + host.id;
+  const seq = ++dockerTabSeq;
+  // A stale response (older request, other sub-tab or other host) never overwrites the newer view.
+  const stale = () => seq !== dockerTabSeq || currentTab !== 'docker' || !currentHost || currentHost.id !== host.id || dockerSubTab !== view;
+  const setContent = (html) => {
+    content.innerHTML = html + `<div data-docker-view="${key}" style="display: none;"></div>`;
+  };
+  // The same sub-tab is loaded again (refresh, or after an action): keep the content, show an indicator.
+  const same = !!content.querySelector('[data-docker-view="' + key + '"]');
+  const old = document.getElementById('dockerRefreshBar');
+  if (old) old.remove();
+  if (same) {
+    const hdr = content.firstElementChild;
+    if (hdr) hdr.insertAdjacentHTML('afterend', dockerRefreshIndicator());
+    else content.insertAdjacentHTML('afterbegin', dockerRefreshIndicator());
+  } else {
+    content.innerHTML = dockerHeaderHtml() + SP.loading(t('docker_loading_data'), Date.now()) + SP.skeleton(6);
+  }
+  // The security panel needs the stored results; the Images list only needs them for the chips.
+  // DS.load starts here (it drops the cache of a previous host at once) but the tab is not blocked by it.
+  const dsPromise = (window.DS && (view === 'security' || view === 'images')) ? DS.load(host.id) : null;
+  if (view === 'security' && window.DS) {
+    await dsPromise;
+    if (stale()) return;
+    setContent(dockerHeaderHtml() + DS.panelHtml());
+    return;
+  }
   let data;
   try {
     const res = await fetch('/api/hosts/' + host.id + '/docker' + (DOCKER_VIEW_PATH[view] || ''));
@@ -14524,14 +14861,21 @@ async function loadDockerTab() {
   } catch (e) {
     data = { ok: false, error: e.message };
   }
-  if (currentTab !== 'docker' || !currentHost || currentHost.id !== host.id || dockerSubTab !== view) return;
+  if (stale()) return;
   if (!data.ok) {
-    content.innerHTML = dockerHeaderHtml() + dockerEmptyHtml(t('docker_unavailable'), data.error || '', true);
+    setContent(dockerHeaderHtml() + dockerEmptyHtml(t('docker_unavailable'), data.error || '', true));
     return;
   }
   const render = { containers: renderDockerContainers, images: renderDockerImages, stats: renderDockerStats, volumes: renderDockerVolumes, networks: renderDockerNetworks, stacks: renderDockerStacks, system: renderDockerSystem }[view];
-  content.innerHTML = dockerHeaderHtml() + render(data);
+  setContent(dockerHeaderHtml() + render(data));
   if (view === 'stats' && dockerStatsAuto) startDockerStatsTimer();
+  // The vulnerability chips of the Images list arrive with the (slow) scan data: fill them in later.
+  if (view === 'images' && dsPromise) {
+    dsPromise.then(() => {
+      if (stale()) return;
+      DS.paintChips();
+    });
+  }
 }
 
 let dockerContainersCache = [];
@@ -14639,20 +14983,12 @@ async function dockerAction(container, action, opts) {
     });
     if (!ok) return;
   }
-  const data = await dockerPost('action', Object.assign({ container, action }, opts || {}));
+  const data = await DP.run({ sub: 'action', payload: Object.assign({ container, action }, opts || {}) });
   if (data.ok) {
-    showToast(t('docker_action_success', 'Docker {action} completed successfully').replace('{action}', dockerVerb(action)), 'success');
     if (currentTab === 'docker') loadDockerTab();
     if (dkInspectState.name === container && document.getElementById('dockerInspectModal').classList.contains('open')) loadDockerInspect();
-  } else {
-    showToast(t('error_prefix', 'Error: ') + (data.error || 'Docker action failed'), 'error', 8000);
   }
   return data;
-}
-
-function dockerVerb(action) {
-  const v = t('dk_verb_' + action, '');
-  return v || action;
 }
 
 async function dockerRemoveContainer(c) {
@@ -14960,7 +15296,7 @@ function renderFilesView() {
           ${svgIcon('file-plus', 'icon-sm')} <span>${t('new_file', 'New File')}</span>
         </button>
         <input type="file" id="fileUploadInput" style="display: none;" onchange="uploadFile(${jsArg(data.path)})" />
-        <button class="btn btn-primary btn-sm" ${isProtectedDir ? 'disabled title="' + t('cannot_upload_protected') + '"' : ''} onclick="document.getElementById('fileUploadInput').click()">
+        <button class="btn btn-primary btn-sm" id="btnFileUpload" ${isProtectedDir ? 'disabled title="' + t('cannot_upload_protected') + '"' : ''} onclick="document.getElementById('fileUploadInput').click()">
           ${svgIcon('upload', 'icon-sm')} <span>${t('upload_file')}</span>
         </button>
         <button class="btn btn-sm" onclick="backupSelected()" title="${t('backup_title', 'Backup selected folders as .tar.gz')}">
@@ -15040,8 +15376,17 @@ function setupFileDragAndDrop() {
     }
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {
-      for (let i = 0; i < files.length; i++) {
-        await uploadRawFile(currentFilesData.path, files[i]);
+      const total = files.length;
+      const t0 = Date.now();
+      try {
+        for (let i = 0; i < total; i++) {
+          const label = t('upd_uploading_n_of_m').replace('{n}', i + 1).replace('{m}', total);
+          fileOpBanner(label, t0, i, total, files[i].name);
+          // The banner belongs to the drop handler here, so a failed file cannot leave it stuck.
+          await uploadRawFile(currentFilesData.path, files[i], false, label, false);
+        }
+      } finally {
+        fileOpBannerClear();
       }
       loadFiles(currentFilesData.path);
     }
@@ -15192,32 +15537,85 @@ function renderFilesTableBody() {
   }).join('');
 }
 
-async function uploadRawFile(targetDir, file, overwrite = false) {
+// Uploads one file. When manageBanner is false the caller owns the banner (multi-file drop),
+// so this function neither shows nor clears it; the outcome is returned as a boolean.
+async function uploadRawFile(targetDir, file, overwrite = false, label, manageBanner = true) {
   const formData = new FormData();
   formData.append('file', file);
   const url = filesApiUrl(currentHost.id, 'upload', { dir: targetDir, overwrite: overwrite ? 'true' : undefined });
-  const res = await fetch(url, {
-    method: 'POST',
-    body: formData
-  });
+  const t0 = Date.now();
+  if (manageBanner) fileOpBanner(label || t('upd_uploading'), t0);
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      body: formData
+    });
+  } catch (e) {
+    if (manageBanner) fileOpBannerClear();
+    showToast(t('failed_prefix', 'Failed: ') + e.message, 'error');
+    return false;
+  }
   if (res.status === 409) {
+    if (manageBanner) fileOpBannerClear();
     if (await showConfirm({ message: t('file_exists_overwrite').replace('{name}', file.name), confirmText: t('overwrite', 'Overwrite'), danger: true })) {
-      return uploadRawFile(targetDir, file, true);
+      return uploadRawFile(targetDir, file, true, label, manageBanner);
     }
-    return;
+    return false;
   }
   if (res.status === 403) {
+    if (manageBanner) fileOpBannerClear();
     const errTxt = (await res.text()).trim();
     showToast(errTxt || t('cannot_upload_protected'), 'error');
     resetHostFileAccess(currentHost.id);
-    return;
+    return false;
   }
   if (!res.ok) {
+    if (manageBanner) fileOpBannerClear();
     const errTxt = (await res.text()).trim();
     showToast(t('failed_prefix', 'Failed: ') + (errTxt || 'Failed to upload file'), 'error');
-    return;
+    return false;
   }
+  if (manageBanner) fileOpBannerClear();
   showToast(t('file_uploaded', 'File uploaded successfully'), 'success');
+  return true;
+}
+
+// Progress banner for long file operations (upload, archive). It lives outside the tab content,
+// so it survives a re-render of the files table.
+function fileOpBanner(text, t0, done, total, current) {
+  let box = document.getElementById('fileOpBanner');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'fileOpBanner';
+    box.style.cssText = 'position:fixed;right:24px;bottom:24px;z-index:99999;max-width:420px;';
+    document.body.appendChild(box);
+  }
+  fileOpBannerSeq++; // a new banner invalidates the auto-clear timer of the previous one
+  box.innerHTML = SP.banner(text, t0, done, total, current);
+  return box;
+}
+
+let fileOpBannerSeq = 0;
+
+function fileOpBannerClear() {
+  const box = document.getElementById('fileOpBanner');
+  fileOpBannerSeq++;
+  if (box) box.innerHTML = '';
+}
+
+// The browser starts the download without telling us when it is done, so the banner is cleared
+// a few seconds after the navigation started. The sequence guard keeps an old timer from
+// clearing a banner that was shown later.
+function fileOpBannerAutoClear(ms) {
+  const seq = fileOpBannerSeq;
+  setTimeout(() => { if (seq === fileOpBannerSeq) fileOpBannerClear(); }, ms || 5000);
+}
+
+// Archive downloads are built on the host and streamed to the browser: the browser gives no
+// progress signal, so the banner stays up with the elapsed time and clears on its own.
+function fileOpBannerArchive(t0) {
+  fileOpBanner(t('upd_archiving') + ' — ' + t('upd_archiving_hint'), t0);
 }
 
 function onFileFilterInput(val) {
@@ -15264,7 +15662,12 @@ async function downloadFolder(path) {
   } catch (e) {
     console.warn('size check error:', e);
   }
+  // The archive is built server side and streamed to the browser: no byte signal exists,
+  // so the banner shows the elapsed time until the download navigation started.
+  const t0 = Date.now();
+  fileOpBannerArchive(t0);
   window.location.href = filesApiUrl(currentHost.id, 'download', { path });
+  fileOpBannerAutoClear(8000);
 }
 
 // Multi-item backup: the selection survives folder navigation; one tar.gz is streamed to the browser.
@@ -15312,53 +15715,87 @@ async function backupSelected() {
     return;
   }
   if (ok !== true) return;
+  // The archive is streamed to the browser: the browser gives no progress signal, so the
+  // banner shows the elapsed time until the download navigation started.
+  const t0 = Date.now();
+  fileOpBannerArchive(t0);
   const base = filesApiUrl(currentHost.id, 'backup');
   window.location.href = base + (base.includes('?') ? '&' : '?') + [...sel].map(p => 'path=' + encodeURIComponent(p)).join('&');
+  fileOpBannerAutoClear(8000);
 }
 
-async function uploadFile(targetDir, overwrite = false) {
+async function uploadFile(targetDir, overwrite = false, fileOverride = null) {
   const input = document.getElementById('fileUploadInput');
-  if (!input.files.length) return;
-  const file = input.files[0];
+  const file = fileOverride || (input && input.files.length ? input.files[0] : null);
+  if (!file) return;
   const formData = new FormData();
   formData.append('file', file);
   const url = filesApiUrl(currentHost.id, 'upload', { dir: targetDir, overwrite: overwrite ? 'true' : undefined });
-  const res = await fetch(url, {
-    method: 'POST',
-    body: formData
-  });
-  if (res.status === 409) {
-    if (await showConfirm({ message: t('file_exists_overwrite').replace('{name}', file.name), confirmText: t('overwrite', 'Overwrite'), danger: true })) {
-      return uploadFile(targetDir, true);
+  const t0 = Date.now();
+  fileOpBanner(t('upd_uploading'), t0);
+  // The upload button is disabled while the transfer runs, so a second click cannot start a parallel upload.
+  const btn = document.getElementById('btnFileUpload');
+  const restore = SP.busy(btn, t('upd_uploading'));
+  try {
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        body: formData
+      });
+    } catch (e) {
+      showToast(t('failed_prefix', 'Failed: ') + e.message, 'error');
+      return;
     }
-    input.value = '';
-    return;
+    if (res.status === 409) {
+      if (await showConfirm({ message: t('file_exists_overwrite').replace('{name}', file.name), confirmText: t('overwrite', 'Overwrite'), danger: true })) {
+        await uploadFile(targetDir, true, file);
+      }
+      return;
+    }
+    if (res.status === 403) {
+      const errTxt = (await res.text()).trim();
+      showToast(errTxt || t('cannot_upload_protected'), 'error');
+      resetHostFileAccess(currentHost.id);
+      return;
+    }
+    if (!res.ok) {
+      const errTxt = (await res.text()).trim();
+      showToast(t('failed_prefix', 'Failed: ') + (errTxt || 'Failed to upload file'), 'error');
+      return;
+    }
+    showToast(t('file_uploaded', 'File uploaded successfully'), 'success');
+    loadFiles(targetDir);
+  } finally {
+    fileOpBannerClear();
+    restore();
+    if (input) input.value = '';
   }
-  if (res.status === 403) {
-    const errTxt = (await res.text()).trim();
-    showToast(errTxt || t('cannot_upload_protected'), 'error');
-    resetHostFileAccess(currentHost.id);
-    input.value = '';
-    return;
-  }
-  if (!res.ok) {
-    const errTxt = (await res.text()).trim();
-    showToast(t('failed_prefix', 'Failed: ') + (errTxt || 'Failed to upload file'), 'error');
-    input.value = '';
-    return;
-  }
-  showToast(t('file_uploaded', 'File uploaded successfully'), 'success');
-  input.value = '';
-  loadFiles(targetDir);
 }
 
 async function deleteRemoteFile(path, parentDir) {
   if (!await showConfirm({ message: t('confirm_delete_file').replace('{path}', path), confirmText: t('delete', 'Delete') })) return;
-  const res = await fetch(filesApiUrl(currentHost.id, 'delete'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path })
-  });
+  let recursive = false;
+  let res;
+  for (;;) {
+    try {
+      res = await fetch(filesApiUrl(currentHost.id, 'delete'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, recursive })
+      });
+    } catch (e) {
+      showToast(t('failed_prefix', 'Failed: ') + e.message, 'error');
+      return;
+    }
+    // A folder with content is only removed after a second, explicit confirmation.
+    if (res.status === 409 && !recursive) {
+      if (!await showConfirm({ message: t('confirm_delete_folder_recursive').replace('{path}', path), confirmText: t('delete', 'Delete'), danger: true })) return;
+      recursive = true;
+      continue;
+    }
+    break;
+  }
   if (res.status === 403) {
     const errTxt = (await res.text()).trim();
     showToast(errTxt || t('cannot_delete_protected'), 'error');
@@ -15659,7 +16096,7 @@ async function openGlobalPinsModal() {
 async function loadGlobalPins() {
   const container = document.getElementById('globalPinsList');
   if (container) {
-    container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 20px;">' + t('loading', 'Loading...') + '</p>';
+    container.innerHTML = SP.loading(t('loading', 'Loading...'));
   }
   try {
     const res = await fetch('/api/pins');
@@ -15925,14 +16362,41 @@ async function openEditor(path) {
     restoreWorkspaceSession(sessId);
     return;
   }
-  const res = await fetch(filesApiUrl(currentHost.id, 'read', { path }));
+  // The modal opens right away with a spinner: reading a remote file can take a while.
+  const pathEl = document.getElementById('editorFilePath');
+  if (pathEl) pathEl.innerText = path;
+  openModal('editorModal');
+  const modalBody = document.querySelector('#editorModal .modal-body');
+  const loader = document.createElement('div');
+  loader.id = 'editorFileLoading';
+  loader.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--card-bg);z-index:10;';
+  loader.innerHTML = SP.loading(t('loading', 'Loading...'));
+  if (modalBody) { modalBody.style.position = 'relative'; modalBody.appendChild(loader); }
+  let res;
+  try {
+    res = await fetch(filesApiUrl(currentHost.id, 'read', { path }));
+  } catch (e) {
+    showToast(t('failed_read_file', 'Failed to read file') + ': ' + e.message, 'error');
+    closeModal('editorModal');
+    return;
+  } finally {
+    if (loader.parentNode) loader.parentNode.removeChild(loader);
+  }
   if (!res.ok) {
     const errTxt = (await res.text()).trim();
     showToast(errTxt || t('failed_read_file'), 'error');
     if (res.status === 403) resetHostFileAccess(currentHost.id);
+    closeModal('editorModal');
     return;
   }
-  const data = await res.json();
+  let data;
+  try {
+    data = await res.json();
+  } catch (e) {
+    showToast(t('failed_read_file', 'Failed to read file') + ': ' + e.message, 'error');
+    closeModal('editorModal');
+    return;
+  }
   currentEditorState = {
     hostId: currentHost.id,
     hostName: currentHost.name,
@@ -15941,7 +16405,6 @@ async function openEditor(path) {
     savedContent: data.content
   };
   document.getElementById('editorFilePath').innerText = path;
-  openModal('editorModal');
 
   const mode = getEditorModeForPath(path);
   const chip = document.getElementById('editorLanguageChip');
@@ -15971,32 +16434,45 @@ async function openEditor(path) {
   if (lines) lines.textContent = `${codeEditor.lineCount()} lines`;
   setTimeout(() => codeEditor.refresh(), 100);
 }
+let editorSaveInFlight = false;
 async function saveEditorFile() {
+  if (editorSaveInFlight) return; // Ctrl-S must not start a second save while one runs
   const path = document.getElementById('editorFilePath').innerText;
   const content = codeEditor.getValue();
   const hostId = (currentEditorState && currentEditorState.hostId) ? currentEditorState.hostId : (currentHost ? currentHost.id : null);
   if (!hostId) return;
-  const res = await fetch(filesApiUrl(hostId, 'write'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path, content })
-  });
-  if (res.ok) {
-    showToast(t('file_saved', 'File saved successfully'), 'success');
-    if (currentEditorState) {
-      currentEditorState.savedContent = content;
+  // The save button is disabled while the write runs, so a double save cannot happen.
+  const btn = document.getElementById('btnSaveEditorFile');
+  const restore = SP.busy(btn, t('upd_saving_file'));
+  editorSaveInFlight = true;
+  try {
+    const res = await fetch(filesApiUrl(hostId, 'write'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, content })
+    });
+    if (res.ok) {
+      showToast(t('file_saved', 'File saved successfully'), 'success');
+      if (currentEditorState) {
+        currentEditorState.savedContent = content;
+      }
+      const sessId = 'editor-' + hostId + '-' + path;
+      workspaceSessions = workspaceSessions.filter(s => s.id !== sessId);
+      renderWorkspaceShelf();
+      closeModal('editorModal');
+    } else if (res.status === 403) {
+      const errTxt = (await res.text()).trim();
+      showToast(errTxt || t('cannot_modify_protected'), 'error');
+      resetHostFileAccess(hostId);
+    } else {
+      const errTxt = (await res.text()).trim();
+      showToast(t('failed_prefix', 'Failed: ') + (errTxt || 'Failed to save file'), 'error');
     }
-    const sessId = 'editor-' + hostId + '-' + path;
-    workspaceSessions = workspaceSessions.filter(s => s.id !== sessId);
-    renderWorkspaceShelf();
-    closeModal('editorModal');
-  } else if (res.status === 403) {
-    const errTxt = (await res.text()).trim();
-    showToast(errTxt || t('cannot_modify_protected'), 'error');
-    resetHostFileAccess(hostId);
-  } else {
-    const errTxt = (await res.text()).trim();
-    showToast(t('failed_prefix', 'Failed: ') + (errTxt || 'Failed to save file'), 'error');
+  } catch (e) {
+    showToast(t('failed_prefix', 'Failed: ') + e.message, 'error');
+  } finally {
+    editorSaveInFlight = false;
+    restore();
   }
 }
 
@@ -16459,7 +16935,7 @@ function createTabWorkspaceDOM(tab) {
       <div id="paneLeft_${tab.id}" class="terminal-pane active-pane" onclick="focusTabPane('${tab.id}', 'left')" style="flex: 1; display: flex; flex-direction: column; min-width: 0; height: 100%; border-radius: var(--radius); overflow: hidden; background: var(--code-bg); position: relative;">
         <div class="terminal-pane-header">
           <div class="terminal-pane-title">${svgIcon('server', 'icon-xs')} <span>${escapeHtml(tab.hostName)}</span></div>
-          <div id="statusLeft_${tab.id}" class="terminal-pane-status connected"><span class="terminal-tab-status-dot"></span><span>Connected</span></div>
+          <div id="statusLeft_${tab.id}" class="terminal-pane-status connecting"><span class="terminal-tab-status-dot"></span><span>${escapeHtml(t('terminal_connecting', 'Connecting…'))}</span></div>
         </div>
         <div id="termDivLeft_${tab.id}" class="terminal-container" style="flex: 1; height: 100%; padding: 4px;"></div>
       </div>
@@ -16471,7 +16947,7 @@ function createTabWorkspaceDOM(tab) {
             <select id="splitSelect_${tab.id}" class="input" style="padding: 2px 6px; font-size: 0.72rem; width: auto; max-width: 160px;" onchange="onTabSplitHostChange('${tab.id}')"></select>
           </div>
           <div style="display: flex; align-items: center; gap: 8px;">
-            <div id="statusRight_${tab.id}" class="terminal-pane-status connected"><span class="terminal-tab-status-dot"></span><span>Connected</span></div>
+            <div id="statusRight_${tab.id}" class="terminal-pane-status connecting"><span class="terminal-tab-status-dot"></span><span>${escapeHtml(t('terminal_connecting', 'Connecting…'))}</span></div>
             <button class="btn btn-sm btn-ghost" onclick="closeTabSplit('${tab.id}')" title="Close Split" style="padding: 2px;">${svgIcon('x', 'icon-xs')}</button>
           </div>
         </div>
@@ -16862,13 +17338,18 @@ function initTabLeftTerminal(tab, presetID) {
   setupTerminalPathTracking(tab, 'left', term);
   setupTerminalLinkProvider(term, tab, tab.hostID);
 
+  // The pane starts as "Connecting…": the socket is not open yet.
+  const setStatus = (cls, label) => {
+    const el = document.getElementById('statusLeft_' + tab.id);
+    if (!el) return;
+    el.className = 'terminal-pane-status ' + cls;
+    el.innerHTML = '<span class="terminal-tab-status-dot' + (cls === 'disconnected' ? ' disconnected' : '') + '"></span><span>' + escapeHtml(label) + '</span>';
+  };
+  setStatus('connecting', t('terminal_connecting', 'Connecting…'));
+
   ws.onopen = () => {
     tab.connectedLeft = true;
-    const status = document.getElementById('statusLeft_' + tab.id);
-    if (status) {
-      status.className = 'terminal-pane-status connected';
-      status.innerHTML = '<span class="terminal-tab-status-dot"></span><span>Connected</span>';
-    }
+    setStatus('connected', t('connected', 'Connected'));
     renderTerminalTabsList();
     term.write('\r\n\x1b[32m[Pantau SSH Bridge Connected]\x1b[0m\r\n\r\n');
     if (activeTerminalTabId === tab.id && !isTerminalDockMinimized) {
@@ -16892,11 +17373,7 @@ function initTabLeftTerminal(tab, presetID) {
 
   ws.onclose = () => {
     tab.connectedLeft = false;
-    const status = document.getElementById('statusLeft_' + tab.id);
-    if (status) {
-      status.className = 'terminal-pane-status disconnected';
-      status.innerHTML = '<span class="terminal-tab-status-dot disconnected"></span><span>Disconnected</span>';
-    }
+    setStatus('disconnected', t('terminal_disconnected', 'Disconnected'));
     renderTerminalTabsList();
     term.write('\r\n\x1b[31m[Session Disconnected]\x1b[0m\r\n');
   };
@@ -16959,13 +17436,18 @@ function initTabRightTerminal(tab, hostID, presetID) {
   setupTerminalPathTracking(tab, 'right', term);
   setupTerminalLinkProvider(term, tab, hostID);
 
+  // The pane starts as "Connecting…": the socket is not open yet.
+  const setStatus = (cls, label) => {
+    const el = document.getElementById('statusRight_' + tab.id);
+    if (!el) return;
+    el.className = 'terminal-pane-status ' + cls;
+    el.innerHTML = '<span class="terminal-tab-status-dot' + (cls === 'disconnected' ? ' disconnected' : '') + '"></span><span>' + escapeHtml(label) + '</span>';
+  };
+  setStatus('connecting', t('terminal_connecting', 'Connecting…'));
+
   ws.onopen = () => {
     tab.connectedRight = true;
-    const status = document.getElementById('statusRight_' + tab.id);
-    if (status) {
-      status.className = 'terminal-pane-status connected';
-      status.innerHTML = '<span class="terminal-tab-status-dot"></span><span>Connected</span>';
-    }
+    setStatus('connected', t('connected', 'Connected'));
     term.write('\r\n\x1b[32m[Pantau SSH Bridge Connected]\x1b[0m\r\n\r\n');
     if (activeTerminalTabId === tab.id && tab.focusedPane === 'right' && !isTerminalDockMinimized) {
       setTimeout(() => {
@@ -16988,11 +17470,7 @@ function initTabRightTerminal(tab, hostID, presetID) {
 
   ws.onclose = () => {
     tab.connectedRight = false;
-    const status = document.getElementById('statusRight_' + tab.id);
-    if (status) {
-      status.className = 'terminal-pane-status disconnected';
-      status.innerHTML = '<span class="terminal-tab-status-dot disconnected"></span><span>Disconnected</span>';
-    }
+    setStatus('disconnected', t('terminal_disconnected', 'Disconnected'));
     renderTerminalTabsList();
     term.write('\r\n\x1b[31m[Session Disconnected]\x1b[0m\r\n');
   };
@@ -18602,10 +19080,7 @@ async function applySelfUpdate() {
   if (!confirmed) return;
 
   const btn = document.getElementById('btnApplyUpdate');
-  if (btn) {
-    btn.disabled = true;
-    btn.innerText = t('updating') || 'Updating...';
-  }
+  const restore = SP.busy(btn, t('updating') || 'Updating...');
 
   showToast('Downloading verified update from GitHub Releases...', 'info');
 
@@ -18614,10 +19089,6 @@ async function applySelfUpdate() {
     const data = await res.json();
     if (!res.ok || data.error) {
       showToast(data.error || 'Failed to apply update', 'error');
-      if (btn) {
-        btn.disabled = false;
-        btn.innerText = t('update_now') || 'Update Now';
-      }
       return;
     }
 
@@ -18628,19 +19099,14 @@ async function applySelfUpdate() {
     if (restartCard) restartCard.style.display = 'block';
   } catch (err) {
     showToast('Update error: ' + err.message, 'error');
-    if (btn) {
-      btn.disabled = false;
-      btn.innerText = t('update_now') || 'Update Now';
-    }
+  } finally {
+    restore();
   }
 }
 
 async function restartPantau() {
   const btn = document.getElementById('btnRestartNow');
-  if (btn) {
-    btn.disabled = true;
-    btn.innerText = t('restarting') || 'Restarting...';
-  }
+  const restore = SP.busy(btn, t('restarting') || 'Restarting...');
 
   showToast('Restarting Pantau process...', 'info');
 
@@ -18650,9 +19116,12 @@ async function restartPantau() {
     // Process might exit before response completes, which is expected
   }
 
-  // Poll for reconnection
+  // Poll for reconnection (capped so a server that never returns does not leave the button stuck).
   showToast('Waiting for server to restart...', 'warning');
+  const MAX_ATTEMPTS = 90;
+  let attempts = 0;
   const pollInterval = setInterval(async () => {
+    attempts++;
     try {
       const res = await fetch('/api/auth/status');
       if (res.ok) {
@@ -18661,9 +19130,15 @@ async function restartPantau() {
         setTimeout(() => {
           window.location.reload();
         }, 800);
+        return;
       }
     } catch (_) {
       // server still rebooting
+    }
+    if (attempts >= MAX_ATTEMPTS) {
+      clearInterval(pollInterval);
+      restore();
+      showToast(t('restart_timeout', 'Server did not come back online. Restart it manually and try again.'), 'error');
     }
   }, 1000);
 }
@@ -18700,6 +19175,10 @@ async function openSettingsModal(tab) {
   if (secScanEl) secScanEl.value = (data.security_scan_interval_hours !== undefined && data.security_scan_interval_hours !== '') ? data.security_scan_interval_hours : '24';
   const vulnIntelEl = document.getElementById('settingVulnIntel');
   if (vulnIntelEl) vulnIntelEl.checked = data.vuln_intel_enabled === '1';
+  const osvEnabledEl = document.getElementById('settingOsvEnabled');
+  if (osvEnabledEl) osvEnabledEl.checked = data.osv_enabled === '1';
+  const iacGateEl = document.getElementById('settingIacGate');
+  if (iacGateEl) iacGateEl.checked = data.iac_gate_enabled === '1';
 
   document.getElementById('settingGhEnabled').checked = data.github_backup_enabled === '1';
   document.getElementById('settingGhRepo').value = data.github_repo || '';
@@ -18992,23 +19471,45 @@ async function saveGitHubBackupSettings() {
     backup_interval_hours: document.getElementById('settingGhInterval').value.trim() || '24',
     github_file_path: document.getElementById('settingGhPath').value.trim() || 'pantau-state.enc',
   };
-  await fetch('/api/settings', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  showToast(t('gh_config_saved'), 'success');
-  openSettingsModal();
+  const btn = document.getElementById('btnSaveGhConfig');
+  const restore = SP.busy(btn, t('saving', 'Saving...'));
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      let msg = '';
+      try { msg = (await res.json()).error || ''; } catch (_) { msg = ''; }
+      showToast(t('gh_config_save_failed') + (msg || (res.status + ' ' + res.statusText)), 'error');
+      return;
+    }
+    showToast(t('gh_config_saved'), 'success');
+    openSettingsModal();
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+  } finally {
+    restore();
+  }
 }
 
 async function syncGitHubNow() {
-  const res = await fetch('/api/snapshot/github/sync', { method: 'POST' });
-  const data = await res.json();
-  if (data.ok) {
-    showToast(data.message, 'success');
+  const btn = document.getElementById('btnSyncGhNow');
+  const restore = SP.busy(btn, t('syncing_gh', 'Syncing to GitHub...'));
+  try {
+    const res = await fetch('/api/snapshot/github/sync', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      showToast(t('sync_gh_failed') + (data.error || 'Unknown error'), 'error');
+      return;
+    }
+    showToast(data.message || t('gh_config_saved'), 'success');
     openSettingsModal();
-  } else {
-    showToast(t('sync_gh_failed') + (data.error || 'Unknown error'), 'error');
+  } catch (e) {
+    showToast(t('sync_gh_failed') + e.message, 'error');
+  } finally {
+    restore();
   }
 }
 
@@ -19026,7 +19527,7 @@ async function submitSnapshotExport() {
     return;
   }
   const btn = document.getElementById('btnSubmitSnapshotExport');
-  if (btn) btn.disabled = true;
+  const restore = SP.busy(btn, t('exporting_snapshot', 'Exporting...'));
   try {
     const res = await fetch('/api/snapshot/export', {
       method: 'POST',
@@ -19052,7 +19553,7 @@ async function submitSnapshotExport() {
   } catch (e) {
     showToast(t('error_prefix', 'Error: ') + e.message, 'error');
   } finally {
-    if (btn) btn.disabled = false;
+    restore();
   }
 }
 
@@ -19094,22 +19595,27 @@ async function doRestoreFromGitHub() {
     return;
   }
 
-  msgEl.innerHTML = '<span style="color: var(--accent-text);">' + t('downloading_decrypting') + '</span>';
+  const btn = document.getElementById('btnRestoreFromGh');
+  const restore = SP.busy(btn, t('downloading_decrypting'));
+  const t0 = Date.now();
+  msgEl.innerHTML = SP.html(t('downloading_decrypting'), t0);
   try {
     const res = await fetch('/api/snapshot/github/restore', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ repo, token, path, passphrase })
     });
-    const data = await res.json();
-    if (data.ok) {
-      msgEl.innerHTML = '<span style="color: var(--success);">' + t('restored_refreshing') + '</span>';
-      setTimeout(() => location.reload(), 1200);
-    } else {
-      msgEl.innerHTML = '<span style="color: var(--danger);">' + t('failed_prefix') + escapeHtml(data.error) + '</span>';
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      msgEl.innerHTML = '<span style="color: var(--danger);">' + t('failed_prefix') + escapeHtml(data.error || (res.status + ' ' + res.statusText)) + '</span>';
+      return;
     }
+    msgEl.innerHTML = '<span style="color: var(--success);">' + t('restored_refreshing') + '</span>';
+    setTimeout(() => location.reload(), 1200);
   } catch (e) {
     msgEl.innerHTML = '<span style="color: var(--danger);">' + t('error_prefix') + escapeHtml(e.message) + '</span>';
+  } finally {
+    restore();
   }
 }
 
@@ -19131,21 +19637,26 @@ async function doRestoreFromFile() {
   formData.append('file', fileInput.files[0]);
   formData.append('passphrase', pass);
 
-  msgEl.innerHTML = '<span style="color: var(--accent-text);">' + t('decrypting_restoring') + '</span>';
+  const btn = document.getElementById('btnRestoreFromFile');
+  const restore = SP.busy(btn, t('decrypting_restoring'));
+  const t0 = Date.now();
+  msgEl.innerHTML = SP.html(t('decrypting_restoring'), t0);
   try {
     const res = await fetch('/api/snapshot/import', {
       method: 'POST',
       body: formData
     });
-    const data = await res.json();
-    if (data.ok) {
-      msgEl.innerHTML = '<span style="color: var(--success);">' + t('restored_hosts_refreshing').replace('{count}', data.hosts_imported) + '</span>';
-      setTimeout(() => location.reload(), 1200);
-    } else {
-      msgEl.innerHTML = '<span style="color: var(--danger);">' + t('failed_prefix') + escapeHtml(data.error) + '</span>';
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      msgEl.innerHTML = '<span style="color: var(--danger);">' + t('failed_prefix') + escapeHtml(data.error || (res.status + ' ' + res.statusText)) + '</span>';
+      return;
     }
+    msgEl.innerHTML = '<span style="color: var(--success);">' + t('restored_hosts_refreshing').replace('{count}', data.hosts_imported) + '</span>';
+    setTimeout(() => location.reload(), 1200);
   } catch (e) {
     msgEl.innerHTML = '<span style="color: var(--danger);">' + t('error_prefix') + escapeHtml(e.message) + '</span>';
+  } finally {
+    restore();
   }
 }
 
@@ -19308,19 +19819,27 @@ async function saveS3Account() {
     prefix: document.getElementById('settingS3Prefix').value.trim(),
     path_style: document.getElementById('settingS3PathStyle').value
   };
-  const res = await fetch(s3EditingId ? '/api/s3/accounts/' + s3EditingId : '/api/s3/accounts', {
-    method: s3EditingId ? 'PUT' : 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    showToast(err.error || 'Failed to save S3 account', 'error');
-    return;
+  const btn = document.getElementById('btnSaveS3Account');
+  const restore = SP.busy(btn, t('upd_saving'));
+  try {
+    const res = await fetch(s3EditingId ? '/api/s3/accounts/' + s3EditingId : '/api/s3/accounts', {
+      method: s3EditingId ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      showToast(err.error || 'Failed to save S3 account', 'error');
+      return;
+    }
+    showToast(t('settings_saved'), 'success');
+    cancelS3Form();
+    renderS3Accounts();
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+  } finally {
+    restore();
   }
-  showToast(t('settings_saved'), 'success');
-  cancelS3Form();
-  renderS3Accounts();
 }
 
 async function deleteS3Account(id) {
@@ -19341,7 +19860,7 @@ async function testS3Account(id) {
   const box = document.getElementById('s3AccTest_' + id);
   box.style.display = 'block';
   box.style.color = 'var(--text-muted)';
-  box.innerText = t('s3_testing');
+  box.innerHTML = SP.html(t('s3_testing'));
   try {
     const res = await fetch('/api/s3/accounts/' + id + '/test', { method: 'POST' });
     const data = await res.json().catch(() => ({}));
@@ -19380,7 +19899,7 @@ async function openS3UploadDialog(srcPath, isDir) {
 async function submitS3Upload() {
   const btn = document.getElementById('btnStartS3Upload');
   const accountId = parseInt(document.getElementById('s3UploadAccount').value, 10);
-  btn.disabled = true;
+  const restore = SP.busy(btn, t('s3_starting_upload'));
   try {
     const res = await fetch('/api/transfers/s3', {
       method: 'POST',
@@ -19403,7 +19922,7 @@ async function submitS3Upload() {
   } catch (err) {
     showToast(t('error_prefix', 'Error: ') + err.message, 'error');
   } finally {
-    btn.disabled = false;
+    restore();
   }
 }
 
@@ -21960,7 +22479,7 @@ async function loadSystemdTab(quiet) {
   const content = document.getElementById('tabContent');
   if (!host || !content) return;
   if (!quiet) {
-    content.innerHTML = `<div class="empty-state"><div class="empty-state-icon">${svgIcon('cog', 'icon-xl')}</div><div class="empty-state-desc">${t('systemd_loading', 'Reading services...')}</div></div>`;
+    content.innerHTML = SP.loading(t('systemd_loading', 'Reading services...'));
   }
   let data;
   try {
@@ -22010,7 +22529,7 @@ function systemdRowsHtml(services) {
     const u = escapeHtml(s.name);
     const up = s.active === 'active' || s.active === 'activating' || s.active === 'reloading';
     const canAct = s.load !== 'masked' && s.load !== 'not-found';
-    const btn = (action, icon, extra) => `<button class="btn btn-icon btn-sm ${extra || 'btn-ghost'}" data-unit="${u}" onclick="systemdAction(this.dataset.unit, '${action}')" title="${escapeHtml(t(action))}">${svgIcon(icon, 'icon-sm')}</button>`;
+    const btn = (action, icon, extra) => `<button class="btn btn-icon btn-sm ${extra || 'btn-ghost'}" data-unit="${u}" onclick="systemdAction(this.dataset.unit, '${action}', this)" title="${escapeHtml(t(action))}">${svgIcon(icon, 'icon-sm')}</button>`;
     const acts = [`<button class="btn btn-icon btn-sm ${s.active === 'failed' ? 'btn-danger' : 'btn-ghost'}" data-unit="${u}" onclick="openSystemdDetail(this.dataset.unit)" title="${escapeHtml(t('systemd_btn_debug'))}">${svgIcon('stethoscope', 'icon-sm')}</button>`];
     if (s.active === 'failed' && window.AG && AG.enabled()) acts.push(`<button class="btn btn-icon btn-sm btn-ghost ag-ask-btn" data-arg="${u}" onclick="AG.askUnit(this.dataset.arg)" title="${escapeHtml(t('ag_ask'))}">${svgIcon('bot', 'icon-sm')}</button>`);
     if (canAct) {
@@ -22052,7 +22571,7 @@ function renderSystemdTab() {
   const data = systemdState.data;
   if (!content || !data) return;
   const refreshBtn = `<button class="btn btn-sm btn-ghost" onclick="loadSystemdTab()">${svgIcon('refresh-cw', 'icon-sm')} <span>${t('refresh')}</span></button>`;
-  const reloadBtn = `<button class="btn btn-sm btn-ghost" onclick="systemdAction('', 'daemon-reload')" title="${escapeHtml(t('systemd_reload_title'))}">${svgIcon('rotate-ccw', 'icon-sm')} <span>${systemdVerb('daemon-reload')}</span></button>`;
+  const reloadBtn = `<button class="btn btn-sm btn-ghost" onclick="systemdAction('', 'daemon-reload', this)" title="${escapeHtml(t('systemd_reload_title'))}">${svgIcon('rotate-ccw', 'icon-sm')} <span>${systemdVerb('daemon-reload')}</span></button>`;
   const header = `
     <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; flex-shrink: 0;">
       <h4 style="margin: 0; display: flex; align-items: center; gap: 6px;">${svgIcon('cog', 'icon-sm')} <span>${t('systemd_title', 'systemd Services')}</span></h4>
@@ -22177,7 +22696,7 @@ function renderSystemdDetail() {
   const d = st.data;
   if (!d) {
     if (st.loading) {
-      body.innerHTML = `<div class="empty-state"><div class="empty-state-icon">${svgIcon('cog', 'icon-xl')}</div><div class="empty-state-desc">${t('systemd_loading', 'Reading services...')}</div></div>`;
+      body.innerHTML = SP.loading(t('systemd_loading', 'Reading services...'));
       footer.innerHTML = `<span></span><div class="sd-footer-group">${closeBtn}</div>`;
     } else {
       body.innerHTML = `<div class="empty-state"><div class="empty-state-icon">${svgIcon('triangle-alert', 'icon-xl')}</div><div class="empty-state-title">${t('systemd_unavailable', 'Could not read services')}</div><div class="empty-state-desc" style="font-family: var(--font-mono); font-size: var(--fs-xs); white-space: pre-wrap;">${escapeHtml(st.error || '')}</div></div>`;
@@ -22273,7 +22792,7 @@ function renderSystemdDetail() {
   const dis = st.acting ? 'disabled' : '';
   const u = escapeHtml(st.unit);
   const isSSH = SYSTEMD_SSH_RE.test(st.unit);
-  const act = (action, cls, icon) => `<button class="btn btn-sm ${cls}" ${dis} data-unit="${u}" onclick="systemdAction(this.dataset.unit, '${action}')">${svgIcon(icon, 'icon-sm')} <span>${t(action)}</span></button>`;
+  const act = (action, cls, icon) => `<button class="btn btn-sm ${cls}" ${dis} data-unit="${u}" onclick="systemdAction(this.dataset.unit, '${action}', this)">${svgIcon(icon, 'icon-sm')} <span>${t(action)}</span></button>`;
   const buttons = [];
   if (canAct) {
     if (!up) buttons.push(act('start', 'btn-primary', 'play'));
@@ -22283,7 +22802,7 @@ function renderSystemdDetail() {
   // Secondary actions live in a "More" menu (stop/disable/mask are not offered for the SSH daemon).
   const unitFile = p.UnitFileState || '';
   const more = [];
-  const item = (action, icon) => `<button class="dropdown-item" data-unit="${u}" onclick="systemdAction(this.dataset.unit, '${action}')">${svgIcon(icon, 'icon-sm')} <span>${systemdVerb(action)}</span></button>`;
+  const item = (action, icon) => `<button class="dropdown-item" data-unit="${u}" onclick="systemdAction(this.dataset.unit, '${action}', this)">${svgIcon(icon, 'icon-sm')} <span>${systemdVerb(action)}</span></button>`;
   if (canAct && up) more.push(item('reload', 'refresh-cw'));
   if (state === 'failed') more.push(item('reset-failed', 'rotate-ccw'));
   if (canAct && unitFile === 'disabled') more.push(item('enable', 'power'));
@@ -22319,7 +22838,7 @@ function systemdVerb(action) {
   return v || t(action);
 }
 
-async function systemdAction(unit, action) {
+async function systemdAction(unit, action, btn) {
   const host = currentHost;
   if (!host || (!unit && action !== 'daemon-reload')) return;
   if (action in SYSTEMD_CONFIRM) {
@@ -22335,6 +22854,10 @@ async function systemdAction(unit, action) {
   }
   const label = unit || host.name;
   const detailOpen = !!unit && systemdDetailState.unit === unit && document.getElementById('systemdDetailModal').classList.contains('open');
+  // The clicked button spins with the elapsed time; the toast keeps the feedback visible
+  // when the detail modal re-renders its footer (which replaces the button).
+  const restore = btn ? SP.busy(btn, systemdVerb(action)) : null;
+  const busyToast = showBusyToast(systemdVerb(action), Date.now());
   if (detailOpen) { systemdDetailState.acting = true; renderSystemdDetail(); }
   let res;
   try {
@@ -22346,6 +22869,9 @@ async function systemdAction(unit, action) {
     res = await r.json();
   } catch (e) {
     res = { ok: false, error: e.message };
+  } finally {
+    if (restore) restore();
+    busyToast.close();
   }
   const r = res.result || {};
   const state = [r.active_state, r.sub_state].filter(Boolean).join('/') || r.enabled_state || '—';
@@ -22408,51 +22934,10 @@ function showDockerOutput(title, text) {
   openModal('dockerLogsModal');
 }
 
-// Opens the shared log viewer on the first streamed chunk, so a call rejected before anything ran shows only a toast.
-function dockerLiveViewer(title) {
-  let node = null;
-  let scrollQueued = false;
-  const out = document.getElementById('dockerLogsOutput');
-  const status = document.getElementById('dockerLogsStatus');
-  return {
-    get opened() { return !!node; },
-    append(delta) {
-      if (!node) {
-        stopDockerLogs();
-        document.getElementById('dockerLogsTitle').textContent = title;
-        out.textContent = '';
-        node = out.appendChild(document.createTextNode(''));
-        status.textContent = t('dk_working');
-        status.className = 'badge badge-info';
-        openModal('dockerLogsModal');
-      }
-      node.appendData(delta);
-      if (document.getElementById('dockerLogsAutoScroll').checked && !scrollQueued) {
-        scrollQueued = true;
-        requestAnimationFrame(() => { scrollQueued = false; out.scrollTop = out.scrollHeight; });
-      }
-    },
-    finish(res) {
-      if (res.output !== undefined) node.data = res.output;
-      status.textContent = res.ok ? t('dk_done') : t('dk_failed');
-      status.className = 'badge ' + (res.ok ? 'badge-healthy' : 'badge-down');
-    }
-  };
-}
-
-// Runs one management call: toast, live output viewer for streamed calls, reload of the current sub-tab.
+// Runs one management call with its animated progress card (app/dockerprogress), then reloads the current sub-tab.
 async function dockerExecute(o) {
-  if (o.long) showToast(t('dk_working'), 'info', 2500);
-  const live = o.outputTitle ? dockerLiveViewer(o.outputTitle) : null;
-  const data = await dockerPost(o.sub, o.payload, live && live.append);
-  if (live && live.opened) live.finish(data);
-  if (!data.ok) {
-    showToast(t('error_prefix', 'Error: ') + (data.error || 'failed'), 'error', 9000);
-    return data;
-  }
-  showToast(o.okMsg || t('dk_done'), 'success');
-  if (o.outputTitle && data.output && !(live && live.opened)) showDockerOutput(o.outputTitle, data.output);
-  if (currentTab === 'docker') loadDockerTab();
+  const data = await DP.run(o);
+  if (data.ok && currentTab === 'docker') loadDockerTab();
   return data;
 }
 
@@ -22537,7 +23022,7 @@ function openDockerRunForm(image) {
     ],
     onSubmit: async v => {
       const data = await dockerExecute({
-        sub: 'run', long: true,
+        sub: 'run',
         payload: { image: v.image.trim(), name: v.name.trim(), restart: v.restart, network: v.network.trim(), command: v.command, memory: v.memory.trim(), cpus: v.cpus.trim(), ports: dockerLines(v.ports), env: dockerLines(v.env), volumes: dockerLines(v.volumes) },
         okMsg: t('dk_container_created')
       });
@@ -22582,11 +23067,11 @@ function dkShq(s) {
 }
 
 // ---- container inspect ----
-let dkInspectState = { name: null, data: null, reveal: false, loading: false, error: null };
+let dkInspectState = { name: null, data: null, reveal: false, loading: false, error: null, t0: 0 };
 
 function openDockerInspect(name) {
   if (!name) return;
-  dkInspectState = { name, data: null, reveal: false, loading: true, error: null };
+  dkInspectState = { name, data: null, reveal: false, loading: true, error: null, t0: Date.now() };
   document.getElementById('dockerInspectTitle').textContent = name;
   const badge = document.getElementById('dockerInspectBadge');
   badge.className = 'badge badge-unknown';
@@ -22600,6 +23085,7 @@ async function loadDockerInspect() {
   const host = currentHost;
   if (!st.name || !host) return;
   st.loading = true;
+  st.t0 = Date.now();
   renderDockerInspect();
   let res;
   try {
@@ -22627,8 +23113,8 @@ async function dockerDisconnect(network, container) {
     danger: true
   });
   if (!ok) return;
-  const data = await dockerPost('network', { action: 'disconnect', name: network, container });
-  if (data.ok) { showToast(t('dk_done'), 'success'); loadDockerInspect(); } else showToast(t('error_prefix', 'Error: ') + (data.error || 'failed'), 'error', 8000);
+  const data = await DP.run({ sub: 'network', payload: { action: 'disconnect', name: network, container } });
+  if (data.ok) loadDockerInspect();
 }
 
 function dockerKv(rows) {
@@ -22653,7 +23139,7 @@ function renderDockerInspect() {
   const d = st.data;
   if (!d) {
     body.innerHTML = st.loading
-      ? `<div class="empty-state"><div class="empty-state-icon">${svgIcon('container', 'icon-xl')}</div><div class="empty-state-desc">${t('docker_loading')}</div></div>`
+      ? SP.loading(t('docker_loading_data'), st.t0) + SP.skeleton(4)
       : dockerEmptyHtml(t('docker_unavailable'), st.error || '', true);
     footer.innerHTML = `<span></span><div class="sd-footer-group">${st.loading ? '' : `<button class="btn btn-sm" onclick="loadDockerInspect()">${svgIcon('refresh-cw', 'icon-sm')} <span>${t('refresh')}</span></button>`}${closeBtn}</div>`;
     return;
@@ -22721,7 +23207,7 @@ function renderDockerImages(data) {
   const total = images.reduce((a, i) => a + i.size, 0);
   const unused = images.filter(i => !i.in_use).length;
   return `<div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">${t('dk_img_summary').replace('{n}', images.length).replace('{u}', unused).replace('{size}', formatBytes(total))}${window.Hub ? Hub.summary() : ''}</div>` +
-    dockerTableHtml([t('dk_f_image'), t('dk_col_tag'), 'ID', t('docker_col_size'), t('dk_col_created'), t('status'), ''], images.map(i => {
+    dockerTableHtml([t('dk_f_image'), t('dk_col_tag'), 'ID', t('docker_col_size'), t('dk_col_created'), t('status'), t('ds_col_counts'), ''], images.map(i => {
       const ref = i.dangling ? i.id : i.repository + ':' + i.tag;
       const status = i.in_use ? `<span class="badge badge-success">${t('dk_in_use')}</span>` : (i.dangling ? `<span class="badge badge-warning">${t('dk_dangling')}</span>` : `<span class="badge badge-unknown">${t('dk_unused')}</span>`);
       return `
@@ -22732,8 +23218,9 @@ function renderDockerImages(data) {
           <td style="white-space: nowrap;">${formatBytes(i.size)}</td>
           <td class="text-muted" style="white-space: nowrap;" title="${escapeHtml(i.created)}">${escapeHtml(i.age)}</td>
           <td>${status}${!i.dangling && window.Hub ? Hub.imageBadge(ref) : ''}</td>
+          <td>${!i.dangling && window.DS ? DS.chips(ref) : ''}</td>
           <td class="dk-actions">
-            ${i.dangling ? '' : `${window.Hub ? Hub.imageActions(ref) : ''}<button class="btn btn-sm btn-ghost btn-icon" title="${t('dk_run_image')}" data-ref="${escapeHtml(ref)}" onclick="openDockerRunForm(this.dataset.ref)">${svgIcon('play', 'icon-sm')}</button>`}
+            ${i.dangling ? '' : `${window.Hub ? Hub.imageActions(ref) : ''}${window.DS ? DS.scanButton(ref) : ''}<button class="btn btn-sm btn-ghost btn-icon" title="${t('dk_run_image')}" data-ref="${escapeHtml(ref)}" onclick="openDockerRunForm(this.dataset.ref)">${svgIcon('play', 'icon-sm')}</button>`}
             <button class="btn btn-sm btn-danger btn-icon" ${i.in_use ? 'disabled' : ''} title="${escapeHtml(i.in_use ? t('dk_in_use_hint') : t('dk_remove'))}" data-ref="${escapeHtml(ref)}" onclick="dockerImageRemove(this.dataset.ref)">${svgIcon('trash-2', 'icon-sm')}</button>
           </td>
         </tr>`;
@@ -22747,7 +23234,7 @@ function openDockerPullForm() {
     intro: t('dk_pull_intro'),
     fields: [{ id: 'image', label: t('dk_f_image'), placeholder: 'nginx:1.27-alpine', required: true, mono: true, full: true }],
     onSubmit: async v => {
-      const data = await dockerExecute({ sub: 'image', long: true, payload: { action: 'pull', image: v.image.trim() }, outputTitle: t('dk_pull_image') + ': ' + v.image.trim() });
+      const data = await dockerExecute({ sub: 'image', payload: { action: 'pull', image: v.image.trim() } });
       return data.ok;
     }
   });
@@ -22842,7 +23329,7 @@ function renderDockerStacks(data) {
         <td>${dockerChips(s.services.map(x => [x]))}</td>
         <td class="dk-mono text-muted">${s.config_files.length ? s.config_files.map(escapeHtml).join('<br>') : '—'}</td>
         <td class="dk-actions">
-          <button class="btn btn-sm btn-ghost btn-icon" title="${t('dk_stack_edit')}" ${s.config_files.length === 1 ? '' : 'disabled'} data-name="${n}" onclick="openDockerStackForm(this.dataset.name)">${svgIcon('pencil', 'icon-sm')}</button>
+          <button class="btn btn-sm btn-ghost btn-icon" title="${t('dk_stack_edit')}" ${s.config_files.length === 1 ? '' : 'disabled'} data-name="${n}" onclick="openDockerStackForm(this.dataset.name, this)">${svgIcon('pencil', 'icon-sm')}</button>
           <button class="btn btn-sm btn-ghost btn-icon" title="${t('dk_stack_update')}" ${s.config_files.length ? '' : 'disabled'} data-name="${n}" onclick="dockerStackAction(this.dataset.name, 'update')">${svgIcon('download', 'icon-sm')}</button>
           <button class="btn btn-sm btn-ghost btn-icon" title="${t('docker_menu_title')}" ${s.config_files.length ? '' : 'disabled'} onclick="openDockerStackMenu(event, ${idx})">${svgIcon('ellipsis-vertical', 'icon-sm')}</button>
         </td>
@@ -22928,21 +23415,42 @@ async function dockerStackAction(name, action) {
     await dockerExecute({ sub: 'stack', payload: { project: name, action } });
     return;
   }
-  await dockerExecute({ sub: 'stack', long: true, payload: { project: name, action }, outputTitle: t('dk_stack_' + action) + ': ' + name });
+  await dockerExecute({ sub: 'stack', payload: { project: name, action } });
 }
 
 const DOCKER_STACK_SAMPLE = 'services:\n  web:\n    image: nginx:1.27-alpine\n    ports:\n      - "8080:80"\n    restart: unless-stopped\n';
 
-async function openDockerStackForm(name) {
+// A spinner with the elapsed time inside a small icon button (the full text stays in the tooltip).
+function dockerIconBusy(btn, text) {
+  const saved = btn.innerHTML;
+  const wasDisabled = btn.disabled;
+  btn.disabled = true;
+  const t0 = Date.now();
+  btn.innerHTML = `<span class="spinner" style="display:inline-block; margin-right:4px;">${svgIcon('loader-circle', 'icon-sm')}</span>` +
+    `<span data-sp-t0="${t0}" style="font-variant-numeric: tabular-nums; font-size: var(--fs-xs); color: var(--text-muted);">0s</span>`;
+  const savedTitle = btn.title;
+  btn.title = text;
+  return function () {
+    btn.disabled = wasDisabled;
+    btn.innerHTML = saved;
+    btn.title = savedTitle;
+  };
+}
+
+async function openDockerStackForm(name, btn) {
   let yaml = DOCKER_STACK_SAMPLE;
   let path = '';
   if (name) {
+    // The compose file is fetched from the host (can take a while): the button shows the progress.
+    const restore = btn ? dockerIconBusy(btn, t('docker_stack_loading')) : function () {};
     let data;
     try {
       const res = await fetch('/api/hosts/' + currentHost.id + '/docker/stack/file?project=' + encodeURIComponent(name));
       data = await res.json();
     } catch (e) {
       data = { ok: false, error: e.message };
+    } finally {
+      restore();
     }
     if (!data.ok) { showToast(t('error_prefix', 'Error: ') + (data.error || 'failed'), 'error', 8000); return; }
     yaml = data.content;
@@ -22956,7 +23464,7 @@ async function openDockerStackForm(name) {
       { id: 'name', label: t('dk_f_stack_name'), value: name || '', placeholder: 'myapp', readonly: !!name, required: true, mono: true, full: true, hint: name ? '' : t('dk_h_stack_name') },
       { id: 'yaml', label: 'docker-compose.yml', type: 'textarea', rows: 18, value: yaml, required: true, full: true, hint: t('dk_h_stack_yaml') }
     ],
-    onSubmit: async v => (await dockerExecute({ sub: 'stack/deploy', long: true, payload: { name: v.name.trim(), yaml: v.yaml }, outputTitle: t('dk_deploy') + ': ' + v.name.trim() })).ok
+    onSubmit: async v => (await dockerExecute({ sub: 'stack/deploy', payload: { name: v.name.trim(), yaml: v.yaml } })).ok
   });
 }
 
@@ -22991,7 +23499,7 @@ async function dockerPrune(target) {
     danger: true
   });
   if (!ok) return;
-  await dockerExecute({ sub: 'prune', long: true, payload: { target }, outputTitle: t('dk_prune') + ': ' + target });
+  await dockerExecute({ sub: 'prune', payload: { target } });
 }
 // ===== SLICE-B:END =====
 // ---------------------------------
@@ -23155,6 +23663,8 @@ function clearDockerSectionSearch() {
 let selectedKubeHostId = null, currentKubeCluster = null, currentKubeTab = 'nodes', currentKubeNamespace = '';
 let kubeNodesCache = [], kubeWorkloadsCache = [], kubePodsCache = [], kubeServicesCache = [], kubeNamespacesList = [], currentScaleTarget = null;
 let kubeGenericCache = {}, kubePickerActiveIndex = -1;
+// Auto-refresh keeps the last table on screen while a tick runs; a failed tick only marks the data as stale.
+let kubeTabHasData = false, kubeTabRefreshBusy = false, kubeTabStale = false;
 // Cluster workspaces: the hosts and clusters the operator picked, shown as cards and kept across restarts.
 // selectedKubeHostId is the one that is open (null = the card list). While the page lives, each keeps its tab and
 // namespace (kubeWsState) and its detect answer (kubeDetected), so opening it again is instant.
@@ -23348,36 +23858,50 @@ function findHostForKubeNode(n) {
 async function detectKubeClusters() {
   const btn = document.getElementById('btnKubeDetectClusters');
   if (btn) btn.disabled = true;
-  showToast(t('kube_detecting_clusters', 'Detecting Kubernetes clusters...'), 'info', 3000);
   const hosts = (allRawHosts || []).slice();
-  let active = 0, idx = 0;
-  await new Promise(resolve => {
-    if (hosts.length === 0) return resolve();
-    function next() {
-      while (active < 5 && idx < hosts.length) {
-        const h = hosts[idx++];
-        active++;
-        fetch('/api/hosts/' + h.id + '/kube/detect')
-          .then(r => r.json())
-          .then(data => {
-            if (data && data.ok && data.cluster && data.cluster.cluster_id) {
-              h.kube_cluster_id = data.cluster.cluster_id;
-            }
-          })
-          .catch(() => {})
-          .finally(() => {
-            active--;
-            if (idx >= hosts.length && active === 0) resolve();
-            else next();
-          });
+  const statusArea = document.getElementById('kubeStatusArea');
+  const t0 = Date.now();
+  let done = 0;
+  const render = () => {
+    const text = t('kube_detecting_clusters', 'Detecting Kubernetes clusters...');
+    const count = t('kube_detect_progress', '{done}/{total} hosts').replace('{done}', done).replace('{total}', hosts.length);
+    if (statusArea) statusArea.innerHTML = SP.banner(text + ' — ' + count, t0, done, hosts.length);
+  };
+  render();
+  try {
+    let active = 0, idx = 0;
+    await new Promise(resolve => {
+      if (hosts.length === 0) return resolve();
+      function next() {
+        while (active < 5 && idx < hosts.length) {
+          const h = hosts[idx++];
+          active++;
+          fetch('/api/hosts/' + h.id + '/kube/detect')
+            .then(r => r.json())
+            .then(data => {
+              if (data && data.ok && data.cluster && data.cluster.cluster_id) {
+                h.kube_cluster_id = data.cluster.cluster_id;
+              }
+            })
+            .catch(() => {})
+            .finally(() => {
+              active--;
+              done++;
+              render();
+              if (idx >= hosts.length && active === 0) resolve();
+              else next();
+            });
+        }
       }
-    }
-    next();
-  });
-  await loadHosts();
-  await loadKubeClusters();
-  if (btn) btn.disabled = false;
-  showToast(t('kube_detect_complete', 'Cluster detection complete'), 'success');
+      next();
+    });
+    await loadHosts();
+    await loadKubeClusters();
+    showToast(t('kube_detect_complete', 'Cluster detection complete'), 'success');
+  } finally {
+    if (btn) btn.disabled = false;
+    if (statusArea) statusArea.innerHTML = '';
+  }
 }
 
 function formatKubeMemory(val) {
@@ -23648,6 +24172,10 @@ async function onSelectKubeHost(hostId) {
   selectedKubeHostId = id;
   currentKubeTab = st.tab;
   currentKubeNamespace = st.ns;
+  kubeTabHasData = false;
+  kubeTabStale = false;
+  kubeTabRefreshBusy = false;
+  renderKubeRefreshStatus();
   renderKubeWorkspaces();
   updateKubeHostPickerBtn();
   updateKubeModeChip();
@@ -23658,21 +24186,40 @@ async function onSelectKubeHost(hostId) {
   const clusterBar = document.getElementById('kubeClusterBar');
   const viewsContainer = document.getElementById('kubeViewsContainer');
   const gwChip = document.getElementById('kubeGatewayChip');
+  const detectChip = document.getElementById('kubeDetectChip');
+  const chipsEl = document.getElementById('kubeClusterChips');
+  const nsWrap = document.getElementById('kubeNamespaceSelectorWrapper');
+  const content = document.getElementById('kubeTabContent');
+  const tabsStrip = document.getElementById('kubeTabsStrip');
   if (gwChip) gwChip.style.display = 'none'; // the previous workspace's gateway
   if (!selectedKubeHostId) { // the card list (renderKubeWorkspaces) is on screen
     stopKubeAutorefresh();
     if (noClusterEl) noClusterEl.style.display = 'none';
     if (clusterBar) clusterBar.style.display = 'none';
     if (viewsContainer) viewsContainer.style.display = 'none';
+    if (detectChip) detectChip.style.display = 'none';
+    if (chipsEl) chipsEl.style.display = 'flex';
+    if (nsWrap) nsWrap.style.display = 'flex';
+    if (tabsStrip) tabsStrip.style.display = 'flex';
     return;
   }
   if (noClusterEl) noClusterEl.style.display = 'none';
   if (clusterBar) clusterBar.style.display = 'none';
   if (viewsContainer) viewsContainer.style.display = 'none';
+  const detectT0 = Date.now();
+  const detectText = t('kube_detecting_cluster', 'Detecting cluster...');
+  let detected = false;
+  // Progress in the cluster bar (the chips of the previous cluster are hidden until the answer arrives).
+  if (detectChip) { detectChip.style.display = 'inline-flex'; detectChip.innerHTML = SP.html(detectText, detectT0); }
+  if (clusterBar) clusterBar.style.display = 'flex';
+  if (chipsEl) chipsEl.style.display = 'none';
+  if (nsWrap) nsWrap.style.display = 'none';
+  if (viewsContainer) viewsContainer.style.display = 'flex';
+  if (tabsStrip) tabsStrip.style.display = 'none';
+  if (content) content.innerHTML = SP.loading(detectText, detectT0);
   try {
     let data = kubeDetected[id];
     if (!data) {
-      showToast(t('kube_loading', 'Loading cluster data...'), 'info', 1500);
       const res = await fetch(`${kubeApiBase()}/detect`);
       data = await res.json();
       if (id !== selectedKubeHostId) return; // another workspace was opened meanwhile
@@ -23704,6 +24251,7 @@ async function onSelectKubeHost(hostId) {
     document.getElementById('kubeVersionChip').textContent = currentKubeCluster.version || '-';
     document.getElementById('kubeRoleChip').textContent = currentKubeCluster.role || 'server';
     if (viewsContainer) viewsContainer.style.display = 'flex';
+    detected = true;
     await loadKubeNamespaces();
     if (id !== selectedKubeHostId) return;
     switchKubeTab(currentKubeTab); // marks this workspace's tab and loads it
@@ -23714,27 +24262,70 @@ async function onSelectKubeHost(hostId) {
       const msg = document.getElementById('kubeNoClusterMsg');
       if (msg) msg.textContent = e.message;
     }
+  } finally {
+    // The progress state is reset for the workspace that is still on screen; a stale answer is ignored.
+    if (id === selectedKubeHostId) {
+      if (detectChip) detectChip.style.display = 'none';
+      if (detected) {
+        if (chipsEl) chipsEl.style.display = 'flex';
+        if (nsWrap) nsWrap.style.display = 'flex';
+        if (tabsStrip) tabsStrip.style.display = 'flex';
+      } else {
+        if (clusterBar) clusterBar.style.display = 'none';
+        if (tabsStrip) tabsStrip.style.display = 'flex';
+        if (content) content.innerHTML = '';
+      }
+    }
   }
 }
 async function loadKubeNamespaces() {
   if (!selectedKubeHostId) return;
   const ws = selectedKubeHostId;
+  const sel = document.getElementById('kubeNamespaceSelect');
+  if (sel) {
+    sel.disabled = true;
+    sel.innerHTML = `<option value="">${escapeHtml(t('kube_namespaces_loading', 'Loading...'))}</option>`;
+  }
   let list = [];
   try {
     const res = await fetch(`${kubeApiBase()}/namespaces`);
     const data = await res.json();
     if (data.ok && Array.isArray(data.namespaces)) list = data.namespaces;
   } catch(e) {}
-  if (ws !== selectedKubeHostId) return; // answer of a workspace that is no longer on screen
+  if (ws !== selectedKubeHostId) { // answer of a workspace that is no longer on screen
+    if (sel) { sel.disabled = false; sel.innerHTML = `<option value="">${t('kube_all_namespaces', 'All Namespaces')}</option>`; }
+    return;
+  }
   kubeNamespacesList = list;
-  const sel = document.getElementById('kubeNamespaceSelect');
   if (sel) {
     sel.innerHTML = `<option value="">${t('kube_all_namespaces', 'All Namespaces')}</option>` +
       kubeNamespacesList.map(ns => `<option value="${escapeHtml(ns.name)}" ${ns.name === currentKubeNamespace ? 'selected' : ''}>${escapeHtml(ns.name)}</option>`).join('');
+    sel.disabled = (currentKubeTab === 'pvs');
   }
+}
+// A non-blocking line above the table: "refreshing" while a tick runs, "stale" when the last tick failed.
+function renderKubeRefreshStatus() {
+  const el = document.getElementById('kubeRefreshStatus');
+  if (!el) return;
+  if (kubeTabStale) {
+    el.style.display = 'block';
+    el.innerHTML = `<div class="badge badge-warning" style="display:inline-flex;align-items:center;gap:6px;">${svgIcon('triangle-alert', 'icon-xs')} ${escapeHtml(t('kube_stale_data', 'Showing the last known data - the last refresh failed'))}</div>`;
+    return;
+  }
+  if (kubeTabRefreshBusy) {
+    el.style.display = 'block';
+    el.innerHTML = `<div style="font-size:var(--fs-xs);color:var(--text-muted);display:flex;align-items:center;gap:6px;">${SP.html(t('kube_refreshing', 'Refreshing...'))}</div>`;
+    return;
+  }
+  el.style.display = 'none';
+  el.innerHTML = '';
 }
 function switchKubeTab(tab) {
   currentKubeTab = tab;
+  kubeTabHasData = false; // a new tab starts empty: the loader shows until the first answer arrives
+  kubeTabStale = false;
+  kubeTabRefreshBusy = false;
+  renderKubeRefreshStatus();
   document.querySelectorAll('#kubeViewsContainer .tabs .tab').forEach(el => {
     el.classList.toggle('active', el.id.toLowerCase() === ('tabkube' + tab.toLowerCase()));
   });
@@ -23758,6 +24349,9 @@ function switchKubeTab(tab) {
 }
 function onKubeNamespaceChange(ns) {
   currentKubeNamespace = ns;
+  kubeTabHasData = false; // a different namespace: the loader shows until the first answer arrives
+  kubeTabStale = false;
+  renderKubeRefreshStatus();
   loadKubeTabData(currentKubeTab);
 }
 function refreshKubeCurrentTab() {
@@ -23779,7 +24373,9 @@ function loadKubeTabData(tab) {
 async function kubeFetchTab(url, key, heads, rowFn, cacheFn) {
   const content = document.getElementById('kubeTabContent');
   if (!content || !selectedKubeHostId) return;
-  content.innerHTML = `<div style="text-align:center;padding:30px;color:var(--text-muted);">${t('kube_loading')}</div>`;
+  // A background tick keeps the last table on screen; only an empty tab shows the loader.
+  if (!kubeTabHasData) content.innerHTML = SP.loading(t('kube_loading_resources', 'Loading resources...')) + SP.skeleton(6);
+  else { kubeTabRefreshBusy = true; renderKubeRefreshStatus(); }
   const ws = selectedKubeHostId, tab = currentKubeTab;
   const stale = () => ws !== selectedKubeHostId || tab !== currentKubeTab; // answer of another workspace or tab
   try {
@@ -23787,18 +24383,29 @@ async function kubeFetchTab(url, key, heads, rowFn, cacheFn) {
     const data = await res.json();
     if (stale()) return;
     handleKubeEnvelope(data);
-    if (!data.ok) { content.innerHTML = kubeEmptyHtml(t('error_prefix', 'Error: '), data.error || 'Failed to load', true); return; }
+    if (!data.ok) {
+      if (kubeTabHasData) { kubeTabStale = true; return; } // keep the last data, mark it stale
+      content.innerHTML = kubeEmptyHtml(t('error_prefix', 'Error: '), data.error || 'Failed to load', true);
+      return;
+    }
     const items = data[key] || [];
     if (cacheFn) cacheFn(items);
     if (key === 'nodes') kubeNodesCache = items;
     else if (key === 'workloads') kubeWorkloadsCache = items;
     else if (key === 'pods') kubePodsCache = items;
     else if (key === 'services') kubeServicesCache = items;
+    kubeTabHasData = true;
+    kubeTabStale = false;
     if (!rowFn) return;
     if (items.length === 0) { content.innerHTML = kubeEmptyHtml(t('kube_no_data', 'No items found'), ''); return; }
     content.innerHTML = dockerTableHtml(heads, items.map(rowFn).join(''));
   } catch(e) {
-    if (!stale()) content.innerHTML = kubeEmptyHtml(t('error_prefix', 'Error: '), e.message, true);
+    if (stale()) return;
+    if (kubeTabHasData) { kubeTabStale = true; return; } // keep the last data, mark it stale
+    content.innerHTML = kubeEmptyHtml(t('error_prefix', 'Error: '), e.message, true);
+  } finally {
+    kubeTabRefreshBusy = false;
+    renderKubeRefreshStatus();
   }
 }
 function loadKubeNodes() {
@@ -23942,7 +24549,9 @@ function loadKubeEvents() {
 async function loadKubeGenericResource(kind) {
   const content = document.getElementById('kubeTabContent');
   if (!content || !selectedKubeHostId) return;
-  content.innerHTML = `<div style="text-align:center;padding:30px;color:var(--text-muted);">${t('kube_loading')}</div>`;
+  // A background tick keeps the last table on screen; only an empty tab shows the loader.
+  if (!kubeTabHasData) content.innerHTML = SP.loading(t('kube_loading_resources', 'Loading resources...')) + SP.skeleton(6);
+  else { kubeTabRefreshBusy = true; renderKubeRefreshStatus(); }
   const isClusterScoped = (kind === 'pvs');
   const nsParam = isClusterScoped ? '' : encodeURIComponent(currentKubeNamespace);
   const url = `${kubeApiBase()}/resources?kind=${encodeURIComponent(kind)}&ns=${nsParam}`;
@@ -23954,9 +24563,12 @@ async function loadKubeGenericResource(kind) {
     if (stale()) return;
     handleKubeEnvelope(data);
     if (!data.ok) {
+      if (kubeTabHasData) { kubeTabStale = true; return; } // keep the last data, mark it stale
       content.innerHTML = kubeEmptyHtml(t('error_prefix', 'Error: '), data.error || 'Failed to load', true);
       return;
     }
+    kubeTabHasData = true;
+    kubeTabStale = false;
     kubeGenericCache[kind] = data;
     const columns = data.columns || [];
     const rows = data.rows || [];
@@ -23995,7 +24607,12 @@ async function loadKubeGenericResource(kind) {
 
     content.innerHTML = noteHtml + dockerTableHtml(heads, bodyHtml);
   } catch(e) {
-    if (!stale()) content.innerHTML = kubeEmptyHtml(t('error_prefix', 'Error: '), e.message, true);
+    if (stale()) return;
+    if (kubeTabHasData) { kubeTabStale = true; return; } // keep the last data, mark it stale
+    content.innerHTML = kubeEmptyHtml(t('error_prefix', 'Error: '), e.message, true);
+  } finally {
+    kubeTabRefreshBusy = false;
+    renderKubeRefreshStatus();
   }
 }
 function openKubeGenericMenu(e, kind, rowIdx) {
@@ -24074,8 +24691,12 @@ async function submitKubeDiff() {
   const btnDiff = document.getElementById('btnKubePreviewDiff');
   const btnApply = document.getElementById('btnKubeApplySubmit');
   const outEl = document.getElementById('kubeApplyOutput');
-  if (btnDiff) btnDiff.disabled = true;
-  showToast(t('kube_diffing', 'Running dry-run diff...'), 'info', 2000);
+  const restore = SP.busy(btnDiff, t('kube_diffing', 'Running dry-run diff...'));
+  if (outEl) {
+    outEl.style.display = 'block';
+    outEl.className = 'kube-apply-output';
+    outEl.innerHTML = SP.html(t('kube_diffing', 'Running dry-run diff...'));
+  }
   try {
     const res = await fetch(`${kubeApiBase()}/diff`, {
       method: 'POST',
@@ -24115,13 +24736,39 @@ async function submitKubeDiff() {
     }
   } catch(e) {
     showToast(t('error_prefix', 'Error: ') + e.message, 'error', 9000);
+    if (outEl) {
+      outEl.style.display = 'block';
+      outEl.className = 'kube-apply-output error';
+      outEl.textContent = 'Error: ' + e.message;
+    }
   } finally {
-    if (btnDiff) btnDiff.disabled = false;
+    restore();
   }
+}
+// Persistent "action running" line at the top of the kube views: spinner + text + live elapsed.
+// The returned done() removes it; always call it in a finally block.
+function kubeBusy(text) {
+  const host = document.getElementById('kubeViewsContainer');
+  if (!host) return function () {};
+  const el = document.createElement('div');
+  el.className = 'kube-busy-line';
+  el.setAttribute('role', 'status');
+  el.setAttribute('aria-live', 'polite');
+  el.style.cssText = 'display:flex;align-items:center;gap:6px;padding:8px 12px;margin-bottom:12px;border:1px solid var(--card-border);border-radius:var(--radius-sm, 6px);background:var(--surface-2, var(--bg));font-size:var(--fs-sm);';
+  el.innerHTML = SP.html(text, Date.now());
+  host.insertBefore(el, host.firstChild);
+  let done = false;
+  return function () {
+    if (done) return;
+    done = true;
+    if (el.parentNode) el.parentNode.removeChild(el);
+  };
 }
 async function kubeAction(payload, okMsg, refreshTab) {
   if (!selectedKubeHostId) return;
-  showToast(t('working', 'Working...'), 'info', 2000);
+  const done = kubeBusy(t('kube_action_running', 'Running {op} on {name}...')
+    .replace('{op}', payload.op || 'action')
+    .replace('{name}', payload.name || ''));
   try {
     const res = await fetch(`${kubeApiBase()}/action`, {
       method: 'POST',
@@ -24139,11 +24786,13 @@ async function kubeAction(payload, okMsg, refreshTab) {
     showToast(t('error_prefix', 'Error: ') + (data.error || 'Action failed'), 'error', 9000);
   } catch(e) {
     showToast(t('error_prefix', 'Error: ') + e.message, 'error', 9000);
+  } finally {
+    done();
   }
 }
 async function kubeGetOutput(url, title) {
   if (!selectedKubeHostId) return;
-  showToast(t('working', 'Working...'), 'info', 2000);
+  const done = kubeBusy(t('kube_output_running', 'Fetching {title}...').replace('{title}', title || ''));
   try {
     const res = await fetch(url);
     const data = await res.json();
@@ -24151,6 +24800,8 @@ async function kubeGetOutput(url, title) {
     if (data.ok) showDockerOutput(title, data.output || '(No output)');
   } catch(e) {
     showToast(t('error_prefix', 'Error: ') + e.message, 'error', 9000);
+  } finally {
+    done();
   }
 }
 async function submitKubeApply() {
@@ -24177,8 +24828,7 @@ async function submitKubeApply() {
   });
   if (!confirmed) return;
   const btn = document.getElementById('btnKubeApplySubmit');
-  if (btn) btn.disabled = true;
-  showToast(t('working', 'Working...'), 'info', 2000);
+  const restore = SP.busy(btn, t('kube_applying', 'Applying manifest...'));
   try {
     const res = await fetch(`${kubeApiBase()}/apply`, {
       method: 'POST',
@@ -24197,8 +24847,14 @@ async function submitKubeApply() {
     else showToast(t('error_prefix', 'Error: ') + (data.error || 'Apply failed'), 'error', 9000);
   } catch(e) {
     showToast(t('error_prefix', 'Error: ') + e.message, 'error', 9000);
+    const outEl = document.getElementById('kubeApplyOutput');
+    if (outEl) {
+      outEl.style.display = 'block';
+      outEl.className = 'kube-apply-output error';
+      outEl.textContent = 'Error: ' + e.message;
+    }
   } finally {
-    if (btn) btn.disabled = false;
+    restore();
   }
 }
 function openKubeNodeMenu(e, idx) {
@@ -24336,12 +24992,12 @@ async function submitKubeScale() {
     if (!confirmed) return;
   }
   const btn = document.getElementById('kubeScaleSubmitBtn');
-  if (btn) btn.disabled = true;
+  const restore = SP.busy(btn, t('kube_scaling', 'Scaling...'));
   try {
     const res = await kubeAction({ op: 'scale', kind: currentScaleTarget.kind.toLowerCase(), ns: currentScaleTarget.namespace, name: currentScaleTarget.name, replicas }, null, 'workloads');
     if (res && res.ok) closeModal('kubeScaleModal');
   } finally {
-    if (btn) btn.disabled = false;
+    restore();
   }
 }
 async function kubeDeletePod(pod) {
@@ -24362,10 +25018,6 @@ async function kubeDeletePod(pod) {
 }
 function kubeDescribe(kind, ns, name) {
   kubeGetOutput(`${kubeApiBase()}/describe?kind=${encodeURIComponent(kind)}&ns=${encodeURIComponent(ns || '')}&name=${encodeURIComponent(name)}`, t('kube_describe', 'Describe') + ': ' + kind + '/' + name);
-}
-function kubePodLogs(pod) {
-  const container = (pod.containers && pod.containers.length > 0) ? pod.containers[0] : '';
-  kubeGetOutput(`${kubeApiBase()}/logs?ns=${encodeURIComponent(pod.namespace)}&pod=${encodeURIComponent(pod.name)}&container=${encodeURIComponent(container)}&tail=200`, t('kube_logs', 'Pod Logs') + ': ' + pod.name + (container ? ` (${container})` : ''));
 }
 let kubeContainerChoiceCallback = null;
 function promptKubeContainer(pod, title, onSelected) {
@@ -24395,7 +25047,7 @@ function submitKubeContainerChoice() {
 }
 async function kubePodExec(pod, container) {
   if (!selectedKubeHostId) return;
-  showToast(t('working', 'Working...'), 'info', 1500);
+  const done = kubeBusy(t('kube_exec_running', 'Opening exec console on {name}...').replace('{name}', pod.name));
   try {
     const res = await fetch(`${kubeApiBase()}/exec-cmd?ns=${encodeURIComponent(pod.namespace)}&pod=${encodeURIComponent(pod.name)}&container=${encodeURIComponent(container || '')}`);
     const data = await res.json();
@@ -24417,6 +25069,8 @@ async function kubePodExec(pod, container) {
     showToast(t('dk_console_timeout', 'Terminal connection timed out'), 'warning');
   } catch(e) {
     showToast(t('error_prefix', 'Error: ') + e.message, 'error', 8000);
+  } finally {
+    done();
   }
 }
 let kubeLogsSocket = null, currentKubeLogsPod = null, currentKubeLogsContainer = null, currentKubeLogsWorkload = null;
@@ -24598,7 +25252,13 @@ function openKubeYamlEditor(kind, ns, name) {
   if (isRo) document.getElementById('kubeYamlRoNoteText').textContent = t('kube_yaml_ro_note', 'Read-only mode: viewing is allowed but Apply is disabled.');
   const out = document.getElementById('kubeYamlOutput');
   out.style.display = 'none'; out.textContent = ''; out.className = 'kube-apply-output';
-  document.getElementById('btnKubeYamlPreviewDiff').disabled = false;
+  const loading = document.getElementById('kubeYamlLoading');
+  const editorWrap = document.getElementById('kubeYamlEditorWrap');
+  loading.style.display = 'block';
+  loading.innerHTML = SP.loading(t('kube_yaml_loading', 'Loading YAML...'));
+  editorWrap.style.display = 'none';
+  const btnDiff = document.getElementById('btnKubeYamlPreviewDiff');
+  btnDiff.disabled = true;
   const btnApply = document.getElementById('btnKubeYamlApply');
   btnApply.disabled = true;
   btnApply.title = isRo ? t('kube_mode_blocked_ro', 'Disabled in Read-Only mode') : t('kube_apply_locked_hint', 'Run Preview Diff first');
@@ -24607,6 +25267,9 @@ function openKubeYamlEditor(kind, ns, name) {
     .then(r => r.json()).then(data => {
       handleKubeEnvelope(data);
       if (!data.ok) { showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to load YAML'), 'error', 9000); closeModal('kubeYamlModal'); return; }
+      loading.style.display = 'none';
+      editorWrap.style.display = '';
+      btnDiff.disabled = false;
       initKubeYamlEditor(data.yaml || '');
     })
     .catch(e => { showToast(t('error_prefix', 'Error: ') + e.message, 'error', 9000); closeModal('kubeYamlModal'); });
@@ -24635,11 +25298,10 @@ async function submitKubeYamlDiff() {
   if (!yaml) { showToast(t('kube_apply_empty', 'Please enter a YAML manifest'), 'warning'); return; }
   const btnDiff = document.getElementById('btnKubeYamlPreviewDiff');
   const out = document.getElementById('kubeYamlOutput');
-  btnDiff.disabled = true;
+  const restore = SP.busy(btnDiff, t('kube_diffing', 'Running dry-run diff...'));
   out.style.display = 'block';
   out.className = 'kube-apply-output';
-  out.textContent = t('kube_diffing', 'Running dry-run diff...');
-  showToast(t('working', 'Working...'), 'info', 2000);
+  out.innerHTML = SP.html(t('kube_diffing', 'Running dry-run diff...'));
   try {
     const res = await fetch(`${kubeApiBase()}/diff`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yaml }) });
     const data = await res.json();
@@ -24658,7 +25320,7 @@ async function submitKubeYamlDiff() {
     out.className = 'kube-apply-output error';
     kubeYamlLastDiffed = null;
   } finally {
-    btnDiff.disabled = false;
+    restore();
     onKubeYamlEditorInput();
   }
 }
@@ -24681,8 +25343,8 @@ async function submitKubeYamlApply() {
   });
   if (!confirmed) return;
   const btn = document.getElementById('btnKubeYamlApply');
-  btn.disabled = true;
-  showToast(t('working', 'Working...'), 'info', 2000);
+  const out = document.getElementById('kubeYamlOutput');
+  const restore = SP.busy(btn, t('kube_applying', 'Applying manifest...'));
   try {
     const res = await fetch(`${kubeApiBase()}/apply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yaml }) });
     const data = await res.json();
@@ -24702,7 +25364,11 @@ async function submitKubeYamlApply() {
     }
   } catch(e) {
     showToast(t('error_prefix', 'Error: ') + e.message, 'error', 9000);
+    out.style.display = 'block';
+    out.className = 'kube-apply-output error';
+    out.textContent = 'Error: ' + e.message;
   } finally {
+    restore();
     onKubeYamlEditorInput();
   }
 }
@@ -24780,7 +25446,8 @@ function openKubeDrain(nodeName) {
   if (isRo) { showToast(t('kube_mode_blocked_ro', 'Disabled in Read-Only mode'), 'warning'); return; }
   kubeDrainTarget = nodeName;
   kubeDrainPreviewData = null;
-  document.getElementById('kubeDrainSummary').textContent = t('kube_drain_previewing', 'Running drain preview (dry-run)...');
+  const summary = document.getElementById('kubeDrainSummary');
+  summary.innerHTML = SP.loading(t('kube_drain_previewing', 'Running drain preview (dry-run)...'));
   const podsEl = document.getElementById('kubeDrainPods');
   podsEl.style.display = 'none'; podsEl.textContent = '';
   const note = document.getElementById('kubeDrainBlockedNote');
@@ -24790,15 +25457,14 @@ function openKubeDrain(nodeName) {
   document.getElementById('kubeDrainFlagEmptyDir').checked = false;
   document.getElementById('kubeDrainFlagForce').checked = false;
   openModal('kubeDrainModal');
-  showToast(t('working', 'Working...'), 'info', 2000);
   fetch(`${kubeApiBase()}/drain-preview`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: nodeName }) })
     .then(r => r.json()).then(data => {
       handleKubeEnvelope(data);
-      if (!data.ok) { document.getElementById('kubeDrainSummary').textContent = t('error_prefix', 'Error: ') + (data.error || 'Failed to load preview'); return; }
+      if (!data.ok) { summary.textContent = t('error_prefix', 'Error: ') + (data.error || 'Failed to load preview'); return; }
       kubeDrainPreviewData = data;
       renderKubeDrainPreview();
     })
-    .catch(e => { document.getElementById('kubeDrainSummary').textContent = t('error_prefix', 'Error: ') + e.message; });
+    .catch(e => { summary.textContent = t('error_prefix', 'Error: ') + e.message; });
 }
 function renderKubeDrainPreview() {
   const d = kubeDrainPreviewData;
@@ -24844,10 +25510,14 @@ async function confirmKubeDrain() {
     confirmText: t('kube_drain', 'Drain')
   });
   if (!confirmed) return;
+  const btn = document.getElementById('btnKubeDrainConfirm');
+  const restore = SP.busy(btn, t('kube_drain_starting', 'Starting drain...'));
   closeModal('kubeDrainModal');
-  showToast(t('kube_drain_started', 'Drain started; this can take minutes...'), 'info', 5000);
+  const done = kubeBusy(t('kube_drain_running', 'Draining node {name}... this can take minutes').replace('{name}', nodeName));
   try {
     const res = await fetch(`${kubeApiBase()}/action`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ op: 'drain', kind: 'node', ns: '', name: nodeName, ignoreDaemonsets: ignoreDS, deleteEmptyDirData: emptyDir, force })
     });
     const data = await res.json();
@@ -24864,6 +25534,9 @@ async function confirmKubeDrain() {
     loadKubeTabData('nodes');
   } catch(e) {
     showToast(t('error_prefix', 'Error: ') + e.message, 'error', 9000);
+  } finally {
+    done();
+    restore();
   }
 }
 function showToastDrainUncordon(nodeName, msg, type) {
@@ -24972,7 +25645,7 @@ async function loadKubeClusterContexts() {
   setKubeClusterError('');
   const btn = document.getElementById('btnKubeClusterLoadContexts');
   const origBtnHtml = btn ? btn.innerHTML : '';
-  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = svgIcon('refresh-cw', 'icon-xs') + SP.html(t('kube_ext_loading_contexts', 'Loading contexts...')); }
   try {
     const res = await fetch('/api/kube/clusters/contexts', {
       method: 'POST',
@@ -25024,7 +25697,6 @@ async function submitKubeClusterModal() {
   const nameInput = document.getElementById('kubeClusterName');
   const modeSel = document.getElementById('kubeClusterMode');
   const submitBtn = document.getElementById('btnKubeClusterSubmit');
-  const submitText = document.getElementById('btnKubeClusterSubmitText');
 
   const kubeconfig = (configArea ? configArea.value : '').trim();
   const name = (nameInput ? nameInput.value : '').trim();
@@ -25049,9 +25721,7 @@ async function submitKubeClusterModal() {
     }
   }
 
-  const origBtnText = submitText ? submitText.textContent : '';
-  if (submitBtn) submitBtn.disabled = true;
-  if (submitText) submitText.textContent = kubeClusterModalMode === 'add' ? t('kube_ext_verifying', 'Verifying...') : t('kube_ext_saving', 'Saving...');
+  const restore = SP.busy(submitBtn, kubeClusterModalMode === 'add' ? t('kube_ext_verifying', 'Verifying...') : t('kube_ext_saving', 'Saving...'));
 
   try {
     let url = '/api/kube/clusters';
@@ -25094,8 +25764,7 @@ async function submitKubeClusterModal() {
   } catch (e) {
     setKubeClusterError(e.message);
   } finally {
-    if (submitBtn) submitBtn.disabled = false;
-    if (submitText) submitText.textContent = origBtnText;
+    restore();
   }
 }
 
@@ -25444,6 +26113,8 @@ async function openHostPackageUpgradePreview(hostId) {
 
   const loadingEl = document.getElementById('pkgUpgradePreviewLoading');
   const contentEl = document.getElementById('pkgUpgradePreviewContent');
+  // The preview can take a while on a host with many packages: show the elapsed time.
+  if (loadingEl) loadingEl.innerHTML = SP.html(t('loading', 'Loading...'));
   if (loadingEl) loadingEl.style.display = 'block';
   if (contentEl) contentEl.style.display = 'none';
 
@@ -25727,7 +26398,7 @@ async function loadCfZones(accId) {
   const grid = document.getElementById('cfZonesGrid');
   const empty = document.getElementById('cfZonesEmpty');
   const countBadge = document.getElementById('cfZoneCountBadge');
-  if (grid) grid.innerHTML = `<div style="grid-column:1/-1;padding:24px;text-align:center;color:var(--text-muted);">${t('loading', 'Loading...')}</div>`;
+  if (grid) grid.innerHTML = `<div style="grid-column:1/-1;">${SP.loading(t('loading', 'Loading...'))}</div>`;
   try {
     const res = await fetch(`/api/cloudflare/accounts/${accId}/zones`);
     const data = await res.json();
@@ -25838,7 +26509,6 @@ async function submitCfAccountModal() {
   const apiToken = (document.getElementById('cfAccountToken')?.value || '').trim();
   const errEl = document.getElementById('cfAccountError');
   const submitBtn = document.getElementById('btnCfAccountSubmit');
-  const submitText = document.getElementById('btnCfAccountSubmitText');
   const setError = (msg) => {
     if (!errEl) return;
     errEl.textContent = msg;
@@ -25857,8 +26527,7 @@ async function submitCfAccountModal() {
   if (accountId) payload.account_id = accountId;
   if (apiToken) payload.api_token = apiToken;
 
-  if (submitBtn) submitBtn.disabled = true;
-  if (submitText) submitText.textContent = t('working', 'Working...');
+  const restore = SP.busy(submitBtn, t('working', 'Working...'));
   try {
     const url = cfAccountModalMode === 'edit' ? `/api/cloudflare/accounts/${cfAccountEditId}` : '/api/cloudflare/accounts';
     const method = cfAccountModalMode === 'edit' ? 'PUT' : 'POST';
@@ -25885,12 +26554,11 @@ async function submitCfAccountModal() {
   } catch (e) {
     setError(e.message || 'Network error');
   } finally {
-    if (submitBtn) submitBtn.disabled = false;
-    if (submitText) submitText.textContent = t('cf_btn_save', 'Verify & Save');
+    restore();
   }
 }
 
-async function deleteCfAccount(accId) {
+async function deleteCfAccount(accId, btn) {
   if (!accId) return;
   const acc = cfAccounts.find(a => Number(a.id) === Number(accId));
   const accName = acc ? acc.name : `#${accId}`;
@@ -25901,9 +26569,10 @@ async function deleteCfAccount(accId) {
     danger: true
   });
   if (!confirmed) return;
+  const restore = SP.busy(btn, t('cf_deleting_record', 'Deleting...'));
   try {
     const res = await fetch(`/api/cloudflare/accounts/${accId}`, { method: 'DELETE' });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) {
       showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to delete account'), 'error');
       return;
@@ -25913,6 +26582,8 @@ async function deleteCfAccount(accId) {
     await loadCfAccounts();
   } catch (e) {
     showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+  } finally {
+    restore();
   }
 }
 
@@ -25993,7 +26664,7 @@ function renderCfDnsTable() {
     const ttlStr = r.ttl === 1 ? t('cf_ttl_auto', 'Auto') : (r.ttl >= 3600 ? `${r.ttl / 3600}h` : `${r.ttl}s`);
     const isProxied = r.proxied === true;
     const proxyBadge = r.proxiable
-      ? `<button type="button" class="badge ${isProxied ? 'badge-warning' : 'badge-info'}" style="cursor:pointer;border:none;outline:none;" onclick="toggleCfRecordProxied(${jsArg(r.id)})" title="Click to toggle proxy">
+      ? `<button type="button" class="badge ${isProxied ? 'badge-warning' : 'badge-info'}" style="cursor:pointer;border:none;outline:none;" onclick="toggleCfRecordProxied(${jsArg(r.id)}, this)" title="Click to toggle proxy">
           ${svgIcon('cloud', 'icon-xs')} <span>${isProxied ? t('cf_proxied_badge', 'Proxied') : t('cf_dns_only_badge', 'DNS only')}</span>
         </button>`
       : `<span class="badge" style="background:var(--surface-2);color:var(--text-muted);border:1px solid var(--card-border);">${t('cf_dns_only_badge', 'DNS only')}</span>`;
@@ -26006,13 +26677,13 @@ function renderCfDnsTable() {
       <td style="font-size:var(--fs-xs);color:var(--text-muted);">${escapeHtml(r.comment || '-')}</td>
       <td style="text-align:right;white-space:nowrap;">
         <button type="button" class="btn btn-sm btn-ghost btn-icon" title="Edit" onclick="openCfRecordModal(${jsArg(r.id)})">${svgIcon('pencil', 'icon-sm')}</button>
-        <button type="button" class="btn btn-sm btn-ghost btn-icon text-danger" title="Delete" onclick="deleteCfRecord(${jsArg(r.id)})">${svgIcon('trash-2', 'icon-sm')}</button>
+        <button type="button" class="btn btn-sm btn-ghost btn-icon text-danger" title="Delete" onclick="deleteCfRecord(${jsArg(r.id)}, this)">${svgIcon('trash-2', 'icon-sm')}</button>
       </td>
     </tr>`;
   }).join('');
 }
 
-async function toggleCfRecordProxied(recordId) {
+async function toggleCfRecordProxied(recordId, btn) {
   if (!selectedCfAccountId || !currentCfZone) return;
   const rec = cfDnsRecords.find(r => r.id === recordId);
   if (!rec || !rec.proxiable) return;
@@ -26026,13 +26697,14 @@ async function toggleCfRecordProxied(recordId) {
   };
   if (rec.priority !== undefined && rec.priority !== null) payload.priority = rec.priority;
   if (rec.comment) payload.comment = rec.comment;
+  const restore = SP.busy(btn, t('cf_saving_record', 'Saving...'));
   try {
     const res = await fetch(`/api/cloudflare/accounts/${selectedCfAccountId}/zones/${currentCfZone.id}/dns/${recordId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to update record'), 'error');
       return;
@@ -26041,6 +26713,8 @@ async function toggleCfRecordProxied(recordId) {
     await loadCfDnsRecords();
   } catch (e) {
     showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+  } finally {
+    restore();
   }
 }
 
@@ -26132,7 +26806,7 @@ async function submitCfRecordModal() {
   }
   if (comment) payload.comment = comment;
 
-  if (submitBtn) submitBtn.disabled = true;
+  const restore = SP.busy(submitBtn, t('working', 'Working...'));
   try {
     const url = cfRecordModalMode === 'edit'
       ? `/api/cloudflare/accounts/${selectedCfAccountId}/zones/${currentCfZone.id}/dns/${cfRecordEditId}`
@@ -26143,7 +26817,7 @@ async function submitCfRecordModal() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       setError(data.error || 'Server error');
       return;
@@ -26154,11 +26828,11 @@ async function submitCfRecordModal() {
   } catch (e) {
     setError(e.message || 'Network error');
   } finally {
-    if (submitBtn) submitBtn.disabled = false;
+    restore();
   }
 }
 
-async function deleteCfRecord(recordId) {
+async function deleteCfRecord(recordId, btn) {
   if (!selectedCfAccountId || !currentCfZone) return;
   const rec = cfDnsRecords.find(r => r.id === recordId);
   const rName = rec ? `${rec.type} ${rec.name}` : `#${recordId}`;
@@ -26169,9 +26843,10 @@ async function deleteCfRecord(recordId) {
     danger: true
   });
   if (!confirmed) return;
+  const restore = SP.busy(btn, t('cf_deleting_record', 'Deleting...'));
   try {
     const res = await fetch(`/api/cloudflare/accounts/${selectedCfAccountId}/zones/${currentCfZone.id}/dns/${recordId}`, { method: 'DELETE' });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) {
       showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to delete record'), 'error');
       return;
@@ -26180,6 +26855,8 @@ async function deleteCfRecord(recordId) {
     await loadCfDnsRecords();
   } catch (e) {
     showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+  } finally {
+    restore();
   }
 }
 
@@ -26193,14 +26870,14 @@ async function submitCfPurgeEverything() {
   });
   if (!confirmed) return;
   const btn = document.getElementById('btnCfPurgeEverything');
-  if (btn) btn.disabled = true;
+  const restore = SP.busy(btn, t('cf_purging', 'Purging...'));
   try {
     const res = await fetch(`/api/cloudflare/accounts/${selectedCfAccountId}/zones/${currentCfZone.id}/purge`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ purge_everything: true })
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) {
       showToast(t('error_prefix', 'Error: ') + (data.error || 'Purge failed'), 'error');
       return;
@@ -26209,7 +26886,7 @@ async function submitCfPurgeEverything() {
   } catch (e) {
     showToast(t('error_prefix', 'Error: ') + e.message, 'error');
   } finally {
-    if (btn) btn.disabled = false;
+    restore();
   }
 }
 
@@ -26230,14 +26907,14 @@ async function submitCfPurgeUrls() {
     return;
   }
   const btn = document.getElementById('btnCfPurgeUrls');
-  if (btn) btn.disabled = true;
+  const restore = SP.busy(btn, t('cf_purging', 'Purging...'));
   try {
     const res = await fetch(`/api/cloudflare/accounts/${selectedCfAccountId}/zones/${currentCfZone.id}/purge`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ files })
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) {
       showToast(t('error_prefix', 'Error: ') + (data.error || 'Purge failed'), 'error');
       return;
@@ -26248,7 +26925,7 @@ async function submitCfPurgeUrls() {
   } catch (e) {
     showToast(t('error_prefix', 'Error: ') + e.message, 'error');
   } finally {
-    if (btn) btn.disabled = false;
+    restore();
   }
 }
 
@@ -26333,14 +27010,24 @@ function renderCfZoneSettings() {
 
 async function updateCfZoneSetting(settingId, nextValue, el) {
   if (!selectedCfAccountId || !currentCfZone) return;
-  if (el) el.disabled = true;
+  const ctl = el || null;
+  let spinner = null;
+  if (ctl) {
+    ctl.disabled = true;
+    spinner = document.createElement('span');
+    spinner.className = 'spinner';
+    spinner.style.display = 'inline-block';
+    spinner.style.marginLeft = '6px';
+    spinner.innerHTML = svgIcon('loader-circle', 'icon-sm');
+    if (ctl.parentElement) ctl.parentElement.appendChild(spinner);
+  }
   try {
     const res = await fetch(`/api/cloudflare/accounts/${selectedCfAccountId}/zones/${currentCfZone.id}/settings`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: settingId, value: nextValue })
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to update setting'), 'error');
       await loadCfZoneSettings();
@@ -26353,6 +27040,9 @@ async function updateCfZoneSetting(settingId, nextValue, el) {
   } catch (e) {
     showToast(t('error_prefix', 'Error: ') + e.message, 'error');
     await loadCfZoneSettings();
+  } finally {
+    if (spinner && spinner.parentElement) spinner.parentElement.removeChild(spinner);
+    if (ctl) ctl.disabled = false;
   }
 }
 
@@ -26382,6 +27072,10 @@ const TF_TXT = {
   tfx_per_month: ['/month', '/bulan'],
   tfx_comment_required: ['A comment of at least 3 characters is required', 'Komentar minimal 3 karakter wajib diisi'],
   tfx_apply_ok: ['Apply started', 'Apply dimulai'],
+  tfx_applying: ['Applying (security scan runs first, up to 3 min)…', 'Menerapkan (pemindaian keamanan jalan lebih dulu, maks 3 mnt)…'],
+  tfx_poll_failed: ['Lost contact with the server while polling the run log; the run may still be active.', 'Koneksi ke server terputus saat mengambil log run; run mungkin masih berjalan.'],
+  tfx_vcs_testing: ['Testing VCS connection…', 'Menguji koneksi VCS…'],
+  tfx_saving_module: ['Saving (git clone may take a while)…', 'Menyimpan (git clone bisa memakan waktu lama)…'],
   tfx_discard_ok: ['Run discarded', 'Run dibatalkan (discard)'],
   tfx_discard_confirm: ['Discard this run? The saved plan will be deleted.', 'Discard run ini? Plan tersimpan akan dihapus.'],
   tfx_decision: ['Decision', 'Keputusan'],
@@ -26537,12 +27231,15 @@ let tfStatus = null;
 let tfWorkspaces = [];
 let tfCurrentTab = 'workspaces';
 let tfWsViewMode = localStorage.getItem('pantau_tf_view') === 'list' ? 'list' : 'grid';
+let tfApplyBusy = false;
 let tfWs = null;
 let tfWsTab = 'overview';
 let tfRunId = 0;
 let tfRunTimer = null;
 let tfLogOffset = 0;
 let tfLogText = '';
+let tfPollFails = 0;
+const TF_POLL_MAX_FAILS = 5;
 let tfVars = [];
 let tfVarScope = null;
 let tfPolicies = [];
@@ -27168,6 +27865,8 @@ async function tfRenderOverview(body) {
         <button type="button" class="btn btn-sm btn-primary" onclick="openTfRunDialog('plan')">${svgIcon('play', 'icon-xs')} ${tfE(t('tf_run_type_plan', 'Plan'))}</button>
         <button type="button" class="btn btn-sm" onclick="openTfRunDialog('refresh')">${svgIcon('refresh-cw', 'icon-xs')} ${tfE(t('tf_run_type_refresh', 'Refresh-only'))}</button>
         <button type="button" class="btn btn-sm btn-danger" onclick="openTfRunDialog('destroy')">${svgIcon('trash-2', 'icon-xs')} ${tfE(t('tf_run_type_destroy', 'Destroy'))}</button>
+        ${window.IacScan ? window.IacScan.btnHtml('terraform', w.id) : ''}
+        <span id="tfIacChip"></span>
       </div></div>
     <div class="card tf-ov-card"><div class="card-title"><span>${tfE(tx('tfx_outputs'))}</span>
       <button type="button" class="btn btn-sm" id="tfOutRevealBtn" onclick="tfToggleReveal()">${svgIcon('eye', 'icon-xs')} ${tfE(t('tf_reveal_sensitive', 'Reveal Sensitive'))}</button></div>
@@ -27179,6 +27878,11 @@ async function tfRenderOverview(body) {
   if (recent) {
     const runs = await tfLoadRunList();
     recent.innerHTML = runs.slice(0, 5).map(x => `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--card-border);font-size:var(--fs-xs);"><span><b>#${x.id}</b> ${tfE(x.type)}</span><span>${tfBadge(x.status)} <span style="color:var(--text-muted);">${tfE(tfTime(x.finished_at || x.created_at))}</span></span></div>`).join('') || tfEmpty(tx('tfx_no_runs'));
+  }
+  if (window.IacScan) {
+    const scan = await window.IacScan.latest('terraform', w.id);
+    const chip = tfEl('tfIacChip');
+    if (chip) chip.innerHTML = scan ? window.IacScan.chipHtml('terraform', w.id, { summary: scan.summary }) : '';
   }
 }
 async function tfLoadOutputs() {
@@ -27304,7 +28008,18 @@ async function tfOpenRunFinal(id) {
 }
 async function tfPollLog() {
   const r = await tfApi('GET', `/api/terraform/runs/${tfRunId}/log?offset=${tfLogOffset}`);
-  if (!r.ok) return true;
+  if (!r.ok) {
+    // A transient poll failure is not the end of the run: keep polling and only give up after several
+    // consecutive failures, so a short network hiccup never stops the log of a running plan/apply.
+    tfPollFails++;
+    if (tfPollFails <= TF_POLL_MAX_FAILS) return false;
+    tfLogText += '\n' + tx('tfx_poll_failed') + '\n';
+    const pre = tfEl('tfRunLog');
+    if (pre) pre.textContent = tfLogText;
+    showToast(tx('tfx_poll_failed'), 'error');
+    return true;
+  }
+  tfPollFails = 0;
   if (r.data.log) {
     tfLogText += r.data.log;
     const pre = tfEl('tfRunLog');
@@ -27371,17 +28086,21 @@ function tfRenderRun(run) {
   const changes = run.type === 'drift' ? (run.drift || []) : (plan.changes || []);
   const needDecision = run.status === 'awaiting_approval';
   const warn = run.policy && run.policy.status === 'warning';
+  // While the run is pending/running the status badge gets a spinner and a live elapsed counter.
+  // The counter starts at the run start (falling back to creation) and disappears when the run finishes.
+  const runT0 = run.started_at ? new Date(run.started_at).getTime() : (run.created_at ? new Date(run.created_at).getTime() : 0);
+  const elapsed = active && runT0 ? `<span class="badge" style="display:inline-flex;align-items:center;gap:4px;" role="status">${svgIcon('loader-circle', 'icon-xs')}<span data-sp-t0="${runT0}" style="font-variant-numeric:tabular-nums;">0s</span></span>` : '';
   const gate = needDecision ? `<div class="card" style="border-left:4px solid var(--primary);gap:8px;">
       <div class="card-title"><span>${svgIcon('shield-alert', 'icon-sm')} ${tfE(t('tf_approval_title', 'Approval Gate'))}</span></div>
       <textarea id="tfApprComment" class="form-input" rows="2" style="width:100%;box-sizing:border-box;" placeholder="${tfE(t('tf_approval_comment_ph', ''))}"></textarea>
       ${warn ? tfCheck('tfApprOverride', t('tf_approval_override_policy', 'Override policy warnings'), false) : ''}
       <div id="tfApprErr" role="alert" style="display:none;color:var(--danger);font-size:var(--fs-xs);"></div>
-      <div class="tf-act-row"><button type="button" class="btn btn-sm btn-primary" onclick="tfApplyRun(${run.id})">${svgIcon('check', 'icon-xs')} ${tfE(t('tf_btn_confirm_apply', 'Confirm & Apply'))}</button>
+      <div class="tf-act-row"><button type="button" id="tfApprApply" class="btn btn-sm btn-primary" onclick="tfApplyRun(${run.id})">${svgIcon('check', 'icon-xs')} ${tfE(t('tf_btn_confirm_apply', 'Confirm & Apply'))}</button>
       <button type="button" class="btn btn-sm btn-danger" onclick="tfDiscardRun(${run.id})">${svgIcon('x', 'icon-xs')} ${tfE(t('tf_btn_discard_run', 'Discard Run'))}</button></div></div>` : '';
   const decided = run.decision ? `<div class="card" style="gap:4px;font-size:var(--fs-xs);"><b>${tfE(tx('tfx_decision'))}: ${tfE(run.decision)}</b><span>${tfE(run.decision_comment || '')}</span></div>` : '';
   box.innerHTML = `<div class="card" style="gap:8px;">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
-        <div style="display:flex;gap:8px;align-items:center;"><b style="font-size:var(--fs-md);">${tfE(tx('tfx_run_n', { n: run.id }))}</b>${tfBadge(run.status)}<span class="badge">${tfE(run.type)}${run.speculative ? ' · speculative' : ''}</span></div>
+        <div style="display:flex;gap:8px;align-items:center;"><b style="font-size:var(--fs-md);">${tfE(tx('tfx_run_n', { n: run.id }))}</b>${tfBadge(run.status)}${elapsed}<span class="badge">${tfE(run.type)}${run.speculative ? ' · speculative' : ''}</span></div>
         ${active ? `<button type="button" class="btn btn-sm btn-danger" onclick="tfCancelRun(${run.id})">${svgIcon('square', 'icon-xs')} ${tfE(t('tf_btn_cancel_run', 'Cancel Run'))}</button>` : ''}</div>
       <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:var(--fs-xs);">
         <span style="color:var(--text-muted);">${tfE(tx('tfx_trigger'))}</span><span>${tfE(run.trigger_kind)}</span>
@@ -27400,12 +28119,31 @@ function tfRenderRun(run) {
   const pre = tfEl('tfRunLog');
   if (pre) pre.textContent = tfLogText;
 }
-async function tfApplyRun(id) {
+async function tfApplyRun(id, force) {
+  if (tfApplyBusy) return; // the gate scan can take minutes: no double apply
   const comment = tfV('tfApprComment').trim();
   const err = tfEl('tfApprErr');
-  if (comment.length < 3) { err.textContent = tx('tfx_comment_required'); err.style.display = 'block'; return; }
-  const r = await tfApi('POST', `/api/terraform/runs/${id}/apply`, { comment, override_policy: tfChk('tfApprOverride') });
-  if (!r.ok) { err.textContent = r.data.error || 'Error'; err.style.display = 'block'; return; }
+  const showErr = (m) => { if (err) { err.textContent = m; err.style.display = 'block'; } };
+  if (comment.length < 3) { showErr(tx('tfx_comment_required')); return; }
+  const btn = tfEl('tfApprApply');
+  const restore = SP.busy(btn, tx('tfx_applying'));
+  tfApplyBusy = true;
+  let r;
+  try {
+    r = await tfApi('POST', `/api/terraform/runs/${id}/apply`, { comment, override_policy: tfChk('tfApprOverride'), ignore_iac_gate: !!force });
+  } finally {
+    // The spinner must stop on success, on an HTTP error and on a network failure alike.
+    tfApplyBusy = false;
+    restore();
+  }
+  if (!r.ok) {
+    if (r.status === 409 && r.data.findings_summary && window.IacScan) {
+      window.IacScan.gateBlocked(r.data.findings_summary, () => tfApplyRun(id, true));
+      return;
+    }
+    showErr(r.data.error || 'Error');
+    return;
+  }
   showToast(tx('tfx_apply_ok'), 'success');
   await tfOpenRun(id);
   tfReloadWs();
@@ -27721,11 +28459,20 @@ async function tfCheckDrift() {
 
 /* ---------- settings / VCS ---------- */
 function tfWebhookURL(w) { return w.webhook_url ? location.origin + w.webhook_url : ''; }
-async function tfVcsTest() {
+async function tfVcsTest(btn) {
+  if (btn && !(btn instanceof HTMLElement)) btn = null; // a click event was passed instead of the button
   const out = tfEl('tfVcsResult');
-  out.textContent = '…';
-  const r = await tfApi('POST', `/api/terraform/workspaces/${tfWs.id}/vcs/test`);
-  const d = r.data;
+  if (!out) return;
+  const restore = SP.busy(btn, tx('tfx_vcs_testing'));
+  out.style.color = '';
+  out.innerHTML = SP.html(tx('tfx_vcs_testing'));
+  let r;
+  try {
+    r = await tfApi('POST', `/api/terraform/workspaces/${tfWs.id}/vcs/test`);
+  } finally {
+    restore();
+  }
+  const d = r.data || {};
   const ok = r.ok && d.ok;
   out.style.color = ok ? 'var(--success)' : 'var(--danger)';
   out.textContent = ok ? `${tx('tfx_vcs_ok')} · ${d.branch || ''} ${(d.commit || '').slice(0, 10)}` : (d.error || 'failed');
@@ -27961,7 +28708,14 @@ async function saveTfVersion(id) {
     const files = tfFeCollect();
     body.files = Object.fromEntries(Object.entries(files).filter(([, c]) => c !== ''));
   }
-  const r = await tfApi('POST', `/api/terraform/modules/${id}/versions`, body);
+  const btn = document.querySelector('#tfDlg2Footer .btn-primary');
+  const restore = SP.busy(btn, tx('tfx_saving_module'));
+  let r;
+  try {
+    r = await tfApi('POST', `/api/terraform/modules/${id}/versions`, body);
+  } finally {
+    restore();
+  }
   if (!r.ok) { tfDlgErr(2, r.data.error || 'Error'); return; }
   tfDlgClose(2);
   showToast(tx('tfx_saved'), 'success');
@@ -28000,8 +28754,13 @@ langRerenderHooks.push(renderTfWorkspaces, tfRenderWsHead, () => {
 <script src="/app/repos.js"></script>
 <script src="/app/ansible.js"></script>
 <script src="/app/firewall.js"></script>
+<script src="/app/scanprogress.js"></script>
+<script src="/app/dockerprogress.js"></script>
 <script src="/app/dockerhub.js"></script>
 <script src="/app/vulnintel.js"></script>
+<script src="/app/osvvulns.js"></script>
+<script src="/app/dockersec.js"></script>
+<script src="/app/accounts.js"></script>
 <script src="/app/palette.js"></script>
 <script src="/app/portfwd.js"></script>
 <script src="/app/fleetsearch.js"></script>
@@ -28010,5 +28769,7 @@ langRerenderHooks.push(renderTfWorkspaces, tfRenderWsHead, () => {
 <script src="/app/shortcuts.js"></script>
 <script src="/app/dbbackup.js"></script>
 <script src="/app/agent.js"></script>
+<script src="/app/iacscan.js"></script>
+<script src="/app/fim.js"></script>
 </body>
 </html>

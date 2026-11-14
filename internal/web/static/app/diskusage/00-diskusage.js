@@ -6,7 +6,7 @@
   'use strict';
 
   const DiskUsage = (window.DiskUsage = {});
-  const S = { hostId: 0, path: '/', loading: false, error: '', data: null };
+  const S = { hostId: 0, path: '/', loading: false, error: '', busy: false, data: null, t0: 0 };
 
   const esc = (s) => escapeHtml(String(s === null || s === undefined ? '' : s));
   const icon = (n, cls) => svgIcon(n, cls || 'icon-sm');
@@ -102,7 +102,13 @@
 
   /* ---------- rendering ---------- */
   function loadingHtml() {
-    return `<div class="du-loading"><span class="spinner">${icon('loader-circle', 'icon-sm')}</span><span>${esc(t('du_loading'))}</span></div>`;
+    // SP.html adds the rotating icon and the live elapsed counter, so a slow du scan looks alive.
+    return `<div class="du-loading">${window.SP ? SP.html(t('du_loading'), S.t0) : `<span class="spinner">${icon('loader-circle', 'icon-sm')}</span><span>${esc(t('du_loading'))}</span>`}</div>`;
+  }
+
+  // HTTP 429 means a scan is already running for this host: that is a state, not an error.
+  function busyHtml() {
+    return `<div class="du-info">${icon('info')} ${esc(t('du_busy'))}</div>`;
   }
 
   function warningsHtml(d) {
@@ -136,6 +142,7 @@
       badge.textContent = h ? h.name : (S.hostId ? String(S.hostId) : '');
     }
     if (S.loading) { body.innerHTML = loadingHtml(); return; }
+    if (S.busy) { body.innerHTML = busyHtml(); return; }
     if (S.error) {
       body.innerHTML = `<div class="du-err">${icon('circle-alert')} ${esc(S.error)}</div>`;
       return;
@@ -167,8 +174,10 @@
     S.hostId = hostId;
     S.path = path || '/';
     S.loading = true;
+    S.busy = false;
     S.error = '';
     S.data = null;
+    S.t0 = Date.now();
     render();
     const q = new URLSearchParams({ host_id: String(hostId), path: S.path });
     const as = (typeof getHostFileAccess === 'function') ? getHostFileAccess(hostId) : '';
@@ -177,7 +186,12 @@
       const res = await fetch('/api/du?' + q.toString());
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        S.error = res.status === 429 ? t('du_busy') : fill(t('du_failed'), { why: data.error || ('HTTP ' + res.status) });
+        if (res.status === 429) {
+          // A scan is already running for this host: informational, not a failure.
+          S.busy = true;
+        } else {
+          S.error = fill(t('du_failed'), { why: data.error || ('HTTP ' + res.status) });
+        }
         S.loading = false;
         render();
         return;

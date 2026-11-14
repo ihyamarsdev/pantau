@@ -38,6 +38,7 @@ import (
 	"pantau/internal/logger"
 	"pantau/internal/netdiag"
 	"pantau/internal/notify"
+	"pantau/internal/osv"
 	"pantau/internal/snapshot"
 	"pantau/internal/sshrunner"
 	"pantau/internal/store"
@@ -106,6 +107,7 @@ type Server struct {
 	cfClient          func(token string) *cloudflare.Client
 	hub               *dockerhub.Client
 	vuln              *vulnintel.Client
+	osv               *osv.Client
 	agent             agentState
 	ansibleRun        func(ctx context.Context, spec ansible.RunSpec, log io.Writer) (int, error)
 	ansibleAvail      func() (string, string, error)
@@ -151,6 +153,7 @@ func NewServer(db *store.DB, ins *inspector.Inspector, disp *notify.Dispatcher) 
 		cfClient:       cloudflare.New,
 		hub:            dockerhub.New(dockerhub.DefaultHubURL, dockerhub.DefaultIndexURL),
 		vuln:           vulnintel.New(vulnintel.DefaultKEVURL, vulnintel.DefaultEPSSURL),
+		osv:            osv.New(osv.DefaultBaseURL, osv.DefaultArchURL),
 		ansibleRun:     ansible.Run,
 		ansibleAvail:   ansible.Available,
 		ansibleSync:    ansible.SyncGit,
@@ -251,6 +254,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/app/dockerhub.css", serveAppBundle("dockerhub", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/vulnintel.js", serveAppBundle("vulnintel", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/vulnintel.css", serveAppBundle("vulnintel", ".css", "text/css; charset=utf-8"))
+	s.mux.HandleFunc("/app/osvvulns.js", serveAppBundle("osvvulns", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/osvvulns.css", serveAppBundle("osvvulns", ".css", "text/css; charset=utf-8"))
+	s.mux.HandleFunc("/app/dockersec.js", serveAppBundle("dockersec", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/accounts.js", serveAppBundle("accounts", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/palette.js", serveAppBundle("palette", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/palette.css", serveAppBundle("palette", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/portfwd.js", serveAppBundle("portfwd", ".js", "text/javascript; charset=utf-8"))
@@ -266,6 +273,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/app/dbbackup.css", serveAppBundle("dbbackup", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/agent.js", serveAppBundle("agent", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/agent.css", serveAppBundle("agent", ".css", "text/css; charset=utf-8"))
+	s.mux.HandleFunc("/app/iacscan.js", serveAppBundle("iacscan", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/iacscan.css", serveAppBundle("iacscan", ".css", "text/css; charset=utf-8"))
+	s.mux.HandleFunc("/app/fim.js", serveAppBundle("fim", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/scanprogress.js", serveAppBundle("scanprogress", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/scanprogress.css", serveAppBundle("scanprogress", ".css", "text/css; charset=utf-8"))
+	s.mux.HandleFunc("/app/dockerprogress.js", serveAppBundle("dockerprogress", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/dockerprogress.css", serveAppBundle("dockerprogress", ".css", "text/css; charset=utf-8"))
 
 	// Vendor static assets (airgapped / local cache)
 	vendorHandler := http.StripPrefix("/vendor/", http.FileServer(http.FS(vendorFS())))
@@ -358,6 +372,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/cloudflare/accounts/", s.authMiddleware(s.handleCloudflareAccountRoute))
 	s.mux.HandleFunc("/api/dockerhub/", s.authMiddleware(s.handleDockerHub))
 	s.mux.HandleFunc("/api/security/vuln-databases", s.authMiddleware(s.handleVulnDatabases))
+	s.mux.HandleFunc("/api/security/keys", s.authMiddleware(s.handleFleetKeys))
 	// Ansible Playbooks & Runs
 	s.mux.HandleFunc("/api/ansible/status", s.authMiddleware(s.handleAnsibleStatus))
 	s.mux.HandleFunc("/api/ansible/playbooks", s.authMiddleware(s.handleAnsiblePlaybooks))
@@ -384,6 +399,9 @@ func (s *Server) routes() {
 	// Terraform Management
 	s.mux.HandleFunc("/api/repos", s.authMiddleware(s.handleRepos))
 	s.mux.HandleFunc("/api/repos/", s.authMiddleware(s.handleRepoRoute))
+	// IaC and secret scanning of the sources on this server (repos, Terraform workspaces, Ansible projects)
+	s.mux.HandleFunc("/api/iac-scan", s.authMiddleware(s.handleIacScan))
+	s.mux.HandleFunc("/api/iac-scan/", s.authMiddleware(s.handleIacScan))
 	s.mux.HandleFunc("/api/terraform/status", s.authMiddleware(s.handleTerraformStatus))
 	s.mux.HandleFunc("/api/terraform/templates", s.authMiddleware(s.handleTerraformTemplates))
 	s.mux.HandleFunc("/api/terraform/workspaces", s.authMiddleware(s.handleTerraformWorkspaces))
@@ -1540,6 +1558,24 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 
 	case "rules":
 		// /api/hosts/{id}/rules
+		// /api/hosts/{id}/rules/fim/{baseline|diff}
+		if len(parts) >= 4 && parts[2] == "fim" {
+			switch parts[3] {
+			case "baseline":
+				s.handleFIMBaseline(w, r, hostID)
+				return
+			case "diff":
+				ruleID, err := strconv.ParseInt(r.URL.Query().Get("rule_id"), 10, 64)
+				if err != nil || ruleID <= 0 {
+					http.Error(w, "rule_id required", http.StatusBadRequest)
+					return
+				}
+				s.handleFIMRuleDiff(w, r, hostID, ruleID)
+				return
+			}
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
 		switch r.Method {
 		case http.MethodGet:
 			rules, _ := s.db.ListDesiredRules(hostID)
@@ -1580,6 +1616,15 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				if _, err := inspector.ParseBackupExpected(rData.Expected); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+			case "file_integrity":
+				if err := inspector.ValidateFIMTarget(rData.Target); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				if _, err := inspector.ParseFIMExpected(rData.Expected); err != nil {
 					http.Error(w, err.Error(), http.StatusBadRequest)
 					return
 				}
@@ -1632,6 +1677,10 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 			}
 			payload["ok"] = true
 			writeJSON(w, http.StatusOK, payload)
+			return
+		}
+		// Container misconfiguration audit and image vulnerability scans
+		if s.handleDockerSecurity(w, r, hostID, parts) {
 			return
 		}
 		// Portainer-style management endpoints (images, system, stacks, inspect, container/image/volume/network ops)
@@ -1769,6 +1818,40 @@ func isProtectedPath(p string, sftpClient *sftp.Client) bool {
 		curr = parent
 	}
 	return false
+}
+
+// measureBytes runs a command that prints one integer (du, df). The error is set only when the command could not
+// run or timed out; an unsupported flag (macOS has no `du -b`) prints nothing and yields 0 with no error.
+func measureBytes(runner sshrunner.Runner, cmd string, timeout time.Duration) (int64, error) {
+	out, _, _, err := runner.ExecTimeout(cmd, timeout)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := strconv.ParseInt(strings.TrimSpace(out), 10, 64)
+	return n, nil
+}
+
+const archiveStreamLimit = 30 * time.Minute
+
+// pipeWithLimit streams a remote command to out and aborts it when the browser goes away or the limit passes
+// (PipeCommand alone has no deadline, so a vanished client left tar running on the host).
+func pipeWithLimit(ctx context.Context, runner sshrunner.Runner, cmd string, out io.Writer) error {
+	done := make(chan error, 1)
+	go func() { done <- runner.PipeCommand(cmd, nil, out) }()
+	timer := time.NewTimer(archiveStreamLimit)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		_ = runner.Close()
+		<-done
+		return ctx.Err()
+	case <-timer.C:
+		_ = runner.Close()
+		<-done
+		return fmt.Errorf("archive stream exceeded %v", archiveStreamLimit)
+	}
 }
 
 func (s *Server) handleFilesRoute(hostID int64, subparts []string, w http.ResponseWriter, r *http.Request) {
@@ -1934,12 +2017,21 @@ func (s *Server) handleFilesRoute(hostID int64, subparts []string, w http.Respon
 		}
 		defer f.Close()
 
-		// Read up to 2MB for text editor
-		buf := make([]byte, 2*1024*1024)
-		n, _ := f.Read(buf)
+		// The editor saves its whole buffer back: a file that does not fit must not open at all, or the
+		// truncated buffer would overwrite the original with its first 2 MiB.
+		const maxEditBytes = 2 * 1024 * 1024
+		data, err := io.ReadAll(io.LimitReader(f, maxEditBytes+1))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if len(data) > maxEditBytes {
+			http.Error(w, "file is larger than 2 MB: download it or edit it in the terminal", http.StatusRequestEntityTooLarge)
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]string{
 			"path":    path,
-			"content": string(buf[:n]),
+			"content": string(data),
 		})
 
 	case "write":
@@ -2023,10 +2115,12 @@ func (s *Server) handleFilesRoute(hostID int64, subparts []string, w http.Respon
 			http.Error(w, "path required", http.StatusBadRequest)
 			return
 		}
-		out, _, _, _ := runner.Exec(asCmd(fmt.Sprintf(`du -sb %s 2>/dev/null | cut -f1`, shellQuote(targetPath))))
-		size, _ := strconv.ParseInt(strings.TrimSpace(out), 10, 64)
-		outDf, _, _, _ := runner.Exec(asCmd(fmt.Sprintf(`df -PB1 %s 2>/dev/null | tail -n 1 | awk '{print $4}'`, shellQuote(path.Dir(targetPath)))))
-		avail, _ := strconv.ParseInt(strings.TrimSpace(outDf), 10, 64)
+		size, err := measureBytes(runner, asCmd(fmt.Sprintf(`du -sb %s 2>/dev/null | cut -f1`, shellQuote(targetPath))), 5*time.Minute)
+		if err != nil {
+			http.Error(w, "could not measure the size: "+err.Error(), http.StatusGatewayTimeout)
+			return
+		}
+		avail, _ := measureBytes(runner, asCmd(fmt.Sprintf(`df -PB1 %s 2>/dev/null | tail -n 1 | awk '{print $4}'`, shellQuote(path.Dir(targetPath)))), 30*time.Second)
 		writeJSON(w, http.StatusOK, map[string]int64{
 			"size":      size,
 			"available": avail,
@@ -2071,10 +2165,13 @@ func (s *Server) handleFilesRoute(hostID int64, subparts []string, w http.Respon
 
 		// Disk Space Safety Check:
 		// Measure source size and available space on target partition (+ 100MB safety buffer)
-		outSize, _, _, _ := runner.Exec(asCmd(fmt.Sprintf(`du -sb %s 2>/dev/null | cut -f1`, shellQuote(req.Path))))
-		sourceSize, _ := strconv.ParseInt(strings.TrimSpace(outSize), 10, 64)
-		outDf, _, _, _ := runner.Exec(asCmd(fmt.Sprintf(`df -PB1 %s 2>/dev/null | tail -n 1 | awk '{print $4}'`, shellQuote(parentDir))))
-		availBytes, _ := strconv.ParseInt(strings.TrimSpace(outDf), 10, 64)
+		sourceSize, err := measureBytes(runner, asCmd(fmt.Sprintf(`du -sb %s 2>/dev/null | cut -f1`, shellQuote(req.Path))), 5*time.Minute)
+		if err != nil {
+			// Fail closed: an unmeasured source would skip the guard and cp -a could fill the disk.
+			http.Error(w, "could not measure the source size, so the disk-space check cannot run: "+err.Error(), http.StatusGatewayTimeout)
+			return
+		}
+		availBytes, _ := measureBytes(runner, asCmd(fmt.Sprintf(`df -PB1 %s 2>/dev/null | tail -n 1 | awk '{print $4}'`, shellQuote(parentDir))), 30*time.Second)
 
 		const safetyBuffer = 100 * 1024 * 1024 // 100 MB buffer
 		if availBytes > 0 && sourceSize > 0 && availBytes < (sourceSize+safetyBuffer) {
@@ -2084,9 +2181,13 @@ func (s *Server) handleFilesRoute(hostID int64, subparts []string, w http.Respon
 
 		// ponytail: Use native remote cp -a to perform instant atomic copy with preserved permissions
 		cmd := asCmd(fmt.Sprintf("cp -a -- %s %s", shellQuote(req.Path), shellQuote(destPath)))
-		_, stderr, exitCode, err := runner.Exec(cmd)
+		_, stderr, exitCode, err := runner.ExecTimeout(cmd, 30*time.Minute)
 		if err != nil || exitCode != 0 {
-			http.Error(w, fmt.Sprintf("duplication failed: %s", strings.TrimSpace(stderr)), http.StatusInternalServerError)
+			msg := strings.TrimSpace(stderr)
+			if err != nil {
+				msg = err.Error()
+			}
+			http.Error(w, fmt.Sprintf("duplication failed (a partial copy may remain at %s): %s", destPath, msg), http.StatusInternalServerError)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -2117,12 +2218,12 @@ func (s *Server) handleFilesRoute(hostID int64, subparts []string, w http.Respon
 				w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", base+".zip"))
 				w.Header().Set("Content-Type", "application/zip")
 				cmd := asCmd(fmt.Sprintf(`cd %s && zip -r -q - %s`, shellQuote(parent), shellQuote(base)))
-				_ = runner.PipeCommand(cmd, nil, w)
+				_ = pipeWithLimit(r.Context(), runner, cmd, w)
 			} else {
 				w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", base+".tar.gz"))
 				w.Header().Set("Content-Type", "application/gzip")
 				cmd := asCmd(fmt.Sprintf(`tar -czf - -C %s %s`, shellQuote(parent), shellQuote(base)))
-				_ = runner.PipeCommand(cmd, nil, w)
+				_ = pipeWithLimit(r.Context(), runner, cmd, w)
 			}
 			return
 		}
@@ -2165,7 +2266,7 @@ func (s *Server) handleFilesRoute(hostID int64, subparts []string, w http.Respon
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", slugName(host.Name)+"-backup-"+time.Now().Format("20060102-150405")+".tar.gz"))
 		w.Header().Set("Content-Type", "application/gzip")
 		// -C / with relative members keeps the tree layout and avoids tar's leading-slash rewrite.
-		if err := runner.PipeCommand(asCmd("tar -czf - -C / -- "+strings.Join(rels, " ")), nil, w); err != nil {
+		if err := pipeWithLimit(r.Context(), runner, asCmd("tar -czf - -C / -- "+strings.Join(rels, " ")), w); err != nil {
 			logger.Warn("files", host.Name, fmt.Sprintf("backup of %d path(s) ended with error: %v", len(rels), err))
 			return
 		}
@@ -2177,7 +2278,8 @@ func (s *Server) handleFilesRoute(hostID int64, subparts []string, w http.Respon
 			return
 		}
 		var req struct {
-			Path string `json:"path"`
+			Path      string `json:"path"`
+			Recursive bool   `json:"recursive"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
@@ -2187,7 +2289,35 @@ func (s *Server) handleFilesRoute(hostID int64, subparts []string, w http.Respon
 			http.Error(w, "protected path: cannot delete system location", http.StatusForbidden)
 			return
 		}
-		_ = sftpClient.Remove(req.Path)
+		// Lstat: a symlink to a folder is removed as a link, never followed.
+		st, err := sftpClient.Lstat(req.Path)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		switch {
+		case !st.IsDir():
+			err = sftpClient.Remove(req.Path)
+		case req.Recursive:
+			err = sftpClient.RemoveAll(req.Path)
+		default:
+			err = sftpClient.RemoveDirectory(req.Path)
+			if err != nil {
+				if entries, lerr := sftpClient.ReadDir(req.Path); lerr == nil && len(entries) > 0 {
+					http.Error(w, "folder is not empty", http.StatusConflict)
+					return
+				}
+			}
+		}
+		if err == nil {
+			if _, serr := sftpClient.Lstat(req.Path); serr == nil {
+				err = fmt.Errorf("%s is still there after the delete", req.Path)
+			}
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 
 	case "chmod":
@@ -2305,9 +2435,11 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 
 		debounceRuns, _ := s.db.GetSetting("alert_debounce_runs")
 		vulnIntel, _ := s.db.GetSetting(vulnIntelSetting)
+		osvEnabled, _ := s.db.GetSetting(osvEnabledSetting)
 		if debounceRuns == "" {
 			debounceRuns = "1"
 		}
+		iacGate, _ := s.db.GetSetting(iacGateSetting)
 
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"ssh_public_key":               pubKey,
@@ -2338,6 +2470,8 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			"smtp_security":                smtpSecurity,
 			"alert_debounce_runs":          debounceRuns,
 			vulnIntelSetting:               vulnIntel,
+			osvEnabledSetting:              osvEnabled,
+			iacGateSetting:                 iacGate,
 		})
 	case http.MethodPost:
 		var req map[string]interface{}
@@ -2387,6 +2521,20 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if k == vulnIntelSetting {
+				if v == "1" || v == "true" {
+					v = "1"
+				} else {
+					v = "0"
+				}
+			}
+			if k == osvEnabledSetting {
+				if v == "1" || v == "true" {
+					v = "1"
+				} else {
+					v = "0"
+				}
+			}
+			if k == iacGateSetting {
 				if v == "1" || v == "true" {
 					v = "1"
 				} else {

@@ -77,7 +77,7 @@
     }
     async function loadCatalog() {
       if (P.loading || P.catalog) return;
-      P.loading = true; P.catalogErr = '';
+      P.loading = true; P.catalogErr = ''; P.catalogT0 = Date.now();
       try { const d = await Ans.api.get('/api/ansible/roles'); P.catalog = (d && d.roles) || []; } catch (e) { P.catalogErr = e.message; P.catalog = []; }
       P.loading = false;
       paintCatalog();
@@ -152,7 +152,7 @@
     }
     function paintCatalog() {
       const box = ctx.q('[data-pt="available"]'); if (!box) return;
-      if (P.loading || !P.catalog) { box.innerHTML = '<div class="ans-muted">' + icon('loader-circle', 'icon-sm') + ' ' + esc(T('ans_pt_catalog_loading')) + '</div>'; return; }
+      if (P.loading || !P.catalog) { box.innerHTML = '<div class="ans-muted">' + SP.html(T('ans_pt_catalog_loading'), P.catalogT0 || Date.now()) + '</div>'; return; }
       const q = P.rq.trim().toLowerCase();
       const hits = P.catalog.filter(function (c) { return !q || (c.name + ' ' + (c.description || '') + ' ' + (c.collection || '')).toLowerCase().indexOf(q) >= 0; });
       const count = function (n) { return P.roles.filter(function (r) { return r.name === n; }).length; };

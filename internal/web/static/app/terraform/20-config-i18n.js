@@ -24,6 +24,7 @@
     tfcfg_validate: ['Validate', 'Validasi'],
     tfcfg_validate_title: ['terraform init + validate on the current (unsaved) files', 'terraform init + validate pada file saat ini (belum disimpan)'],
     tfcfg_validating: ['Validating…', 'Memvalidasi…'],
+    tfcfg_formatting: ['Formatting…', 'Memformat…'],
     tfcfg_formatted: ['Formatted {n} file(s)', '{n} file diformat'],
     tfcfg_already_fmt: ['Already formatted', 'Sudah terformat'],
     tfcfg_diag_title: ['Validation results', 'Hasil validasi'],

@@ -11,8 +11,8 @@
   'use strict';
 
   const D = (window.Domains = {});
-  const S = { hostId: 0, hostName: '', data: null, loading: false, scanning: false, error: '', filter: '', seq: 0 };
-  const A = { data: null, loading: false, error: '', filter: '', group: '', scanning: false, done: 0, total: 0, failures: [], cancel: false, token: 0, seq: 0 };
+  const S = { hostId: 0, hostName: '', data: null, loading: false, scanning: false, error: '', filter: '', seq: 0, t0: 0, removing: '' };
+  const A = { data: null, loading: false, error: '', filter: '', group: '', scanning: false, done: 0, total: 0, failures: [], cancel: false, token: 0, seq: 0, t0: 0 };
 
   const esc = (s) => escapeHtml(String(s === null || s === undefined ? '' : s));
   const icon = (n, cls) => svgIcon(n, cls || 'icon-sm');
@@ -45,6 +45,7 @@
       dm_remove: 'Remove config file',
       dm_remove_confirm: 'Delete {path} from this host? Every domain defined in it stops being served. nginx is tested and reloaded; if the test fails the file is restored.',
       dm_removed: 'Config removed, nginx reloaded',
+      dm_removing: 'Removing…',
       dm_remove_failed: 'Remove failed: {why}',
       dm_tls_yes: 'TLS',
       dm_tls_no: 'Plain',
@@ -92,6 +93,7 @@
       dm_removed: 'Konfigurasi dihapus, nginx di-reload',
       dm_remove_failed: 'Gagal menghapus: {why}',
       dm_tls_yes: 'TLS',
+      dm_removing: 'Menghapus…',
       dm_tls_no: 'Biasa',
       dm_no_proxy_title: 'Tidak ada proxy terdeteksi di host ini',
       dm_no_proxy_desc: 'Pantau mencari nginx, Caddy, dan Traefik di host dan di dalam container Docker. Akses Docker (dan sudo untuk konfigurasi host) mungkin diperlukan.',
@@ -114,10 +116,15 @@
   ['en', 'id'].forEach((l) => { I18N[l] = Object.assign(I18N[l] || {}, I[l]); });
 
   /* ---------- helpers ---------- */
+  // A network failure must not leave the caller waiting forever: the caller checks .ok.
   async function api(url, opts) {
-    const res = await fetch(url, opts);
-    const data = await res.json().catch(() => ({}));
-    return { ok: res.ok, status: res.status, data };
+    try {
+      const res = await fetch(url, opts);
+      const data = await res.json().catch(() => ({}));
+      return { ok: res.ok, status: res.status, data };
+    } catch (e) {
+      return { ok: false, status: 0, data: { error: e.message } };
+    }
   }
 
   const activeHostId = () => (typeof currentHost !== 'undefined' && currentHost ? currentHost.id : 0);
@@ -227,7 +234,8 @@
     const open = `<button class="btn btn-sm btn-icon btn-ghost dm-open" data-dm-open="${esc(m[1])}" title="${esc(t('dm_open'))}">${icon('file-code')}</button>`;
     // nginx.conf holds the global config; removing it would break the proxy, so only include files qualify.
     const removable = s.proxy === 'nginx' && m[1].indexOf('/etc/nginx/') === 0 && m[1] !== '/etc/nginx/nginx.conf';
-    const remove = removable ? `<button class="btn btn-sm btn-icon btn-ghost dm-remove" data-dm-remove="${esc(m[1])}" title="${esc(t('dm_remove'))}">${icon('trash-2')}</button>` : '';
+    const busy = S.removing === m[1];
+    const remove = removable ? `<button class="btn btn-sm btn-icon btn-ghost dm-remove" data-dm-remove="${esc(m[1])}" title="${esc(t('dm_remove'))}" ${busy ? 'disabled' : ''}>${busy ? SP.html(t('dm_removing'), S.t0) : icon('trash-2')}</button>` : '';
     return `${text} ${open}${remove}`;
   }
 
@@ -288,7 +296,7 @@
     if (!box || !tabStillActive()) return;
 
     if (S.loading) {
-      box.innerHTML = `<div class="dm-loading"><span class="spinner">${svgIcon('loader-circle', 'icon-sm')}</span><span>${esc(t('dm_loading'))}</span></div>`;
+      box.innerHTML = SP.loading(t('dm_loading'), S.t0);
       return;
     }
     if (S.error && !S.data) {
@@ -307,6 +315,7 @@
         <button class="btn btn-sm btn-ghost" data-dm-all>${icon('globe')} <span>${esc(t('dm_all_hosts'))}</span></button>
       </div>
     </div>
+    ${S.scanning ? SP.banner(t('dm_scanning'), S.t0) : ''}
     ${S.error ? `<div class="dm-err dm-banner">${icon('circle-alert')} <span>${esc(S.error)}</span></div>` : ''}
     ${warningsHtml(d.warnings)}
     <div class="dm-filter"><input type="text" id="dmFilter" value="${esc(S.filter)}" placeholder="${esc(t('dm_filter_ph'))}" autocomplete="off" spellcheck="false" /></div>
@@ -317,6 +326,7 @@
   async function loadHost(hostId) {
     const seq = ++S.seq;
     S.loading = true;
+    S.t0 = Date.now();
     S.error = '';
     S.data = null;
     renderTab();
@@ -336,14 +346,19 @@
 
   async function scanHost(hostId, seq) {
     S.scanning = true;
+    S.t0 = Date.now();
     renderTab();
-    const r = await api('/api/domains/scan', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ host_id: hostId })
-    });
+    let r;
+    try {
+      r = await api('/api/domains/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ host_id: hostId })
+      });
+    } finally {
+      if (seq === undefined || seq === S.seq) S.scanning = false;
+    }
     if (seq !== undefined && seq !== S.seq) return;
-    S.scanning = false;
     if (!r.ok) {
       if (r.status === 429) {
         showToast(t('dm_scan_running'), 'warning');
@@ -364,11 +379,20 @@
   async function removeConfig(path) {
     const hostId = S.hostId;
     if (!await showConfirm({ message: fill(t('dm_remove_confirm'), { path }), confirmText: t('delete', 'Delete') })) return;
-    const r = await api('/api/domains/remove', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ host_id: hostId, path })
-    });
+    S.removing = path;
+    S.t0 = Date.now();
+    renderSites();
+    let r;
+    try {
+      r = await api('/api/domains/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ host_id: hostId, path })
+      });
+    } finally {
+      S.removing = '';
+      renderSites();
+    }
     if (!r.ok) {
       showToast(fill(t('dm_remove_failed'), { why: r.data.error || ('HTTP ' + r.status) }), 'error');
       return;
@@ -492,7 +516,7 @@
     if (!box) return;
     const parts = [];
     if (A.scanning) {
-      parts.push(`<div class="dm-progress">${icon('loader-circle')} <span>${esc(fill(t('dm_scan_all_running'), { n: A.done, total: A.total }))}</span></div>`);
+      parts.push(`<div class="dm-progress">${icon('loader-circle')} <span>${esc(fill(t('dm_scan_all_running'), { n: A.done, total: A.total }))}</span> <span data-sp-t0="${A.t0}" style="font-variant-numeric: tabular-nums; opacity: 0.8;">0s</span></div>`);
     } else if (A.total) {
       parts.push(`<div class="dm-progress">${icon(A.failures.length ? 'triangle-alert' : 'check')} <span>${esc(fill(t('dm_scan_all_done'), { n: A.total - A.failures.length, f: A.failures.length }))}</span></div>`);
       parts.push(A.failures.map((f) => `<div class="dm-fail">${icon('circle-x')} <span>${esc(fill(t('dm_failed_host'), { host: f.host, why: f.error }))}</span></div>`).join(''));
@@ -519,8 +543,8 @@
   async function scanAllHosts() {
     const hosts = ((A.data && A.data.hosts) || []).slice();
     if (!hosts.length || A.scanning) return;
-    A.scanning = true;
-    A.cancel = false;
+    A.failures = [];
+    A.t0 = Date.now();
     const token = ++A.token;
     A.done = 0;
     A.total = hosts.length;

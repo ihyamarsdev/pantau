@@ -4,7 +4,7 @@
   'use strict';
 
   const Fw = (window.Fw = {});
-  const S = { hostID: 0, data: null, tab: 'ufw', loading: false, busy: false, error: '' };
+  const S = { hostID: 0, data: null, tab: 'ufw', loading: false, busy: false, error: '', t0: 0, action: '' };
   let dlg = null; // { backend, old } - old is the listed rule being edited, null when adding
 
   const esc = (s) => escapeHtml(String(s === null || s === undefined ? '' : s));
@@ -58,7 +58,9 @@
       fw_confirm_disable_title: 'Disable {backend}',
       fw_confirm_disable_msg: 'Disable {backend} on {host}? Its rules stop filtering traffic.',
       fw_confirm_delete_title: 'Delete rule',
-      fw_confirm_delete_msg: 'Delete this {backend} rule on {host}?'
+      fw_confirm_delete_msg: 'Delete this {backend} rule on {host}?',
+      fw_loading: 'Reading firewall rules…',
+      fw_action_running: '{backend}: {action}…'
     },
     id: {
       fw_title: 'Firewall', fw_load: 'Muat firewall',
@@ -106,7 +108,9 @@
       fw_confirm_disable_title: 'Nonaktifkan {backend}',
       fw_confirm_disable_msg: 'Nonaktifkan {backend} pada {host}? Aturannya berhenti menyaring lalu lintas.',
       fw_confirm_delete_title: 'Hapus aturan',
-      fw_confirm_delete_msg: 'Hapus aturan {backend} ini pada {host}?'
+      fw_confirm_delete_msg: 'Hapus aturan {backend} ini pada {host}?',
+      fw_loading: 'Membaca aturan firewall…',
+      fw_action_running: '{backend}: {action}…'
     }
   };
   ['en', 'id'].forEach((l) => { I18N[l] = Object.assign(I18N[l] || {}, I[l]); });
@@ -126,9 +130,12 @@
     const working = S.loading || S.busy;
     const loadBtn = `<button class="btn btn-sm ${d ? '' : 'btn-primary'}" onclick="Fw.load()" ${working ? 'disabled' : ''}>${icon(working ? 'loader-circle' : 'refresh-cw')} <span>${d ? t('refresh', 'Refresh') : t('fw_load')}</span></button>`;
     let body = '';
+    if (S.busy && S.action) {
+      body += SP.banner(t('fw_action_running').replace('{backend}', S.action.backend).replace('{action}', S.action.label), S.t0);
+    }
     if (S.error) body += box('danger', esc(S.error));
     if (!d) {
-      body += `<div style="color: var(--text-muted); font-size: 0.85rem;">${esc(t('fw_desc'))}</div>`;
+      body += S.loading ? SP.loading(t('fw_loading'), S.t0) : `<div style="color: var(--text-muted); font-size: 0.85rem;">${esc(t('fw_desc'))}</div>`;
     } else if (!d.supported) {
       body += `<div style="color: var(--text-muted); font-size: 0.85rem;">${esc(t('fw_unsupported'))}</div>`;
     } else {
@@ -195,6 +202,7 @@
     const host = currentHost;
     if (!host) return;
     S.loading = true;
+    S.t0 = Date.now();
     S.error = '';
     Fw.render();
     let res;
@@ -221,6 +229,8 @@
     const host = currentHost;
     if (!host) return { ok: false, message: '' };
     S.busy = true;
+    S.t0 = Date.now();
+    S.action = { backend: be, label: t('fw_act_' + action, action) };
     Fw.render();
     let res;
     try {
@@ -234,6 +244,7 @@
       res = { ok: false, error: e.message };
     }
     S.busy = false;
+    S.action = '';
     const r = res.result || {};
     let message = res.error || r.output || '';
     if (!res.ok && r.mode === 'none') message += (message ? ' — ' : '') + t('fw_no_priv_short');

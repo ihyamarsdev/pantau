@@ -29,15 +29,28 @@ var (
 	ErrPackageScanInProgress = errors.New("package scan already in progress for this host")
 )
 
+// sensitivePorts lists the services that should never face the internet directly (databases, caches,
+// admin/control planes, legacy cleartext, file sharing, remote desktop). Shared by the port exposure
+// report and the Docker container audit.
+var sensitivePorts = map[string]bool{
+	"21": true, "23": true, "69": true, "111": true, "135": true, "139": true, "161": true,
+	"389": true, "445": true, "512": true, "513": true, "514": true, "873": true,
+	"1433": true, "1521": true, "2049": true, "2375": true, "2376": true, "2379": true, "2380": true,
+	"3306": true, "3389": true, "5000": true, "5432": true, "5601": true, "5900": true, "5984": true,
+	"6379": true, "8086": true, "9042": true, "9200": true, "9300": true, "10250": true,
+	"11211": true, "15672": true, "27017": true, "50070": true,
+}
+
 type Inspector struct {
-	db               *store.DB
-	factory          sshrunner.RunnerFactory
-	notifier         *notify.Dispatcher
-	inFlight         sync.Map
-	packageInFlight  sync.Map
-	securityInFlight sync.Map
-	drainInFlight    sync.Map
-	debouncer        *AlertDebouncer
+	db                *store.DB
+	factory           sshrunner.RunnerFactory
+	notifier          *notify.Dispatcher
+	inFlight          sync.Map
+	packageInFlight   sync.Map
+	securityInFlight  sync.Map
+	drainInFlight     sync.Map
+	dockerSecInFlight sync.Map
+	debouncer         *AlertDebouncer
 
 	// sudoRetryAt remembers, per host, when passwordless sudo may be probed again after it failed, so a
 	// host that requires a sudo password logs at most one failed attempt per sudoRetryAfter.
@@ -579,14 +592,8 @@ func parseNetworkMetrics(h *store.Host, netDevSec, pingSec, pubIPSec, estSec, li
 
 	// 5. Listening Ports & Public Exposure
 	// Services that should never face the internet directly (databases, caches, admin/control planes, legacy cleartext, file sharing, remote desktop).
-	sensitivePorts := map[string]bool{
-		"21": true, "23": true, "69": true, "111": true, "135": true, "139": true, "161": true,
-		"389": true, "445": true, "512": true, "513": true, "514": true, "873": true,
-		"1433": true, "1521": true, "2049": true, "2375": true, "2376": true, "2379": true, "2380": true,
-		"3306": true, "3389": true, "5000": true, "5432": true, "5601": true, "5900": true, "5984": true,
-		"6379": true, "8086": true, "9042": true, "9200": true, "9300": true, "10250": true,
-		"11211": true, "15672": true, "27017": true, "50070": true,
-	}
+	// The sensitive port list lives in the package scope (sensitivePorts) and is shared with the
+	// Docker container audit.
 	listening := []store.ListeningPort{}
 	for _, line := range strings.Split(listenSec, "\n") {
 		line = strings.TrimSpace(line)
@@ -1340,7 +1347,7 @@ func (ins *Inspector) evaluateDesiredRules(h *store.Host, runner sshrunner.Runne
 				Kind:             rule.Kind,
 				Target:           rule.Target,
 				EventType:        "drift_detected",
-				Summary:          fmt.Sprintf("Drift detected: %s '%s' is %s (expected %s)", rule.Kind, rule.Target, current, rule.Expected),
+				Summary:          fmt.Sprintf("Drift detected: %s '%s' is %s (expected %s)", rule.Kind, rule.Target, current, ruleExpectedSummary(rule)),
 				RootCauseExcerpt: rootCause,
 			}
 			_ = ins.db.RecordIncident(inc)
@@ -1690,6 +1697,8 @@ func (ins *Inspector) evaluateRule(h *store.Host, runner sshrunner.Runner, rule 
 			rootCause = strings.Join(rcLines, "\n")
 		}
 		return
+	case "file_integrity":
+		return ins.evaluateFIMRule(h, runner, rule)
 	}
 
 	return "unknown", "ok", "", ""
@@ -1951,7 +1960,7 @@ const PackageScanBatchCmd = `if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
 elif command -v dpkg-query >/dev/null 2>&1; then
     echo "TYPE:DPKG"
     echo "===PKGS==="
-    dpkg-query -W -f='${Package}\t${Version}\t${Installed-Size}\t${db:Status-Status}\n' 2>/dev/null
+    dpkg-query -W -f='${Package}\t${Version}\t${Installed-Size}\t${db:Status-Status}\t${source:Package}\t${source:Version}\n' 2>/dev/null
     echo "===MANUAL==="
     apt-mark showmanual 2>/dev/null
 elif command -v rpm >/dev/null 2>&1; then
@@ -1963,7 +1972,7 @@ elif command -v rpm >/dev/null 2>&1; then
 elif [ -f /lib/apk/db/installed ]; then
     echo "TYPE:APK"
     echo "===PKGS==="
-    awk -F: '/^P:/ {p=$2} /^V:/ {v=$2} /^I:/ {s=$2; print p "\t" v "\t" s} /^[ \t]*$/ {p=""; v=""; s=""}' /lib/apk/db/installed 2>/dev/null
+    awk -F: '/^P:/ { if(p!="") print p "\t" v "\t" s "\t" o; p=$2; v=""; s=""; o="" } /^V:/ {v=$2} /^I:/ {s=$2} /^o:/ {o=$2} END { if(p!="") print p "\t" v "\t" s "\t" o }' /lib/apk/db/installed 2>/dev/null
     echo "===MANUAL==="
     cat /etc/apk/world 2>/dev/null
 elif command -v pacman >/dev/null 2>&1; then
@@ -2080,6 +2089,14 @@ func parseDpkgOutput(out string, manualMap map[string]bool, servicesMap map[stri
 		if status != "installed" {
 			continue
 		}
+		// Columns 5/6 hold the source package name and version (OSV tracks source packages).
+		source, sourceVersion := name, version
+		if len(parts) > 4 && strings.TrimSpace(parts[4]) != "" {
+			source = strings.TrimSpace(parts[4])
+		}
+		if len(parts) > 5 && strings.TrimSpace(parts[5]) != "" {
+			sourceVersion = strings.TrimSpace(parts[5])
+		}
 		isManual := manualMap[name]
 		svcStatus := ""
 		svcName := ""
@@ -2091,6 +2108,8 @@ func parseDpkgOutput(out string, manualMap map[string]bool, servicesMap map[stri
 			HostID:        hostID,
 			Name:          name,
 			Version:       version,
+			Source:        source,
+			SourceVersion: sourceVersion,
 			SizeBytes:     sizeKB * 1024,
 			IsManual:      isManual,
 			ServiceName:   svcName,
@@ -2156,6 +2175,47 @@ func parseRpmOutput(out string, manualMap map[string]bool, servicesMap map[strin
 			Version:       version,
 			SizeBytes:     sizeBytes,
 			InstallEpoch:  installEpoch,
+			IsManual:      isManual,
+			ServiceName:   svcName,
+			ServiceStatus: svcStatus,
+			LastScannedAt: now,
+		})
+	}
+	return list
+}
+
+// parseApkOutput parses the Alpine package inventory (name, version, size, origin package).
+// The origin package is what OSV tracks for Alpine, so it is stored next to the binary package.
+func parseApkOutput(out string, manualMap map[string]bool, servicesMap map[string]string, hostID int64) []*store.HostPackage {
+	var list []*store.HostPackage
+	lines := strings.Split(out, "\n")
+	now := time.Now()
+	for _, l := range lines {
+		parts := strings.Split(strings.TrimSpace(l), "\t")
+		if len(parts) < 3 {
+			continue
+		}
+		name := strings.TrimSpace(parts[0])
+		version := strings.TrimSpace(parts[1])
+		sizeBytes := parsePackageSize(parts[2])
+		source := name
+		if len(parts) > 3 && strings.TrimSpace(parts[3]) != "" {
+			source = strings.TrimSpace(parts[3])
+		}
+		isManual := manualMap[name] || manualMap[source]
+		svcStatus := ""
+		svcName := ""
+		if s, ok := servicesMap[name]; ok {
+			svcName = name + ".service"
+			svcStatus = s
+		}
+		list = append(list, &store.HostPackage{
+			HostID:        hostID,
+			Name:          name,
+			Version:       version,
+			Source:        source,
+			SourceVersion: version,
+			SizeBytes:     sizeBytes,
 			IsManual:      isManual,
 			ServiceName:   svcName,
 			ServiceStatus: svcStatus,
@@ -2253,7 +2313,9 @@ func (ins *Inspector) ScanPackagesWithTimeout(hostID int64, timeout time.Duratio
 		return nil
 	case "DPKG":
 		pkgs = parseDpkgOutput(pkgsSec, manualMap, servicesMap, hostID)
-	case "RPM", "APK", "PACMAN":
+	case "APK":
+		pkgs = parseApkOutput(pkgsSec, manualMap, servicesMap, hostID)
+	case "RPM", "PACMAN":
 		pkgs = parseRpmOutput(pkgsSec, manualMap, servicesMap, hostID)
 	default:
 		if strings.Contains(pkgsSec, "\tinstalled") {

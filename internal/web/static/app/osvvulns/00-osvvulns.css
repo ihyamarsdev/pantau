@@ -1,0 +1,16 @@
+/* Known vulnerabilities of installed packages (00-osvvulns.js). Tokens come from index.html :root. */
+.osv-empty { padding: 16px 0; color: var(--text-muted); font-size: 0.85rem; }
+.osv-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.osv-bar input[type="search"] { height: 30px; font-size: var(--fs-xs); width: 220px; }
+.osv-toggle { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-muted); cursor: pointer; }
+.osv-toggle input { width: auto; }
+.osv-count { margin-left: auto; font-size: var(--fs-xs); color: var(--text-muted); }
+.osv-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.osv-table th { text-align: left; font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); padding: 6px 8px; border-bottom: 1px solid var(--card-border); }
+.osv-table td { padding: 6px 8px; border-bottom: 1px solid var(--card-border); vertical-align: top; }
+.osv-table tr:last-child td { border-bottom: none; }
+.osv-summary { font-size: var(--fs-xs); color: var(--text-muted); max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.osv-nofix { color: var(--text-muted); font-size: var(--fs-xs); }
+.osv-meta { margin-top: 8px; font-size: var(--fs-xs); color: var(--text-muted); }
+.osv-notes { margin-top: 8px; font-size: var(--fs-xs); color: var(--text-muted); }
+.osv-notes ul { margin: 4px 0 0; padding-left: 18px; }

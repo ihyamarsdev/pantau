@@ -76,13 +76,22 @@
   // Install endpoints answer NDJSON ({log} chunks, then {done[,error]}); a plain JSON reply means nothing ran.
   async function streamInstall(url, body, out) {
     out.hidden = false; out.textContent = '';
-    const init = { method: 'POST', body: body instanceof FormData ? body : JSON.stringify(body), headers: body instanceof FormData ? {} : { 'Content-Type': 'application/json' }, credentials: 'same-origin' };
-    const res = await fetch(url, init);
-    if (!(res.headers.get('content-type') || '').includes('application/x-ndjson')) {
-      const d = await res.json().catch(function () { return {}; });
-      out.hidden = true; return d.error || T('ans_rs_install_failed');
-    }
-    return ndjsonRead(res, function (s) { out.textContent += s; out.scrollTop = out.scrollHeight; });
+    const t0 = Date.now();
+    // The elapsed time sits above the log from the start: the install may take a while before the first line arrives.
+    const head = document.createElement('div');
+    head.className = 'ans-rs-out-head';
+    head.innerHTML = SP.html(T('ans_rs_installing'), t0);
+    out.parentNode.insertBefore(head, out);
+    const done = function () { if (head.parentNode) head.parentNode.removeChild(head); };
+    try {
+      const init = { method: 'POST', body: body instanceof FormData ? body : JSON.stringify(body), headers: body instanceof FormData ? {} : { 'Content-Type': 'application/json' }, credentials: 'same-origin' };
+      const res = await fetch(url, init);
+      if (!(res.headers.get('content-type') || '').includes('application/x-ndjson')) {
+        const d = await res.json().catch(function () { return {}; });
+        out.hidden = true; return d.error || T('ans_rs_install_failed');
+      }
+      return await ndjsonRead(res, function (s) { out.textContent += s; out.scrollTop = out.scrollHeight; });
+    } finally { done(); }
   }
 
   /* ===================== Resources tab ===================== */
@@ -199,22 +208,24 @@
       '<div class="ans-error" id="ansibleLibLocalError" role="alert" hidden></div><div class="ans-row" style="justify-content:flex-end"><button type="button" id="btnAnsibleLibLocalImport" class="btn btn-sm btn-primary" data-lib="local">' + esc(T('ans_rs_import')) + '</button></div><pre class="ans-rs-out" id="ansibleLibLocalOutput" hidden></pre></div></fieldset>';
   }
   const gid = function (id) { return R.root.querySelector('#' + id); };
-  async function withBusy(btn, busyText, normalText, fn) {
-    btn.disabled = true; btn.textContent = busyText;
-    try { await fn(); } finally { btn.disabled = false; btn.textContent = normalText; }
+  async function withBusy(btn, busyText, fn) {
+    if (!btn) { try { await fn(); } catch (e) { Ans.toast(T('ans_rs_install_failed') + ': ' + (e && e.message ? e.message : e), 'error'); } return; }
+    const restore = SP.busy(btn, busyText); // SP.busy restores the whole button, so the icon survives
+    try { await fn(); } catch (e) { Ans.toast(T('ans_rs_install_failed') + ': ' + (e && e.message ? e.message : e), 'error'); }
+    finally { restore(); }
   }
   async function libInstall(kind) {
     if (kind === 'galaxy') {
       const name = gid('ansibleLibGalaxyName').value.trim();
       if (!name) { Ans.toast(T('ans_rs_err_name'), 'error'); return; }
-      await withBusy(gid('btnAnsibleLibGalaxyInstall'), T('ans_rs_installing'), T('ans_rs_install'), async function () {
+      await withBusy(gid('btnAnsibleLibGalaxyInstall'), T('ans_rs_installing'), async function () {
         const err = await streamInstall('/api/ansible/library/galaxy', { kind: gid('ansibleLibGalaxyKind').value, name: name, version: gid('ansibleLibGalaxyVersion').value.trim() }, gid('ansibleLibGalaxyOutput'));
         await loadLib(); if (err) Ans.toast(err, 'error'); else Ans.toast(T('ans_rs_install_ok'), 'success'); refreshLibLists();
       });
     } else if (kind === 'reqs') {
       const content = gid('ansibleLibReqsContent').value.trim();
       if (!content) { Ans.toast(T('ans_rs_err_reqs'), 'error'); return; }
-      await withBusy(gid('btnAnsibleLibReqsInstall'), T('ans_rs_installing'), T('ans_rs_install'), async function () {
+      await withBusy(gid('btnAnsibleLibReqsInstall'), T('ans_rs_installing'), async function () {
         const err = await streamInstall('/api/ansible/library/requirements', { content: content }, gid('ansibleLibReqsOutput'));
         await loadLib(); if (err) Ans.toast(err, 'error'); else Ans.toast(T('ans_rs_install_ok'), 'success'); refreshLibLists();
       });
@@ -247,7 +258,7 @@
       const f = gid('ansibleLibLocalFolder').files; if (!f || !f.length) { fail(T('ans_rs_err_folder')); return; }
       try { prepareFolder(f).forEach(function (x) { body.append('files', x.file, x.path); }); } catch (e) { fail(e.message); return; }
     }
-    await withBusy(gid('btnAnsibleLibLocalImport'), T('ans_rs_importing'), T('ans_rs_import'), async function () {
+    await withBusy(gid('btnAnsibleLibLocalImport'), T('ans_rs_importing'), async function () {
       const e2 = await streamInstall('/api/ansible/library/local', body, out);
       await loadLib(); if (e2) fail(e2); else Ans.toast(T('ans_rs_import_ok'), 'success'); refreshLibLists();
     });

@@ -19,7 +19,7 @@
     en: {
       vi_title: 'Exploit intelligence (CISA KEV + EPSS)',
       vi_off: 'Off. Turn on "CISA KEV and EPSS" in Settings → General to mark findings whose CVEs are exploited in the wild (CISA KEV) and their probability of exploitation (EPSS). The Pantau server then downloads these public feeds once a day.',
-      vi_no_cves: 'Not assessed: {pm} does not report CVE IDs for pending updates. Only dnf and yum hosts are covered for now.',
+      vi_no_cves: 'Not assessed: {pm} does not report CVE IDs for pending updates. The card "Known vulnerabilities in installed packages" below covers the installed packages of this host instead.',
       vi_no_findings: 'No pending security updates, nothing to assess.',
       vi_summary: '{kev} of {n} CVEs are in CISA KEV (exploited in the wild) · EPSS of 10% or more: {hi}.',
       vi_sources: 'CISA KEV catalog {kev} · EPSS {epss}',
@@ -40,7 +40,7 @@
     id: {
       vi_title: 'Intelijen eksploitasi (CISA KEV + EPSS)',
       vi_off: 'Nonaktif. Aktifkan "CISA KEV dan EPSS" di Pengaturan → Umum untuk menandai temuan yang CVE-nya sedang dieksploitasi (CISA KEV) beserta peluang eksploitasinya (EPSS). Server Pantau lalu mengunduh feed publik ini sekali sehari.',
-      vi_no_cves: 'Tidak dinilai: {pm} tidak melaporkan ID CVE untuk pembaruan tertunda. Saat ini hanya host dnf dan yum yang tercakup.',
+      vi_no_cves: 'Tidak dinilai: {pm} tidak melaporkan ID CVE untuk pembaruan tertunda. Kartu "Kerentanan yang diketahui pada paket terpasang" di bawah ini mencakup paket terpasang pada host ini.',
       vi_no_findings: 'Tidak ada pembaruan keamanan tertunda, tidak ada yang dinilai.',
       vi_summary: '{kev} dari {n} CVE ada di CISA KEV (sedang dieksploitasi) · EPSS 10% atau lebih: {hi}.',
       vi_sources: 'Katalog CISA KEV {kev} · EPSS {epss}',

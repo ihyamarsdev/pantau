@@ -41,7 +41,7 @@ tfTabRenderers.settings = function (body) {
     };
     syncAuth();
     tfEl('tfSetGitAuth').addEventListener('change', syncAuth);
-    tfEl('tfSetGitTest').addEventListener('click', tfVcsTest);
+    tfEl('tfSetGitTest').addEventListener('click', (e) => tfVcsTest(e.currentTarget));
     tfApi('GET', '/api/ssh-keys').then(r => {
       const keys = r.ok && Array.isArray(r.data) ? r.data : [];
       const s = tfEl('tfSetGitKey');

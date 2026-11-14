@@ -163,7 +163,7 @@
       </div>
       <div class="hub-note">${esc(fill(t('hub_note'), { host: currentHost ? currentHost.name : '-' }))}</div>`;
     if (S.error) return bar + `<div class="hub-err">${esc(S.error)}</div>`;
-    if (S.searching) return bar + `<div class="hub-empty">${esc(t('hub_loading'))}</div>`;
+    if (S.searching) return bar + SP.loading(t('hub_loading'), S.searchT0);
     const r = S.search;
     if (!r) return bar + `<div class="hub-empty">${esc(t('hub_start'))}</div>`;
     if (!r.results.length) return bar + `<div class="hub-empty">${esc(fill(t('hub_no_results'), { q: S.q }))}</div>`;
@@ -181,7 +181,7 @@
     const el = document.getElementById('hubQuery');
     const q = (el ? el.value : S.q).trim();
     if (!q) return;
-    Object.assign(S, { q, page, searching: true, error: '', view: 'search' });
+    Object.assign(S, { q, page, searching: true, error: '', view: 'search', searchT0: Date.now() });
     render();
     const r = await api('/api/dockerhub/search?q=' + encodeURIComponent(q) + '&page=' + page);
     if (S.q !== q || S.page !== page) return; // a newer search replaced this one
@@ -212,7 +212,7 @@
   function tagsHtml() {
     const filter = `<div class="hub-bar"><input type="search" id="hubTagFilter" value="${esc(S.tagFilter)}" placeholder="${esc(t('hub_filter_ph'))}" maxlength="128" autocomplete="off" spellcheck="false" oninput="Hub.filterTags(this.value)" /></div>`;
     const tg = S.tags;
-    if (!tg) return filter + `<div class="hub-empty">${esc(S.tagsLoading ? t('hub_loading') : '')}</div>`;
+    if (!tg) return filter + (S.tagsLoading ? SP.loading(t('hub_loading'), S.tagsT0) : '');
     if (tg.error) return filter + `<div class="hub-err">${esc(tg.error)}</div>`;
     if (!tg.tags.length) return filter + `<div class="hub-empty">${esc(t('hub_no_tags'))}</div>`;
     const heads = [t('hub_col_tag'), t('hub_col_platforms'), t('hub_col_size'), t('hub_col_pushed'), ''];
@@ -232,7 +232,7 @@
     const back = `<div><button class="btn btn-sm btn-ghost" onclick="Hub.back()">${icon('chevron-left')} <span>${esc(t('hub_back'))}</span></button></div>`;
     if (S.error) return back + `<div class="hub-err">${esc(S.error)}</div>`;
     const r = S.repo;
-    if (!r) return back + `<div class="hub-empty">${esc(t('hub_loading'))}</div>`;
+    if (!r) return back + SP.loading(t('hub_loading'), S.repoT0);
     const count = S.tags && !S.tags.error ? ` (${num(S.tags.count)})` : '';
     const pane = (id, label) => `<button class="btn btn-sm ${S.pane === id ? 'btn-primary' : 'btn-ghost'}" style="padding: 4px 10px; font-size: var(--fs-xs);" onclick="Hub.pane('${id}')">${esc(label)}</button>`;
     return back + `
@@ -257,7 +257,7 @@
   Hub.openRepo = async function (repo) {
     if (!repo || !currentHost) return;
     ensureModal();
-    Object.assign(S, { view: 'repo', repoName: repo, repo: null, tags: null, tagFilter: '', pane: 'tags', error: '' });
+    Object.assign(S, { view: 'repo', repoName: repo, repo: null, tags: null, tagFilter: '', pane: 'tags', error: '', repoT0: Date.now(), tagsT0: Date.now() });
     render();
     openModal('dockerHubModal');
     const [ns, name] = repo.split('/');
@@ -272,6 +272,7 @@
     const repo = S.repoName, filter = S.tagFilter;
     const [ns, name] = repo.split('/');
     S.tagsLoading = true;
+    S.tagsT0 = Date.now();
     if (page === 1) S.tags = null;
     if (S.repo) render();
     const r = await api('/api/dockerhub/tags/' + encodeURIComponent(ns) + '/' + encodeURIComponent(name) + '?page=' + page + '&name=' + encodeURIComponent(filter));
@@ -315,9 +316,12 @@
 
   /* ---------- image update check (Images sub-tab) ---------- */
   const imagesTabOf = (hostID) => currentTab === 'docker' && dockerSubTab === 'images' && currentHost && currentHost.id === hostID;
-  const checkBtnHtml = () => `${icon(S.checking ? 'loader-circle' : 'refresh-cw')} <span>${esc(t(S.checking ? 'hub_checking_btn' : 'hub_check'))}</span>`;
+  const checkBtnHtml = () => S.checking
+    ? SP.html(t('hub_checking_btn'), S.checkT0)
+    : `${icon('refresh-cw')} <span>${esc(t('hub_check'))}</span>`;
   function setChecking(on) {
     S.checking = on;
+    if (on) S.checkT0 = Date.now();
     const b = document.getElementById('hubCheckBtn');
     if (b) { b.disabled = on; b.innerHTML = checkBtnHtml(); }
   }
@@ -327,8 +331,12 @@
     if (!host || S.checking) return;
     setChecking(true);
     showToast(t('hub_checking'), 'info', 2500);
-    const r = await api('/api/hosts/' + host.id + '/docker/images/updates');
-    setChecking(false);
+    let r;
+    try {
+      r = await api('/api/hosts/' + host.id + '/docker/images/updates');
+    } finally {
+      setChecking(false);
+    }
     if (!r.ok || !r.data.ok) {
       showToast(t('hub_check_failed') + ': ' + (r.error || r.data.error), 'error', 9000);
       return;

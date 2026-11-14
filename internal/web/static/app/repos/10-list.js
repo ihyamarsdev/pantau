@@ -6,19 +6,25 @@
 async function rpLoad() {
   const r = await R.api('GET', '/api/repos');
   if (r.ok) R.state = { list: r.data.repos || [], folder: r.data.folder || '', loaded: true };
+  if (window.IacScan) {
+    const fleet = await window.IacScan.fleet();
+    R.state.iac = fleet;
+  }
   return r;
 }
 
 function rpCardHTML(r) {
   const s = r.status;
+  const id = Number(r.id);
   const badges = r.error
     ? `<span class="badge badge-errored" title="${R.esc(r.error)}">${R.esc(R.tx('rp_unavailable'))}</span>`
     : `<span class="badge badge-info">${R.esc(s.branch)}</span><span class="mono rp-meta">${R.esc(R.short(s.commit))}</span>` +
       (s.dirty ? `<span class="badge badge-warning">${R.esc(R.tx('rp_changes_n', { n: s.dirty }))}</span>` : `<span class="badge badge-healthy">${R.esc(R.tx('rp_clean'))}</span>`) +
       (s.ahead ? `<span class="badge badge-info" title="${R.esc(R.tx('rp_ed_ahead', { n: s.ahead }))}">↑${s.ahead}</span>` : '') +
-      (s.behind ? `<span class="badge badge-warning" title="${R.esc(R.tx('rp_ed_behind', { n: s.behind }))}">↓${s.behind}</span>` : '');
+      (s.behind ? `<span class="badge badge-warning" title="${R.esc(R.tx('rp_ed_behind', { n: s.behind }))}">↓${s.behind}</span>` : '') +
+      (window.IacScan && R.state.iac ? window.IacScan.chipHtml('repo', id, R.state.iac['repo:' + id]) : '');
   const when = r.synced_at ? R.tx('rp_synced', { when: formatRelativeTime(r.synced_at).relative }) : '';
-  const id = Number(r.id);
+
   return `<div class="card rp-card">
     <div class="rp-name" title="${R.esc(r.name)}">${R.esc(r.name)}</div>
     <div class="rp-url mono">${R.esc(r.url)}</div>
@@ -30,6 +36,7 @@ function rpCardHTML(r) {
       <button type="button" class="btn btn-sm" data-rp-copy="${id}"${r.error ? ' disabled' : ''} title="${R.esc(R.tx('rp_copy_title'))}">${svgIcon('upload', 'icon-xs')} ${R.esc(R.tx('rp_copy'))}</button>
       <button type="button" class="btn btn-sm" data-rp-move="${id}" title="${R.esc(R.tx('rp_move_title'))}">${svgIcon('folder', 'icon-xs')} ${R.esc(R.tx('rp_f_folder'))}</button>
       <button type="button" class="btn btn-sm" data-rp-creds="${id}">${svgIcon('pencil', 'icon-xs')} ${R.esc(R.tx('rp_creds'))}</button>
+      ${window.IacScan ? window.IacScan.btnHtml('repo', id) : ''}
       <button type="button" class="btn btn-icon btn-sm" data-rp-del="${id}" aria-label="${R.esc(R.tx('rp_remove'))}">${svgIcon('trash-2', 'icon-xs')}</button>
     </div></div>`;
 }
@@ -96,7 +103,7 @@ function rpRender() {
 async function rpRefresh() {
   const root = R.el('reposRoot');
   if (!root) return;
-  if (!R.state.loaded) root.innerHTML = R.empty(R.tx('rp_loading'));
+  if (!R.state.loaded) root.innerHTML = SP.loading(R.tx('rp_loading'));
   const r = await rpLoad();
   if (!r.ok) { root.innerHTML = R.empty(r.data.error || 'Error'); return; }
   rpRender();
@@ -157,14 +164,17 @@ async function rpDoClone() {
   const url = R.val('rpUrl').trim();
   if (!url) { R.dlgErr(R.tx('rp_f_url') + ' *'); return; }
   const btn = R.el('rpGo');
-  R.busy(btn, R.tx('rp_cloning'));
+  const restore = SP.busy(btn, R.tx('rp_cloning'));
   R.dlgErr('');
   const req = Object.assign({ url, group: R.val('rpGroup').trim(), name: R.val('rpName').trim(), branch: R.val('rpBranch').trim() }, rpAuthBody());
-  const r = await R.api('POST', '/api/repos', req);
+  let r;
+  try {
+    r = await R.api('POST', '/api/repos', req);
+  } finally {
+    restore();
+  }
   if (!r.ok) {
     R.dlgErr(r.data.error || 'Error');
-    btn.disabled = false;
-    btn.textContent = R.tx('rp_clone_btn');
     return;
   }
   rpFollow(r.data.job, req);
@@ -176,19 +186,20 @@ const rpDlgShowsJob = () => !!(R.el('rpLog') && R.el('repoDlg').classList.contai
 
 async function rpFollow(id, req) {
   rpJob = { id, req };
+  const t0 = Date.now();
   R.dlg(R.tx('rp_clone'),
-    `<div class="rp-prog"><div class="rp-prog-head"><span class="spinner" id="rpSpin">${svgIcon('loader-circle', 'icon-sm')}</span> <span id="rpProgTitle">${R.esc(R.tx('rp_cloning'))}</span></div>
+    `<div class="rp-prog"><div class="rp-prog-head"><span class="spinner" id="rpSpin">${svgIcon('loader-circle', 'icon-sm')}</span> <span id="rpProgTitle">${R.esc(R.tx('rp_cloning'))}</span> <span data-sp-t0="${t0}" style="font-variant-numeric:tabular-nums;opacity:0.8;">0s</span></div>
       <pre id="rpLog" class="rp-log" aria-live="polite"></pre><div class="dk-hint">${R.esc(R.tx('rp_clone_bg'))}</div></div>`,
     `<button type="button" id="rpCancel" class="btn btn-sm" onclick="Repos.cancelClone()">${R.esc(R.tx('rp_clone_cancel'))}</button>`, 680);
-  let failures = 0;
+  let rpFailures = 0; // consecutive poll errors tolerated before the follow gives up
   while (rpJob && rpJob.id === id) {
     const r = await R.api('GET', '/api/repos/clone/' + id);
     if (!r.ok) {
-      if (++failures < 3) { await new Promise(res => setTimeout(res, 800)); continue; }
+      if (++rpFailures < 3) { await new Promise(res => setTimeout(res, 800)); continue; }
       rpFinish(id, 'error', r.data.error || 'Error');
       return;
     }
-    failures = 0;
+    rpFailures = 0;
     const log = R.el('rpLog');
     if (log) {
       const stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 24;
@@ -216,6 +227,7 @@ function rpFinish(id, state, msg) {
     showToast(R.tx('rp_clone_canceled'), 'info');
   } else if (showing) {
     const spin = R.el('rpSpin'); if (spin) spin.style.display = 'none';
+    const el = document.querySelector('#repoDlgBody [data-sp-t0]'); if (el) el.removeAttribute('data-sp-t0'); // freeze the elapsed counter
     R.el('rpProgTitle').textContent = R.tx('rp_clone_failed');
     R.dlgErr(msg || 'Error');
     R.el('repoDlgFooter').innerHTML = R.foot(`<button type="button" class="btn btn-sm btn-primary" onclick="Repos.retryClone()">${R.esc(R.tx('rp_clone_retry'))}</button>`);
@@ -228,8 +240,14 @@ let rpLastReq = null;
 async function rpCancelClone() {
   if (!rpJob) return;
   const btn = R.el('rpCancel');
-  R.busy(btn, R.tx('rp_clone_canceling'));
-  await R.api('DELETE', '/api/repos/clone/' + rpJob.id);
+  const restore = SP.busy(btn, R.tx('rp_clone_canceling'));
+  let r;
+  try {
+    r = await R.api('DELETE', '/api/repos/clone/' + rpJob.id);
+  } finally {
+    restore();
+  }
+  if (!r.ok) showToast(R.tx('rp_clone_failed') + ': ' + (r.data.error || 'Error'), 'error');
 }
 function rpRetryClone() { rpOpenClone(rpLastReq || {}); }
 
@@ -296,13 +314,16 @@ async function rpDoCopy(id) {
   const path = R.val('rpCopyPath').trim();
   const git = !!R.el('rpCopyGit').checked;
   if (!path) { R.dlgErr(R.tx('rp_copy_path') + ' *'); return; }
-  R.busy(R.el('rpCopyGo'), R.tx('rp_copy'));
+  const restore = SP.busy(R.el('rpCopyGo'), R.tx('rp_copy'));
   R.dlgErr('');
-  const r = await R.api('POST', `/api/repos/${id}/copy`, { host_id: host, path, include_git: git });
+  let r;
+  try {
+    r = await R.api('POST', `/api/repos/${id}/copy`, { host_id: host, path, include_git: git });
+  } finally {
+    restore();
+  }
   if (!r.ok) {
     R.dlgErr(r.data.error || 'Error');
-    R.el('rpCopyGo').disabled = false;
-    R.el('rpCopyGo').textContent = R.tx('rp_copy');
     return;
   }
   try { localStorage.setItem('pantau_repo_copy_' + id, JSON.stringify({ host, path, git })); } catch (e) { /* ignore */ }
@@ -326,11 +347,14 @@ async function rpSaveFolder() {
 
 async function rpSync(btn, id) {
   const repo = R.state.list.find(x => x.id === id);
-  btn.disabled = true;
-  btn.innerHTML = `<span class="spinner">${svgIcon('loader-circle', 'icon-xs')}</span> ${R.esc(R.tx('rp_sync'))}`;
-  const r = await R.api('POST', `/api/repos/${id}/sync`);
-  if (r.ok) showToast(R.tx('rp_sync_ok', { name: repo ? repo.name : id, commit: R.short(r.data.commit) }), 'success');
-  else R.err(r);
+  const restore = SP.busy(btn, R.tx('rp_syncing'));
+  try {
+    const r = await R.api('POST', `/api/repos/${id}/sync`);
+    if (r.ok) showToast(R.tx('rp_sync_ok', { name: repo ? repo.name : id, commit: R.short(r.data.commit) }), 'success');
+    else R.err(r);
+  } finally {
+    restore();
+  }
   await rpRefresh();
 }
 
@@ -338,9 +362,15 @@ async function rpRemove(id) {
   const repo = R.state.list.find(x => x.id === id);
   if (!repo) return;
   if (!(await showConfirm({ title: R.tx('rp_remove_title'), message: R.tx('rp_remove_msg', { name: repo.name, dir: repo.dir }), confirmText: R.tx('rp_remove'), danger: true }))) return;
-  const r = await R.api('DELETE', '/api/repos/' + id);
-  if (!r.ok) { R.err(r); return; }
-  showToast(R.tx('rp_removed'), 'success');
+  const btn = document.querySelector('[data-rp-del="' + id + '"]');
+  const restore = SP.busy(btn, R.tx('rp_removing'));
+  try {
+    const r = await R.api('DELETE', '/api/repos/' + id);
+    if (!r.ok) { R.err(r); return; }
+    showToast(R.tx('rp_removed'), 'success');
+  } finally {
+    restore();
+  }
   await rpRefresh();
 }
 

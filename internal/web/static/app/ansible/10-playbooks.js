@@ -403,7 +403,8 @@
       title: isNew ? T('ans_pb_tab_new') : (pb0 ? pb0.name : '#' + id),
       subtitle: subtitleHtml(pb0),
       wide: false,
-      actions: isNew ? '' : '<button type="button" class="btn btn-sm btn-primary" data-pbd="run"' + (gateOn() ? '' : ' disabled title="' + esc(T('ans_pb_run_off')) + '"') + '>' + icon('play', 'icon-sm') + ' ' + esc(T('ans_pb_run')) + '</button>',
+      actions: isNew ? '' : '<button type="button" class="btn btn-sm btn-primary" data-pbd="run"' + (gateOn() ? '' : ' disabled title="' + esc(T('ans_pb_run_off')) + '"') + '>' + icon('play', 'icon-sm') + ' ' + esc(T('ans_pb_run')) + '</button>' +
+        (window.IacScan ? window.IacScan.btnHtml('ansible', id) : ''),
       mount: function (body, ctrl) {
         ctx.body = body; ctx.ctrl = ctrl;
         body.innerHTML = '<div class="ans-drawer-tabs" role="tablist">' + tabs.map(function (t) {
@@ -660,7 +661,8 @@
         batch.add(l);
         if (existing.has(l)) { err(T('ans_pb_imp_err_taken', 'Playbook name already exists: "{name}"', { name: p.name })); return; }
       }
-      err(''); imp.busy = true; q('#ansibleImportFields').disabled = true; b.disabled = true; b.textContent = T('ans_pb_imp_busy');
+      err(''); imp.busy = true; q('#ansibleImportFields').disabled = true;
+      const restore = SP.busy(b, T('ans_pb_imp_busy'));
       try {
         const payload = [];
         for (const p of picked) {
@@ -674,7 +676,7 @@
         Ans.toast(T('ans_pb_imp_done'), 'success');
         Ans.load.playbooks().catch(function () { /* polling catches up */ });
       } catch (ex) { err(ex.message || T('ans_pb_imp_failed')); }
-      finally { imp.busy = false; q('#ansibleImportFields').disabled = false; b.disabled = false; b.textContent = T('ans_pb_import'); }
+      finally { imp.busy = false; q('#ansibleImportFields').disabled = false; restore(); }
     });
     openModal('ansibleImportModal');
   }

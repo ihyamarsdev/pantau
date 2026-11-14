@@ -31,9 +31,17 @@ async function tfRegSettings(el) {
     if (await save()) { msg(''); showToast(tx('tfregs_saved'), 'success'); }
   });
   tfEl('tfRegUrlTest').addEventListener('click', async () => {
-    msg(tx('tfregs_testing'));
-    if (input.value.trim() !== saved && !(await save())) return; // test what the user sees
-    const s = await tfApi('POST', '/api/terraform/registry/settings/test');
+    const btn = tfEl('tfRegUrlTest');
+    const restore = SP.busy(btn, tx('tfregs_testing'));
+    const m = tfEl('tfRegUrlStatus');
+    if (m) m.innerHTML = SP.html(tx('tfregs_testing'));
+    let s;
+    try {
+      if (input.value.trim() !== saved && !(await save())) return; // test what the user sees
+      s = await tfApi('POST', '/api/terraform/registry/settings/test');
+    } finally {
+      restore();
+    }
     if (s.ok && s.data.ok) msg(tx('tfregs_test_ok', { ms: s.data.latency_ms || 0 }));
     else msg(tx('tfregs_test_fail', { err: s.data.error || 'Error' }), true);
   });

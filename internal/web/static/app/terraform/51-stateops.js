@@ -1,4 +1,5 @@
 /* State tab additions: state rm / mv / import via POST .../state/ops (always behind a confirm). */
+let tfStBusy = false; // a state operation is running: no second submit
 tfTabRenderers.state = async function (body) {
   await tfRenderState(body);
   const filter = tfEl('tfResFilter');
@@ -48,20 +49,43 @@ function tfStSubmit(op) {
   const addr = tfV('tfStAddr').trim(), to = tfV('tfStTo').trim(), id = tfV('tfStId').trim();
   if (!tfStAddrOK(addr) || (op === 'mv' && !tfStAddrOK(to))) { tfDlgErr(1, tx('tfst_addr_bad')); return; }
   if (op === 'import' && !id) { tfDlgErr(1, tx('tfst_id_required')); return; }
-  tfDlgClose(1);
   tfStRun(op, addr, to, id);
 }
 
 async function tfStRun(op, addr, to, id) {
+  if (tfStBusy) return; // no double submit while an operation runs
   const bin = tfWs.binary || 'terraform';
   const cmd = op === 'rm' ? `${bin} state rm ${addr}` : op === 'mv' ? `${bin} state mv ${addr} ${to}` : `${bin} import ${addr} ${id}`;
-  const ok = await showConfirm({ title: tx('tfst_confirm_title'), message: tx('tfst_confirm_msg', { cmd }), confirmText: tx('tfst_run'), danger: op !== 'import' });
+  tfStBusy = true;
+  let ok = false;
+  try {
+    ok = await showConfirm({ title: tx('tfst_confirm_title'), message: tx('tfst_confirm_msg', { cmd }), confirmText: tx('tfst_run'), danger: op !== 'import' });
+  } finally {
+    if (!ok) tfStBusy = false; // cancelled: allow another run
+  }
   if (!ok) return;
-  const r = await tfApi('POST', `/api/terraform/workspaces/${tfWs.id}/state/ops`, { op, address: addr, to, import_id: id });
+  // The operation can run for minutes: the dialog stays open with a live elapsed counter and disabled buttons.
+  const t0 = Date.now();
+  tfDlg(1, tx('tfst_result_title'), SP.banner(tx('tfst_running', { cmd }), t0),
+    `<button type="button" class="btn btn-sm" disabled>${tfE(tx('tfst_running_short'))}</button>`, 720);
+  let r;
+  try {
+    r = await tfApi('POST', `/api/terraform/workspaces/${tfWs.id}/state/ops`, { op, address: addr, to, import_id: id });
+  } catch (e) {
+    r = { ok: false, data: { error: e.message } };
+  } finally {
+    tfStBusy = false;
+  }
   const d = r.data || {};
-  tfDlg(1, tx('tfst_result_title'), `<div class="tf-st-res ${r.ok ? 'ok' : 'err'}">${tfE(r.ok ? tx('tfst_done', { v: d.state_version }) : tx('tfst_failed') + ': ' + (d.error || ''))}</div>
-    <pre class="tf-log" style="margin-top:8px;">${tfE(d.output || '')}</pre>`,
-    `<button type="button" class="btn btn-sm btn-primary" onclick="tfDlgClose(1)">${tfE(tx('tfst_close'))}</button>`, 720);
+  if (r.ok) {
+    tfDlgClose(1);
+    showToast(tx('tfst_done', { v: d.state_version }), 'success');
+  } else {
+    // Failure: the dialog stays open and shows the error inline.
+    tfDlg(1, tx('tfst_result_title'), `<div class="tf-st-res err" role="alert">${tfE(tx('tfst_failed') + ': ' + (d.error || ''))}</div>
+      <pre class="tf-log" style="margin-top:8px;">${tfE(d.output || '')}</pre>`,
+      `<button type="button" class="btn btn-sm btn-primary" onclick="tfDlgClose(1)">${tfE(tx('tfst_close'))}</button>`, 720);
+  }
   if (r.ok) switchTfWsTab('state');
   tfReloadWs();
 }

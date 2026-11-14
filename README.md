@@ -297,6 +297,13 @@ Pantau inspects remote hosts via non-interactive SSH commands, continuously vali
 - **Clone & Organize**: Clone Git repositories over SSH (key from the SSH Key Library), HTTPS token, or anonymously into a folder on the Pantau server (configurable, default `<data>/repos`). Each repository gets its own subfolder and a card with branch, commit, pending changes and ahead/behind counts. It is a separate section: no Terraform or Ansible gate is needed.
 - **Browse, Edit, Commit & Push**: A file tree with filter and change markers, a CodeMirror editor (save to the clone with `Ctrl+S`, new/delete/discard), then **Commit & Push** the files you tick to the current or a new branch, never with force. **Sync** only fast-forwards the current branch; a rejected push keeps the commit locally for a retry. Credentials are write-only and need write permission on the remote.
 
+### 33. 🔐 DevSecOps Toolkit (Agentless, Opt-In Where Data Leaves the Server)
+- **Known Vulnerabilities in Installed Packages**: opt-in (`osv_enabled`) check of the package inventory against OSV (Debian, Ubuntu, Alpine) and the Arch Linux Security Tracker (pacman), listing CVE, severity and fixing version, with CISA KEV/EPSS badges. Only package names, versions and the OS release are sent; unsupported releases are reported *not assessed*, never clean.
+- **Container Security**: Docker tab **Security** sub-tab with a read-only container misconfiguration audit (privileged, `docker.sock`, host paths, capabilities, namespaces, root user, public ports, mutable tags, no limits) and on-demand image vulnerability scans via the trivy or grype already on the host (never installed by Pantau).
+- **IaC & Secret Scanning**: built-in scanner (no external binary, no network) for Terraform workspaces, Ansible projects and cloned repositories: redacted hard-coded secrets and insecure Terraform/Ansible/Dockerfile patterns. Optional gate (`iac_gate_enabled`) blocks Terraform apply and Ansible run with HTTP 409 while critical/high findings are open.
+- **File Integrity Monitoring**: Desired State rule `file_integrity` compares sha256 of chosen files, `preset:auth`, or all SUID/SGID binaries with a baseline you captured and confirmed; drift names the changed files, unreadable files are *not assessed*.
+- **Accounts & SSH Keys Audit**: read-only inventory of login accounts, `authorized_keys`, password state and sudo grants, matched to the SSH Key Library by fingerprint; flags weak and unknown keys, extra UID 0 accounts and empty passwords, plus a **Fleet keys** view of every key across hosts.
+
 ---
 
 ## 🤖 AI Agent (optional, Hermes Agent)

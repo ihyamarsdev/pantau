@@ -27,11 +27,17 @@
   async function doFormat() {
     if (busy) return;
     const root = C.root, id = tfWs.id, files = C.collect();
-    busy = true; tfEl('tfCfgFmt').disabled = true;
-    const r = await api('fmt', files);
-    busy = false;
+    busy = true;
+    const fmtBtn = tfEl('tfCfgFmt');
+    const restore = SP.busy(fmtBtn, tx('tfcfg_formatting'));
+    let r;
+    try {
+      r = await api('fmt', files);
+    } finally {
+      busy = false;
+      restore();
+    }
     if (stale(root, id)) return;
-    tfEl('tfCfgFmt').disabled = false;
     if (!r.ok) { tfErr(r); return; }
     const out = r.data.files || {};
     let n = 0;
@@ -54,13 +60,19 @@
 
   async function doValidate() {
     if (busy) return;
-    const root = C.root, id = tfWs.id, btn = tfEl('tfCfgValidate'), html = btn.innerHTML;
-    busy = true; btn.disabled = true; tfEl('tfCfgFmt').disabled = true;
-    btn.innerHTML = `<span class="spinner">${svgIcon('loader-circle', 'icon-xs')}</span> ${tfE(tx('tfcfg_validating'))}`;
-    const r = await api('validate', C.collect());
-    busy = false;
+    const root = C.root, id = tfWs.id, btn = tfEl('tfCfgValidate'), fmtBtn = tfEl('tfCfgFmt');
+    busy = true;
+    const restore = SP.busy(btn, tx('tfcfg_validating'));
+    if (fmtBtn) fmtBtn.disabled = true;
+    let r;
+    try {
+      r = await api('validate', C.collect());
+    } finally {
+      busy = false;
+      restore();
+      if (fmtBtn) fmtBtn.disabled = false;
+    }
     if (stale(root, id)) return;
-    btn.disabled = false; btn.innerHTML = html; tfEl('tfCfgFmt').disabled = false;
     if (!r.ok) { tfErr(r); return; }
     const d = r.data;
     if (d.init_error) { showDiag(tx('tfcfg_init_err'), 'err', '', d.init_error); return; }

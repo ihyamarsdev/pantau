@@ -9,6 +9,7 @@
 .du-total { font-size: var(--fs-sm); color: var(--text-muted); white-space: nowrap; }
 .du-warn { display: flex; align-items: center; gap: 6px; background: var(--warning-soft); border: 1px solid var(--warning-border); border-radius: var(--radius); padding: 8px 10px; color: var(--warning); font-size: var(--fs-xs); }
 .du-err { display: flex; align-items: center; gap: 6px; background: var(--danger-soft); border: 1px solid var(--danger-border); border-radius: var(--radius); padding: 10px 12px; color: var(--danger); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.du-info { display: flex; align-items: center; gap: 6px; background: var(--info-soft); border: 1px solid var(--info-border); border-radius: var(--radius); padding: 10px 12px; color: var(--info); font-size: var(--fs-sm); overflow-wrap: anywhere; }
 .du-cols { display: grid; grid-template-columns: minmax(0, 1fr) 90px 60px 30px; gap: 10px; font-size: var(--fs-xs); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--card-border); padding-bottom: 4px; }
 .du-cols span:nth-child(2), .du-cols span:nth-child(3) { text-align: right; }
 .du-rows { display: flex; flex-direction: column; gap: 2px; }

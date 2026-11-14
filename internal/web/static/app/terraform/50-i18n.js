@@ -40,6 +40,8 @@
     tflk_remove: ['Remove link', 'Hapus tautan'],
     tflk_var_bad: ['Variable name must match [A-Za-z_][A-Za-z0-9_]* and be unique', 'Nama variabel harus cocok dengan [A-Za-z_][A-Za-z0-9_]* dan unik'],
     tflk_pick: ['Choose a source workspace and output for every link', 'Pilih workspace sumber dan output untuk setiap tautan'],
+    tfst_running: ['Running: {cmd} (this can take a few minutes)…', 'Menjalankan: {cmd} (bisa memakan waktu beberapa menit)…'],
+    tfst_running_short: ['Running…', 'Menjalankan…'],
   };
   for (const [k, v] of Object.entries(D)) { I18N.en[k] = v[0]; I18N.id[k] = v[1]; }
 })();

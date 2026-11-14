@@ -18,7 +18,7 @@
       ans_ed_token_set: 'A token is stored. Leave empty to keep it.', ans_ed_token_new: 'Token with access to the repository. Stored encrypted like SSH keys and never shown again.',
       ans_ed_git_key: 'SSH key', ans_ed_git_nokeys: 'No keys in the SSH Key Library yet.',
       ans_ed_git_notice: 'Pantau clones the repository (shallow) for every run, so the playbook is always taken from the configured branch. The write access needed for commits is explained under Files.',
-      ans_ed_git_missing: 'The git binary was not found on the Pantau server.', ans_ed_sync: 'Sync now', ans_ed_sync_ok: 'Synced at commit {c}', ans_ed_sync_failed: 'Sync failed',
+      ans_ed_git_missing: 'The git binary was not found on the Pantau server.', ans_ed_sync: 'Sync now', ans_ed_sync_ok: 'Synced at commit {c}', ans_ed_sync_failed: 'Sync failed', ans_ed_syncing: 'Syncing…',
       ans_ed_last_sync: 'Last sync: {when} · {commit}', ans_ed_sync_need_save: 'Save the playbook before syncing.',
       ans_ed_vars_hint: 'Variables found in the playbook, grouped into the playbook\'s own and those of each role. Set a default value to pass it as an extra var on every run; runs can still override it.',
       ans_ed_vars_loading: 'Analyzing…', ans_ed_vars_empty: 'No variables detected.', ans_ed_vars_fail: 'Could not analyze the playbook',
@@ -45,7 +45,7 @@
       ans_ed_c_title: 'Commit & push', ans_ed_c_msg: 'Commit message', ans_ed_c_msg_ph: 'Describe the change', ans_ed_c_branch: 'New branch (optional)', ans_ed_c_branch_ph: 'push to a new branch instead of the configured one',
       ans_ed_c_author: 'Author name (optional)', ans_ed_c_email: 'Author email (optional)', ans_ed_c_go: 'Commit & push', ans_ed_c_cancel: 'Cancel',
       ans_ed_c_note: 'Never force-pushes. The token or SSH key needs write permission on the remote (GitHub: Contents read and write; GitLab: write_repository).',
-      ans_ed_c_ok: 'Pushed {c} to {b}', ans_ed_c_conflict: 'The repository changed since you opened it. Reload the files and apply your changes again.', ans_ed_c_failed: 'Commit failed',
+      ans_ed_c_ok: 'Pushed {c} to {b}', ans_ed_c_conflict: 'The repository changed since you opened it. Reload the files and apply your changes again.', ans_ed_c_failed: 'Commit failed', ans_ed_c_working: 'Committing & pushing…',
       ans_ed_c_msg_required: 'A commit message is required.', ans_ed_c_nochanges: 'There are no changes to commit.',
     },
     id: {
@@ -61,7 +61,7 @@
       ans_ed_token_set: 'Token sudah tersimpan. Kosongkan untuk mempertahankannya.', ans_ed_token_new: 'Token yang punya akses ke repositori. Disimpan terenkripsi seperti kunci SSH dan tidak pernah ditampilkan lagi.',
       ans_ed_git_key: 'Kunci SSH', ans_ed_git_nokeys: 'Belum ada kunci di Pustaka Kunci SSH.',
       ans_ed_git_notice: 'Pantau meng-clone repositori (dangkal) pada setiap run, sehingga playbook selalu diambil dari branch yang dikonfigurasi. Akses tulis untuk commit dijelaskan di bagian Berkas.',
-      ans_ed_git_missing: 'Biner git tidak ditemukan di server Pantau.', ans_ed_sync: 'Sinkronkan', ans_ed_sync_ok: 'Disinkronkan pada commit {c}', ans_ed_sync_failed: 'Sinkronisasi gagal',
+      ans_ed_git_missing: 'Biner git tidak ditemukan di server Pantau.', ans_ed_sync: 'Sinkronkan', ans_ed_sync_ok: 'Disinkronkan pada commit {c}', ans_ed_sync_failed: 'Sinkronisasi gagal', ans_ed_syncing: 'Menyinkronkan…',
       ans_ed_last_sync: 'Sinkron terakhir: {when} · {commit}', ans_ed_sync_need_save: 'Simpan playbook sebelum sinkronisasi.',
       ans_ed_vars_hint: 'Variabel yang ditemukan di playbook, dikelompokkan menjadi variabel playbook dan variabel tiap role. Isi nilai bawaan untuk meneruskannya sebagai extra var pada setiap run; run tetap bisa menimpanya.',
       ans_ed_vars_loading: 'Menganalisis…', ans_ed_vars_empty: 'Tidak ada variabel terdeteksi.', ans_ed_vars_fail: 'Gagal menganalisis playbook',
@@ -88,7 +88,7 @@
       ans_ed_c_title: 'Commit & push', ans_ed_c_msg: 'Pesan commit', ans_ed_c_msg_ph: 'Jelaskan perubahan', ans_ed_c_branch: 'Branch baru (opsional)', ans_ed_c_branch_ph: 'push ke branch baru, bukan branch yang dikonfigurasi',
       ans_ed_c_author: 'Nama penulis (opsional)', ans_ed_c_email: 'Email penulis (opsional)', ans_ed_c_go: 'Commit & push', ans_ed_c_cancel: 'Batal',
       ans_ed_c_note: 'Tidak pernah force-push. Token atau kunci SSH perlu izin tulis di remote (GitHub: Contents read and write; GitLab: write_repository).',
-      ans_ed_c_ok: '{c} di-push ke {b}', ans_ed_c_conflict: 'Repositori berubah sejak Anda membukanya. Muat ulang berkas lalu terapkan perubahan lagi.', ans_ed_c_failed: 'Commit gagal',
+      ans_ed_c_ok: '{c} di-push ke {b}', ans_ed_c_conflict: 'Repositori berubah sejak Anda membukanya. Muat ulang berkas lalu terapkan perubahan lagi.', ans_ed_c_failed: 'Commit gagal', ans_ed_c_working: 'Commit & push…',
       ans_ed_c_msg_required: 'Pesan commit wajib diisi.', ans_ed_c_nochanges: 'Tidak ada perubahan untuk di-commit.',
     },
   });
@@ -251,10 +251,11 @@
       try { const d = await Ans.api.get('/api/ssh-keys'); S.keys = Array.isArray(d) ? d : []; if (!S.git.keyId && S.keys[0]) { S.git.keyId = S.keys[0].id; } if (!destroyed && S.sub === 'playbook' && S.source === 'git') { paintSub(); notifyDirty(); } } catch (e) { S.keys = []; }
     }
     async function syncNow() {
-      const b = q('[data-ed="sync"]'); if (b) b.disabled = true;
+      const b = q('[data-ed="sync"]');
+      const restore = SP.busy(b, T('ans_ed_syncing'));
       try { const d = await Ans.api.post('/api/ansible/playbooks/' + id + '/git/sync'); const info = q('[data-ed="syncinfo"]'); const c = ((d && (d.commit || (d.sync && d.sync.commit))) || '').slice(0, 8); if (info) info.textContent = T('ans_ed_sync_ok', 'Synced at commit {c}', { c: c }); Ans.toast(T('ans_ed_sync_ok', 'Synced at commit {c}', { c: c }), 'success'); }
       catch (e) { Ans.toast(T('ans_ed_sync_failed') + ': ' + e.message, 'error'); }
-      finally { if (b && !destroyed) b.disabled = false; }
+      finally { restore(); }
     }
 
     /* ----- variables panel ----- */
@@ -267,7 +268,7 @@
       if (S.source !== 'inline' || destroyed) return;
       const content = cm ? cm.getValue() : S.content;
       const seq = ++analyzeSeq;
-      S.analysis = 'loading'; paintVarsStatus();
+      S.analysis = 'loading'; S.analysisT0 = Date.now(); paintVarsStatus();
       try {
         const d = await Ans.api.post('/api/ansible/playbooks/analyze', { content: content, extra_vars: Object.keys(S.extra).length ? JSON.stringify(S.extra) : '' });
         if (seq !== analyzeSeq || destroyed) return;
@@ -277,7 +278,7 @@
     }
     async function analyzeGit() {
       if (!id) return;
-      S.analysis = 'loading'; paintVarsStatus();
+      S.analysis = 'loading'; S.analysisT0 = Date.now(); paintVarsStatus();
       try { const d = await Ans.api.get('/api/ansible/playbooks/' + id + '/contents'); S.detected = (d && d.vars) || []; S.analysis = ''; }
       catch (e) { S.analysis = T('ans_ed_vars_fail') + ': ' + e.message; }
       paintVarsStatus(); paintVarsTable();
@@ -293,7 +294,7 @@
     }
     function paintVarsStatus() {
       const el = q('[data-ed="vstatus"]'); if (!el) return;
-      el.innerHTML = S.analysis === 'loading' ? '<span class="ans-muted">' + icon('loader-circle', 'icon-sm') + ' ' + esc(T('ans_ed_vars_loading')) + '</span>' : S.analysis ? '<span class="ans-err">' + esc(S.analysis) + '</span>' : '';
+      el.innerHTML = S.analysis === 'loading' ? '<span class="ans-muted">' + SP.html(T('ans_ed_vars_loading'), S.analysisT0 || Date.now()) + '</span>' : S.analysis ? '<span class="ans-err">' + esc(S.analysis) + '</span>' : '';
     }
     function varRows() {
       const rows = new Map();
@@ -460,8 +461,8 @@
       paintBar();
     }
     async function loadTree() {
-      fs.loading = true; fs.error = '';
-      const list = q('[data-fl="list"]'); if (list) list.innerHTML = '<div class="ans-muted ans-ed-empty">' + icon('loader-circle', 'icon-sm') + ' ' + esc(T('ans_ed_f_loading')) + '</div>';
+      fs.loading = true; fs.error = ''; fs.t0 = Date.now();
+      const list = q('[data-fl="list"]'); if (list) list.innerHTML = '<div class="ans-muted ans-ed-empty">' + SP.html(T('ans_ed_f_loading'), fs.t0) + '</div>';
       try { fs.tree = await Ans.api.get('/api/ansible/playbooks/' + id + '/git/files'); fs.loaded = true; }
       catch (e) { fs.error = T('ans_ed_f_failed') + ': ' + e.message; }
       fs.loading = false;
@@ -488,7 +489,7 @@
       const view = q('[data-fl="view"]'); if (!view) return;
       const e = fs.edits[path];
       if (e) { paintFileView(); return; }
-      view.innerHTML = '<div class="ans-muted ans-ed-empty">' + icon('loader-circle', 'icon-sm') + ' …</div>';
+      view.innerHTML = '<div class="ans-muted ans-ed-empty">' + SP.html(T('ans_ed_f_loading'), Date.now()) + '</div>';
       try { const d = await Ans.api.get('/api/ansible/playbooks/' + id + '/git/file?path=' + encodeURIComponent(path)); fs.files = fs.files || {}; fs.files[path] = d.content; }
       catch (er) { fs.ro = true; fs.msg = er.status === 415 ? T('ans_ed_f_binary') : er.status === 413 ? T('ans_ed_f_too_big') : er.message; }
       if (!destroyed && fs.open === path) paintFileView();
@@ -570,7 +571,7 @@
         const body = { message: msg, base_commit: fs.tree ? fs.tree.commit : '', changes: Object.keys(fs.edits).map(function (p) { const x = fs.edits[p]; return x.del ? { path: p, content: '', delete: true } : { path: p, content: x.content }; }) };
         const br = m.querySelector('#ansEdCBranch').value.trim(), an = m.querySelector('#ansEdCAuthor').value.trim(), ae = m.querySelector('#ansEdCEmail').value.trim();
         if (br) body.new_branch = br; if (an) body.author_name = an; if (ae) body.author_email = ae;
-        b.disabled = true;
+        const restore = SP.busy(b, T('ans_ed_c_working'));
         try {
           const d = await Ans.api.post('/api/ansible/playbooks/' + id + '/git/commit', body);
           Ans.toast(T('ans_ed_c_ok', '{c} pushed to {b}', { c: (d.commit || '').slice(0, 8), b: d.branch || '' }), 'success');
@@ -578,7 +579,7 @@
           if (!destroyed && S.sub === 'files') paintSub();
         } catch (ex) {
           err.textContent = ex.status === 409 ? T('ans_ed_c_conflict') : T('ans_ed_c_failed') + ': ' + ex.message; err.hidden = false;
-        } finally { b.disabled = false; }
+        } finally { restore(); }
       });
       openModal('ansEdCommitModal');
       setTimeout(function () { const i = m.querySelector('#ansEdCMsg'); if (i) i.focus(); }, 80);
@@ -587,61 +588,62 @@
     /* ----- save ----- */
     async function save() {
       if (S.busy) return;
-      if (!(await P.flush())) return;
-      if (cm) S.content = cm.getValue();
-      showError('');
-      const name = S.name.trim();
-      if (!name) { showError(T('ans_ed_err_name')); return; }
-      if (name.length > 64) { showError(T('ans_ed_err_name_len')); return; }
-      // Inline playbooks are checked and formatted server-side before saving; git ones are committed as authored.
-      if (S.source === 'inline' && S.content.trim()) {
-        try {
-          const f = await Ans.api.post('/api/ansible/playbooks/format', { content: S.content });
-          if (f && f.changed && typeof f.content === 'string') {
-            S.content = f.content;
-            if (cm) { // raw editor is showing: keep cursor and scroll as close as possible
-              const cur = cm.getCursor(), sc = cm.getScrollInfo();
-              cm.setValue(f.content);
-              const ln = Math.min(cur.line, cm.lineCount() - 1);
-              cm.setCursor({ line: ln, ch: Math.min(cur.ch, (cm.getLine(ln) || '').length) });
-              cm.scrollTo(sc.left, sc.top);
-            }
-            if (P.has(S.sub)) { P.invalidate(); await P.enter(S.sub); paintSub(); } // part tab showing: re-derive it from the formatted text
-            Ans.toast(T('ans_ed_formatted'), 'success');
-          }
-        } catch (e) {
-          if (S.sub !== 'raw') await switchSub('raw'); // switchSub clears the error on success, so show it after
-          showError(e.message);
-          return; // abort the save, S.busy stays false
-        }
-      }
-      const payload = { name: name, description: S.desc.trim(), source: S.source, group_name: S.group.trim(), extra_vars: Object.keys(S.extra).length ? JSON.stringify(S.extra) : '' };
-      if (S.source === 'git') {
-        Object.assign(payload, { git_url: S.git.url.trim(), git_branch: S.git.branch.trim(), git_path: S.git.path.trim(), git_auth: S.git.auth, git_token: S.git.token, git_key_id: Number(S.git.keyId) || 0 });
-        if (!payload.git_url || !payload.git_path) { showError(T('ans_ed_err_git')); return; }
-      } else {
-        payload.content = S.content.trim();
-        if (!payload.content) { showError(T('ans_ed_err_content')); return; }
-      }
-      const sp = surveyPayload();
-      if (sp.error) { showError(sp.error); return; }
-      S.busy = true; notifyDirty();
-      const btn = q('[data-ed="save"] span'); if (btn) btn.textContent = T('ans_ed_saving');
+      // The busy flag is set before the first await: a double click must not create two playbooks.
+      S.busy = true;
+      const restore = SP.busy(q('[data-ed="save"]'), T('ans_ed_saving'));
+      const done = function () { S.busy = false; restore(); notifyDirty(); };
       try {
+        if (!(await P.flush())) return;
+        if (cm) S.content = cm.getValue();
+        showError('');
+        const name = S.name.trim();
+        if (!name) { showError(T('ans_ed_err_name')); return; }
+        if (name.length > 64) { showError(T('ans_ed_err_name_len')); return; }
+        // Inline playbooks are checked and formatted server-side before saving; git ones are committed as authored.
+        if (S.source === 'inline' && S.content.trim()) {
+          try {
+            const f = await Ans.api.post('/api/ansible/playbooks/format', { content: S.content });
+            if (f && f.changed && typeof f.content === 'string') {
+              S.content = f.content;
+              if (cm) { // raw editor is showing: keep cursor and scroll as close as possible
+                const cur = cm.getCursor(), sc = cm.getScrollInfo();
+                cm.setValue(f.content);
+                const ln = Math.min(cur.line, cm.lineCount() - 1);
+                cm.setCursor({ line: ln, ch: Math.min(cur.ch, (cm.getLine(ln) || '').length) });
+                cm.scrollTo(sc.left, sc.top);
+              }
+              if (P.has(S.sub)) { P.invalidate(); await P.enter(S.sub); paintSub(); } // part tab showing: re-derive it from the formatted text
+              Ans.toast(T('ans_ed_formatted'), 'success');
+            }
+          } catch (e) {
+            if (S.sub !== 'raw') await switchSub('raw'); // switchSub clears the error on success, so show it after
+            showError(e.message);
+            return; // abort the save
+          }
+        }
+        const payload = { name: name, description: S.desc.trim(), source: S.source, group_name: S.group.trim(), extra_vars: Object.keys(S.extra).length ? JSON.stringify(S.extra) : '' };
+        if (S.source === 'git') {
+          Object.assign(payload, { git_url: S.git.url.trim(), git_branch: S.git.branch.trim(), git_path: S.git.path.trim(), git_auth: S.git.auth, git_token: S.git.token, git_key_id: Number(S.git.keyId) || 0 });
+          if (!payload.git_url || !payload.git_path) { showError(T('ans_ed_err_git')); return; }
+        } else {
+          payload.content = S.content.trim();
+          if (!payload.content) { showError(T('ans_ed_err_content')); return; }
+        }
+        const sp = surveyPayload();
+        if (sp.error) { showError(sp.error); return; }
         const d = id ? await Ans.api.put('/api/ansible/playbooks/' + id, payload) : await Ans.api.post('/api/ansible/playbooks', payload);
         const pb = d && d.playbook ? d.playbook : Object.assign({ id: id }, payload);
         id = pb.id;
         if (sp.fields && JSON.stringify(S.survey) !== savedSurvey) {
           try { await Ans.api.put('/api/ansible/playbooks/' + id + '/survey', { survey: sp.fields }); savedSurvey = JSON.stringify(S.survey); }
-          catch (e) { showError(T('ans_ed_sv_save_failed') + ': ' + e.message); S.sub = 'survey'; S.busy = false; paintNav(); paintSub(); if (o.onSaved && isNew) { /* playbook exists now; keep the editor open on the survey */ } S.baseline = serialize(); notifyDirty(); Ans.load.playbooks().catch(function () { /* list refresh */ }); return; }
+          catch (e) { showError(T('ans_ed_sv_save_failed') + ': ' + e.message); S.sub = 'survey'; paintNav(); paintSub(); if (o.onSaved && isNew) { /* playbook exists now; keep the editor open on the survey */ } S.baseline = serialize(); Ans.load.playbooks().catch(function () { /* list refresh */ }); return; }
         }
         S.git.token = ''; S.git.tokenSet = S.git.auth === 'token' && (S.git.tokenSet || !!payload.git_token);
         S.baseline = serialize();
         Ans.toast(T('ans_ed_saved'), 'success');
-        S.busy = false; notifyDirty();
         if (o.onSaved) o.onSaved(pb, { sub: S.sub });
-      } catch (e) { showError(T('ans_ed_save_failed') + ': ' + e.message); S.busy = false; notifyDirty(); }
-      finally { const b2 = q('[data-ed="save"] span'); if (b2) b2.textContent = T('ans_ed_save'); }
+      } catch (e) { showError(T('ans_ed_save_failed') + ': ' + e.message); }
+      finally { done(); }
     }
     function discard() {
       if (!dirty()) return;
@@ -676,12 +678,8 @@
       const sv = e.target.closest('[data-sv]'); if (sv) { surveyClick(sv); return; }
       const vg = e.target.closest('[data-vg]'); if (vg) { toggleVarGroup(vg.getAttribute('data-vg')); return; }
       const dv = e.target.closest('[data-delvar]'); if (dv) { deleteVar(dv.getAttribute('data-delvar')); return; }
-      const ed = e.target.closest('[data-ed]');
-      if (ed) {
-        const a = ed.getAttribute('data-ed');
-        if (a === 'save') save(); else if (a === 'discard') discard(); else if (a === 'addvar') addVar(); else if (a === 'sync') syncNow(); else if (a === 'agit') analyzeGit();
-        return;
-      }
+      // The file tree lives inside [data-ed="body"], so the [data-fl] and [data-file] handlers must run
+      // before the [data-ed] one: closest('[data-ed]') would otherwise match the body and swallow the click.
       const fi = e.target.closest('[data-file]'); if (fi) { openFile(fi.getAttribute('data-file')); return; }
       const fl = e.target.closest('[data-fl]');
       if (fl) {
@@ -693,6 +691,13 @@
         }
         else if (a === 'new') newFile(); else if (a === 'del') toggleDelete(); else if (a === 'commit') commitDialog();
         else if (a === 'revert') { delete fs.edits[fs.open]; paintTree(); paintFileView(); paintBar(); }
+        return;
+      }
+      const ed = e.target.closest('[data-ed]');
+      if (ed) {
+        const a = ed.getAttribute('data-ed');
+        if (a === 'save') save(); else if (a === 'discard') discard(); else if (a === 'addvar') addVar(); else if (a === 'sync') syncNow(); else if (a === 'agit') analyzeGit();
+        return;
       }
     };
     const onKey = function (e) {

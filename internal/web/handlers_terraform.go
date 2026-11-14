@@ -1166,6 +1166,7 @@ func (s *Server) handleTerraformRunRoute(w http.ResponseWriter, r *http.Request)
 		var req struct {
 			Comment        string `json:"comment"`
 			OverridePolicy bool   `json:"override_policy"`
+			IgnoreIacGate  bool   `json:"ignore_iac_gate"`
 		}
 		if !decodeTerraformBody(w, r, &req) {
 			return
@@ -1201,6 +1202,20 @@ func (s *Server) handleTerraformRunRoute(w http.ResponseWriter, r *http.Request)
 		if err != nil {
 			http.Error(w, "workspace not found", http.StatusNotFound)
 			return
+		}
+
+		// IaC/secret gate (opt-in): a critical or high finding blocks the apply unless it is ignored explicitly.
+		if s.iacGateEnabled() && !req.IgnoreIacGate {
+			ctx, cancel := context.WithTimeout(r.Context(), iacScanTimeout)
+			blocks, summary := s.iacCheckGate(ctx, iacSourceTerraform, ws.ID)
+			cancel()
+			if blocks {
+				writeJSON(w, http.StatusConflict, map[string]interface{}{
+					"error":            "the IaC/secret scan found blocking findings; fix them or set ignore_iac_gate to apply anyway",
+					"findings_summary": summary,
+				})
+				return
+			}
 		}
 
 		if err := s.tfMgr.StartApply(ws, run, req.Comment); err != nil {

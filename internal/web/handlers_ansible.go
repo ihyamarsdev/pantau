@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -389,9 +390,24 @@ func (s *Server) handleAnsiblePlaybookRun(w http.ResponseWriter, r *http.Request
 		SurveyAnswers map[string]interface{} `json:"survey_answers"`
 		Verbosity     int                    `json:"verbosity"`
 		Become        bool                   `json:"become"`
+		IgnoreIacGate bool                   `json:"ignore_iac_gate"`
 	}
 	if !decodeAnsibleBody(w, r, &req) {
 		return
+	}
+
+	// IaC/secret gate (opt-in): a critical or high finding blocks the run unless it is ignored explicitly.
+	if s.iacGateEnabled() && !req.IgnoreIacGate {
+		ctx, cancel := context.WithTimeout(r.Context(), iacScanTimeout)
+		blocks, summary := s.iacCheckGate(ctx, iacSourceAnsible, pb.ID)
+		cancel()
+		if blocks {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{
+				"error":            "the IaC/secret scan found blocking findings; fix them or set ignore_iac_gate to run anyway",
+				"findings_summary": summary,
+			})
+			return
+		}
 	}
 
 	run, lerr := s.launchAnsibleRun(pb, ansibleRunParams{

@@ -65,8 +65,10 @@
     rp_creds_saved: ['Credentials saved', 'Kredensial disimpan'],
     rp_open: ['Open', 'Buka'],
     rp_sync: ['Sync', 'Sinkron'],
+    rp_syncing: ['Syncing…', 'Menyinkronkan…'],
     rp_sync_ok: ['Synced {name} ({commit})', '{name} disinkronkan ({commit})'],
     rp_remove: ['Remove', 'Hapus'],
+    rp_removing: ['Removing…', 'Menghapus…'],
     rp_remove_title: ['Remove repository', 'Hapus repositori'],
     rp_remove_msg: ['Remove "{name}" and DELETE its folder {dir} from this server? Uncommitted changes and unpushed commits are lost; the remote repository is not touched.', 'Hapus "{name}" dan HAPUS foldernya {dir} dari server ini? Perubahan yang belum di-commit dan commit yang belum di-push akan hilang; repositori remote tidak diubah.'],
     rp_removed: ['Repository removed', 'Repositori dihapus'],
@@ -168,11 +170,6 @@
   };
   R.foot = (primary) => `<button type="button" class="btn btn-sm" onclick="Repos.dlgClose()">${R.esc(t('cancel', 'Cancel'))}</button>${primary || ''}`;
   R.primary = (label, onclick) => `<button type="button" class="btn btn-sm btn-primary" onclick="${onclick}">${R.esc(label)}</button>`;
-  R.busy = (btn, label) => {
-    if (!btn) return;
-    btn.disabled = true;
-    btn.innerHTML = `<span class="spinner">${svgIcon('loader-circle', 'icon-xs')}</span> ${R.esc(label)}`;
-  };
   // Highlighting follows the file name: hcl comes from the Terraform bundle, the rest from the vendored CodeMirror modes
   // via its mode table (meta.js); a name without a loaded mode stays plain text.
   R.modeFor = (path) => {

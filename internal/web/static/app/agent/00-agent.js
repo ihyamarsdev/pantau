@@ -5,7 +5,7 @@
   'use strict';
 
   const AG = (window.AG = {});
-  const S = { grants: [], enabled: false, open: false, busy: false, session: null, abort: null, approvals: [], timer: null, msgs: [] };
+  const S = { grants: [], enabled: false, open: false, busy: false, session: null, abort: null, approvals: [], timer: null, msgs: [], chatT0: 0, apprT0: 0 };
   const SESSION_KEY = 'pantau_agent_session';
 
   const I = {
@@ -15,6 +15,7 @@
       ag_empty: 'Pantau Operator can read host state and, with your approval, restart services and containers or change settings on your hosts.',
       ag_disabled: 'The AI agent is off. Enable it in Settings → AI Agent.', ag_open_settings: 'Open AI Agent settings',
       ag_working: 'Working…', ag_stop: 'Stop',
+      ag_waiting_approval: 'Waiting for your approval',
       ag_appr_title: 'Agent wants to run', ag_appr_exec: 'Shell command (always needs approval)', ag_appr_infra: 'Infrastructure change (always needs approval)', ag_approve: 'Approve', ag_deny: 'Deny', ag_approve_session: 'Approve for this session', ag_session_hint: 'Approves every later change on {host} without asking (shell commands too: {shell}). Ends on New chat, Revoke or after 2 hours.', ag_grants: 'Auto-approved this session', ag_revoke: 'Revoke', ag_g_shell: 'incl. shell', ag_g_tools: 'service/container actions',
       ag_s_enable: 'Enable AI agent', ag_s_url: 'Hermes API server URL', ag_s_key: 'Hermes API key (API_SERVER_KEY)',
       ag_s_key_saved: 'Saved. Leave empty to keep it.', ag_s_model: 'Model name sent to Hermes',
@@ -40,6 +41,7 @@
       ag_empty: 'Pantau Operator bisa membaca kondisi host dan, dengan persetujuan Anda, me-restart service/container atau mengubah setting host.',
       ag_disabled: 'Agen AI nonaktif. Aktifkan di Pengaturan → AI Agent.', ag_open_settings: 'Buka pengaturan AI Agent',
       ag_working: 'Bekerja…', ag_stop: 'Berhenti',
+      ag_waiting_approval: 'Menunggu persetujuan Anda',
       ag_appr_title: 'Agent ingin menjalankan', ag_appr_exec: 'Perintah shell (selalu butuh persetujuan)', ag_appr_infra: 'Perubahan infrastruktur (selalu butuh persetujuan)', ag_approve: 'Setujui', ag_deny: 'Tolak', ag_approve_session: 'Setujui untuk sesi ini', ag_session_hint: 'Menyetujui semua perubahan berikutnya di {host} tanpa bertanya (termasuk perintah shell: {shell}). Berakhir saat Chat baru, Cabut, atau setelah 2 jam.', ag_grants: 'Disetujui otomatis di sesi ini', ag_revoke: 'Cabut', ag_g_shell: 'termasuk shell', ag_g_tools: 'aksi service/container',
       ag_s_enable: 'Aktifkan agen AI', ag_s_url: 'URL API server Hermes', ag_s_key: 'API key Hermes (API_SERVER_KEY)',
       ag_s_key_saved: 'Tersimpan. Kosongkan untuk tetap memakainya.', ag_s_model: 'Nama model yang dikirim ke Hermes',
@@ -118,7 +120,7 @@
       if (m.role === 'user') return `<div class="ag-msg ag-user">${esc(m.text)}</div>`;
       if (m.role === 'tool') return `<div class="ag-tool">${svgIcon('wrench', 'icon-sm')} ${esc(m.text)}</div>`;
       if (m.role === 'error') return `<div class="ag-err">${esc(m.text)}</div>`;
-      return `<div class="ag-msg ag-bot">${m.text ? md(m.text) : esc(t('ag_working'))}</div>`;
+      if (!m.text) return `<div class="ag-msg ag-bot">${S.approvals.length ? SP.html(t('ag_waiting_approval'), S.apprT0) : SP.html(t('ag_working'), S.chatT0)}</div>`;
     }).join('');
     log.scrollTop = log.scrollHeight;
   }
@@ -173,6 +175,7 @@
     S.msgs.push({ role: 'user', text });
     const bot = { role: 'bot', text: '' };
     S.msgs.push(bot);
+    S.chatT0 = Date.now();
     renderLog();
     setBusy(true);
     S.abort = new AbortController();
@@ -238,7 +241,10 @@
     if (!S.enabled) return;
     const r = await api('/api/agent/approvals').catch(() => null);
     if (!r || !r.ok) return;
+    const prev = S.approvals.length;
     S.approvals = r.data || [];
+    // The first pending approval starts the "waiting for your approval" clock.
+    if (S.approvals.length && !prev) S.apprT0 = Date.now();
     const gr = await api('/api/agent/grants').catch(() => null);
     S.grants = gr && gr.ok ? gr.data || [] : [];
     const badge = $('agentBadge');
@@ -257,6 +263,8 @@
     const host = $('agentApprovals');
     const html = grantsHtml() + cards; // grants stay visible even while the chat panel is closed
     if (host.dataset.html !== html) { host.dataset.html = html; host.innerHTML = html; }
+    // The chat bubble shows the approval wait, so it must follow the approval state.
+    if (S.approvals.length !== prev) renderLog();
   }
 
   AG.decide = async function (id, approve, session) {
@@ -368,8 +376,14 @@
   AG.testConn = async function () {
     const out = $('agTestResult');
     await AG.saveSettings();
-    out.textContent = '…';
-    const r = await post('/api/agent/test');
+    out.innerHTML = SP.html(t('ag_s_testing', 'Testing connection…'));
+    let r;
+    try {
+      r = await post('/api/agent/test');
+    } catch (e) {
+      out.innerHTML = `<span style="color:var(--danger)">${esc(e.message)}</span>`;
+      return;
+    }
     out.innerHTML = r.data.ok ? `<span style="color:var(--success)">${esc(t('ag_s_test_ok'))}</span>` : `<span style="color:var(--danger)">${esc(r.data.error || 'error')}</span>`;
   };
 

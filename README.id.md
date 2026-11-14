@@ -296,6 +296,13 @@ Pantau menginspeksi Host remote melalui perintah SSH non-interaktif, memvalidasi
 - **Clone & Kelola**: Clone repositori Git lewat SSH (kunci dari SSH Key Library), token HTTPS, atau anonim ke folder di server Pantau (dapat diatur, bawaan `<data>/repos`). Setiap repositori punya subfolder dan kartu berisi branch, commit, perubahan tertunda, dan jumlah ahead/behind. Ini bagian tersendiri: tidak memerlukan gate Terraform atau Ansible.
 - **Jelajah, Sunting, Commit & Push**: Pohon berkas dengan filter dan penanda perubahan, editor CodeMirror (simpan ke clone dengan `Ctrl+S`, baru/hapus/buang), lalu **Commit & Push** berkas yang dicentang ke branch aktif atau branch baru, tanpa force. **Sync** hanya fast-forward branch aktif; push yang ditolak mempertahankan commit lokal untuk dicoba ulang. Kredensial bersifat write-only dan wajib berizin tulis di remote.
 
+### 33. 🔐 Toolkit DevSecOps (Agentless, Opt-In Bila Data Keluar Server)
+- **Kerentanan Dikenal pada Paket Terpasang**: pemeriksaan opt-in (`osv_enabled`) inventaris paket terhadap OSV (Debian, Ubuntu, Alpine) dan Arch Linux Security Tracker (pacman), menampilkan CVE, severity, dan versi perbaikan beserta badge CISA KEV/EPSS. Hanya nama paket, versi, dan rilis OS yang dikirim; rilis yang tidak didukung berstatus *not assessed*, bukan bersih.
+- **Keamanan Container**: sub-tab **Security** di tab Docker berisi audit misconfiguration container read-only (privileged, `docker.sock`, path host, kapabilitas, namespace, user root, port publik, tag mutable, tanpa limit) dan pemindaian kerentanan image on-demand lewat trivy atau grype yang sudah ada di host (tidak pernah dipasang Pantau).
+- **Pemindaian IaC & Secret**: pemindai bawaan (tanpa biner eksternal dan tanpa jaringan) untuk workspace Terraform, proyek Ansible, dan repositori ter-clone: rahasia ter-hardcode yang disamarkan serta pola Terraform/Ansible/Dockerfile yang tidak aman. Gate opsional (`iac_gate_enabled`) menolak apply Terraform dan run Ansible dengan HTTP 409 selama ada temuan critical/high.
+- **File Integrity Monitoring**: rule Desired State `file_integrity` membandingkan sha256 berkas pilihan, `preset:auth`, atau semua biner SUID/SGID dengan baseline yang Anda ambil dan konfirmasi; drift menyebut berkas yang berubah, berkas tak terbaca berstatus *not assessed*.
+- **Audit Akun & Kunci SSH**: inventaris read-only akun login, `authorized_keys`, status kata sandi, dan hak sudo yang dicocokkan dengan SSH Key Library lewat sidik jari; menandai kunci lemah dan tidak dikenal, akun UID 0 tambahan, dan kata sandi kosong, plus tampilan **Fleet keys** untuk semua kunci lintas host.
+
 ---
 
 ## 🚀 Panduan Memulai Cepat (Quick Start)

@@ -8,7 +8,7 @@
   'use strict';
 
   const FS = (window.FleetSearch = {});
-  const S = { query: '', kind: 'all', results: null, loading: false, error: '', timer: null, seq: 0 };
+  const S = { query: '', kind: 'all', results: null, loading: false, error: '', timer: null, seq: 0, t0: 0 };
 
   const esc = (s) => escapeHtml(String(s === null || s === undefined ? '' : s));
   const icon = (n) => svgIcon(n, 'icon-sm');
@@ -175,7 +175,8 @@
     const box = document.getElementById('fsResults');
     if (!box) return;
     if (S.loading) {
-      box.innerHTML = `<div class="fs-empty">${icon('loader-circle')} <span>${esc(t('fs_searching'))}</span></div>`;
+      // SP.html adds the rotating icon and the live elapsed counter.
+      box.innerHTML = `<div class="fs-empty">${window.SP ? SP.html(t('fs_searching'), S.t0) : `${icon('loader-circle')} <span>${esc(t('fs_searching'))}</span>`}</div>`;
       return;
     }
     if (S.error) {
@@ -211,6 +212,7 @@
     const seq = ++S.seq;
     S.loading = true;
     S.error = '';
+    S.t0 = Date.now();
     render();
     try {
       const res = await fetch('/api/search?q=' + encodeURIComponent(q) + '&kind=' + encodeURIComponent(S.kind) + '&limit=200');

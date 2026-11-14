@@ -119,6 +119,8 @@ type HostPackage struct {
 	HostID        int64     `json:"host_id"`
 	Name          string    `json:"name"`
 	Version       string    `json:"version"`
+	Source        string    `json:"source,omitempty"`         // source package name (dpkg), origin package (apk); empty for rpm/pacman
+	SourceVersion string    `json:"source_version,omitempty"` // source package version (dpkg); empty for rpm/pacman
 	SizeBytes     int64     `json:"size_bytes"`
 	InstallEpoch  int64     `json:"install_epoch"`
 	IsManual      bool      `json:"is_manual"`
@@ -332,6 +334,8 @@ func (d *DB) migrate() error {
 		host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
 		name TEXT NOT NULL,
 		version TEXT NOT NULL,
+		source TEXT NOT NULL DEFAULT '',
+		source_version TEXT NOT NULL DEFAULT '',
 		size_bytes INTEGER NOT NULL DEFAULT 0,
 		install_epoch INTEGER NOT NULL DEFAULT 0,
 		is_manual INTEGER NOT NULL DEFAULT 0,
@@ -494,6 +498,19 @@ func (d *DB) migrate() error {
 		notes_json TEXT,
 		error TEXT
 	);
+	CREATE TABLE IF NOT EXISTS docker_security_scans (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+		kind TEXT NOT NULL,
+		subject TEXT NOT NULL DEFAULT '',
+		scanned_at DATETIME NOT NULL,
+		scanner TEXT NOT NULL DEFAULT '',
+		summary_json TEXT NOT NULL DEFAULT '{}',
+		findings_json TEXT NOT NULL DEFAULT '[]',
+		error TEXT NOT NULL DEFAULT '',
+		UNIQUE (host_id, kind, subject)
+	);
+	CREATE INDEX IF NOT EXISTS idx_docker_security_scans_host ON docker_security_scans(host_id, kind);
 	CREATE TABLE IF NOT EXISTS kube_clusters (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -652,6 +669,19 @@ func (d *DB) migrate() error {
 		synced_at DATETIME,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+	CREATE TABLE IF NOT EXISTS iac_scans (
+		source_kind TEXT NOT NULL,
+		source_id INTEGER NOT NULL,
+		scanned_at DATETIME NOT NULL,
+		summary_json TEXT NOT NULL DEFAULT '{}',
+		findings_json TEXT NOT NULL DEFAULT '[]',
+		status TEXT NOT NULL DEFAULT '',
+		files_scanned INTEGER NOT NULL DEFAULT 0,
+		truncated INTEGER NOT NULL DEFAULT 0,
+		root TEXT NOT NULL DEFAULT '',
+		notes_json TEXT NOT NULL DEFAULT '[]',
+		PRIMARY KEY (source_kind, source_id)
+	);
 	CREATE TABLE IF NOT EXISTS tf_cloud_accounts (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -768,6 +798,9 @@ func (d *DB) migrate() error {
 	if err != nil {
 		return err
 	}
+	if err := d.migrateAccountAudits(); err != nil {
+		return fmt.Errorf("migrate account audits: %w", err)
+	}
 
 	// Idempotent column additions for existing databases
 	for col, typ := range map[string]string{
@@ -818,6 +851,8 @@ func (d *DB) migrate() error {
 	_ = d.alterAddColumn("hosts", "hardware_model", "TEXT DEFAULT ''")
 	_ = d.alterAddColumn("hosts", "swap_used_bytes", "INTEGER DEFAULT 0")
 	_ = d.alterAddColumn("hosts", "swap_total_bytes", "INTEGER DEFAULT 0")
+	_ = d.alterAddColumn("host_packages", "source", "TEXT NOT NULL DEFAULT ''")
+	_ = d.alterAddColumn("host_packages", "source_version", "TEXT NOT NULL DEFAULT ''")
 	_ = d.alterAddColumn("hosts", "last_duration_ms", "INTEGER DEFAULT 0")
 	_ = d.alterAddColumn("hosts", "commission_date", "TEXT DEFAULT ''")
 	_ = d.alterAddColumn("hosts", "bios_date", "TEXT DEFAULT ''")
@@ -1258,7 +1293,7 @@ func (d *DB) ReplaceHostPackages(hostID int64, pkgs []*HostPackage) error {
 		return err
 	}
 
-	stmt, err := tx.Prepare(`INSERT INTO host_packages (host_id, name, version, size_bytes, install_epoch, is_manual, service_name, service_status, last_scanned_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	stmt, err := tx.Prepare(`INSERT INTO host_packages (host_id, name, version, source, source_version, size_bytes, install_epoch, is_manual, service_name, service_status, last_scanned_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -1274,7 +1309,7 @@ func (d *DB) ReplaceHostPackages(hostID int64, pkgs []*HostPackage) error {
 		if scannedAt.IsZero() {
 			scannedAt = now
 		}
-		if _, err := stmt.Exec(hostID, p.Name, p.Version, p.SizeBytes, p.InstallEpoch, isManualInt, p.ServiceName, p.ServiceStatus, scannedAt); err != nil {
+		if _, err := stmt.Exec(hostID, p.Name, p.Version, p.Source, p.SourceVersion, p.SizeBytes, p.InstallEpoch, isManualInt, p.ServiceName, p.ServiceStatus, scannedAt); err != nil {
 			return err
 		}
 	}
@@ -1282,7 +1317,7 @@ func (d *DB) ReplaceHostPackages(hostID int64, pkgs []*HostPackage) error {
 }
 
 func (d *DB) GetHostPackages(hostID int64) ([]*HostPackage, error) {
-	rows, err := d.Query(`SELECT id, host_id, name, version, size_bytes, install_epoch, is_manual, service_name, service_status, last_scanned_at FROM host_packages WHERE host_id = ? ORDER BY is_manual DESC, size_bytes DESC, name ASC`, hostID)
+	rows, err := d.Query(`SELECT id, host_id, name, version, source, source_version, size_bytes, install_epoch, is_manual, service_name, service_status, last_scanned_at FROM host_packages WHERE host_id = ? ORDER BY is_manual DESC, size_bytes DESC, name ASC`, hostID)
 	if err != nil {
 		return nil, err
 	}
@@ -1292,7 +1327,7 @@ func (d *DB) GetHostPackages(hostID int64) ([]*HostPackage, error) {
 	for rows.Next() {
 		var p HostPackage
 		var isManualInt int
-		if err := rows.Scan(&p.ID, &p.HostID, &p.Name, &p.Version, &p.SizeBytes, &p.InstallEpoch, &isManualInt, &p.ServiceName, &p.ServiceStatus, &p.LastScannedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.HostID, &p.Name, &p.Version, &p.Source, &p.SourceVersion, &p.SizeBytes, &p.InstallEpoch, &isManualInt, &p.ServiceName, &p.ServiceStatus, &p.LastScannedAt); err != nil {
 			return nil, err
 		}
 		p.IsManual = isManualInt == 1
