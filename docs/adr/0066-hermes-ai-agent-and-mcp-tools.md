@@ -49,6 +49,13 @@ Pantau stays a single Go binary with no runtime dependency (ADR-0002), so Hermes
   Repositories handlers in-process, so path, symlink and protected-path checks are the UI's. Repository scopes have no
   host, so they are never covered by a session grant. `repo_commit` and `repo_push` publish to the remote and always
   ask; commits use the author `Pantau AI agent`. Clone, delete, credentials and folders stay with the operator.
+- **Security tools** (`agent_mcp_security.go`, [ADR-0068](0068-known-vulnerabilities-osv-arch-tracker.md)..[0072](0072-authorized-keys-inventory-and-account-audit.md)):
+  read `vuln_status`, `docker_security`, `account_audit`, `fleet_keys`, `iac_findings` (stored results; findings cut
+  to 40 per list, the full count in `<list>_total`) and `fim_diff` (one read-only SSH comparison against a
+  `file_integrity` rule); change (gate 1) `docker_security_scan` (audit or one image), `account_audit_scan` and
+  `iac_scan`. They call the UI handlers in-process, so `osv_enabled`, the account-audit cooldown, in-progress locks and
+  secret masking are the UI's. IaC scans have no host, so they are never covered by a session grant. Not offered: File
+  Integrity baseline capture (a Desired State rule: the agent must not redefine "healthy") and the IaC gate setting.
 - **Gate 3.** Besides gate 1 (routine) and 2 (shell, drain, compose down), gate 3 is infrastructure change:
   `tf_apply`, `ansible_run` mode `run` and `kube_apply`. It is never auto-approved and never covered by a session
   grant, and host-less scopes (Terraform, Ansible) cannot be granted at all. The agent cannot override a policy
