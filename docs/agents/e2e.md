@@ -21,6 +21,7 @@ e2e/
 │   ├── host-groups.e2e.ts # Host group rename from the dashboard header
 │   ├── hosts-import.e2e.ts # Import hosts dialog sends the chosen SSH key (key library and import API stubbed with browser.route)
 │   ├── docker-security.e2e.ts # Docker Security: summary strip, grouped findings, image table, chunked CVE detail (security API stubbed with browser.route)
+│   ├── agent.e2e.ts    # AI Agent: Settings panel (provider/base URL/key/model + Test connection), chat tool line, exec_command approval card, deny (LLM endpoint stubbed with a fake OpenAI-compatible server)
 │   └── terraform-helpers.ts  # shared Terraform workspace/runner helpers
 └── package.json
 ```

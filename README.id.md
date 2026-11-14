@@ -305,6 +305,21 @@ Pantau menginspeksi Host remote melalui perintah SSH non-interaktif, memvalidasi
 
 ---
 
+## 🤖 AI Agent (opsional, bawaan Pantau)
+
+Pantau bisa menyerahkan kegagalan ke AI agent-nya sendiri: chat melayang (pojok kanan bawah) plus tombol **Ask agent** pada service gagal, container, alert, dan tab Security. Agent berjalan **di dalam Pantau** (tanpa container tambahan), membaca status host, dan — **hanya setelah Anda menyetujui tiap perubahan** — me-restart service/container, inspeksi ulang, memindai, atau menjalankan perintah shell.
+
+**Konfigurasi** (Pantau → **Settings → AI Agent**):
+
+1. **Enable** agent.
+2. **Provider**: `Anthropic` (Anthropic Messages API) atau `OpenAI-compatible` (OpenAI, OpenRouter, LiteLLM, vLLM, Ollama, atau gateway apa pun).
+3. **Base URL**: biarkan kosong untuk bawaan provider; untuk endpoint OpenAI-compatible isi URL-nya (mis. `http://host:port/v1`), yang harus terjangkau dari server Pantau.
+4. **API key**: tempelkan kunci provider (write-only; Pantau tidak menampilkannya lagi) dan **model** id (mis. `claude-sonnet-4-6`).
+5. **Test connection**: satu panggilan model kecil untuk memeriksa kunci, URL, dan model.
+6. Pilih **mode persetujuan**: `ask` (semua perubahan menunggu Anda, bawaan) atau `auto` (perubahan rutin disetujui otomatis, `exec_command` tetap selalu meminta).
+
+Identitas dan aturan agent (SOUL) dapat disunting di panel yang sama. Riwayat chat hanya ada di memori dan hilang saat Pantau restart; catatan memori agent (tentang infrastruktur Anda) tersimpan di database dan bertahan melewati restart.
+
 ## 🚀 Panduan Memulai Cepat (Quick Start)
 
 ### Opsi 1: Binary Mandiri (Paling Praktis)

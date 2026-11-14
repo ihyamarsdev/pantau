@@ -10,95 +10,65 @@ import (
 	"time"
 )
 
-func mcpCall(t *testing.T, srv *Server, token, body string) *httptest.ResponseRecorder {
+// callTool runs one agent tool and returns its result text and whether it failed.
+func callTool(t *testing.T, srv *Server, name, args string) (string, bool) {
 	t.Helper()
-	r := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
-	if token != "" {
-		r.Header.Set("Authorization", "Bearer "+token)
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(args), &m); err != nil {
+		t.Fatalf("bad tool arguments %s: %v", args, err)
 	}
-	w := httptest.NewRecorder()
-	srv.ServeHTTP(w, r)
-	return w
+	return srv.callAgentTool(approvalReq(), name, m)
 }
 
-func TestAgentMCPAuthAndProtocol(t *testing.T) {
-	srv, db, cleanup := setupTestServer(t)
-	defer cleanup()
-	init := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`
-
-	if w := mcpCall(t, srv, "", init); w.Code != http.StatusUnauthorized {
-		t.Fatalf("no token: %d", w.Code)
+// Every tool the model may call must have an object schema and a description, and the internal gate
+// field must stay out of the specs.
+func TestAgentToolSpecs(t *testing.T) {
+	specs := agentToolSpecs()
+	if len(specs) != len(agentTools) {
+		t.Fatalf("one spec per tool expected: %d vs %d", len(specs), len(agentTools))
 	}
-	tok := srv.agentToken()
-	if w := mcpCall(t, srv, "wrong", init); w.Code != http.StatusUnauthorized {
-		t.Fatalf("wrong token: %d", w.Code)
-	}
-	if w := mcpCall(t, srv, tok, init); w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("disabled agent must refuse, got %d", w.Code)
-	}
-
-	_ = db.SetSetting("hermes_enabled", "1")
-	w := mcpCall(t, srv, tok, init)
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), mcpProtocolVersion) {
-		t.Fatalf("initialize: %d %s", w.Code, w.Body.String())
-	}
-	if w := mcpCall(t, srv, tok, `{"jsonrpc":"2.0","method":"notifications/initialized"}`); w.Code != http.StatusAccepted {
-		t.Fatalf("notification must be 202, got %d", w.Code)
-	}
-
-	w = mcpCall(t, srv, tok, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
-	var list struct {
-		Result struct {
-			Tools []struct {
-				Name        string                 `json:"name"`
-				InputSchema map[string]interface{} `json:"inputSchema"`
-			} `json:"tools"`
-		} `json:"result"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &list); err != nil || len(list.Result.Tools) != len(agentTools) {
-		t.Fatalf("tools/list: %v %s", err, w.Body.String())
-	}
-	for _, tl := range list.Result.Tools {
+	for _, tl := range agentTools {
+		if tl.Description == "" {
+			t.Errorf("%s has no description", tl.Name)
+		}
 		if tl.InputSchema["type"] != "object" {
-			t.Fatalf("%s has no object schema", tl.Name)
+			t.Errorf("%s has no object schema", tl.Name)
 		}
 	}
-	if strings.Contains(w.Body.String(), `"gate"`) {
-		t.Fatal("internal gate field leaked into tools/list")
+	for _, s := range specs {
+		b, _ := json.Marshal(s)
+		if strings.Contains(string(b), `"gate"`) {
+			t.Errorf("the internal gate field leaked into the spec of %s", s.Name)
+		}
 	}
 }
 
-func TestAgentMCPToolValidation(t *testing.T) {
+func TestAgentToolValidation(t *testing.T) {
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
-	_ = db.SetSetting("hermes_enabled", "1")
-	tok := srv.agentToken()
+	_ = db.SetSetting("agent_enabled", "1")
 
-	call := func(name, args string) string {
-		w := mcpCall(t, srv, tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"`+name+`","arguments":`+args+`}}`)
-		return w.Body.String()
-	}
-	if out := call("systemd_action", `{"host_id":1,"unit":"x;reboot.service","action":"restart"}`); !strings.Contains(out, `"isError":true`) {
+	if out, isErr := callTool(t, srv, "systemd_action", `{"host_id":1,"unit":"x;reboot.service","action":"restart"}`); !isErr {
 		t.Fatalf("bad unit must be an error: %s", out)
 	}
-	if out := call("docker_action", `{"host_id":1,"container":"a b","action":"restart"}`); !strings.Contains(out, "invalid container name") {
+	if out, _ := callTool(t, srv, "docker_action", `{"host_id":1,"container":"a b","action":"restart"}`); !strings.Contains(out, "invalid container name") {
 		t.Fatalf("bad container: %s", out)
 	}
-	if out := call("docker_action", `{"host_id":1,"container":"web","action":"remove"}`); !strings.Contains(out, "action must be") {
+	if out, _ := callTool(t, srv, "docker_action", `{"host_id":1,"container":"web","action":"remove"}`); !strings.Contains(out, "action must be") {
 		t.Fatalf("remove must not be offered: %s", out)
 	}
-	if out := call("read_file", `{"host_id":1,"path":"/etc/shadow"}`); !strings.Contains(out, "secret file") {
+	if out, _ := callTool(t, srv, "read_file", `{"host_id":1,"path":"/etc/shadow"}`); !strings.Contains(out, "secret file") {
 		t.Fatalf("shadow must be refused: %s", out)
 	}
 	for _, a := range []string{`{"query":"x"}`, `{"query":"nginx","kind":"nope"}`, `{"query":"nginx","limit":0}`} {
-		if out := call("fleet_search", a); !strings.Contains(out, `"isError":true`) {
+		if out, isErr := callTool(t, srv, "fleet_search", a); !isErr {
 			t.Fatalf("fleet_search %s must be an error: %s", a, out)
 		}
 	}
-	if out := call("fleet_search", `{"query":"nginx","kind":"container"}`); strings.Contains(out, `"isError":true`) || !strings.Contains(out, "groups") {
+	if out, isErr := callTool(t, srv, "fleet_search", `{"query":"nginx","kind":"container"}`); isErr || !strings.Contains(out, "groups") {
 		t.Fatalf("fleet_search on empty inventory: %s", out)
 	}
-	if out := call("nope", `{}`); !strings.Contains(out, "unknown tool") {
+	if out, _ := callTool(t, srv, "nope", `{}`); !strings.Contains(out, "unknown tool") {
 		t.Fatalf("unknown tool: %s", out)
 	}
 }
@@ -117,7 +87,7 @@ func TestAgentSecretPathRe(t *testing.T) {
 	}
 }
 
-func approvalReq() *http.Request { return httptest.NewRequest(http.MethodPost, "/mcp", nil) }
+func approvalReq() *http.Request { return httptest.NewRequest(http.MethodPost, "/api/agent/chat", nil) }
 
 func TestAgentApprovalFlow(t *testing.T) {
 	srv, db, cleanup := setupTestServer(t)
@@ -173,54 +143,37 @@ func TestAgentSettingsKeyIsWriteOnly(t *testing.T) {
 		srv.handleAgentSettings(w, httptest.NewRequest(http.MethodPost, "/api/agent/settings", strings.NewReader(body)))
 		return w.Code
 	}
-	if post(`{"enabled":true,"url":"http://127.0.0.1:8642/","key":"S3CRET","approval":"auto"}`) != http.StatusOK {
+	if post(`{"enabled":true,"provider":"anthropic","base_url":"https://api.anthropic.com","api_key":"S3CRET","model":"claude-x","approval":"auto"}`) != http.StatusOK {
 		t.Fatal("save failed")
 	}
-	if post(`{"url":"file:///etc/passwd"}`) != http.StatusBadRequest {
+	if post(`{"base_url":"file:///etc/passwd"}`) != http.StatusBadRequest {
 		t.Fatal("non-http URL must be rejected")
 	}
-	post(`{"key":""}`) // empty key keeps the stored one
+	post(`{"api_key":""}`) // empty key keeps the stored one
 	w := httptest.NewRecorder()
 	srv.handleAgentSettings(w, httptest.NewRequest(http.MethodGet, "/api/agent/settings", nil))
-	if strings.Contains(w.Body.String(), "S3CRET") || !strings.Contains(w.Body.String(), `"key_set":true`) {
+	if strings.Contains(w.Body.String(), "S3CRET") || !strings.Contains(w.Body.String(), `"api_key_set":true`) {
 		t.Fatalf("key must be write-only and kept: %s", w.Body.String())
 	}
-	if c := srv.agentConfig(); c.URL != "http://127.0.0.1:8642" || c.Key != "S3CRET" || c.Approval != "auto" {
+	if c := srv.agentConfig(); c.Provider != "anthropic" || c.BaseURL != "https://api.anthropic.com" || c.Key != "S3CRET" || c.Model != "claude-x" || c.Approval != "auto" || !c.Enabled {
 		t.Fatalf("config: %+v", c)
 	}
 }
 
-func TestAgentChatProxiesStreamWithSessionHeaders(t *testing.T) {
+// Without a provider the chat must point the operator at the settings instead of failing somewhere else.
+func TestAgentChatNeedsProvider(t *testing.T) {
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
-	var gotAuth, gotSession, gotBody string
-	hermes := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuth, gotSession = r.Header.Get("Authorization"), r.Header.Get("X-Hermes-Session-Id")
-		b := new(bytes.Buffer)
-		_, _ = b.ReadFrom(r.Body)
-		gotBody = b.String()
-		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: [DONE]\n\n"))
-	}))
-	defer hermes.Close()
-	_ = db.SetSetting("hermes_enabled", "1")
-	_ = db.SetSetting("hermes_url", hermes.URL)
-	_ = db.SetSetting("hermes_key", "k1")
+	_ = db.SetSetting("agent_enabled", "1")
 
-	chat := func(body string) *httptest.ResponseRecorder {
-		w := httptest.NewRecorder()
-		srv.handleAgentChat(w, httptest.NewRequest(http.MethodPost, "/api/agent/chat", strings.NewReader(body)))
-		return w
+	w := httptest.NewRecorder()
+	srv.handleAgentChat(w, httptest.NewRequest(http.MethodPost, "/api/agent/chat", strings.NewReader(`{"message":"hi","session_id":"s1"}`)))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("without a provider the chat must be refused: %d %s", w.Code, w.Body.String())
 	}
-	w := chat(`{"message":"why is nginx down?","session_id":"pantau-abc"}`)
-	if !strings.Contains(w.Body.String(), `"content":"hi"`) || gotAuth != "Bearer k1" || gotSession != "pantau-abc" {
-		t.Fatalf("proxy: auth=%q session=%q body=%s", gotAuth, gotSession, w.Body.String())
-	}
-	if !strings.Contains(gotBody, "Pantau Operator") || !strings.Contains(gotBody, "why is nginx down?") {
-		t.Fatalf("SOUL or message missing upstream: %s", gotBody)
-	}
-	if w := chat(`{"message":"x","session_id":"bad id\n"}`); w.Code != http.StatusBadRequest {
-		t.Fatalf("session id must be validated: %d", w.Code)
+	var body map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || !strings.Contains(body["error"], "Settings") {
+		t.Fatalf("the error must point at the settings: %v %s", err, w.Body.String())
 	}
 }
 

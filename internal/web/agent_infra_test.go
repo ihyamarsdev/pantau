@@ -11,13 +11,6 @@ import (
 	"pantau/internal/store"
 )
 
-// callTool runs one MCP tool call through /mcp and returns the text result.
-func callTool(t *testing.T, srv *Server, name, args string) string {
-	t.Helper()
-	w := mcpCall(t, srv, srv.agentToken(), `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"`+name+`","arguments":`+args+`}}`)
-	return w.Body.String()
-}
-
 func pendingCount(srv *Server) int {
 	srv.agent.mu.Lock()
 	defer srv.agent.mu.Unlock()
@@ -123,7 +116,7 @@ func TestAgentInfraGateNeverAutoOrGranted(t *testing.T) {
 func TestAgentKubeReadOnlyRefusedBeforeAsking(t *testing.T) {
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
-	_ = db.SetSetting("hermes_enabled", "1")
+	_ = db.SetSetting("agent_enabled", "1")
 	cid, err := db.CreateKubeCluster(&store.KubeCluster{Name: "prod", KubeMode: "read-only", Provider: "generic"})
 	if err != nil {
 		t.Fatal(err)
@@ -133,8 +126,8 @@ func TestAgentKubeReadOnlyRefusedBeforeAsking(t *testing.T) {
 		{"kube_action", `{"target_id":` + target + `,"op":"restart","kind":"deployment","namespace":"app","name":"web"}`},
 		{"kube_apply", `{"target_id":` + target + `,"yaml":"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n"}`},
 	} {
-		out := callTool(t, srv, c.tool, c.args)
-		if !strings.Contains(out, "read-only") || !strings.Contains(out, `"isError":true`) {
+		out, isErr := callTool(t, srv, c.tool, c.args)
+		if !strings.Contains(out, "read-only") || !isErr {
 			t.Fatalf("%s on a read-only cluster must be refused: %s", c.tool, out)
 		}
 		if pendingCount(srv) != 0 {
@@ -142,25 +135,25 @@ func TestAgentKubeReadOnlyRefusedBeforeAsking(t *testing.T) {
 		}
 	}
 	// Invalid input is rejected before asking too.
-	if out := callTool(t, srv, "kube_action", `{"target_id":`+target+`,"op":"delete","kind":"node","name":"n1"}`); !strings.Contains(out, "isError") {
+	if out, isErr := callTool(t, srv, "kube_action", `{"target_id":`+target+`,"op":"delete","kind":"node","name":"n1"}`); !isErr {
 		t.Fatalf("invalid kube action: %s", out)
 	}
 }
 
 func TestAgentTerraformGuardsAndNoWebhookToken(t *testing.T) {
 	srv, db, _, _ := setupTerraformTestServer(t)
-	_ = db.SetSetting("hermes_enabled", "1")
+	_ = db.SetSetting("agent_enabled", "1")
 	_ = db.SetTerraformEnabled(true)
 	wsID, err := db.CreateTFWorkspace(&store.TFWorkspace{Name: "prod", Binary: "terraform", Source: "inline", Files: `{"main.tf":"variable \"x\" {}\ndb_password = \"hunter2\"\n"}`, WebhookToken: "SECRETWEBHOOKTOKEN123", WebhookEnabled: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	list := callTool(t, srv, "tf_workspaces", `{}`)
+	list, _ := callTool(t, srv, "tf_workspaces", `{}`)
 	if !strings.Contains(list, "prod") || strings.Contains(list, "SECRETWEBHOOKTOKEN123") {
 		t.Fatalf("list must show the workspace and never the webhook token: %s", list)
 	}
-	one := callTool(t, srv, "tf_workspaces", `{"workspace_id":`+itoa(wsID)+`}`)
+	one, _ := callTool(t, srv, "tf_workspaces", `{"workspace_id":`+itoa(wsID)+`}`)
 	if strings.Contains(one, "SECRETWEBHOOKTOKEN123") || strings.Contains(one, "hunter2") || !strings.Contains(one, "db_password") {
 		t.Fatalf("detail must mask secret-looking values and drop the webhook: %s", one)
 	}
@@ -170,18 +163,18 @@ func TestAgentTerraformGuardsAndNoWebhookToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := callTool(t, srv, "tf_apply", `{"run_id":`+itoa(runID)+`,"comment":"fix it"}`)
-	if !strings.Contains(out, "awaiting_approval") || !strings.Contains(out, `"isError":true`) || pendingCount(srv) != 0 {
+	out, isErr := callTool(t, srv, "tf_apply", `{"run_id":`+itoa(runID)+`,"comment":"fix it"}`)
+	if !strings.Contains(out, "awaiting_approval") || !isErr || pendingCount(srv) != 0 {
 		t.Fatalf("apply of a non-awaiting run: %s", out)
 	}
 
 	// A warning policy is never overridden by the agent.
 	warnID, _ := db.CreateTFRun(&store.TFRun{WorkspaceID: wsID, Type: "plan", Status: "awaiting_approval", TriggerKind: "manual", Targets: "[]", Replace: "[]", Policy: `{"status":"warning"}`})
-	out = callTool(t, srv, "tf_apply", `{"run_id":`+itoa(warnID)+`,"comment":"fix it"}`)
+	out, _ = callTool(t, srv, "tf_apply", `{"run_id":`+itoa(warnID)+`,"comment":"fix it"}`)
 	if !strings.Contains(out, "policy") || pendingCount(srv) != 0 {
 		t.Fatalf("policy warning must stop the agent: %s", out)
 	}
-	if out := callTool(t, srv, "tf_apply", `{"run_id":`+itoa(warnID)+`,"comment":"x"}`); !strings.Contains(out, "comment") {
+	if out, _ := callTool(t, srv, "tf_apply", `{"run_id":`+itoa(warnID)+`,"comment":"x"}`); !strings.Contains(out, "comment") {
 		t.Fatalf("short comment must be rejected: %s", out)
 	}
 }
@@ -225,18 +218,18 @@ func reqJSON(method, url, body string) *http.Request {
 
 func TestAgentAnsibleThroughLoopback(t *testing.T) {
 	srv, _ := setupAnsibleTestServer(t)
-	_ = srv.db.SetSetting("hermes_enabled", "1")
+	_ = srv.db.SetSetting("agent_enabled", "1")
 	_ = srv.db.SetAnsibleEnabled(true)
 	pid, err := srv.db.CreateAnsiblePlaybook(&store.AnsiblePlaybook{Name: "web-fix", Content: "---\n- hosts: all\n  vars:\n    db_password: hunter2\n  tasks: []\n"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	list := callTool(t, srv, "ansible_playbooks", `{}`)
+	list, _ := callTool(t, srv, "ansible_playbooks", `{}`)
 	if !strings.Contains(list, "web-fix") {
 		t.Fatalf("list: %s", list)
 	}
-	one := callTool(t, srv, "ansible_playbooks", `{"playbook_id":`+itoa(pid)+`}`)
+	one, _ := callTool(t, srv, "ansible_playbooks", `{"playbook_id":`+itoa(pid)+`}`)
 	if strings.Contains(one, "hunter2") || !strings.Contains(one, "db_password") {
 		t.Fatalf("playbook content must be masked: %s", one)
 	}
@@ -245,7 +238,8 @@ func TestAgentAnsibleThroughLoopback(t *testing.T) {
 	_ = srv.db.SetSetting("agent_approval", "auto")
 	res := make(chan string, 1)
 	go func() {
-		res <- callTool(t, srv, "ansible_run", `{"playbook_id":`+itoa(pid)+`,"mode":"run","group":"x"}`)
+		out, _ := callTool(t, srv, "ansible_run", `{"playbook_id":`+itoa(pid)+`,"mode":"run","group":"x"}`)
+		res <- out
 	}()
 	for end := time.Now().Add(2 * time.Second); pendingCount(srv) == 0; {
 		if time.Now().After(end) {
@@ -267,14 +261,14 @@ func TestAgentAnsibleThroughLoopback(t *testing.T) {
 		t.Fatalf("denied run must report the denial: %s", out)
 	}
 
-	out := callTool(t, srv, "ansible_run", `{"playbook_id":`+itoa(pid)+`,"mode":"syntax"}`)
-	if strings.Contains(out, `"isError":true`) || !strings.Contains(out, "syntax") {
+	out, isErr := callTool(t, srv, "ansible_run", `{"playbook_id":`+itoa(pid)+`,"mode":"syntax"}`)
+	if isErr || !strings.Contains(out, "syntax") {
 		t.Fatalf("syntax run must start unprompted in auto mode: %s", out)
 	}
 	if pendingCount(srv) != 0 {
 		t.Fatal("syntax run must not ask")
 	}
-	runs := callTool(t, srv, "ansible_runs", `{}`)
+	runs, _ := callTool(t, srv, "ansible_runs", `{}`)
 	if !strings.Contains(runs, "web-fix") {
 		t.Fatalf("runs: %s", runs)
 	}

@@ -1,4 +1,4 @@
-/* AI agent (Hermes) floating chat, approval cards and settings panel (00-agent.js). Tokens come from index.html :root. */
+/* AI agent floating chat, approval cards and settings panel (00-agent.js). Tokens come from index.html :root. */
 #agentFab { position: fixed; right: 24px; bottom: 52px; z-index: 60; width: 48px; height: 48px; border-radius: 50%; border: 1px solid var(--accent-ring); background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: var(--shadow-lg); }
 #agentFab .icon { width: 22px; height: 22px; }
 #agentFab .ag-badge { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--danger); color: #fff; font-size: 11px; font-weight: 700; display: none; align-items: center; justify-content: center; }
@@ -15,6 +15,8 @@
 .ag-bot code { font-family: var(--font-mono); font-size: var(--fs-xs); background: var(--code-bg); padding: 1px 4px; border-radius: 4px; }
 .ag-bot pre code { padding: 0; background: none; }
 .ag-tool { align-self: flex-start; display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-muted); font-family: var(--font-mono); }
+.ag-tool-done { color: var(--success); }
+.ag-tool-error { color: var(--danger); }
 .ag-err { align-self: stretch; color: var(--danger); font-size: var(--fs-sm); background: var(--danger-soft); border: 1px solid var(--danger-border); border-radius: var(--radius); padding: 8px 10px; }
 .ag-form { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--card-border); align-items: flex-end; }
 .ag-form textarea { flex: 1; resize: none; min-height: 38px; max-height: 120px; }

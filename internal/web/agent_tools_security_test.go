@@ -16,7 +16,7 @@ import (
 func TestAgentSecurityTools(t *testing.T) {
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
-	_ = db.SetSetting("hermes_enabled", "1")
+	_ = db.SetSetting("agent_enabled", "1")
 	hostID, err := db.CreateHost(&store.Host{Name: "web-1", Host: "10.0.0.1", Port: 22, User: "root"})
 	if err != nil {
 		t.Fatal(err)
@@ -24,7 +24,7 @@ func TestAgentSecurityTools(t *testing.T) {
 	h := itoa(hostID)
 
 	// The opt-in setting of the UI applies: nothing is looked up while the feature is off.
-	if out := callTool(t, srv, "vuln_status", `{"host_id":`+h+`}`); !strings.Contains(out, `enabled`) || !strings.Contains(out, `false`) || strings.Contains(out, `"isError":true`) {
+	if out, isErr := callTool(t, srv, "vuln_status", `{"host_id":`+h+`}`); !strings.Contains(out, `enabled`) || !strings.Contains(out, `false`) || isErr {
 		t.Fatalf("vuln_status with the feature off: %s", out)
 	}
 
@@ -36,7 +36,7 @@ func TestAgentSecurityTools(t *testing.T) {
 	if err := db.SaveAccountAudit(audit); err != nil {
 		t.Fatal(err)
 	}
-	out := callTool(t, srv, "account_audit", `{"host_id":`+h+`}`)
+	out, _ := callTool(t, srv, "account_audit", `{"host_id":`+h+`}`)
 	if !strings.Contains(out, "findings_total") || !strings.Contains(out, "50") {
 		t.Fatalf("account_audit must cut the findings and say how many there are: %s", out)
 	}
@@ -48,17 +48,17 @@ func TestAgentSecurityTools(t *testing.T) {
 		"iac_findings":         `{"kind":"repo"}`,
 		"fim_diff":             `{"host_id":` + h + `,"rule_id":0}`,
 	} {
-		if out := callTool(t, srv, name, args); !strings.Contains(out, `"isError":true`) || pendingCount(srv) != 0 {
+		if out, isErr := callTool(t, srv, name, args); !isErr || pendingCount(srv) != 0 {
 			t.Fatalf("%s %s must be refused before asking: %s (pending %d)", name, args, out, pendingCount(srv))
 		}
 	}
 
 	// Scans change state (they write results), so they wait for the operator like security_scan does.
 	_ = db.SetSetting("agent_approval", "auto")
-	if out := callTool(t, srv, "iac_scan", `{"kind":"repo","id":999}`); !strings.Contains(out, `"isError":true`) {
+	if out, isErr := callTool(t, srv, "iac_scan", `{"kind":"repo","id":999}`); !isErr {
 		t.Fatalf("scan of an unknown source: %s", out)
 	}
-	if out := callTool(t, srv, "iac_findings", `{}`); !strings.Contains(out, "gate_enabled") {
+	if out, _ := callTool(t, srv, "iac_findings", `{}`); !strings.Contains(out, "gate_enabled") {
 		t.Fatalf("iac_findings digest: %s", out)
 	}
 }
@@ -68,7 +68,7 @@ func TestAgentSecurityTools(t *testing.T) {
 func TestAgentSecurityDockerTool(t *testing.T) {
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
-	_ = db.SetSetting("hermes_enabled", "1")
+	_ = db.SetSetting("agent_enabled", "1")
 	hostID, err := db.CreateHost(&store.Host{Name: "web-1", Host: "10.0.0.1", Port: 22, User: "root"})
 	if err != nil {
 		t.Fatal(err)
@@ -83,8 +83,8 @@ func TestAgentSecurityDockerTool(t *testing.T) {
 	if err := db.SaveDockerSecurityScan(scan); err != nil {
 		t.Fatal(err)
 	}
-	out := callTool(t, srv, "docker_security", `{"host_id":`+itoa(hostID)+`}`)
-	if strings.Contains(out, `"isError":true`) {
+	out, isErr := callTool(t, srv, "docker_security", `{"host_id":`+itoa(hostID)+`}`)
+	if isErr {
 		t.Fatalf("docker_security must work: %s", out)
 	}
 	if !strings.Contains(out, "nginx:1.25") {
@@ -98,7 +98,7 @@ func TestAgentSecurityDockerTool(t *testing.T) {
 func TestAgentSecurityDockerToolCapsIntel(t *testing.T) {
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
-	_ = db.SetSetting("hermes_enabled", "1")
+	_ = db.SetSetting("agent_enabled", "1")
 	_ = db.SetSetting(vulnIntelSetting, "1")
 	// The feeds are fake: the tool must not reach the internet in a test. The EPSS feed scores every
 	// CVE it is asked about, so the intelligence holds more entries than the tool keeps.
@@ -134,8 +134,8 @@ func TestAgentSecurityDockerToolCapsIntel(t *testing.T) {
 	if err := db.SaveDockerSecurityScan(scan); err != nil {
 		t.Fatal(err)
 	}
-	out := callTool(t, srv, "docker_security", `{"host_id":`+itoa(hostID)+`}`)
-	if strings.Contains(out, `"isError":true`) {
+	out, isErr := callTool(t, srv, "docker_security", `{"host_id":`+itoa(hostID)+`}`)
+	if isErr {
 		t.Fatalf("docker_security must work: %s", out)
 	}
 	if !strings.Contains(out, "cves_total") {

@@ -11,7 +11,7 @@ import (
 func TestKubeHostClusterRenameAndAgentByName(t *testing.T) {
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
-	_ = db.SetSetting("hermes_enabled", "1")
+	_ = db.SetSetting("agent_enabled", "1")
 
 	// Two SSH hosts of one k3s cluster; one is read-only, so the cluster must count as read-only.
 	for i, mode := range []string{"full", "read-only"} {
@@ -34,7 +34,7 @@ func TestKubeHostClusterRenameAndAgentByName(t *testing.T) {
 	}
 
 	// Default name is the shared group, one row for the two hosts.
-	out := callTool(t, srv, "kube_targets", `{}`)
+	out, _ := callTool(t, srv, "kube_targets", `{}`)
 	if strings.Count(out, "prod-a") != 1 || !strings.Contains(out, "staging") {
 		t.Fatalf("expected one row per cluster: %s", out)
 	}
@@ -45,16 +45,16 @@ func TestKubeHostClusterRenameAndAgentByName(t *testing.T) {
 	if rename("Prod Jakarta") != http.StatusOK {
 		t.Fatal("rename failed")
 	}
-	if out := callTool(t, srv, "kube_targets", `{}`); !strings.Contains(out, "Prod Jakarta") || strings.Contains(out, "prod-a") {
+	if out, _ := callTool(t, srv, "kube_targets", `{}`); !strings.Contains(out, "Prod Jakarta") || strings.Contains(out, "prod-a") {
 		t.Fatalf("custom name not used: %s", out)
 	}
 
 	// The agent addresses the cluster by name; the strictest member mode applies.
-	out = callTool(t, srv, "kube_action", `{"cluster":"prod jakarta","op":"restart","kind":"deployment","namespace":"app","name":"web"}`)
+	out, _ = callTool(t, srv, "kube_action", `{"cluster":"prod jakarta","op":"restart","kind":"deployment","namespace":"app","name":"web"}`)
 	if !strings.Contains(out, "read-only") || pendingCount(srv) != 0 {
 		t.Fatalf("read-only member must make the cluster read-only: %s", out)
 	}
-	if out := callTool(t, srv, "kube_get", `{"cluster":"nope","what":"nodes"}`); !strings.Contains(out, "no Kubernetes cluster named") {
+	if out, _ := callTool(t, srv, "kube_get", `{"cluster":"nope","what":"nodes"}`); !strings.Contains(out, "no Kubernetes cluster named") {
 		t.Fatalf("unknown name: %s", out)
 	}
 
@@ -62,7 +62,7 @@ func TestKubeHostClusterRenameAndAgentByName(t *testing.T) {
 	if rename("") != http.StatusOK {
 		t.Fatal("reset failed")
 	}
-	if out := callTool(t, srv, "kube_targets", `{}`); !strings.Contains(out, "prod-a") {
+	if out, _ := callTool(t, srv, "kube_targets", `{}`); !strings.Contains(out, "prod-a") {
 		t.Fatalf("reset did not restore derived name: %s", out)
 	}
 }

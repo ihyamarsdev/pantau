@@ -306,19 +306,20 @@ Pantau inspects remote hosts via non-interactive SSH commands, continuously vali
 
 ---
 
-## 🤖 AI Agent (optional, Hermes Agent)
+## 🤖 AI Agent (optional, built in)
 
-Pantau can hand failures to [Hermes Agent](https://github.com/NousResearch/hermes-agent): a floating chat (bottom-right) plus **Ask agent** buttons on failed services, containers, alerts and the Security tab. The agent reads host state and, **only after you approve each change**, restarts services/containers, re-inspects, scans or runs a shell command.
+Pantau can hand failures to its own AI agent: a floating chat (bottom-right) plus **Ask agent** buttons on failed services, containers, alerts and the Security tab. The agent runs inside Pantau (no extra container), reads host state and, **only after you approve each change**, restarts services/containers, re-inspects, scans or runs a shell command.
 
-**With Docker Compose** (Hermes image [`sbx/hermes-agent`](https://hub.docker.com/r/sbx/hermes-agent), started by `docker compose up`; Pantau alone: `docker compose up -d pantau`):
+**Setup** (Pantau → **Settings → AI Agent**):
 
-1. `.env` next to `docker-compose.yml`: `HERMES_API_KEY=` and `PANTAU_AGENT_TOKEN=` (each `openssl rand -hex 16`, 16+ chars) and `ANTHROPIC_API_KEY=sk-ant-...`. Model defaults to `claude-sonnet-4-6`; change with `HERMES_LLM_MODEL=` (e.g. `claude-opus-4-8`). Other providers: `HERMES_LLM_PROVIDER=openrouter` + `OPENROUTER_API_KEY`. **Custom OpenAI-compatible endpoint** (LiteLLM, vLLM, Ollama, a gateway): `HERMES_LLM_BASE_URL=http://host:port/v1`, `HERMES_LLM_API_KEY=...` and `HERMES_LLM_MODEL=<model id>` (required); `ANTHROPIC_API_KEY` is then not used. The URL must be reachable *from the Hermes container* (not `localhost`).
-2. `docker compose up -d --build`.
-3. Pantau → **Settings → AI Agent**: enable, URL `http://hermes:8642`, key = `HERMES_API_KEY`, **Test connection**. The MCP link (`http://pantau:8080/mcp` + `PANTAU_AGENT_TOKEN`) is already wired by compose.
+1. **Enable** the agent.
+2. **Provider**: `Anthropic` (Anthropic Messages API) or `OpenAI-compatible` (OpenAI, OpenRouter, LiteLLM, vLLM, Ollama, or any gateway).
+3. **Base URL**: leave it empty for the provider's default; for an OpenAI-compatible endpoint put its URL (e.g. `http://host:port/v1`), reachable from the Pantau server.
+4. **API key**: paste the provider key (write-only; Pantau never shows it again) and the **model** id (e.g. `claude-sonnet-4-6`).
+5. **Test connection**: one tiny model call to check the key, the URL and the model.
+6. Pick the **approval mode**: `ask` (every change waits for you, the default) or `auto` (routine changes are approved, `exec_command` still always asks).
 
-**Without Docker** (Hermes installed on the host): in `~/.hermes/.env` set `API_SERVER_ENABLED=true` and `API_SERVER_KEY=<secret>`, run `hermes gateway`; in Pantau enable the agent with URL `http://127.0.0.1:8642`, then copy the shown `mcp_servers:` block into `~/.hermes/config.yaml` and restart the gateway.
-
-The agent's identity and rules (SOUL) are editable in the same panel.
+The agent's identity and rules (SOUL) are editable in the same panel. The chat history lives in memory only and is lost when Pantau restarts; the agent's own memory notes (about your infrastructure) are stored in the database and survive a restart.
 
 ## 🚀 Quick Start
 

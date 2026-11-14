@@ -13,21 +13,20 @@ import (
 func TestAgentMemoryToolsAndPrompt(t *testing.T) {
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
-	_ = db.SetSetting("hermes_enabled", "1")
-	tok := srv.agentToken()
+	_ = db.SetSetting("agent_enabled", "1")
 	hostID, _ := db.CreateHost(&store.Host{Name: "web-1", Host: "10.0.0.1", Port: 22, User: "root"})
-	call := func(name, args string) string {
-		return mcpCall(t, srv, tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"`+name+`","arguments":`+args+`}}`).Body.String()
+	call := func(name, args string) (string, bool) {
+		return callTool(t, srv, name, args)
 	}
 
 	if p := srv.agentMemoryPrompt(); !strings.Contains(p, "No notes saved yet") || !strings.Contains(p, "memory_save") {
 		t.Fatalf("empty prompt must still teach the tools: %s", p)
 	}
 
-	if out := call("memory_save", `{"content":"Backups run at 02:00"}`); !strings.Contains(out, "saved as note #1") {
+	if out, _ := call("memory_save", `{"content":"Backups run at 02:00"}`); !strings.Contains(out, "saved as note #1") {
 		t.Fatalf("save: %s", out)
 	}
-	if out := call("memory_save", `{"content":"nginx sits behind Cloudflare","host_id":`+itoa(hostID)+`}`); !strings.Contains(out, "note #2") {
+	if out, _ := call("memory_save", `{"content":"nginx sits behind Cloudflare","host_id":`+itoa(hostID)+`}`); !strings.Contains(out, "note #2") {
 		t.Fatalf("save host note: %s", out)
 	}
 	for _, bad := range []string{
@@ -37,7 +36,7 @@ func TestAgentMemoryToolsAndPrompt(t *testing.T) {
 		`{"content":"x","replaces":9999}`,
 		`{"content":""}`,
 	} {
-		if out := call("memory_save", bad); !strings.Contains(out, `"isError":true`) {
+		if out, isErr := call("memory_save", bad); !isErr {
 			t.Errorf("must be refused: %s -> %s", bad, out)
 		}
 	}
@@ -47,13 +46,13 @@ func TestAgentMemoryToolsAndPrompt(t *testing.T) {
 		t.Fatalf("notes missing from prompt: %s", p)
 	}
 
-	if out := call("memory_save", `{"content":"Backups run at 03:00","replaces":1}`); !strings.Contains(out, "rewritten") {
+	if out, _ := call("memory_save", `{"content":"Backups run at 03:00","replaces":1}`); !strings.Contains(out, "rewritten") {
 		t.Fatalf("replace: %s", out)
 	}
-	if out := call("memory_list", `{"host_id":`+itoa(hostID)+`}`); !strings.Contains(out, "03:00") || !strings.Contains(out, "Cloudflare") {
+	if out, _ := call("memory_list", `{"host_id":`+itoa(hostID)+`}`); !strings.Contains(out, "03:00") || !strings.Contains(out, "Cloudflare") {
 		t.Fatalf("list host: %s", out)
 	}
-	if out := call("memory_forget", `{"id":2}`); !strings.Contains(out, "deleted") {
+	if out, _ := call("memory_forget", `{"id":2}`); !strings.Contains(out, "deleted") {
 		t.Fatalf("forget: %s", out)
 	}
 	if p := srv.agentMemoryPrompt(); strings.Contains(p, "Cloudflare") || strings.Contains(p, "02:00") {

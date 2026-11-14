@@ -4,117 +4,205 @@ import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
 import { initApp } from './helpers.js';
 
-// Stand-in for Hermes' API server: streams a tool-progress frame and a reply for any chat turn.
-async function startFakeHermes() {
+type ChatMessage = { role: string; content?: string; tool_call_id?: string };
+
+type FakeLLM = {
+  url: string;
+  /** The host the exec_command tool call runs on; the test creates it. */
+  hostId: number;
+  /** How many chat turns (not the settings test ping) the fake has answered. */
+  chats: number;
+  close(): Promise<void>;
+};
+
+// Stand-in for an OpenAI-compatible LLM endpoint: it answers POST /v1/chat/completions with a scripted
+// SSE stream. The script follows the request: the settings test ping gets a short text, a chat turn gets
+// an exec_command tool call, and a turn that already carries every tool result gets the final text.
+async function startFakeLLM(toolCalls = 1): Promise<FakeLLM> {
+  const fake: FakeLLM = { url: '', hostId: 0, chats: 0, close: async () => {} };
   const server = createServer((req, res) => {
-    if (req.url === '/v1/models') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{"data":[]}'); return; }
-    res.writeHead(200, { 'Content-Type': 'text/event-stream' });
-    res.write('event: hermes.tool.progress\ndata: {"tool":"systemd_detail","label":"nginx.service","status":"running","toolCallId":"c1"}\n\n');
-    res.write('data: {"choices":[{"delta":{"content":"Root cause: **port 80 busy**.\\n```\\nsystemctl restart nginx\\n```"},"finish_reason":null}]}\n\n');
-    res.end('data: [DONE]\n\n');
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      let body: { messages?: ChatMessage[] } = {};
+      try { body = JSON.parse(raw); } catch { /* an unparsable body is answered like an empty one */ }
+      const messages = body.messages || [];
+      const last = messages[messages.length - 1];
+      const isPing = last?.role === 'user' && last.content === 'ping';
+      const results = messages.filter((m) => m.role === 'tool');
+      if (!isPing) fake.chats++;
+
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      const chunk = (o: unknown) => res.write('data: ' + JSON.stringify(o) + '\n\n');
+      if (isPing) {
+        chunk({ choices: [{ delta: { content: 'pong' }, finish_reason: null }] });
+        chunk({ choices: [{ delta: {}, finish_reason: 'stop' }] });
+      } else if (results.length < toolCalls) {
+        chunk({
+          choices: [{
+            delta: {
+              tool_calls: [{ index: 0, id: 'call_' + (results.length + 1), type: 'function', function: { name: 'exec_command', arguments: JSON.stringify({ host_id: fake.hostId, command: 'systemctl status nginx' }) } }]
+            },
+            finish_reason: null
+          }]
+        });
+        chunk({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] });
+      } else {
+        const result = results[results.length - 1]?.content || '';
+        const text = /denied/i.test(result)
+          ? 'The command was not run: the operator denied it.'
+          : /refused|error|not connected/i.test(result)
+            ? 'The command failed on the host.'
+            : 'The command finished without an error.';
+        chunk({ choices: [{ delta: { content: text }, finish_reason: null }] });
+        chunk({ choices: [{ delta: {}, finish_reason: 'stop' }] });
+      }
+      res.end('data: [DONE]\n\n');
+    });
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
-  return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, close: () => new Promise<void>((r) => server.close(() => r())) };
+  fake.url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  fake.close = () => new Promise<void>((r) => server.close(() => r()));
+  return fake;
 }
 
-test('agent: button always shown, off state points to Settings, chat streams tool + reply, MCP exec waits for approval', async ({ app, screen, browser }) => {
-  const hermes = await startFakeHermes();
+type PageGlobals = {
+  openSettingsModal(tab: string): void;
+  closeModal(id: string): void;
+  AG: { init(): void; newChat(): void };
+};
+
+test('agent: settings configure a provider, the chat streams a tool, and an exec waits for approval', async ({ app, screen, browser }) => {
+  const llm = await startFakeLLM();
   try {
     await app.open('/');
     await initApp(screen, browser);
-    // Button is always there; while the agent is off the panel points to Settings.
+
+    // The button is always there; while the agent is off the panel points to Settings.
+    await browser.evaluate(async () => {
+      await fetch('/api/agent/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: false }) });
+      (window as unknown as PageGlobals).AG.init();
+      return null;
+    });
     await expect(browser.locator('#agentFab')).toBeVisible();
     await browser.locator('#agentFab').click();
     await expect(browser.locator('#agentLog')).toContainText('Settings');
     await browser.locator('#agentFab').click();
 
-    // Enable through the Settings → AI Agent panel.
-    await browser.evaluate(() => (window as any).openSettingsModal('agent'));
-    await expect(browser.locator('#agUrl')).toBeVisible();
-    await browser.locator('#agEnabled').click();
-    await browser.locator('#agUrl').fill(hermes.url);
-    await browser.locator('#agKey').fill('k-test');
-    await browser.locator('#agentSettingsBody .btn-primary').first().click();
-    await expect(browser.locator('#agentFab')).toBeVisible();
-    await expect(browser.locator('#agentSettingsBody .ag-snippet').last()).toContainText('mcp_servers:');
-
-    // Floating chat: tool progress line + markdown reply.
-    await browser.evaluate(() => (window as any).closeModal('settingsModal'));
-    await browser.locator('#agentFab').click();
-    await browser.locator('#agentInput').fill('nginx is down');
-    await browser.locator('#agentSend').click();
-    await expect(browser.locator('#agentLog .ag-tool')).toContainText('systemd_detail');
-    await expect(browser.locator('#agentLog .ag-bot b')).toHaveText('port 80 busy');
-    await expect(browser.locator('#agentLog .ag-bot pre')).toContainText('systemctl restart nginx');
-
-    // Hermes → Pantau: an exec_command tool call must block on an operator approval card.
-    await browser.evaluate(async () => {
-      const cfg = await (await fetch('/api/agent/settings')).json();
+    // A host for the exec_command call.
+    llm.hostId = (await browser.evaluate(async () => {
       const h = await (await fetch('/api/hosts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'e2e', host: '127.0.0.1', port: 1, user: 'x' }) })).json();
-      const rpc = (name: string, args: unknown) => fetch('/mcp', { method: 'POST', headers: { Authorization: 'Bearer ' + cfg.mcp_token, 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) }).then((r) => r.text());
-      (window as any).__mcp = rpc('exec_command', { host_id: h.id, command: 'systemctl restart nginx' });
-      return null;
-    });
-    await expect(browser.locator('#agentApprovals .ag-appr-exec pre')).toContainText('systemctl restart nginx');
+      return h.id as number;
+    })) as number;
+
+    // Configure the agent in Settings → AI Agent.
+    await browser.evaluate(() => { (window as unknown as PageGlobals).openSettingsModal('agent'); return null; });
+    await expect(browser.locator('#agProvider')).toBeVisible();
+    await browser.locator('#agEnabled').click();
+    await browser.locator('#agProvider').selectOption({ value: 'openai' });
+    await browser.locator('#agBaseUrl').fill(llm.url);
+    await browser.locator('#agKey').fill('k-test');
+    await browser.locator('#agModel').fill('gpt-4o');
+    await browser.locator('#agSave').click();
+    await expect(browser.locator('#agentFab')).toBeVisible();
+
+    // Test connection: the provider answers the tiny ping.
+    await browser.locator('#agTest').click();
+    await expect(browser.locator('#agTestResult')).toContainText('answered');
+
+    // The floating chat: the tool line shows the running call.
+    await browser.evaluate(() => { (window as unknown as PageGlobals).closeModal('settingsModal'); return null; });
+    await browser.locator('#agentFab').click();
+    await browser.locator('#agentInput').fill('is nginx up?');
+    await browser.locator('#agentSend').click();
+    await expect(browser.locator('#agentLog .ag-tool')).toContainText('exec_command');
+    await expect(browser.locator('#agentLog .ag-user')).toContainText('is nginx up?');
+
+    // The exec_command call waits for the operator: the card shows the command, and the model gets no
+    // second request before the decision.
+    await expect(browser.locator('#agentApprovals .ag-appr-exec pre')).toContainText('systemctl status nginx');
+    expect(llm.chats).toBe(1);
     await browser.locator('#agentApprovals .ag-appr-btns button').first().click(); // Deny
     await expect(browser.locator('#agentApprovals .ag-appr')).toBeHidden();
-    // The blocked MCP call returns an error carrying the denial, and nothing was executed.
-    const denied = await browser.evaluate(async () => (await (window as any).__mcp) as string);
-    expect(denied).toContain('the operator denied this action');
+
+    // The final reply renders and mentions the denial; the tool line is marked as failed.
+    await expect(browser.locator('#agentLog .ag-tool-error')).toContainText('exec_command');
+    await expect(browser.locator('#agentLog .ag-bot').last()).toContainText('denied');
+
+    // The key is write-only: the settings show the saved badge, the input is empty and the key is
+    // nowhere on the page.
+    await browser.evaluate(() => { (window as unknown as PageGlobals).openSettingsModal('agent'); return null; });
+    await expect(browser.locator('#agKeySaved')).toContainText('Saved');
+    const shown = (await browser.evaluate(() => {
+      const el = document.getElementById('agKey') as HTMLInputElement | null;
+      return { value: el ? el.value : '', page: document.body.innerText };
+    })) as { value: string; page: string };
+    expect(shown.value).toBe('');
+    expect(shown.page).not.toContain('k-test');
   } finally {
-    await hermes.close();
+    await llm.close();
   }
 });
 
-test('agent: "Approve for this session" runs the next change without a card until revoked', async ({ app, screen, browser }) => {
-  await app.open('/');
-  await initApp(screen, browser);
-  // Agent on, so the card poller runs. The host is unreachable (port 1): approval is what is under test, not the SSH call.
-  await browser.evaluate(async () => {
-    await fetch('/api/agent/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true }) });
-    (window as any).AG.init();
-    const cfg = await (await fetch('/api/agent/settings')).json();
-    const h = await (await fetch('/api/hosts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'e2e', host: '127.0.0.1', port: 1, user: 'x' }) })).json();
-    (window as any).__rpc = (cmd: string) => fetch('/mcp', { method: 'POST', headers: { Authorization: 'Bearer ' + cfg.mcp_token, 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'exec_command', arguments: { host_id: h.id, command: cmd } } }) }).then((r) => r.text());
-    (window as any).__first = (window as any).__rpc('echo one');
-    return null;
-  });
+test('agent: "Approve for this session" runs the next command on that host without a card, until revoked', async ({ app, screen, browser }) => {
+  const llm = await startFakeLLM(2);
+  try {
+    await app.open('/');
+    await initApp(screen, browser);
 
-  await expect(browser.locator('#agentApprovals .ag-appr-exec pre')).toContainText('echo one');
-  await browser.locator('#agentApprovals .ag-appr-btns button').nth(1).click(); // Approve for this session
-  await expect(browser.locator('#agentApprovals .ag-grants')).toContainText('e2e');
+    llm.hostId = (await browser.evaluate(async () => {
+      const h = await (await fetch('/api/hosts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'e2e-grant', host: '127.0.0.1', port: 1, user: 'x' }) })).json();
+      return h.id as number;
+    })) as number;
 
-  // Second call: no card may appear; it must reach the SSH step (fails: unreachable) instead of waiting.
-  const second = await browser.evaluate(async () => (await (window as any).__rpc('echo two')) as string);
-  expect(second).not.toContain('operator');
-  expect(second).not.toContain('no operator decision');
-  await expect(browser.locator('#agentApprovals .ag-appr')).toBeHidden();
+    // The agent is on and points at the fake provider.
+    await browser.evaluate(async (base) => {
+      await fetch('/api/agent/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true, provider: 'openai', base_url: base, api_key: 'k-test', model: 'gpt-4o' }) });
+      const g = window as unknown as PageGlobals;
+      g.AG.init();
+      g.AG.newChat();
+      return null;
+    }, llm.url);
 
-  await browser.locator('#agentApprovals .ag-grants a').click(); // Revoke
-  await expect(browser.locator('#agentApprovals .ag-grants')).toBeHidden();
-  await browser.evaluate(() => { (window as any).__third = (window as any).__rpc('echo three'); return null; });
-  await expect(browser.locator('#agentApprovals .ag-appr-exec pre')).toContainText('echo three');
-  await browser.locator('#agentApprovals .ag-appr-btns button').first().click(); // Deny
+    await browser.locator('#agentFab').click();
+    await browser.locator('#agentInput').fill('check nginx twice');
+    await browser.locator('#agentSend').click();
+
+    // The first command waits for the operator.
+    await expect(browser.locator('#agentApprovals .ag-appr-exec pre')).toContainText('systemctl status nginx');
+    await browser.locator('#agentApprovals .ag-appr-btns button').nth(1).click(); // Approve for this session
+    await expect(browser.locator('#agentApprovals .ag-grants')).toContainText('e2e');
+
+    // The second command runs under the grant: no new card, the turn ends with the model's answer.
+    await expect(browser.locator('#agentLog .ag-bot').last()).toContainText('command');
+    await expect(browser.locator('#agentApprovals .ag-appr')).toBeHidden();
+    expect(llm.chats).toBe(3);
+
+    // Revoking ends the grant.
+    await browser.locator('#agentApprovals .ag-grants a').click();
+    await expect(browser.locator('#agentApprovals .ag-grants')).toBeHidden();
+  } finally {
+    await llm.close();
+  }
 });
 
-test('agent: infrastructure change card has no "approve for this session" button', async ({ app, screen, browser }) => {
+test('agent: a chat without a provider shows the error and points at Settings', async ({ app, screen, browser }) => {
   await app.open('/');
   await initApp(screen, browser);
+
+  // The agent is on, but no provider and no model are configured.
   await browser.evaluate(async () => {
-    await fetch('/api/agent/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true, approval: 'auto' }) });
-    (window as any).AG.init();
-    const cfg = await (await fetch('/api/agent/settings')).json();
-    const h = await (await fetch('/api/hosts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'e2e', host: '127.0.0.1', port: 1, user: 'x' }) })).json();
-    const yaml = 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: demo\n';
-    (window as any).__apply = fetch('/mcp', { method: 'POST', headers: { Authorization: 'Bearer ' + cfg.mcp_token, 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'kube_apply', arguments: { target_id: h.id, yaml } } }) }).then((r) => r.text());
+    await fetch('/api/agent/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true, provider: '', model: '' }) });
+    (window as unknown as PageGlobals).AG.init();
     return null;
   });
 
-  // Even in auto-approve mode the card appears, titled as an infrastructure change, with only Deny and Approve.
-  await expect(browser.locator('#agentApprovals .ag-appr-exec')).toContainText('Infrastructure change');
-  await expect(browser.locator('#agentApprovals .ag-appr-exec pre')).toContainText('kind: ConfigMap');
-  await expect(browser.locator('#agentApprovals .ag-appr-btns button')).toHaveCount(2);
-  await browser.locator('#agentApprovals .ag-appr-btns button').first().click(); // Deny
-  const out = await browser.evaluate(async () => (await (window as any).__apply) as string);
-  expect(out).toContain('the operator denied this action');
+  await browser.locator('#agentFab').click();
+  await browser.locator('#agentInput').fill('hello');
+  await browser.locator('#agentSend').click();
+
+  // The error names the missing configuration and offers the way to fix it.
+  await expect(browser.locator('#agentLog .ag-err')).toContainText('Settings');
+  await browser.locator('#agentLog .ag-err .btn').click();
+  await expect(browser.locator('#agProvider')).toBeVisible();
 });

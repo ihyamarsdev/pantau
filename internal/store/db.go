@@ -863,7 +863,9 @@ func (d *DB) migrate() error {
 	_ = d.alterAddColumn("hosts", "key_id", "INTEGER DEFAULT 0")
 	_ = d.alterAddColumn("hosts", "kube_cluster_id", "TEXT DEFAULT ''")
 	_ = d.alterAddColumn("hosts", "kube_mode", "TEXT NOT NULL DEFAULT 'full'")
-
+	if err := d.migrateAgentSettings(); err != nil {
+		return fmt.Errorf("migrate agent settings: %w", err)
+	}
 	return nil
 }
 
@@ -2453,7 +2455,11 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 		return err
 	}
 	// A snapshot made before multi-account S3 carries the single-account settings: turn them into an account.
-	return d.migrateLegacyS3Settings()
+	// A snapshot of the old AI agent carries the hermes_* settings: drop them.
+	if err := d.migrateLegacyS3Settings(); err != nil {
+		return err
+	}
+	return d.migrateAgentSettings()
 }
 
 func (d *DB) GetFilePins(hostID int64) ([]FilePin, error) {

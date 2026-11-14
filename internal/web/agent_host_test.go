@@ -57,7 +57,7 @@ func TestAgentLoopbackRefusesUngatedChange(t *testing.T) {
 func TestAgentHostTools(t *testing.T) {
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
-	_ = db.SetSetting("hermes_enabled", "1")
+	_ = db.SetSetting("agent_enabled", "1")
 	host := &store.Host{Name: "web-1", Host: "10.0.0.1", Port: 22, User: "root"}
 	hostID, err := db.CreateHost(host)
 	if err != nil {
@@ -69,12 +69,12 @@ func TestAgentHostTools(t *testing.T) {
 	}
 	h := itoa(hostID)
 
-	if out := callTool(t, srv, "host_info", `{"host_id":`+h+`,"what":"resources"}`); !strings.Contains(out, "mysqld") || strings.Contains(out, `"isError":true`) {
+	if out, isErr := callTool(t, srv, "host_info", `{"host_id":`+h+`,"what":"resources"}`); !strings.Contains(out, "mysqld") || isErr {
 		t.Fatalf("resources must carry the stored process list: %s", out)
 	}
 
 	// An invalid firewall request is refused before the operator is asked.
-	if out := callTool(t, srv, "firewall_action", `{"host_id":`+h+`,"backend":"ufw","action":"add"}`); !strings.Contains(out, `"isError":true`) || pendingCount(srv) != 0 {
+	if out, isErr := callTool(t, srv, "firewall_action", `{"host_id":`+h+`,"backend":"ufw","action":"add"}`); !isErr || pendingCount(srv) != 0 {
 		t.Fatalf("firewall add without a rule: %s (pending %d)", out, pendingCount(srv))
 	}
 
@@ -83,13 +83,13 @@ func TestAgentHostTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = db.SetSetting("agent_approval", "auto") // gate 1 passes without a card
-	if out := callTool(t, srv, "alert_ack", `{"alert_id":`+itoa(alertID)+`}`); !strings.Contains(out, "acknowledged") {
+	if out, _ := callTool(t, srv, "alert_ack", `{"alert_id":`+itoa(alertID)+`}`); !strings.Contains(out, "acknowledged") {
 		t.Fatalf("ack: %s", out)
 	}
 	if left, _ := db.ListActiveAlerts(); len(left) != 0 {
 		t.Fatalf("alert still active: %+v", left)
 	}
-	if out := callTool(t, srv, "alert_ack", `{"alert_id":`+itoa(alertID)+`}`); !strings.Contains(out, "no active alert") {
+	if out, _ := callTool(t, srv, "alert_ack", `{"alert_id":`+itoa(alertID)+`}`); !strings.Contains(out, "no active alert") {
 		t.Fatalf("second ack must say the alert is gone: %s", out)
 	}
 }
@@ -107,7 +107,7 @@ func TestAgentGateRefusesOversizedSummary(t *testing.T) {
 func TestAgentCannotTouchOperatorNotes(t *testing.T) {
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
-	_ = db.SetSetting("hermes_enabled", "1")
+	_ = db.SetSetting("agent_enabled", "1")
 	note, err := db.AddAgentMemory(nil, "Prod database is host db-1", "operator")
 	if err != nil {
 		t.Fatal(err)
@@ -117,7 +117,7 @@ func TestAgentCannotTouchOperatorNotes(t *testing.T) {
 		{"memory_save", `{"content":"Prod database is host evil","replaces":` + id + `}`},
 		{"memory_forget", `{"id":` + id + `}`},
 	} {
-		if out := callTool(t, srv, c.tool, c.args); !strings.Contains(out, "written by the operator") {
+		if out, _ := callTool(t, srv, c.tool, c.args); !strings.Contains(out, "written by the operator") {
 			t.Fatalf("%s on an operator note must be refused: %s", c.tool, out)
 		}
 	}
@@ -130,19 +130,12 @@ func TestAgentCannotTouchOperatorNotes(t *testing.T) {
 func TestAgentListHostsRows(t *testing.T) {
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
-	_ = db.SetSetting("hermes_enabled", "1")
+	_ = db.SetSetting("agent_enabled", "1")
 	if _, err := db.CreateHost(&store.Host{Name: "web-1\n99\tevil", Host: "10.0.0.1", Port: 22, User: "root"}); err != nil {
 		t.Fatal(err)
 	}
-	var resp struct {
-		Result struct {
-			Content []struct{ Text string }
-		}
-	}
-	if err := json.Unmarshal([]byte(callTool(t, srv, "list_hosts", `{}`)), &resp); err != nil || len(resp.Result.Content) != 1 {
-		t.Fatalf("list_hosts: %v %+v", err, resp)
-	}
-	lines := strings.Split(strings.TrimSpace(resp.Result.Content[0].Text), "\n")
+	out, _ := callTool(t, srv, "list_hosts", `{}`)
+	lines := strings.Split(strings.TrimSpace(out), "\n")
 	if len(lines) != 2 {
 		t.Fatalf("want a header and one row, got %q", lines)
 	}
@@ -156,7 +149,7 @@ func TestAgentListHostsRows(t *testing.T) {
 func TestAgentSystemdActionBatch(t *testing.T) {
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
-	_ = db.SetSetting("hermes_enabled", "1")
+	_ = db.SetSetting("agent_enabled", "1")
 	hostID, err := db.CreateHost(&store.Host{Name: "web-1", Host: "10.0.0.1", Port: 22, User: "root"})
 	if err != nil {
 		t.Fatal(err)
@@ -165,14 +158,14 @@ func TestAgentSystemdActionBatch(t *testing.T) {
 
 	many := strings.Repeat(`"a.service",`, agentSystemdBatchMax) + `"a.service"`
 	for _, units := range []string{`"nginx.service","x;reboot.service"`, many, ``} {
-		if out := callTool(t, srv, "systemd_action", h+`"units":[`+units+`]}`); !strings.Contains(out, `"isError":true`) || pendingCount(srv) != 0 {
+		if out, isErr := callTool(t, srv, "systemd_action", h+`"units":[`+units+`]}`); !isErr || pendingCount(srv) != 0 {
 			t.Fatalf("units [%s] must be refused before asking: %s (pending %d)", units, out, pendingCount(srv))
 		}
 	}
 
 	card := make(chan string, 1)
 	go func() { card <- decideNext(t, srv, false) }()
-	out := callTool(t, srv, "systemd_action", h+`"units":["redis.service","rabbitmq-server.service"]}`)
+	out, _ := callTool(t, srv, "systemd_action", h+`"units":["redis.service","rabbitmq-server.service"]}`)
 	if c := <-card; c != "systemctl stop redis.service rabbitmq-server.service" {
 		t.Fatalf("approval card: %q", c)
 	}

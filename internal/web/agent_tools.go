@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"path"
 	"regexp"
@@ -18,29 +17,17 @@ import (
 	"pantau/internal/store"
 )
 
-// Pantau as an MCP server (Model Context Protocol, streamable HTTP, JSON responses only) for Hermes Agent.
-// Config on the Hermes side (~/.hermes/config.yaml):
-//
-//	mcp_servers:
-//	  pantau: {url: "http://127.0.0.1:<port>/mcp", headers: {Authorization: "Bearer <token>"}, timeout: 300}
+// Pantau's tools for the AI agent: the model calls them by their plain names (list_hosts, systemd_action, ...).
 //
 // Tool gates: 0 never asks, 1 routine change with a dedicated validated tool (auto-approvable), 2 high impact or
-// arbitrary shell (always needs the operator), 3 infrastructure change (agent_mcp_infra.go).
+// arbitrary shell (always needs the operator), 3 infrastructure change (agent_tools_infra.go).
 
 const (
-	mcpProtocolVersion = "2025-03-26"
-	mcpMaxResultBytes  = 24 << 10
-	mcpExecTimeout     = 120 * time.Second
-	agentReadChunk     = 20 << 10 // read_file bytes per call; below mcpMaxResultBytes so a chunk is never clipped
-	agentSummaryMax    = 64 << 10 // an approval card shows the whole action: a larger one is refused, never cut
+	agentMaxResultBytes = 24 << 10
+	agentExecTimeout    = 120 * time.Second
+	agentReadChunk      = 20 << 10 // read_file bytes per call; below agentMaxResultBytes so a chunk is never clipped
+	agentSummaryMax     = 64 << 10 // an approval card shows the whole action: a larger one is refused, never cut
 )
-
-type rpcReq struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id,omitempty"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params,omitempty"`
-}
 
 type agentTool struct {
 	Name        string                 `json:"name"`
@@ -86,99 +73,50 @@ var agentTools = []agentTool{
 		InputSchema: schema([]string{"host_id", "command"}, map[string]interface{}{"host_id": pHost, "command": map[string]interface{}{"type": "string"}}), run: toolExec},
 }
 
-func (s *Server) handleAgentMCP(w http.ResponseWriter, r *http.Request) {
-	tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if tok == r.Header.Get("Authorization") || !s.agentTokenValid(tok) {
-		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
-		return
+// callAgentTool runs one tool and returns its result text. A failure is reported as an error result.
+func (s *Server) callAgentTool(r *http.Request, name string, args map[string]interface{}) (string, bool) {
+	tool := findAgentTool(name)
+	if tool == nil {
+		return clip("unknown tool: " + name), true
 	}
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
+	// The gate mark lets loopback refuse a change that skipped agentGate. Every call is audited, reads included.
+	raw, _ := json.Marshal(args)
+	out, err := "", checkArgs(tool.InputSchema, args)
+	if err == nil {
+		out, err = tool.run(s, r.WithContext(context.WithValue(r.Context(), gateKey{}, new(bool))), args)
 	}
-	if !s.agentConfig().Enabled {
-		http.Error(w, `{"error":"agent disabled"}`, http.StatusServiceUnavailable)
-		return
+	if err == nil {
+		logger.Info("agent", name, fmt.Sprintf("%s %s", name, clipTo(string(raw), 300)))
+		return clip(out), false
 	}
-	raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
-	if err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-	var req rpcReq
-	if json.Unmarshal(raw, &req) != nil || req.JSONRPC != "2.0" {
-		writeJSON(w, http.StatusBadRequest, rpcErr(nil, -32700, "parse error"))
-		return
-	}
-	if len(req.ID) == 0 { // notification (notifications/initialized, ...)
-		w.WriteHeader(http.StatusAccepted)
-		return
-	}
-	switch req.Method {
-	case "initialize":
-		writeJSON(w, http.StatusOK, rpcOK(req.ID, map[string]interface{}{
-			"protocolVersion": mcpProtocolVersion,
-			"capabilities":    map[string]interface{}{"tools": map[string]interface{}{}},
-			"serverInfo":      map[string]string{"name": "pantau", "version": "1"},
-			"instructions":    "Pantau infrastructure console. Read first, change little, verify after. Mutating tools may wait for a human approval.",
-		}))
-	case "ping":
-		writeJSON(w, http.StatusOK, rpcOK(req.ID, map[string]interface{}{}))
-	case "tools/list":
-		writeJSON(w, http.StatusOK, rpcOK(req.ID, map[string]interface{}{"tools": agentTools}))
-	case "tools/call":
-		var p struct {
-			Name      string                 `json:"name"`
-			Arguments map[string]interface{} `json:"arguments"`
-		}
-		if json.Unmarshal(req.Params, &p) != nil {
-			writeJSON(w, http.StatusOK, rpcErr(req.ID, -32602, "invalid params"))
-			return
-		}
-		var tool *agentTool
-		for i := range agentTools {
-			if agentTools[i].Name == p.Name {
-				tool = &agentTools[i]
-			}
-		}
-		if tool == nil {
-			writeJSON(w, http.StatusOK, rpcErr(req.ID, -32602, "unknown tool: "+p.Name))
-			return
-		}
-		// The gate mark lets loopback refuse a change that skipped agentGate. Every call is audited, reads included.
-		args, _ := json.Marshal(p.Arguments)
-		out, err := "", checkArgs(tool.InputSchema, p.Arguments)
-		if err == nil {
-			out, err = tool.run(s, r.WithContext(context.WithValue(r.Context(), gateKey{}, new(bool))), p.Arguments)
-		}
-		res := map[string]interface{}{"content": []map[string]string{{"type": "text", "text": clip(out)}}}
-		if err == nil {
-			logger.Info("agent", "mcp", fmt.Sprintf("%s %s", p.Name, clipTo(string(args), 300)))
-		} else {
-			logger.Warn("agent", "mcp", fmt.Sprintf("%s %s: %v", p.Name, clipTo(string(args), 300), err))
-			res["isError"] = true
-			res["content"] = []map[string]string{{"type": "text", "text": clip(strings.TrimSpace(out + "\nERROR: " + err.Error()))}}
-		}
-		writeJSON(w, http.StatusOK, rpcOK(req.ID, res))
-	default:
-		writeJSON(w, http.StatusOK, rpcErr(req.ID, -32601, "method not found"))
-	}
+	logger.Warn("agent", name, fmt.Sprintf("%s %s: %v", name, clipTo(string(raw), 300), err))
+	return clip(strings.TrimSpace(out + "\nERROR: " + err.Error())), true
 }
 
-func rpcOK(id json.RawMessage, result interface{}) map[string]interface{} {
-	return map[string]interface{}{"jsonrpc": "2.0", "id": id, "result": result}
+// agentToolSpecs exposes the tools to the in-process agent.
+func agentToolSpecs() []llmToolSpec {
+	specs := make([]llmToolSpec, 0, len(agentTools))
+	for _, t := range agentTools {
+		specs = append(specs, llmToolSpec{Name: t.Name, Description: t.Description, Schema: t.InputSchema})
+	}
+	return specs
 }
 
-func rpcErr(id json.RawMessage, code int, msg string) map[string]interface{} {
-	return map[string]interface{}{"jsonrpc": "2.0", "id": id, "error": map[string]interface{}{"code": code, "message": msg}}
+// findAgentTool returns the tool with that name, or nil.
+func findAgentTool(name string) *agentTool {
+	for i := range agentTools {
+		if agentTools[i].Name == name {
+			return &agentTools[i]
+		}
+	}
+	return nil
 }
 
 func clip(s string) string {
-	if len(s) <= mcpMaxResultBytes {
+	if len(s) <= agentMaxResultBytes {
 		return s
 	}
-	return s[:mcpMaxResultBytes] + "\n…[truncated]"
+	return s[:agentMaxResultBytes] + "\n…[truncated]"
 }
 
 // ---------------------------------------------------------------- argument helpers
@@ -403,7 +341,7 @@ func toolDockerLogs(s *Server, _ *http.Request, args map[string]interface{}) (st
 	}
 	tail, _ := args["tail"].(float64)
 	out, err := s.inspector.DockerLogs(id, argStr(args, "container"), int(tail))
-	return tailOf(out, mcpMaxResultBytes-8), err // the newest lines matter
+	return tailOf(out, agentMaxResultBytes-8), err // the newest lines matter
 }
 
 func toolSecurityStatus(s *Server, _ *http.Request, args map[string]interface{}) (string, error) {
@@ -552,9 +490,9 @@ func toolSystemdAction(s *Server, r *http.Request, args map[string]interface{}) 
 	if err := s.agentGate(r, id, "systemd_action", summary, 1); err != nil {
 		return "", err
 	}
-	// One call per unit, as in the UI. The deadline keeps a slow batch inside Hermes' tool timeout: a call that
+	// One call per unit, as in the UI. The deadline keeps a slow batch inside the tool timeout: a call that
 	// times out there would look failed to the agent while its actions still ran.
-	results, failed, deadline := []*inspector.SystemdActionResult{}, []string{}, time.Now().Add(mcpExecTimeout)
+	results, failed, deadline := []*inspector.SystemdActionResult{}, []string{}, time.Now().Add(agentExecTimeout)
 	for i, u := range units {
 		if time.Now().After(deadline) {
 			err = fmt.Errorf("time limit reached, not run: %s", strings.Join(units[i:], " "))
@@ -640,11 +578,11 @@ func toolExec(s *Server, r *http.Request, args map[string]interface{}) (string, 
 	if err := s.agentGate(r, id, "exec_command", cmd, 2); err != nil {
 		return "", err
 	}
-	stdout, stderr, code, err := s.inspector.ExecShell(id, cmd, mcpExecTimeout)
+	stdout, stderr, code, err := s.inspector.ExecShell(id, cmd, agentExecTimeout)
 	if err != nil {
 		return "", err
 	}
-	half := mcpMaxResultBytes/2 - 64 // both streams keep their end: that is where the failure is
+	half := agentMaxResultBytes/2 - 64 // both streams keep their end: that is where the failure is
 	out := fmt.Sprintf("exit code: %d\n--- stdout ---\n%s\n--- stderr ---\n%s", code, tailOf(stdout, half), tailOf(stderr, half))
 	if code != 0 {
 		return out, fmt.Errorf("command exited %d", code)

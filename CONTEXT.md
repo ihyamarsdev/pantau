@@ -60,11 +60,15 @@ Status kevalidan backup berdasarkan keberadaan file di path tujuan, timestamp pe
 _Avoid_: Backup validation, dump check
 
 **AI Agent**:
-Asisten operasi opsional (Hermes Agent, proses terpisah) yang mengobrol lewat chat melayang di pojok kanan bawah dan memanggil *Agent Tool* Pantau melalui MCP (`/mcp`) untuk menyelidiki dan memperbaiki Host. Identitas dan aturannya ditentukan oleh **SOUL**.
+Asisten operasi opsional yang berjalan **di dalam proses Pantau** (bukan layanan terpisah): mengobrol lewat chat melayang di pojok kanan bawah, memanggil *Agent Tool* Pantau secara langsung untuk menyelidiki dan memperbaiki Host. Modelnya ditentukan oleh **LLM Provider**; identitas dan aturannya oleh **SOUL**.
 _Avoid_: Bot, copilot, auto-fixer
 
+**LLM Provider**:
+Endpoint LLM yang dipakai AI Agent, dikonfigurasi di Settings → AI Agent: `anthropic` (Anthropic Messages API) atau `openai` (OpenAI-compatible: OpenAI, OpenRouter, LiteLLM, vLLM, Ollama, atau gateway apa pun lewat *base URL*). Disertai *API key* (write-only) dan *model*. Kosong berarti belum dikonfigurasi.
+_Avoid_: Model, engine, backend, LLM server
+
 **Agent Tool**:
-Satu fungsi Pantau yang dapat dipanggil AI Agent (baca: `list_hosts`, `systemd_detail`, `docker_logs`, dst.; ubah: `systemd_action`, `docker_action`, `inspect_host`, `security_scan`, `exec_command`). Setiap tool ubah menunggu **Agent Approval** dari operator.
+Satu fungsi Pantau yang dapat dipanggil AI Agent secara langsung (baca: `list_hosts`, `systemd_detail`, `docker_logs`, dst.; ubah: `systemd_action`, `docker_action`, `inspect_host`, `security_scan`, `exec_command`). Setiap tool ubah menunggu **Agent Approval** dari operator.
 _Avoid_: Plugin, skill, command
 
 **Agent Approval**:

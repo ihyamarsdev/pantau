@@ -1,9 +1,7 @@
 package web
 
 import (
-	"bytes"
 	"crypto/rand"
-	"crypto/subtle"
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
@@ -11,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -22,19 +19,15 @@ import (
 	"pantau/internal/logger"
 )
 
-// AI agent (Hermes Agent, https://github.com/NousResearch/hermes-agent) integration, ADR-0066.
-//
-// Two directions: the floating chat proxies to Hermes' OpenAI-compatible API server (/v1/chat/completions), and
-// Hermes calls back into Pantau as an MCP server at /mcp (agent_mcp.go). Mutating tool calls wait here for an
-// operator decision before they run.
+// The native AI agent: Pantau calls the LLM provider itself (agent_llm.go), runs the tool-call loop
+// (agent_loop.go) and offers its own tools to the model (agent_tools.go). Mutating tool calls wait here
+// for an operator decision before they run.
 
 //go:embed agent_soul.md
 var defaultAgentSoul string
 
 const (
-	agentDefaultURL   = "http://127.0.0.1:8642"
-	agentDefaultModel = "hermes-agent"
-	agentApprovalWait = 170 * time.Second // plus mcpExecTimeout (120 s) stays below Hermes' default 300 s tool timeout
+	agentApprovalWait = 170 * time.Second // an unattended approval card is denied after this long
 	agentMaxPending   = 20
 	agentGrantTTL     = 2 * time.Hour // "approve for this session" lapses after this, or on New chat / Pantau restart
 )
@@ -58,10 +51,11 @@ type agentApproval struct {
 
 // agentState is the zero-value-usable runtime state of the agent integration.
 type agentState struct {
-	mu      sync.Mutex
-	token   string
-	pending map[string]*agentApproval
-	grants  map[int64]agentGrant
+	mu         sync.Mutex
+	pending    map[string]*agentApproval
+	grants     map[int64]agentGrant
+	convs      map[string]*agentConv                                     // chat sessions of the in-process agent
+	llmFactory func(provider, baseURL, apiKey string) (llmClient, error) // nil: the real provider client
 }
 
 func (s *Server) grantCovers(hostID int64, gate int) bool {
@@ -85,7 +79,8 @@ type agentGrant struct {
 
 type agentCfg struct {
 	Enabled  bool
-	URL      string
+	Provider string // "", "anthropic" or "openai" (any OpenAI-compatible endpoint)
+	BaseURL  string // empty: the provider default
 	Key      string
 	Model    string
 	Approval string // ask | auto
@@ -94,12 +89,13 @@ type agentCfg struct {
 
 func (s *Server) agentConfig() agentCfg {
 	get := func(k string) string { v, _ := s.db.GetSetting(k); return strings.TrimSpace(v) }
-	c := agentCfg{Enabled: get("hermes_enabled") == "1", URL: get("hermes_url"), Key: get("hermes_key"), Model: get("hermes_model"), Approval: get("agent_approval")}
-	if c.URL == "" {
-		c.URL = agentDefaultURL
-	}
-	if c.Model == "" {
-		c.Model = agentDefaultModel
+	c := agentCfg{
+		Enabled:  get("agent_enabled") == "1",
+		Provider: get("agent_llm_provider"),
+		BaseURL:  get("agent_llm_base_url"),
+		Key:      get("agent_llm_api_key"),
+		Model:    get("agent_llm_model"),
+		Approval: get("agent_approval"),
 	}
 	if c.Approval != "auto" {
 		c.Approval = "ask"
@@ -112,55 +108,27 @@ func (s *Server) agentConfig() agentCfg {
 	return c
 }
 
-// agentToken returns the bearer token Hermes must present at /mcp, creating it on first use.
-func (s *Server) agentToken() string {
-	s.agent.mu.Lock()
-	defer s.agent.mu.Unlock()
-	if s.agent.token != "" {
-		return s.agent.token
-	}
-	// PANTAU_AGENT_TOKEN pins the token (compose passes the same value to Hermes); otherwise one is generated.
-	tok := strings.TrimSpace(os.Getenv("PANTAU_AGENT_TOKEN"))
-	if tok != "" && len(tok) < 16 {
-		tok = "" // too weak to be a bearer secret: ignore the env value
-	}
-	if tok == "" {
-		tok, _ = s.db.GetSetting("agent_mcp_token")
-	}
-	if tok == "" {
-		tok = randHex(24)
-		_ = s.db.SetSetting("agent_mcp_token", tok)
-	}
-	s.agent.token = tok
-	return tok
-}
-
-func (s *Server) agentTokenValid(got string) bool {
-	return subtle.ConstantTimeCompare([]byte(got), []byte(s.agentToken())) == 1
-}
-
 func randHex(n int) string {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
 
-func normalizeAgentURL(raw string) (string, error) {
+// normalizeLLMBaseURL checks the base URL of a native provider. An empty URL means the provider default.
+func normalizeLLMBaseURL(raw string) (string, error) {
 	raw = strings.TrimRight(strings.TrimSpace(raw), "/")
 	if raw == "" {
-		return agentDefaultURL, nil
+		return "", nil
 	}
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.RawQuery != "" || u.User != nil {
-		return "", fmt.Errorf("Hermes URL must be http:// or https:// with a host")
+		return "", fmt.Errorf("the LLM base URL must be http:// or https:// with a host")
 	}
 	return raw, nil
 }
 
 func (s *Server) registerAgentRoutes() {
-	s.mux.HandleFunc("/mcp", s.handleAgentMCP) // bearer token, not the session cookie: Hermes is not a browser
 	s.mux.HandleFunc("/api/agent/settings", s.authMiddleware(s.handleAgentSettings))
-	s.mux.HandleFunc("/api/agent/rotate-token", s.authMiddleware(s.handleAgentRotateToken))
 	s.mux.HandleFunc("/api/agent/test", s.authMiddleware(s.handleAgentTest))
 	s.mux.HandleFunc("/api/agent/chat", s.authMiddleware(s.handleAgentChat))
 	s.mux.HandleFunc("/api/agent/approvals", s.authMiddleware(s.handleAgentApprovals))
@@ -174,14 +142,15 @@ func (s *Server) handleAgentSettings(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		c := s.agentConfig()
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"enabled": c.Enabled, "url": c.URL, "key_set": c.Key != "", "model": c.Model, "approval": c.Approval,
-			"soul": c.Soul, "soul_is_default": c.Soul == defaultAgentSoul, "mcp_token": s.agentToken(),
+			"enabled": c.Enabled, "provider": c.Provider, "base_url": c.BaseURL, "api_key_set": c.Key != "",
+			"model": c.Model, "approval": c.Approval, "soul": c.Soul, "soul_is_default": c.Soul == defaultAgentSoul,
 		})
 	case http.MethodPost:
 		var req struct {
 			Enabled  *bool   `json:"enabled"`
-			URL      *string `json:"url"`
-			Key      *string `json:"key"` // nil or "" keeps the stored key
+			Provider *string `json:"provider"`
+			BaseURL  *string `json:"base_url"`
+			APIKey   *string `json:"api_key"` // nil or "" keeps the stored key
 			Model    *string `json:"model"`
 			Approval *string `json:"approval"`
 			Soul     *string `json:"soul"`
@@ -191,22 +160,32 @@ func (s *Server) handleAgentSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		set := map[string]string{}
-		if req.URL != nil {
-			u, err := normalizeAgentURL(*req.URL)
+		if req.Enabled != nil {
+			set["agent_enabled"] = map[bool]string{true: "1", false: "0"}[*req.Enabled]
+		}
+		if req.Provider != nil {
+			p := strings.ToLower(strings.TrimSpace(*req.Provider))
+			switch p {
+			case "", llmProviderAnthropic, llmProviderOpenAI:
+			default:
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the LLM provider must be anthropic, openai or empty"})
+				return
+			}
+			set["agent_llm_provider"] = p
+		}
+		if req.BaseURL != nil {
+			u, err := normalizeLLMBaseURL(*req.BaseURL)
 			if err != nil {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 				return
 			}
-			set["hermes_url"] = u
+			set["agent_llm_base_url"] = u
 		}
-		if req.Enabled != nil {
-			set["hermes_enabled"] = map[bool]string{true: "1", false: "0"}[*req.Enabled]
-		}
-		if req.Key != nil && strings.TrimSpace(*req.Key) != "" {
-			set["hermes_key"] = strings.TrimSpace(*req.Key)
+		if req.APIKey != nil && strings.TrimSpace(*req.APIKey) != "" {
+			set["agent_llm_api_key"] = strings.TrimSpace(*req.APIKey)
 		}
 		if req.Model != nil {
-			set["hermes_model"] = strings.TrimSpace(*req.Model)
+			set["agent_llm_model"] = strings.TrimSpace(*req.Model)
 		}
 		if req.Approval != nil {
 			set["agent_approval"] = map[bool]string{true: "auto", false: "ask"}[*req.Approval == "auto"]
@@ -227,55 +206,33 @@ func (s *Server) handleAgentSettings(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleAgentRotateToken(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if os.Getenv("PANTAU_AGENT_TOKEN") != "" {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "the token is set by PANTAU_AGENT_TOKEN; change it there"})
-		return
-	}
-	tok := randHex(24)
-	_ = s.db.SetSetting("agent_mcp_token", tok)
-	s.agent.mu.Lock()
-	s.agent.token = tok
-	s.agent.mu.Unlock()
-	writeJSON(w, http.StatusOK, map[string]string{"mcp_token": tok})
-}
-
-// handleAgentTest checks that Hermes' API server answers with the configured key.
+// handleAgentTest checks that the configured provider answers with one tiny model call.
 func (s *Server) handleAgentTest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	c := s.agentConfig()
-	ctx, cancel := contextTimeout(r, 8*time.Second)
-	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, c.URL+"/v1/models", nil)
-	if c.Key != "" {
-		req.Header.Set("Authorization", "Bearer "+c.Key)
+	if c.Model == "" {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": false, "error": "no model is configured in Settings"})
+		return
 	}
-	resp, err := agentHTTP.Do(req)
+	client, err := s.agentLLMClient(c)
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": false, "error": "Hermes unreachable: " + err.Error()})
+		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": false, "error": redactSecret(err.Error(), c.Key)})
 		return
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": false, "error": "Hermes rejected the API key (HTTP " + fmt.Sprint(resp.StatusCode) + ")"})
-		return
-	}
-	if resp.StatusCode >= 300 {
-		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": false, "error": fmt.Sprintf("Hermes answered HTTP %d", resp.StatusCode)})
+	ctx, cancel := contextTimeout(r, 20*time.Second)
+	defer cancel()
+	req := llmRequest{Model: c.Model, Messages: []llmMessage{{Role: llmRoleUser, Text: "ping"}}, MaxTokens: 16}
+	if _, err := client.Stream(ctx, req, nil); err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": false, "error": redactSecret(err.Error(), c.Key)})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true})
 }
 
-// handleAgentChat streams one chat turn from Hermes to the browser as SSE. Hermes keeps the conversation under
-// X-Hermes-Session-Id, so only the new message and the SOUL travel on each turn.
+// handleAgentChat streams one chat turn to the browser as SSE.
 func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -294,46 +251,43 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "AI agent is disabled in Settings"})
 		return
 	}
-	body, _ := json.Marshal(map[string]interface{}{
-		"model": c.Model, "stream": true,
-		"messages": []map[string]string{{"role": "system", "content": c.Soul + "\n\n" + s.agentMemoryPrompt()}, {"role": "user", "content": req.Message}},
-	})
-	hreq, _ := http.NewRequestWithContext(r.Context(), http.MethodPost, c.URL+"/v1/chat/completions", bytes.NewReader(body))
-	hreq.Header.Set("Content-Type", "application/json")
-	hreq.Header.Set("Accept", "text/event-stream")
-	hreq.Header.Set("X-Hermes-Session-Id", req.SessionID)
-	hreq.Header.Set("X-Hermes-Session-Key", "pantau")
-	if c.Key != "" {
-		hreq.Header.Set("Authorization", "Bearer "+c.Key)
+	if c.Provider == "" || c.Model == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the AI agent is not configured: choose a provider and a model in Settings -> AI Agent"})
+		return
 	}
-	resp, err := agentHTTP.Do(hreq)
+	s.chatNative(w, r, c, req.Message, req.SessionID)
+}
+
+// chatNative runs one turn of the in-process agent: Pantau calls the provider itself and streams the answer.
+func (s *Server) chatNative(w http.ResponseWriter, r *http.Request, c agentCfg, message, sessionID string) {
+	if c.Model == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no model is configured in Settings (AI agent)"})
+		return
+	}
+	if c.Provider == llmProviderAnthropic && c.Key == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no API key is configured in Settings (AI agent)"})
+		return
+	}
+	client, err := s.agentLLMClient(c)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Hermes unreachable: " + err.Error()})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": redactSecret(err.Error(), c.Key)})
 		return
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": fmt.Sprintf("Hermes answered HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))})
+	conv, ok := s.acquireConv(sessionID)
+	if !ok {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "the agent is still answering"})
 		return
 	}
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("X-Accel-Buffering", "no")
-	rc := http.NewResponseController(w)
-	buf := make([]byte, 4096)
-	for {
-		n, err := resp.Body.Read(buf)
-		if n > 0 {
-			if _, werr := w.Write(buf[:n]); werr != nil {
-				return
-			}
-			_ = rc.Flush()
-		}
-		if err != nil {
-			return
-		}
+	defer s.endConv(conv)
+	s.runAgentTurn(w, r, c, client, conv, message)
+}
+
+// agentLLMClient builds the provider client of the in-process agent. Tests replace it with a fake.
+func (s *Server) agentLLMClient(c agentCfg) (llmClient, error) {
+	if s.agent.llmFactory != nil {
+		return s.agent.llmFactory(c.Provider, c.BaseURL, c.Key)
 	}
+	return newLLMClient(c.Provider, c.BaseURL, c.Key)
 }
 
 // ---------------------------------------------------------------- approvals

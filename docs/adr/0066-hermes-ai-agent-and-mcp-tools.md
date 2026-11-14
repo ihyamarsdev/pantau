@@ -1,5 +1,7 @@
 # 0066. Hermes AI agent: floating chat, MCP tools, operator approval
 
+> **Status: superseded in part by [ADR-0073](0073-in-process-ai-agent.md): the Hermes transport and the MCP endpoint are gone; the tools, gates, approvals, memory and SOUL stand.**
+
 ## Context
 
 Operators fix the same failures by hand: a failed systemd unit, a crashed container, a security finding. We want an

@@ -446,7 +446,7 @@ func toolKubeLogs(s *Server, r *http.Request, args map[string]interface{}) (stri
 		return "", err
 	}
 	out, _ := m["output"].(string)
-	return tailOf(out, mcpMaxResultBytes-8), nil
+	return tailOf(out, agentMaxResultBytes-8), nil
 }
 
 func toolKubeDiff(s *Server, r *http.Request, args map[string]interface{}) (string, error) {

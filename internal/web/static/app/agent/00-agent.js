@@ -1,4 +1,4 @@
-/* AI agent (Hermes Agent): floating chat bottom-right, operator approval cards, Settings → AI Agent panel and the
+/* AI agent: floating chat bottom-right, operator approval cards, Settings → AI Agent panel and the
  * "Ask agent" entry points (AG.askUnit / askContainer / askAlert / askSecurity). Backend: /api/agent/* (agent.go).
  * Relies on index.html globals: svgIcon, escapeHtml, t, I18N, showToast, currentHost, latestAlerts, langRerenderHooks. */
 (function () {
@@ -17,16 +17,17 @@
       ag_working: 'Working…', ag_stop: 'Stop',
       ag_waiting_approval: 'Waiting for your approval',
       ag_appr_title: 'Agent wants to run', ag_appr_exec: 'Shell command (always needs approval)', ag_appr_infra: 'Infrastructure change (always needs approval)', ag_approve: 'Approve', ag_deny: 'Deny', ag_approve_session: 'Approve for this session', ag_session_hint: 'Approves every later change on {host} without asking (shell commands too: {shell}). Ends on New chat, Revoke or after 2 hours.', ag_grants: 'Auto-approved this session', ag_revoke: 'Revoke', ag_g_shell: 'incl. shell', ag_g_tools: 'service/container actions',
-      ag_s_enable: 'Enable AI agent', ag_s_url: 'Hermes API server URL', ag_s_key: 'Hermes API key (API_SERVER_KEY)',
-      ag_s_key_saved: 'Saved. Leave empty to keep it.', ag_s_model: 'Model name sent to Hermes',
+      ag_s_enable: 'Enable AI agent',
+      ag_s_provider: 'LLM provider', ag_s_provider_none: 'Not configured', ag_s_provider_anthropic: 'Anthropic', ag_s_provider_openai: 'OpenAI-compatible',
+      ag_s_base_url: 'Base URL', ag_s_base_url_hint: 'Empty = the provider default. OpenAI-compatible covers OpenRouter, LiteLLM, vLLM, Ollama and any other gateway.',
+      ag_s_key: 'API key', ag_s_key_saved: 'Saved. Leave empty to keep it.',
+      ag_s_key_hint: 'Required for Anthropic. Optional for OpenAI-compatible local servers (Ollama, vLLM).',
+      ag_s_model: 'Model', ag_s_model_hint: 'Required: the agent needs a model to answer.',
       ag_s_approval: 'Approval for changes', ag_s_ask: 'Ask me for every change (recommended)',
       ag_s_auto: 'Auto-approve service/container actions, scans and inspections (shell commands still ask)',
       ag_s_soul: 'SOUL (the agent\'s identity and rules, sent with every chat)', ag_s_soul_reset: 'Reset SOUL to default',
-      ag_s_save: 'Save', ag_s_test: 'Test connection', ag_s_saved: 'Saved', ag_s_test_ok: 'Hermes answered',
-      ag_s_connect: 'Connect Hermes to Pantau',
-      ag_s_connect_desc: 'Add this to ~/.hermes/config.yaml, then restart the Hermes gateway (or run /reload-mcp). Hermes gets Pantau\'s tools as mcp__pantau__*.',
-      ag_s_token: 'MCP token', ag_s_rotate: 'Rotate token', ag_s_rotate_confirm: 'Rotate the token? Hermes must be updated with the new one.',
-      ag_s_hermes_env: 'Hermes side (~/.hermes/.env)',
+      ag_s_save: 'Save', ag_s_test: 'Test connection', ag_s_saved: 'Saved', ag_s_test_ok: 'The provider answered',
+      ag_s_testing: 'Testing connection…',
       ag_q_unit: 'Service {unit} on host "{host}" (id {id}) has a problem. Find the root cause and propose a fix. Check its status and journal first. Do not change anything until I confirm the plan.',
       ag_q_container: 'Container {name} on host "{host}" (id {id}) has a problem. Read its logs and state, find the root cause and propose a fix. Do not change anything until I confirm the plan.',
       ag_q_alert: 'Alert on host "{host}" (id {id}): {msg}\nRoot cause excerpt:\n{rc}\nInvestigate and propose a fix. Do not change anything until I confirm the plan.',
@@ -43,16 +44,17 @@
       ag_working: 'Bekerja…', ag_stop: 'Berhenti',
       ag_waiting_approval: 'Menunggu persetujuan Anda',
       ag_appr_title: 'Agent ingin menjalankan', ag_appr_exec: 'Perintah shell (selalu butuh persetujuan)', ag_appr_infra: 'Perubahan infrastruktur (selalu butuh persetujuan)', ag_approve: 'Setujui', ag_deny: 'Tolak', ag_approve_session: 'Setujui untuk sesi ini', ag_session_hint: 'Menyetujui semua perubahan berikutnya di {host} tanpa bertanya (termasuk perintah shell: {shell}). Berakhir saat Chat baru, Cabut, atau setelah 2 jam.', ag_grants: 'Disetujui otomatis di sesi ini', ag_revoke: 'Cabut', ag_g_shell: 'termasuk shell', ag_g_tools: 'aksi service/container',
-      ag_s_enable: 'Aktifkan agen AI', ag_s_url: 'URL API server Hermes', ag_s_key: 'API key Hermes (API_SERVER_KEY)',
-      ag_s_key_saved: 'Tersimpan. Kosongkan untuk tetap memakainya.', ag_s_model: 'Nama model yang dikirim ke Hermes',
+      ag_s_enable: 'Aktifkan agen AI',
+      ag_s_provider: 'Penyedia LLM', ag_s_provider_none: 'Belum dikonfigurasi', ag_s_provider_anthropic: 'Anthropic', ag_s_provider_openai: 'OpenAI-compatible',
+      ag_s_base_url: 'Base URL', ag_s_base_url_hint: 'Kosong = default penyedia. OpenAI-compatible mencakup OpenRouter, LiteLLM, vLLM, Ollama, dan gateway lainnya.',
+      ag_s_key: 'API key', ag_s_key_saved: 'Tersimpan. Kosongkan untuk tetap memakainya.',
+      ag_s_key_hint: 'Wajib untuk Anthropic. Opsional untuk server lokal OpenAI-compatible (Ollama, vLLM).',
+      ag_s_model: 'Model', ag_s_model_hint: 'Wajib: agent butuh model untuk menjawab.',
       ag_s_approval: 'Persetujuan perubahan', ag_s_ask: 'Tanya saya untuk setiap perubahan (disarankan)',
       ag_s_auto: 'Setujui otomatis aksi service/container, scan, dan inspeksi (perintah shell tetap bertanya)',
       ag_s_soul: 'SOUL (identitas dan aturan agent, dikirim di setiap chat)', ag_s_soul_reset: 'Kembalikan SOUL ke default',
-      ag_s_save: 'Simpan', ag_s_test: 'Tes koneksi', ag_s_saved: 'Tersimpan', ag_s_test_ok: 'Hermes menjawab',
-      ag_s_connect: 'Hubungkan Hermes ke Pantau',
-      ag_s_connect_desc: 'Tambahkan ini ke ~/.hermes/config.yaml, lalu restart gateway Hermes (atau jalankan /reload-mcp). Hermes mendapat tool Pantau sebagai mcp__pantau__*.',
-      ag_s_token: 'Token MCP', ag_s_rotate: 'Ganti token', ag_s_rotate_confirm: 'Ganti token? Hermes harus diperbarui dengan token baru.',
-      ag_s_hermes_env: 'Sisi Hermes (~/.hermes/.env)',
+      ag_s_save: 'Simpan', ag_s_test: 'Tes koneksi', ag_s_saved: 'Tersimpan', ag_s_test_ok: 'Penyedia menjawab',
+      ag_s_testing: 'Menguji koneksi…',
       ag_q_unit: 'Service {unit} di host "{host}" (id {id}) bermasalah. Cari akar masalahnya dan usulkan perbaikan. Cek status dan journal dulu. Jangan ubah apa pun sebelum saya setujui rencananya.',
       ag_q_container: 'Container {name} di host "{host}" (id {id}) bermasalah. Baca log dan statusnya, cari akar masalah, lalu usulkan perbaikan. Jangan ubah apa pun sebelum saya setujui rencananya.',
       ag_q_alert: 'Alert di host "{host}" (id {id}): {msg}\nCuplikan root cause:\n{rc}\nSelidiki dan usulkan perbaikan. Jangan ubah apa pun sebelum saya setujui rencananya.',
@@ -118,8 +120,11 @@
     if (S.msgs.length === 0) { log.innerHTML = `<div class="ag-empty">${esc(t('ag_empty'))}</div>`; return; }
     log.innerHTML = S.msgs.map((m) => {
       if (m.role === 'user') return `<div class="ag-msg ag-user">${esc(m.text)}</div>`;
-      if (m.role === 'tool') return `<div class="ag-tool">${svgIcon('wrench', 'icon-sm')} ${esc(m.text)}</div>`;
-      if (m.role === 'error') return `<div class="ag-err">${esc(m.text)}</div>`;
+      if (m.role === 'tool') {
+        const mark = m.status === 'error' ? svgIcon('x', 'icon-sm') : m.status === 'done' ? svgIcon('check', 'icon-sm') : svgIcon('wrench', 'icon-sm');
+        return `<div class="ag-tool ag-tool-${m.status || 'running'}">${mark} ${esc(m.text)}</div>`;
+      }
+      if (m.role === 'error') return `<div class="ag-err">${esc(m.text)}${m.settings ? `<div style="margin-top:8px;"><button class="btn btn-sm btn-primary" onclick="AG.toggle(false); openSettingsModal('agent')">${esc(t('ag_open_settings'))}</button></div>` : ''}</div>`;
       if (!m.text) return `<div class="ag-msg ag-bot">${S.approvals.length ? SP.html(t('ag_waiting_approval'), S.apprT0) : SP.html(t('ag_working'), S.chatT0)}</div>`;
       return `<div class="ag-msg ag-bot">${md(m.text)}</div>`;
     }).join('');
@@ -193,14 +198,19 @@
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        throw new Error(j.error || 'HTTP ' + res.status);
+        const err = new Error(j.error || 'HTTP ' + res.status);
+        err.settings = res.status === 400; // no provider/model configured: point at Settings → AI Agent
+        throw err;
       }
       await readSSE(res.body, (ev, data) => {
-        if (ev === 'hermes.tool.progress') {
-          if (data.status === 'running') {
-            const at = S.msgs.indexOf(bot);
-            S.msgs.splice(at, 0, { role: 'tool', text: (data.tool || 'tool') + (data.label && data.label !== data.tool ? ': ' + data.label : '') });
-          }
+        if (ev === 'agent.tool') {
+          const label = (data.tool || 'tool') + (data.label && data.label !== data.tool ? ': ' + data.label : '');
+          const line = { role: 'tool', text: label, status: data.status, id: data.toolCallId };
+          const prev = S.msgs.findIndex((m) => m.role === 'tool' && m.id === data.toolCallId);
+          if (prev >= 0 && data.status !== 'running') S.msgs[prev] = line;
+          else S.msgs.splice(S.msgs.indexOf(bot) < 0 ? S.msgs.length : S.msgs.indexOf(bot), 0, line);
+        } else if (ev === 'agent.error') {
+          S.msgs.push({ role: 'error', text: (data && data.error) || 'agent error' });
         } else if (data && data.choices && data.choices[0]) {
           const c = data.choices[0];
           if (c.delta && c.delta.content) bot.text += c.delta.content;
@@ -209,7 +219,7 @@
         scheduleLog();
       });
     } catch (e) {
-      if (e.name !== 'AbortError') S.msgs.push({ role: 'error', text: e.message });
+      if (e.name !== 'AbortError') S.msgs.push({ role: 'error', text: e.message, settings: !!e.settings });
     } finally {
       if (!bot.text) S.msgs.splice(S.msgs.indexOf(bot), 1);
       S.abort = null;
@@ -322,45 +332,56 @@
   };
 
   /* ---------- Settings → AI Agent ---------- */
-  let cfg = null;
   AG.loadSettings = async function () {
     const body = $('agentSettingsBody');
     if (!body) return;
     const r = await api('/api/agent/settings');
     if (!r.ok) { body.innerHTML = `<div class="ag-err">HTTP ${r.status}</div>`; return; }
-    cfg = r.data;
-    const mcpUrl = location.origin + '/mcp';
-    const snippet = `mcp_servers:\n  pantau:\n    url: "${mcpUrl}"\n    headers:\n      Authorization: "Bearer ${cfg.mcp_token}"\n    timeout: 300\n    connect_timeout: 30`;
-    const envSnip = `API_SERVER_ENABLED=true\nAPI_SERVER_KEY=<choose-a-secret>`;
+    const cfg = r.data;
+    const provider = cfg.provider || '';
     body.innerHTML = `
       <div class="set-card">
-        <div class="set-header"><div><h4 class="set-title">${svgIcon('bot')} <span>${esc(t('ag_title'))} · Hermes Agent</span></h4>
-          <p class="set-desc">https://github.com/NousResearch/hermes-agent</p></div></div>
+        <div class="set-header"><div><h4 class="set-title">${svgIcon('bot')} <span>${esc(t('ag_title'))}</span></h4></div></div>
         <label style="display:flex;gap:8px;align-items:center;cursor:pointer;margin-bottom:12px;"><input type="checkbox" id="agEnabled" style="width:auto" ${cfg.enabled ? 'checked' : ''}> <b>${esc(t('ag_s_enable'))}</b></label>
-        <div class="form-group"><label class="form-label">${esc(t('ag_s_url'))}</label><input type="text" id="agUrl" value="${esc(cfg.url)}" placeholder="http://127.0.0.1:8642"></div>
-        <div class="form-group"><label class="form-label">${esc(t('ag_s_key'))}</label><input type="password" id="agKey" placeholder="••••••••" autocomplete="new-password">
-          ${cfg.key_set ? `<span class="badge badge-info" style="margin-top:4px;">${esc(t('ag_s_key_saved'))}</span>` : ''}</div>
-        <div class="form-group"><label class="form-label">${esc(t('ag_s_model'))}</label><input type="text" id="agModel" value="${esc(cfg.model)}" placeholder="hermes-agent"></div>
+        <div class="form-group"><label class="form-label" for="agProvider">${esc(t('ag_s_provider'))}</label>
+          <select id="agProvider" onchange="AG.providerChanged()">
+            <option value="" ${provider === '' ? 'selected' : ''}>${esc(t('ag_s_provider_none'))}</option>
+            <option value="anthropic" ${provider === 'anthropic' ? 'selected' : ''}>${esc(t('ag_s_provider_anthropic'))}</option>
+            <option value="openai" ${provider === 'openai' ? 'selected' : ''}>${esc(t('ag_s_provider_openai'))}</option>
+          </select></div>
+        <div class="form-group"><label class="form-label" for="agBaseUrl">${esc(t('ag_s_base_url'))}</label>
+          <input type="text" id="agBaseUrl" value="${esc(cfg.base_url || '')}" placeholder="https://api.openai.com/v1">
+          <span class="form-hint">${esc(t('ag_s_base_url_hint'))}</span></div>
+        <div class="form-group"><label class="form-label" for="agKey">${esc(t('ag_s_key'))}</label>
+          <input type="password" id="agKey" placeholder="••••••••" autocomplete="new-password">
+          ${cfg.api_key_set ? `<span class="badge badge-info" id="agKeySaved" style="margin-top:4px;">${esc(t('ag_s_key_saved'))}</span>` : ''}
+          <span class="form-hint">${esc(t('ag_s_key_hint'))}</span></div>
+        <div class="form-group"><label class="form-label" for="agModel">${esc(t('ag_s_model'))}</label>
+          <input type="text" id="agModel" value="${esc(cfg.model || '')}" placeholder="gpt-4o">
+          <span class="form-hint">${esc(t('ag_s_model_hint'))}</span></div>
         <div class="form-group"><label class="form-label">${esc(t('ag_s_approval'))}</label>
           <label style="display:flex;gap:8px;cursor:pointer;font-size:var(--fs-sm);"><input type="radio" name="agAppr" value="ask" style="width:auto" ${cfg.approval !== 'auto' ? 'checked' : ''}> ${esc(t('ag_s_ask'))}</label>
           <label style="display:flex;gap:8px;cursor:pointer;font-size:var(--fs-sm);margin-top:4px;"><input type="radio" name="agAppr" value="auto" style="width:auto" ${cfg.approval === 'auto' ? 'checked' : ''}> ${esc(t('ag_s_auto'))}</label></div>
         <div class="form-group"><label class="form-label">${esc(t('ag_s_soul'))}</label><textarea class="ag-soul" id="agSoul">${esc(cfg.soul)}</textarea>
           <div><button class="btn btn-sm btn-ghost" onclick="AG.resetSoul()">${esc(t('ag_s_soul_reset'))}</button></div></div>
         <div style="display:flex;gap:8px;margin-top:8px;">
-          <button class="btn btn-primary btn-sm" onclick="AG.saveSettings()">${svgIcon('save', 'icon-sm')} <span>${esc(t('ag_s_save'))}</span></button>
-          <button class="btn btn-ghost btn-sm" onclick="AG.testConn()">${esc(t('ag_s_test'))}</button>
+          <button class="btn btn-primary btn-sm" id="agSave" onclick="AG.saveSettings()">${svgIcon('save', 'icon-sm')} <span>${esc(t('ag_s_save'))}</span></button>
+          <button class="btn btn-ghost btn-sm" id="agTest" onclick="AG.testConn()">${esc(t('ag_s_test'))}</button>
         </div>
         <div id="agTestResult" style="margin-top:8px;font-size:var(--fs-xs);"></div>
       </div>
-      <div class="set-card">
-        <div class="set-header"><div><h4 class="set-title">${svgIcon('plug')} <span>${esc(t('ag_s_connect'))}</span></h4>
-          <p class="set-desc">${esc(t('ag_s_connect_desc'))}</p></div></div>
-        <div class="form-label">${esc(t('ag_s_hermes_env'))}</div><pre class="ag-snippet">${esc(envSnip)}</pre>
-        <div class="form-label">~/.hermes/config.yaml</div><pre class="ag-snippet">${esc(snippet)}</pre>
-        <div><button class="btn btn-sm btn-ghost" onclick="AG.rotateToken()">${esc(t('ag_s_rotate'))}</button></div>
-      </div>
       <div id="agMemory"></div>`;
+    AG.providerChanged();
     AG.loadMemory();
+  };
+
+  /** The placeholders show the provider default; an empty base URL means the default. */
+  AG.providerChanged = function () {
+    const p = ($('agProvider') || {}).value || '';
+    const url = $('agBaseUrl');
+    const model = $('agModel');
+    if (url) url.placeholder = p === 'anthropic' ? 'https://api.anthropic.com/v1' : p === 'openai' ? 'https://api.openai.com/v1' : '';
+    if (model) model.placeholder = p === 'anthropic' ? 'claude-sonnet-4-6' : p === 'openai' ? 'gpt-4o' : '';
   };
 
   AG.resetSoul = async function () {
@@ -370,20 +391,28 @@
 
   AG.saveSettings = async function () {
     const payload = {
-      enabled: $('agEnabled').checked, url: $('agUrl').value.trim(), model: $('agModel').value.trim(),
-      approval: (document.querySelector('input[name="agAppr"]:checked') || {}).value || 'ask', soul: $('agSoul').value
+      enabled: $('agEnabled').checked,
+      provider: $('agProvider').value,
+      base_url: $('agBaseUrl').value.trim(),
+      model: $('agModel').value.trim(),
+      approval: (document.querySelector('input[name="agAppr"]:checked') || {}).value || 'ask',
+      soul: $('agSoul').value
     };
     const key = $('agKey').value;
-    if (key !== '') payload.key = key;
+    if (key !== '') payload.api_key = key; // empty keeps the stored key
     const r = await post('/api/agent/settings', payload);
-    if (r.ok) { showToast(t('ag_s_saved'), 'success'); await refreshEnabled(); AG.loadSettings(); }
-    else showToast(r.data.error || 'error', 'error');
+    if (r.ok) { showToast(t('ag_s_saved'), 'success'); await refreshEnabled(); await AG.loadSettings(); return ''; }
+    showToast(r.data.error || 'error', 'error');
+    return r.data.error || 'error';
   };
 
   AG.testConn = async function () {
-    const out = $('agTestResult');
-    await AG.saveSettings();
-    out.innerHTML = SP.html(t('ag_s_testing', 'Testing connection…'));
+    const before = $('agTestResult');
+    if (before) before.innerHTML = SP.html(t('ag_s_testing'));
+    const err = await AG.saveSettings();
+    const out = $('agTestResult'); // saving re-renders the panel
+    if (!out) return;
+    if (err) { out.innerHTML = `<span style="color:var(--danger)">${esc(err)}</span>`; return; }
     let r;
     try {
       r = await post('/api/agent/test');
@@ -394,11 +423,6 @@
     out.innerHTML = r.data.ok ? `<span style="color:var(--success)">${esc(t('ag_s_test_ok'))}</span>` : `<span style="color:var(--danger)">${esc(r.data.error || 'error')}</span>`;
   };
 
-  AG.rotateToken = async function () {
-    if (!(await showConfirm({ message: t('ag_s_rotate_confirm') }))) return;
-    await post('/api/agent/rotate-token');
-    AG.loadSettings();
-  };
 
   /* ---------- Settings → AI Agent → Memory ---------- */
   AG.loadMemory = async function () {
