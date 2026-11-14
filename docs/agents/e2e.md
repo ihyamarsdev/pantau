@@ -20,6 +20,7 @@ e2e/
 │   ├── repos.e2e.ts # Repositories section: clone validation + folder setting (real server), editor save/commit/push (repos API stubbed with browser.route)
 │   ├── host-groups.e2e.ts # Host group rename from the dashboard header
 │   ├── hosts-import.e2e.ts # Import hosts dialog sends the chosen SSH key (key library and import API stubbed with browser.route)
+│   ├── docker-security.e2e.ts # Docker Security: summary strip, grouped findings, image table, chunked CVE detail (security API stubbed with browser.route)
 │   └── terraform-helpers.ts  # shared Terraform workspace/runner helpers
 └── package.json
 ```

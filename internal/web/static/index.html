@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="/app/terraform.css" />
 <link rel="stylesheet" href="/app/repos.css" />
 <link rel="stylesheet" href="/app/dockerhub.css" />
+<link rel="stylesheet" href="/app/dockersec.css" />
 <link rel="stylesheet" href="/app/vulnintel.css" />
 <link rel="stylesheet" href="/app/osvvulns.css" />
 <link rel="stylesheet" href="/app/palette.css" />
@@ -14852,6 +14853,9 @@ async function loadDockerTab() {
     await dsPromise;
     if (stale()) return;
     setContent(dockerHeaderHtml() + DS.panelHtml());
+    // The exploit intelligence is fetched after the panel is painted: it is a network lookup and must
+    // never delay the panel. A failure only means no KEV/EPSS badges.
+    DS.loadIntel(host.id);
     return;
   }
   let data;

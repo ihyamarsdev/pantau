@@ -27,6 +27,6 @@ Implement lightweight, single-roundtrip agentless inspection using native Linux 
 
 ## Consequences
 
-- **Zero Agent Overhead**: No daemon or third-party binary installed on target hosts.
+- **Zero Agent Overhead**: No daemon or resident agent installed on target hosts. Two on-demand exceptions, both started by an operator action and limited to root or passwordless `sudo -n`: `traceroute` (network diagnostics) and `trivy` (the first Docker image scan, [ADR-0069](0069-container-security-audit-and-image-vulnerability-scan.md)).
 - **Sub-10ms Execution**: Bundled into the existing inspection SSH batch command with negligible CPU and RAM impact.
 - **Immediate Visual Feedback**: High-level badges on the Host card (Internet Online status and Live RX/TX speeds), and deep diagnostics in a dedicated "Network & Security" detail tab.

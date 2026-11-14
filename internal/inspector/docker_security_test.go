@@ -2,6 +2,10 @@ package inspector
 
 import (
 	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -441,5 +445,119 @@ func TestDockerSecurityAuditRootMount(t *testing.T) {
 	ids := ruleIDsOf(findings, "web")
 	if !hasRule(ids, "sensitive_host_mount") {
 		t.Errorf("a read-write / mount must be reported, got %v", ids)
+	}
+}
+
+func TestParseDockerImageScanInstallFailureNote(t *testing.T) {
+	note := scannerInstallNote("===INSTALL:NOPRIV===")
+	scan := parseDockerImageScan("===SCANNER:NONE===\n"+note, "", 0, "nginx:latest")
+	if scan.Status != "unsupported" || !strings.Contains(scan.Note, "passwordless sudo") {
+		t.Errorf("the reason the install failed must reach the operator: %+v", scan)
+	}
+}
+
+// The scanner talks to the Docker socket itself, so when the socket needs sudo it must run under sudo too,
+// otherwise it falls back to a registry pull that fails for a local-only image.
+func TestDockerScanScriptRunsScannerUnderSudoWhenSocketIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"+body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("docker", `case "$1" in ps) echo "permission denied while trying to connect" >&2; exit 1;; esac`)
+	write("sudo", `[ "$1" = "-n" ] && shift; echo "SUDO $*" >> "$0.log"; [ "$1" = true ] && exit 0; exec "$@"`)
+	write("trivy", `echo '{"Results":[]}'`)
+
+	run := func() string {
+		cmd := exec.Command("sh", "-c", dockerShell(dockerScanScript("nginx:latest")))
+		cmd.Env = []string{"PATH=" + dir + ":/usr/bin:/bin"}
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("script failed: %v\n%s", err, out)
+		}
+		return string(out)
+	}
+	if out := run(); !strings.Contains(out, "===SCANNER:trivy===") {
+		t.Fatalf("scanner did not run: %s", out)
+	}
+	log, _ := os.ReadFile(filepath.Join(dir, "sudo.log"))
+	if !strings.Contains(string(log), "SUDO "+filepath.Join(dir, "trivy")+" image") {
+		t.Fatalf("trivy must run under sudo with its absolute path, sudo saw:\n%s", log)
+	}
+}
+
+// A realistic trivy report of a big image: thousands of vulnerabilities over many packages. The stored
+// list is capped (dockerVulnMax), but the counts describe the whole report and the most severe entries
+// are kept.
+func TestParseDockerImageScanManyVulns(t *testing.T) {
+	const total = 3000
+	var b strings.Builder
+	b.WriteString(`{"SchemaVersion":2,"ArtifactName":"registry.example.com:5000/app:v1.2.3","Results":[`)
+	for i := range total {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		sev := []string{"CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"}[i%5]
+		fmt.Fprintf(&b, `{"Target":"app (debian 12.5)","Class":"os-pkgs","Type":"debian","Vulnerabilities":[{"VulnerabilityID":"CVE-2024-%04d","PkgName":"libpkg%d","InstalledVersion":"1.%d.%d","FixedVersion":"1.%d.%d","Title":"flaw %d","Severity":"%s","PrimaryURL":"https://avd.aquasec.com/nvd/cve-2024-%04d"}]}`,
+			i, i%97, i%10, i%7, i%10, i%7+1, i, sev, i)
+	}
+	b.WriteString(`]}`)
+	scan := parseDockerImageScan("===SCANNER:trivy===\n"+b.String(), "", 0, "registry.example.com:5000/app:v1.2.3")
+	if scan.Status != "ok" {
+		t.Fatalf("status = %q (%s)", scan.Status, scan.Error)
+	}
+	if scan.Scanner != "trivy" {
+		t.Errorf("scanner = %q", scan.Scanner)
+	}
+	if scan.VulnCounts.Total != total {
+		t.Errorf("total = %d, want %d", scan.VulnCounts.Total, total)
+	}
+	if scan.VulnCounts.Critical != 600 || scan.VulnCounts.High != 600 || scan.VulnCounts.Unknown != 600 {
+		t.Errorf("counts = %+v", scan.VulnCounts)
+	}
+	if len(scan.Vulns) != dockerVulnMax {
+		t.Fatalf("stored vulns = %d, want the cap %d", len(scan.Vulns), dockerVulnMax)
+	}
+	if !scan.Truncated {
+		t.Error("a capped list must be marked as truncated")
+	}
+	if scan.Vulns[0].Severity != "critical" {
+		t.Errorf("the most severe vuln must come first, got %+v", scan.Vulns[0])
+	}
+	if scan.Vulns[0].Package == "" || scan.Vulns[0].ID == "" {
+		t.Errorf("the fields of a vuln must survive: %+v", scan.Vulns[0])
+	}
+}
+
+// The grype report has its own shape but the same result.
+func TestParseDockerImageScanManyVulnsGrype(t *testing.T) {
+	const total = 2500
+	var b strings.Builder
+	b.WriteString(`{"matches":[`)
+	for i := range total {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		sev := []string{"Critical", "High", "Medium", "Low", "Negligible"}[i%5]
+		fmt.Fprintf(&b, `{"vulnerability":{"id":"CVE-2024-%04d","severity":"%s","description":"flaw %d"},"artifact":{"name":"pkg%d","version":"1.0.%d"},"fix":{"versions":["1.0.%d"]}}`,
+			i, sev, i, i%53, i%9, i%9+1)
+	}
+	b.WriteString(`]}`)
+	scan := parseDockerImageScan("===SCANNER:grype===\n"+b.String(), "", 0, "app:v1")
+	if scan.Status != "ok" {
+		t.Fatalf("status = %q (%s)", scan.Status, scan.Error)
+	}
+	if scan.Scanner != "grype" {
+		t.Errorf("scanner = %q", scan.Scanner)
+	}
+	if scan.VulnCounts.Total != total {
+		t.Errorf("total = %d, want %d", scan.VulnCounts.Total, total)
+	}
+	if len(scan.Vulns) != dockerVulnMax || !scan.Truncated {
+		t.Errorf("stored vulns = %d, truncated = %v", len(scan.Vulns), scan.Truncated)
+	}
+	if scan.Vulns[0].Severity != "critical" {
+		t.Errorf("the most severe vuln must come first, got %+v", scan.Vulns[0])
 	}
 }

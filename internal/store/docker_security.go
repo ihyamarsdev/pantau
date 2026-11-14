@@ -117,6 +117,7 @@ func (d *DB) SaveDockerSecurityScan(scan *DockerSecurityScan) error {
 	if scannedAt.IsZero() {
 		scannedAt = time.Now()
 	}
+	scan.ScannedAt = scannedAt // the caller gets back the timestamp the row was stored with
 	query := `
 INSERT INTO docker_security_scans (
 	host_id, kind, subject, scanned_at, scanner, summary_json, findings_json, error

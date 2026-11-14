@@ -257,6 +257,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/app/osvvulns.js", serveAppBundle("osvvulns", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/osvvulns.css", serveAppBundle("osvvulns", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/dockersec.js", serveAppBundle("dockersec", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/dockersec.css", serveAppBundle("dockersec", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/accounts.js", serveAppBundle("accounts", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/palette.js", serveAppBundle("palette", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/palette.css", serveAppBundle("palette", ".css", "text/css; charset=utf-8"))

@@ -13,7 +13,7 @@ import (
 
 // Container misconfiguration audit and image vulnerability scan for the Docker tab. Everything is
 // read-only on the host: one `docker inspect` for the audit, and a vulnerability scanner that must
-// already be installed on the host (trivy or grype). Pantau never installs anything.
+// already be on the host (trivy or grype); when neither is, the first image scan installs trivy (installScannerScript).
 
 // ErrDockerSecInProgress is returned when the same host (or host+image) is already being scanned.
 var ErrDockerSecInProgress = errors.New("docker security scan already in progress")
@@ -24,6 +24,8 @@ const (
 	// dockerScanTimeout bounds an image scan. It is generous because the scanner may download its
 	// vulnerability database first, but still bounded so a hung scan cannot block the UI forever.
 	dockerScanTimeout = 10 * time.Minute
+	// dockerInstallTimeout bounds the trivy download and install.
+	dockerInstallTimeout = 4 * time.Minute
 	// dockerVulnMax caps the vulnerability list stored per image (highest severity first).
 	dockerVulnMax = 200
 )
@@ -479,23 +481,58 @@ func countDockerFindings(findings []store.DockerSecurityFinding) store.DockerSev
 
 // ---------------------------------------------------------------- image vulnerability scan
 
-// dockerScanScript runs the scanner that is already installed on the host. Pantau never installs one.
+// dockerScanScript runs the scanner that is installed on the host. The scanner reads the image from the Docker
+// daemon itself, so it runs under sudo (absolute path: sudo's secure_path may not contain /usr/local/bin) when the
+// Docker socket needs it (DOCKER_SUDO, see dockerSudoPrelude); otherwise it would fall back to pulling the image
+// from a registry, which fails for an image that only exists locally.
 // The image reference is baked in (the script runs under `sh -c` without arguments).
 func dockerScanScript(image string) string {
 	q := shellQuote(image)
-	return `if command -v trivy >/dev/null 2>&1; then
+	return `PATH="$PATH:/usr/local/bin"; export PATH
+if command -v trivy >/dev/null 2>&1; then
   echo "===SCANNER:trivy==="
-  trivy image --quiet --format json --scanners vuln ` + q + `
+  $DOCKER_SUDO "$(command -v trivy)" image --quiet --format json --scanners vuln ` + q + `
 elif command -v grype >/dev/null 2>&1; then
   echo "===SCANNER:grype==="
-  grype -o json ` + q + `
+  $DOCKER_SUDO "$(command -v grype)" -o json ` + q + `
 else
   echo "===SCANNER:NONE==="
 fi
 `
 }
 
-// DockerImageScan scans one image with the scanner installed on the host and stores the result.
+// installScannerScript installs trivy with Aqua's official installer (it verifies the release checksum) into
+// /usr/local/bin, like the traceroute probe installs traceroute: root or passwordless sudo only, never a password
+// prompt, Linux only. It prints one ===INSTALL:...=== marker.
+// shortcut: installs the latest trivy (no pinned version), so the host needs internet access; pin a version when
+// reproducible installs matter.
+const installScannerScript = `[ "$(uname -s)" = "Linux" ] || { echo "===INSTALL:UNSUPPORTED==="; exit 0; }
+if [ "$(id -u)" = "0" ]; then SUDO=""
+elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then SUDO="sudo -n"
+else echo "===INSTALL:NOPRIV==="; exit 0; fi
+U=https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh
+if command -v curl >/dev/null 2>&1; then curl -sfL "$U" | $SUDO sh -s -- -b /usr/local/bin 2>&1
+elif command -v wget >/dev/null 2>&1; then wget -qO- "$U" | $SUDO sh -s -- -b /usr/local/bin 2>&1
+else echo "===INSTALL:NODOWNLOADER==="; exit 0; fi
+PATH="$PATH:/usr/local/bin"; export PATH
+if command -v trivy >/dev/null 2>&1; then echo "===INSTALL:OK==="; else echo "===INSTALL:FAILED==="; fi
+`
+
+// scannerInstallNote explains why trivy could not be installed (output of installScannerScript).
+func scannerInstallNote(out string) string {
+	why := "the installer failed (does the host have internet access?)"
+	switch {
+	case strings.Contains(out, "===INSTALL:UNSUPPORTED==="):
+		why = "automatic install is only done on Linux"
+	case strings.Contains(out, "===INSTALL:NOPRIV==="):
+		why = "root or passwordless sudo is needed"
+	case strings.Contains(out, "===INSTALL:NODOWNLOADER==="):
+		why = "neither curl nor wget is installed"
+	}
+	return "No vulnerability scanner (trivy or grype) is installed on this host and Pantau could not install trivy: " + why + ". Install one on the host to enable image scanning."
+}
+
+// DockerImageScan scans one image and stores the result. When the host has no scanner it installs trivy first.
 func (ins *Inspector) DockerImageScan(hostID int64, image string) (*store.DockerSecurityScan, error) {
 	if !ValidDockerImage(image) {
 		return nil, dockerInvalid("invalid image: %q", image)
@@ -510,7 +547,25 @@ func (ins *Inspector) DockerImageScan(hostID int64, image string) (*store.Docker
 	if err != nil {
 		return nil, err
 	}
+	installed := false
+	if strings.Contains(stdout, "===SCANNER:NONE===") {
+		out, _, _, err := ins.dockerExec(hostID, installScannerScript, dockerInstallTimeout)
+		if err != nil {
+			return nil, err
+		}
+		if strings.Contains(out, "===INSTALL:OK===") {
+			installed = true
+			if stdout, stderr, exitCode, err = ins.dockerExec(hostID, dockerScanScript(image), dockerScanTimeout); err != nil {
+				return nil, err
+			}
+		} else {
+			stdout = "===SCANNER:NONE===\n" + scannerInstallNote(out)
+		}
+	}
 	scan := parseDockerImageScan(stdout, stderr, exitCode, image)
+	if installed {
+		scan.Note = strings.TrimSpace("Pantau installed trivy on this host. " + scan.Note)
+	}
 	scan.HostID = hostID
 	scan.Kind = "image"
 	scan.Subject = image
@@ -530,7 +585,12 @@ func parseDockerImageScan(stdout, stderr string, exitCode int, image string) *st
 	switch {
 	case strings.Contains(stdout, "===SCANNER:NONE==="):
 		scan.Status = "unsupported"
-		scan.Note = "No vulnerability scanner is installed on this host (trivy or grype). Install one on the host to enable image scanning; Pantau never installs software."
+		scan.Note = "No vulnerability scanner is installed on this host (trivy or grype). Install one on the host to enable image scanning."
+		if i := strings.Index(stdout, "===SCANNER:NONE===\n"); i >= 0 {
+			if n := strings.TrimSpace(stdout[i+len("===SCANNER:NONE===\n"):]); n != "" {
+				scan.Note = n // the reason the automatic install failed
+			}
+		}
 		return scan
 	case strings.Contains(stdout, "===SCANNER:trivy==="):
 		scan.Scanner = "trivy"

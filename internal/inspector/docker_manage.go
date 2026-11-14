@@ -31,10 +31,11 @@ const (
 // dockerSudoPrelude defines a `docker` shell function that transparently prefixes `sudo -n` when the plain
 // CLI is refused by the Docker socket. Defining a function (instead of rewriting every command) keeps the
 // existing docker scripts unchanged. It makes at most one sudo probe, and only when docker said "permission
-// denied".
+// denied". It also sets DOCKER_SUDO, for programs that talk to the Docker socket themselves (the image scanner):
+// a shell function is invisible to them.
 const dockerSudoPrelude = `e=$(command docker ps -q 2>&1 >/dev/null)
 case "$e" in
-  *ermission\ denied*) if sudo -n true 2>/dev/null; then docker() { sudo -n docker "$@"; }; fi;;
+  *ermission\ denied*) if sudo -n true 2>/dev/null; then docker() { sudo -n docker "$@"; }; DOCKER_SUDO="sudo -n"; fi;;
 esac
 `
 

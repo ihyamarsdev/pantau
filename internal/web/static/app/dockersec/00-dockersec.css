@@ -1,0 +1,71 @@
+/* Docker tab security panel (00-dockersec.js): summary strip, section tabs, grouped findings,
+ * image table and the chunked vulnerability detail. Tokens come from index.html :root. */
+.ds-summary { display: flex; flex-wrap: wrap; gap: 14px; padding: 12px 14px; margin-bottom: 12px; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: var(--radius); }
+.ds-summary-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ds-summary-label { font-size: var(--fs-xs); color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+.ds-summary-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ds-summary-total { font-size: var(--fs-xs); color: var(--text-muted); white-space: nowrap; }
+.ds-summary-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--fs-xs); color: var(--text-muted); }
+.ds-summary-meta b { color: var(--text); }
+
+.ds-sev-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border: 1px solid var(--card-border); border-radius: 999px; background: var(--surface-2); color: var(--text); font-size: var(--fs-xs); cursor: pointer; white-space: nowrap; }
+.ds-sev-chip b { font-weight: 600; }
+.ds-sev-chip.badge-danger { color: var(--danger); }
+.ds-sev-chip.badge-warning { color: var(--warning); }
+.ds-sev-chip.badge-info { color: var(--info); }
+.ds-sev-chip.badge-unknown { color: var(--text-muted); }
+.ds-sev-chip:hover { background: var(--surface-3); }
+.ds-sev-chip.active { border-color: var(--accent-ring); background: var(--accent-soft); }
+.ds-sev-chip:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: 1px; }
+
+.ds-sort-btn { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border: 1px solid var(--card-border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text-muted); font-size: var(--fs-xs); cursor: pointer; }
+.ds-sort-btn:hover { background: var(--surface-3); color: var(--text); }
+.ds-sort-btn.active { border-color: var(--accent-ring); background: var(--accent-soft); color: var(--accent-text); }
+
+.ds-sections { margin-bottom: 10px; }
+.ds-seg { display: inline-flex; gap: 2px; padding: 2px; background: var(--surface-2); border: 1px solid var(--card-border); border-radius: var(--radius-sm); }
+.ds-seg-btn { padding: 4px 12px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); font-size: var(--fs-xs); cursor: pointer; }
+.ds-seg-btn.active { background: var(--primary); color: #fff; }
+
+.ds-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.ds-toolbar input[type="search"] { flex: 1 1 220px; min-width: 160px; }
+.ds-chips-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+.ds-audit-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: var(--fs-xs); color: var(--text-muted); margin-bottom: 8px; }
+.ds-stale { color: var(--warning); }
+
+.ds-group { border: 1px solid var(--card-border); border-radius: var(--radius); margin-bottom: 6px; overflow: hidden; }
+.ds-group-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 0; background: var(--surface-2); color: var(--text); font-size: var(--fs-sm); text-align: left; cursor: pointer; }
+.ds-group-head:hover { background: var(--surface-3); }
+.ds-group-caret { display: inline-flex; color: var(--text-muted); }
+.ds-group-name { font-weight: 600; overflow-wrap: anywhere; }
+.ds-group-count { font-size: var(--fs-xs); color: var(--text-muted); white-space: nowrap; }
+.ds-group-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+.ds-group-body { padding: 4px 10px 8px; }
+
+.ds-finding { padding: 7px 0; border-bottom: 1px solid var(--card-border); }
+.ds-finding:last-child { border-bottom: 0; }
+.ds-finding-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ds-finding-rule { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-muted); }
+.ds-finding-title { font-weight: 600; overflow-wrap: anywhere; }
+.ds-finding-image { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-muted); overflow-wrap: anywhere; }
+.ds-finding-detail { font-size: var(--fs-xs); color: var(--text-muted); margin-top: 3px; overflow-wrap: anywhere; }
+.ds-finding-fix { font-size: var(--fs-xs); color: var(--success); margin-top: 3px; overflow-wrap: anywhere; }
+
+.ds-table-wrap { overflow-x: auto; max-height: 60vh; overflow-y: auto; border: 1px solid var(--card-border); border-radius: var(--radius); }
+.ds-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.ds-table thead th { position: sticky; top: 0; z-index: 1; background: var(--surface-2); border-bottom: 1px solid var(--card-border); padding: 7px 10px; text-align: left; font-size: var(--fs-xs); color: var(--text-muted); font-weight: 600; white-space: nowrap; }
+.ds-table tbody td { padding: 7px 10px; border-bottom: 1px solid var(--card-border); vertical-align: top; }
+.ds-table tbody tr:last-child td { border-bottom: 0; }
+.ds-img-row { cursor: pointer; }
+.ds-img-row:hover td { background: var(--hover); }
+.ds-img-row:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: -2px; }
+.ds-img-name { font-weight: 600; overflow-wrap: anywhere; max-width: 320px; }
+.ds-status-note { font-size: var(--fs-xs); color: var(--text-muted); margin-top: 2px; overflow-wrap: anywhere; }
+
+.ds-vuln-head { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin-bottom: 10px; }
+.ds-vuln-title { font-weight: 600; overflow-wrap: anywhere; }
+.ds-vuln-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+.ds-error { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; padding: 14px; border: 1px solid var(--danger-border); background: var(--danger-soft); border-radius: var(--radius); }
+.ds-error-text { color: var(--danger); font-size: var(--fs-sm); overflow-wrap: anywhere; }
