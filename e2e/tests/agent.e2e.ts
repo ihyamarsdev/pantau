@@ -238,3 +238,65 @@ test('agent: the button and panel sit above an open modal, and the panel expands
   await browser.locator('#agentExpand').click();
   expect(await panelWidth()).toBeCloseTo(normalWidth, 0);
 });
+
+test('agent: the bubble is a solid, draggable anchor, and a click outside closes the chat', async ({ app, screen, browser }) => {
+  await app.open('/');
+  await initApp(screen, browser);
+
+  const fabBox = async () => (await browser.evaluate(() => {
+    const r = document.getElementById('agentFab')!.getBoundingClientRect();
+    return { x: r.left, y: r.top, w: r.width, h: r.height };
+  })) as { x: number; y: number; w: number; h: number };
+
+  // The first click waits for the widget to boot after the first-run wizard; the second closes the chat.
+  await browser.locator('#agentFab').click();
+  await expect(browser.locator('#agentPanel')).toBeVisible();
+  await browser.locator('#agentFab').click();
+  await expect(browser.locator('#agentPanel')).toBeHidden();
+
+  // A filled bubble: --accent was never a token, so the old rule left it transparent.
+  const fabBg = (await browser.evaluate(() => getComputedStyle(document.getElementById('agentFab')!).backgroundColor)) as string;
+  expect(fabBg).not.toMatch(/rgba\(0, 0, 0, 0\)/);
+  // The chat animates in and out instead of appearing.
+  const panelTransition = (await browser.evaluate(() => getComputedStyle(document.getElementById('agentPanel')!).transitionProperty)) as string;
+  expect(panelTransition).toContain('opacity');
+
+  // Drag the bubble up and to the left by (400, 320).
+  const before = await fabBox();
+  const cx = before.x + before.w / 2, cy = before.y + before.h / 2;
+  await browser.mouse.move(cx, cy);
+  await browser.mouse.down();
+  await browser.mouse.move(cx - 200, cy - 160);
+  await browser.mouse.move(cx - 400, cy - 320);
+  await browser.mouse.up();
+  const after = await fabBox();
+  expect(after.x).toBeLessThan(before.x - 300);
+  expect(after.y).toBeLessThan(before.y - 220);
+
+  // Dragging is not a click: the chat stays closed until the bubble is tapped.
+  await expect(browser.locator('#agentPanel')).toBeHidden();
+  await browser.locator('#agentFab').click();
+  await expect(browser.locator('#agentPanel')).toBeVisible();
+
+  // The chat docks to the bubble and never covers it.
+  const coversBubble = (await browser.evaluate(() => {
+    const f = document.getElementById('agentFab')!.getBoundingClientRect();
+    const p = document.getElementById('agentPanel')!.getBoundingClientRect();
+    return f.left < p.right && f.right > p.left && f.top < p.bottom && f.bottom > p.top;
+  })) as boolean;
+  expect(coversBubble).toBe(false);
+
+  // A click outside the chat closes it.
+  await browser.mouse.move(320, 300);
+  await browser.mouse.down();
+  await browser.mouse.up();
+  await expect(browser.locator('#agentPanel')).toBeHidden();
+
+  // The bubble keeps the place it was dropped in across a reload.
+  await app.open('/');
+  await initApp(screen, browser);
+  await browser.locator('#agentFab').waitFor({ state: 'visible', timeout: 10000 });
+  const reloaded = await fabBox();
+  expect(Math.abs(reloaded.x - after.x)).toBeLessThan(2);
+  expect(Math.abs(reloaded.y - after.y)).toBeLessThan(2);
+});

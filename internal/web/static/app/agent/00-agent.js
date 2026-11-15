@@ -5,8 +5,9 @@
   'use strict';
 
   const AG = (window.AG = {});
-  const S = { grants: [], enabled: false, open: false, expanded: false, busy: false, session: null, abort: null, approvals: [], timer: null, msgs: [], chatT0: 0, apprT0: 0 };
+  const S = { grants: [], enabled: false, open: false, expanded: false, busy: false, session: null, abort: null, approvals: [], timer: null, msgs: [], chatT0: 0, apprT0: 0, fab: null, drag: null, suppressToggle: false, wired: false };
   const SESSION_KEY = 'pantau_agent_session';
+  const POS_KEY = 'pantau_agent_fab_pos';
 
   const I = {
     en: {
@@ -111,8 +112,10 @@
       </div>
       <div id="agentApprovals"></div>`;
     while (root.firstChild) document.body.appendChild(root.firstChild);
+    S.fab = storedPos() || defaultPos();
     renderLog();
     paintPanel();
+    wirePlacement();
   }
 
   function renderLog() {
@@ -140,6 +143,8 @@
   }
 
   AG.toggle = function (force) {
+    // A drag ends with a click on the bubble/header; that click must not toggle the chat.
+    if (S.suppressToggle && force === undefined) { S.suppressToggle = false; return; }
     S.open = force === undefined ? !S.open : !!force;
     paintPanel();
     if (S.open) setTimeout(() => $('agentInput') && $('agentInput').focus(), 30);
@@ -156,12 +161,120 @@
     btn.innerHTML = svgIcon(S.expanded ? 'minimize-2' : 'maximize-2', 'icon-sm');
     btn.title = label;
     btn.setAttribute('aria-label', label);
+    applyLayout();
   }
 
   AG.expand = function (force) {
     S.expanded = force === undefined ? !S.expanded : !!force;
     paintPanel();
   };
+
+  /* ---------- placement: the bubble is the only anchor, the chat docks above it (below when there is no room) ---------- */
+  const FAB = 48, GAP = 12, PAD = 8, PANEL_H = 560;
+
+  function clampNum(v, lo, hi) { return Math.min(Math.max(v, lo), Math.max(lo, hi)); }
+
+  function defaultPos() { return { x: window.innerWidth - 24 - FAB, y: window.innerHeight - 52 - FAB }; }
+
+  function storedPos() {
+    try {
+      const p = JSON.parse(localStorage.getItem(POS_KEY) || 'null');
+      if (p && isFinite(p.x) && isFinite(p.y)) return { x: Number(p.x), y: Number(p.y) };
+    } catch (e) { /* a corrupt entry just means the default corner */ }
+    return null;
+  }
+
+  // Always opaque, always on screen: the bubble stays in the viewport, and the chat docks above or below
+  // it without ever covering it, shrinking (max-height, log scrolls) when neither side has room.
+  function applyLayout() {
+    const fab = $('agentFab'), panel = $('agentPanel'), appr = $('agentApprovals');
+    if (!fab || !panel) return;
+    const vw = document.documentElement.clientWidth || window.innerWidth;
+    const vh = document.documentElement.clientHeight || window.innerHeight;
+    const p = S.fab || defaultPos();
+    S.fab = { x: clampNum(p.x, PAD, vw - FAB - PAD), y: clampNum(p.y, PAD, vh - FAB - PAD) };
+    fab.style.left = Math.round(S.fab.x) + 'px';
+    fab.style.top = Math.round(S.fab.y) + 'px';
+    const aw = appr ? appr.offsetWidth || Math.min(420, vw - PAD * 2) : 0;
+    // Approval cards and the grants bar float on the far side of the chat; the chat yields them that space,
+    // so the two never overlap while the chat is open.
+    const band = appr && S.open ? appr.offsetHeight : 0;
+    const reserve = band ? band + GAP : 0;
+    // Width/height from the target state (see #agentPanel in 00-agent.css), not the box: the box is mid-transition.
+    const w = Math.min(S.expanded ? 960 : 420, vw - PAD * 2);
+    const above = S.fab.y - GAP - PAD, below = vh - (S.fab.y + FAB) - GAP - PAD;
+    const useAbove = above >= below;
+    const h = Math.max(120, Math.min(PANEL_H, vh - 120, Math.max(above, below) - reserve));
+    panel.style.maxHeight = h + 'px';
+    const x = clampNum(S.fab.x + FAB - w, PAD, vw - w - PAD);
+    const y = clampNum(useAbove ? S.fab.y - GAP - h : S.fab.y + FAB + GAP, PAD, vh - h - PAD);
+    panel.style.left = Math.round(x) + 'px';
+    panel.style.top = Math.round(y) + 'px';
+    if (!appr) return;
+    const base = S.open ? (useAbove ? y : y + h) : S.fab.y;
+    const up = S.open ? useAbove : true;
+    const ay = clampNum(up ? base - GAP - band : base + GAP, PAD, vh - band - PAD);
+    appr.style.left = Math.round(clampNum(S.fab.x + FAB - aw, PAD, vw - aw - PAD)) + 'px';
+    appr.style.top = Math.round(ay) + 'px';
+  }
+
+  function dragFrom(e) {
+    if (e.button > 0 || S.drag) return;
+    const handle = e.currentTarget;
+    const from = { x: S.fab.x, y: S.fab.y, px: e.clientX, py: e.clientY };
+    S.drag = { moved: false };
+    if (handle.setPointerCapture) handle.setPointerCapture(e.pointerId);
+    const move = (ev) => {
+      const dx = ev.clientX - from.px, dy = ev.clientY - from.py;
+      if (!S.drag.moved) {
+        if (Math.abs(dx) + Math.abs(dy) < 4) return;
+        S.drag.moved = true;
+        $('agentFab').classList.add('ag-dragging');
+        $('agentPanel').classList.add('ag-dragging');
+      }
+      // applyLayout clamps, so the widget can never be dragged off screen.
+      S.fab = { x: from.x + dx, y: from.y + dy };
+      applyLayout();
+    };
+    const up = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
+      const moved = !!S.drag && S.drag.moved;
+      S.drag = null;
+      ['agentFab', 'agentPanel'].forEach((id) => { const n = $(id); if (n) n.classList.remove('ag-dragging'); });
+      if (!moved) return;
+      localStorage.setItem(POS_KEY, JSON.stringify({ x: Math.round(S.fab.x), y: Math.round(S.fab.y) }));
+      S.suppressToggle = true;
+      setTimeout(() => { S.suppressToggle = false; }, 0);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
+  }
+
+  function wirePlacement() {
+    const fab = $('agentFab'), head = document.querySelector('#agentPanel .ag-head');
+    fab.addEventListener('pointerdown', dragFrom);
+    if (head) head.addEventListener('pointerdown', (e) => {
+      if (e.target.closest && e.target.closest('button, a, input, textarea, select')) return;
+      dragFrom(e);
+    });
+    if (S.wired) return;
+    S.wired = true;
+    window.addEventListener('resize', applyLayout);
+    // Click outside the widget closes the chat; Capture phase so page handlers that swallow events cannot keep it open.
+    document.addEventListener('pointerdown', (e) => {
+      if (!S.open || !e.target.closest) return;
+      if (e.target.closest('#agentPanel, #agentFab, #agentApprovals')) return;
+      AG.toggle(false);
+    }, true);
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !S.open) return;
+      if (document.querySelector('.modal.open')) return; // the modal stack owns Escape while a modal is on top
+      AG.toggle(false);
+    });
+  }
 
   AG.newChat = function () {
     if (S.abort) S.abort.abort();
@@ -301,7 +414,7 @@
       </div>`).join('');
     const host = $('agentApprovals');
     const html = grantsHtml() + cards; // grants stay visible even while the chat panel is closed
-    if (host.dataset.html !== html) { host.dataset.html = html; host.innerHTML = html; }
+    if (host.dataset.html !== html) { host.dataset.html = html; host.innerHTML = html; applyLayout(); }
     // The chat bubble shows the approval wait, so it must follow the approval state.
     if (S.approvals.length !== prev) renderLog();
   }
@@ -334,6 +447,9 @@
 
   AG.init = function () { build(); refreshEnabled(); };
   AG.enabled = () => S.enabled;
+  // index.html calls checkAuth() before this module loads, so a reload with a live session never reaches
+  // AG.init() and the bubble would be missing until the next login. Boot here in that case.
+  api('/api/me').then((r) => { if (r.ok && r.data.authenticated && !$('agentFab')) AG.init(); }).catch(() => {});
   if (typeof langRerenderHooks !== 'undefined') langRerenderHooks.push(() => { if ($('agentFab')) { document.getElementById('agentFab').remove(); $('agentPanel').remove(); $('agentApprovals').remove(); build(); refreshEnabled(); } });
 
   /* ---------- "Ask agent" entry points ---------- */
