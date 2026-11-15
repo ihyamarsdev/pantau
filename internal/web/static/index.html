@@ -11335,12 +11335,32 @@ function groupHosts(hosts) {
   const result = [];
   const sortedNames = Array.from(groupsMap.keys()).sort((a, b) => a.localeCompare(b));
   for (const name of sortedNames) {
-    result.push({ name, hosts: groupsMap.get(name), isUngrouped: false });
+    result.push({ key: 'g:' + name, name, hosts: groupsMap.get(name), isUngrouped: false });
   }
   if (ungrouped.length > 0) {
-    result.push({ name: t('group_ungrouped', 'Ungrouped'), hosts: ungrouped, isUngrouped: true });
+    result.push({ key: '__ungrouped__', name: t('group_ungrouped', 'Ungrouped'), hosts: ungrouped, isUngrouped: true });
   }
   return result;
+}
+
+// Collapsed Host Group keys ('g:<name>', or '__ungrouped__'), kept in the browser like the Terraform workspace groups.
+function getHostGroupsCollapsed() {
+  try {
+    const raw = localStorage.getItem('pantau_host_groups_collapsed');
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch (e) {
+    return new Set();
+  }
+}
+
+function toggleHostGroupCollapsed(key) {
+  const set = getHostGroupsCollapsed();
+  if (set.has(key)) set.delete(key);
+  else set.add(key);
+  try {
+    localStorage.setItem('pantau_host_groups_collapsed', JSON.stringify(Array.from(set)));
+  } catch (e) {}
+  renderHosts();
 }
 
 function renderGridView(grid, isManualSort) {
@@ -11373,13 +11393,18 @@ function renderGridView(grid, isManualSort) {
 
   const groups = groupHosts(displayHosts);
   const showDividers = groups.length > 1 || (groups.length === 1 && !groups[0].isUngrouped);
+  const collapsed = getHostGroupsCollapsed();
 
   groups.forEach(grp => {
+    // A collapsed group keeps its header and hides its cards. Without dividers there is no header to click, so nothing collapses.
+    const isCol = showDividers && collapsed.has(grp.key);
     if (showDividers) {
       const divider = document.createElement('div');
-      divider.className = 'host-group-divider';
+      divider.className = 'host-group-divider collapsible';
+      divider.onclick = () => toggleHostGroupCollapsed(grp.key);
       divider.innerHTML = `
         <span class="host-group-title">
+          <svg class="icon icon-xs grp-caret ${isCol ? 'collapsed' : ''}"><use href="#i-chevron-down"/></svg>
           <svg class="icon icon-sm"><use href="#i-folder"/></svg>
           ${escapeHtml(grp.name)}
         </span>
@@ -11390,6 +11415,7 @@ function renderGridView(grid, isManualSort) {
       `;
       grid.appendChild(divider);
     }
+    if (isCol) return;
 
     grp.hosts.forEach(h => {
       const card = document.createElement('div');
@@ -11646,14 +11672,18 @@ function renderListView(listContainer, isManualSort) {
 
   const groups = groupHosts(displayHosts);
   const showDividers = groups.length > 1 || (groups.length === 1 && !groups[0].isUngrouped);
+  const collapsed = getHostGroupsCollapsed();
 
   groups.forEach(grp => {
+    const isCol = showDividers && collapsed.has(grp.key);
     if (showDividers) {
       const headerRow = document.createElement('tr');
-      headerRow.className = 'host-list-group-row';
+      headerRow.className = 'host-list-group-row collapsible';
+      headerRow.onclick = () => toggleHostGroupCollapsed(grp.key);
       headerRow.innerHTML = `
         <td colspan="${isManualSort ? 14 : 13}">
           <div style="display: flex; align-items: center; gap: 8px;">
+            <svg class="icon icon-xs grp-caret ${isCol ? 'collapsed' : ''}"><use href="#i-chevron-down"/></svg>
             <svg class="icon icon-sm"><use href="#i-folder"/></svg>
             <span>${escapeHtml(grp.name)}</span>
             <span class="badge" style="font-size: var(--fs-xs); background: var(--card-bg); color: var(--text-muted); border: 1px solid var(--card-border);">${grp.hosts.length}</span>
@@ -11663,6 +11693,7 @@ function renderListView(listContainer, isManualSort) {
       `;
       tbody.appendChild(headerRow);
     }
+    if (isCol) return;
 
     grp.hosts.forEach(h => {
       const tr = document.createElement('tr');
