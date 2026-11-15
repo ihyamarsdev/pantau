@@ -229,6 +229,8 @@
           const prev = S.msgs.findIndex((m) => m.role === 'tool' && m.id === data.toolCallId);
           if (prev >= 0 && data.status !== 'running') S.msgs[prev] = line;
           else S.msgs.splice(S.msgs.indexOf(bot) < 0 ? S.msgs.length : S.msgs.indexOf(bot), 0, line);
+          // Tools that add, change or regroup hosts: the host list reloads when one finishes, not at the next 30 s poll.
+          if (data.status !== 'running' && ['fleet_host_action', 'fleet_host_groups', 'fleet_host_import'].includes(data.tool) && typeof loadHosts === 'function') loadHosts();
         } else if (ev === 'agent.error') {
           S.msgs.push({ role: 'error', text: (data && data.error) || 'agent error' });
         } else if (data && data.choices && data.choices[0]) {
