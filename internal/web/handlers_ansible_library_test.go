@@ -356,3 +356,110 @@ func TestAnsibleConfigAPI(t *testing.T) {
 		t.Fatalf("DELETE: %d", code)
 	}
 }
+
+// fakeGalaxyCatalog stands in for galaxy.ansible.com: keyword search, one collection and one role lookup, and the
+// versions of that role. Any other request answers 500, so an unexpected query shows up as a failed search.
+func fakeGalaxyCatalog(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		switch {
+		case r.URL.Path == "/api/v3/plugin/ansible/search/collection-versions/" && q.Get("keywords") == "nginx":
+			io.WriteString(w, `{"meta":{"count":171},"data":[{"collection_version":{"namespace":"community","name":"general","version":"14.0.1","description":"General purpose modules"}}]}`)
+		case r.URL.Path == "/api/v1/search/roles/" && q.Get("keywords") == "nginx":
+			io.WriteString(w, `{"count":832,"results":[{"id":10962,"name":"nginx","username":"geerlingguy","description":"Nginx role"}]}`)
+		case r.URL.Path == "/api/v3/plugin/ansible/content/published/collections/index/community/general/":
+			io.WriteString(w, `{"highest_version":{"version":"14.0.1"}}`)
+		case r.URL.Path == "/api/v3/plugin/ansible/content/published/collections/index/nope/nothing/":
+			http.NotFound(w, r)
+		case r.URL.Path == "/api/v1/roles/" && q.Get("namespace") == "geerlingguy" && q.Get("name") == "nginx":
+			io.WriteString(w, `{"count":1,"results":[{"id":10962,"name":"nginx","username":"geerlingguy"}]}`)
+		case r.URL.Path == "/api/v1/roles/10962/versions/":
+			io.WriteString(w, `{"count":3,"next":null,"results":[{"name":"4.0.0-rc1"},{"name":"3.3.1"},{"name":"3.0.0"}]}`)
+		default:
+			http.Error(w, "no fixture for "+r.URL.String(), http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestAnsibleLibraryUpdatesAndSearch(t *testing.T) {
+	fakeGalaxy(t)
+	catalog := fakeGalaxyCatalog(t)
+	env := newAnsibleEnv(t)
+	dir := t.TempDir()
+	env.srv.SetAnsibleLibraryDir(dir)
+	env.srv.galaxy = ansible.NewGalaxyClient(catalog.URL)
+	put := func(path, body string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	coll := ansible.LibraryCollectionsDir(dir)
+	put(filepath.Join(coll, "ansible_collections", "community", "general", "MANIFEST.json"), `{"collection_info":{"version":"9.1.0"}}`)
+	put(filepath.Join(coll, "ansible_collections", "nope", "nothing", "MANIFEST.json"), `{"collection_info":{"version":"1.0.0"}}`)
+	put(filepath.Join(ansible.LibraryRolesDir(dir), "geerlingguy.nginx", "meta", ".galaxy_install_info"), "version: 3.0.0\n")
+
+	rec := doRequest(t, env.srv, env.auth, http.MethodGet, "/api/ansible/library/updates", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("updates: HTTP %d: %s", rec.Code, rec.Body.String())
+	}
+	var updates struct {
+		Items []ansible.LibraryUpdate `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &updates); err != nil {
+		t.Fatal(err)
+	}
+	want := []ansible.LibraryUpdate{
+		{Kind: "collection", Name: "community.general", Installed: "9.1.0", Latest: "14.0.1", Status: "update"},
+		{Kind: "collection", Name: "nope.nothing", Installed: "1.0.0", Status: "not_on_galaxy"},
+		{Kind: "role", Name: "geerlingguy.nginx", Installed: "3.0.0", Latest: "3.3.1", Status: "update"},
+	}
+	if len(updates.Items) != len(want) {
+		t.Fatalf("updates = %+v, want %d items", updates.Items, len(want))
+	}
+	for i := range want {
+		if updates.Items[i] != want[i] {
+			t.Errorf("update %d = %+v, want %+v", i, updates.Items[i], want[i])
+		}
+	}
+
+	rec = doRequest(t, env.srv, env.auth, http.MethodGet, "/api/ansible/library/search?q=nginx", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("search: HTTP %d: %s", rec.Code, rec.Body.String())
+	}
+	var found ansible.GalaxySearch
+	if err := json.Unmarshal(rec.Body.Bytes(), &found); err != nil {
+		t.Fatal(err)
+	}
+	wantColl := ansible.GalaxyHit{Kind: "collection", Name: "community.general", Version: "14.0.1", Description: "General purpose modules"}
+	wantRole := ansible.GalaxyHit{Kind: "role", Name: "geerlingguy.nginx", Version: "3.3.1", Description: "Nginx role"}
+	if len(found.Collections) != 1 || found.Collections[0] != wantColl {
+		t.Errorf("collections = %+v, want [%+v]", found.Collections, wantColl)
+	}
+	if len(found.Roles) != 1 || found.Roles[0] != wantRole {
+		t.Errorf("roles = %+v, want [%+v]", found.Roles, wantRole)
+	}
+	if found.CollectionsTotal != 171 || found.RolesTotal != 832 {
+		t.Errorf("totals: %d collections, %d roles", found.CollectionsTotal, found.RolesTotal)
+	}
+
+	for q, code := range map[string]int{"a": http.StatusBadRequest, "boom": http.StatusBadGateway} {
+		if rec := doRequest(t, env.srv, env.auth, http.MethodGet, "/api/ansible/library/search?q="+q, nil); rec.Code != code {
+			t.Errorf("search q=%q: HTTP %d, want %d", q, rec.Code, code)
+		}
+	}
+
+	bare := newAnsibleEnv(t)
+	bare.srv.SetAnsibleLibraryDir("")
+	for _, url := range []string{"/api/ansible/library/updates", "/api/ansible/library/search?q=nginx"} {
+		if rec := doRequest(t, bare.srv, bare.auth, http.MethodGet, url, nil); rec.Code != http.StatusConflict {
+			t.Errorf("%s without a library directory: HTTP %d, want 409", url, rec.Code)
+		}
+	}
+}

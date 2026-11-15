@@ -29,6 +29,10 @@
       ans_rs_git: 'git', ans_rs_git_yes: 'available', ans_rs_git_no: 'not found', ans_rs_gate_warn: 'Ansible playbooks execute on the Pantau server with the privileges of the Pantau process. Tasks using connection: local, delegate_to: localhost or local plugins can read and write data on the master server. Only enable the Gate if you trust everyone who can sign in to Pantau.',
       ans_rs_cfg: 'ansible.cfg', ans_rs_cfg_hint: 'Global additions to ansible.cfg. Pantau-managed keys (inventory, SSH keys/args, host key checking, roles/collections paths) are rejected. Any ansible.cfg inside imported folders is ignored; configure settings here instead.',
       ans_rs_cfg_allowed: 'Allowed sections: [{s}]', ans_rs_cfg_saved: 'Configuration saved', ans_rs_cfg_failed: 'Could not save the configuration', ans_rs_cfg_off: 'Enable the Ansible Gate to edit the configuration.', ans_rs_cfg_managed: 'Managed keys',
+      ans_rs_updates: 'Updates', ans_rs_upd_check: 'Check for updates', ans_rs_upd_checking: 'Checking…', ans_rs_upd_hint: 'Compares each installed item with the newest version on galaxy.ansible.com. Nothing is installed until you choose Update.',
+      ans_rs_upd_summary: '{u} update(s) available · {c} up to date · {o} other', ans_rs_upd_current: 'Up to date', ans_rs_upd_gone: 'Not on Galaxy', ans_rs_upd_unknown: 'Version unknown', ans_rs_upd_error: 'Check failed', ans_rs_upd_failed: 'Could not check for updates', ans_rs_update: 'Update',
+      ans_rs_gsearch: 'Search Galaxy', ans_rs_gsearch_ph: 'Keyword, e.g. nginx', ans_rs_gsearch_btn: 'Search', ans_rs_gsearch_short: 'Enter at least 2 characters.', ans_rs_searching: 'Searching…', ans_rs_search_failed: 'Galaxy search failed',
+      ans_rs_gsearch_none: 'No collections or roles match "{q}".', ans_rs_gsearch_count: 'Showing {n} of {total}', ans_rs_gsearch_installed: 'Installed {v}',
     },
     id: {
       ans_rs_sub_templates: 'Template', ans_rs_sub_files: 'Berkas', ans_rs_sub_library: 'Pustaka',
@@ -54,6 +58,10 @@
       ans_rs_git: 'git', ans_rs_git_yes: 'tersedia', ans_rs_git_no: 'tidak ditemukan', ans_rs_gate_warn: 'Playbook Ansible dijalankan di server Pantau dengan hak akses proses Pantau. Task yang memakai connection: local, delegate_to: localhost, atau plugin lokal dapat membaca dan menulis data di server master. Aktifkan Gate hanya jika Anda memercayai semua orang yang dapat masuk ke Pantau.',
       ans_rs_cfg: 'ansible.cfg', ans_rs_cfg_hint: 'Tambahan global untuk ansible.cfg. Kunci yang dikelola Pantau (inventory, kunci/argumen SSH, pemeriksaan host key, path role/collection) ditolak. ansible.cfg di dalam folder impor diabaikan; atur di sini.',
       ans_rs_cfg_allowed: 'Section yang diizinkan: [{s}]', ans_rs_cfg_saved: 'Konfigurasi disimpan', ans_rs_cfg_failed: 'Gagal menyimpan konfigurasi', ans_rs_cfg_off: 'Aktifkan Ansible Gate untuk mengedit konfigurasi.', ans_rs_cfg_managed: 'Kunci yang dikelola',
+      ans_rs_updates: 'Pembaruan', ans_rs_upd_check: 'Periksa pembaruan', ans_rs_upd_checking: 'Memeriksa…', ans_rs_upd_hint: 'Membandingkan setiap item terpasang dengan versi terbaru di galaxy.ansible.com. Tidak ada yang dipasang sampai Anda memilih Perbarui.',
+      ans_rs_upd_summary: '{u} pembaruan tersedia · {c} terbaru · {o} lainnya', ans_rs_upd_current: 'Terbaru', ans_rs_upd_gone: 'Tidak ada di Galaxy', ans_rs_upd_unknown: 'Versi tidak diketahui', ans_rs_upd_error: 'Pemeriksaan gagal', ans_rs_upd_failed: 'Gagal memeriksa pembaruan', ans_rs_update: 'Perbarui',
+      ans_rs_gsearch: 'Cari di Galaxy', ans_rs_gsearch_ph: 'Kata kunci, mis. nginx', ans_rs_gsearch_btn: 'Cari', ans_rs_gsearch_short: 'Masukkan minimal 2 karakter.', ans_rs_searching: 'Mencari…', ans_rs_search_failed: 'Pencarian Galaxy gagal',
+      ans_rs_gsearch_none: 'Tidak ada collection atau role yang cocok dengan "{q}".', ans_rs_gsearch_count: 'Menampilkan {n} dari {total}', ans_rs_gsearch_installed: 'Terpasang {v}',
     },
   });
 
@@ -95,7 +103,7 @@
   }
 
   /* ===================== Resources tab ===================== */
-  const R = { sub: Ans.store.get('rs.sub', 'templates'), root: null, assets: null, lib: null, error: '', tpl: { sel: null, name: '', content: '', isNew: false, q: '' } };
+  const R = { sub: Ans.store.get('rs.sub', 'templates'), root: null, assets: null, lib: null, error: '', updates: null, search: null, tpl: { sel: null, name: '', content: '', isNew: false, q: '' } };
 
   async function loadAssets() {
     try { const d = await Ans.api.get('/api/ansible/assets'); R.assets = { template: [], file: [] }; (d.assets || []).forEach(function (a) { if (R.assets[a.kind]) R.assets[a.kind].push(a); }); R.error = ''; }
@@ -185,7 +193,7 @@
 
   /* ----- library ----- */
   function libItems(kind, items) {
-    return items.length ? items.map(function (it) { return '<div class="ans-rs-libitem" data-kind="' + kind + '" data-name="' + esc(it.name) + '"><span class="ans-mono" style="font-weight:600">' + esc(it.name) + '</span><span class="badge badge-unknown ans-mono">' + esc(it.version || '-') + '</span><span class="ans-spacer"></span><button type="button" class="btn btn-sm btn-ghost ans-btn-icon" data-lib="del" title="' + esc(T('ans_rs_delete')) + '" aria-label="' + esc(T('ans_rs_delete')) + '">' + icon('trash-2', 'icon-sm') + '</button></div>'; }).join('') :
+    return items.length ? items.map(function (it) { return '<div class="ans-rs-libitem" data-kind="' + kind + '" data-name="' + esc(it.name) + '"><span class="ans-mono" style="font-weight:600">' + esc(it.name) + '</span><span class="badge badge-unknown ans-mono">' + esc(it.version || '-') + '</span>' + libStatusHtml(kind, it) + '<span class="ans-spacer"></span><button type="button" class="btn btn-sm btn-ghost ans-btn-icon" data-lib="del" title="' + esc(T('ans_rs_delete')) + '" aria-label="' + esc(T('ans_rs_delete')) + '">' + icon('trash-2', 'icon-sm') + '</button></div>'; }).join('') :
       '<div class="ans-muted ans-hint" id="' + (kind === 'collection' ? 'ansibleLibCollectionsEmpty' : 'ansibleLibRolesEmpty') + '">' + esc(T('ans_rs_lib_empty')) + '</div>';
   }
   function libTable(kind, items) {
@@ -196,7 +204,7 @@
     body.innerHTML = '<div class="ans-hint">' + esc(T('ans_rs_lib_hint')) + '</div>' + (R.error ? Ans.ui.error(R.error) : '') +
       (lib.available === false ? '<div class="ans-error" id="ansibleLibUnavailableBanner">' + icon('triangle-alert') + '<span>' + esc(T('ans_rs_lib_unavailable')) + '</span></div>' : '') +
       '<div class="ans-grid-2">' + libTable('collection', lib.collections || []) + libTable('role', lib.roles || []) + '</div>' +
-      '<fieldset class="ans-rs-fs" ' + (lib.available === false ? 'disabled' : '') + '>' +
+      '<fieldset class="ans-rs-fs" ' + (lib.available === false ? 'disabled' : '') + '>' + libUpdatesCard() + libSearchCard() +
       '<div class="ans-card" id="ansibleLibGalaxyFields"><div class="ans-card-title">' + esc(T('ans_rs_galaxy')) + '</div><div class="ans-row"><select id="ansibleLibGalaxyKind" class="form-input" style="width:auto" aria-label="' + esc(T('ans_rs_kind')) + '"><option value="collection">' + esc(T('ans_rs_kind_collection')) + '</option><option value="role">' + esc(T('ans_rs_kind_role')) + '</option></select>' +
       '<input id="ansibleLibGalaxyName" class="form-input ans-mono" style="flex:1;min-width:200px" placeholder="' + esc(T('ans_rs_gname_ph')) + '" aria-label="' + esc(T('ans_rs_gname')) + '" /><input id="ansibleLibGalaxyVersion" class="form-input ans-mono" style="width:160px" placeholder="' + esc(T('ans_rs_gversion')) + '" aria-label="' + esc(T('ans_rs_gversion')) + '" />' +
       '<button type="button" id="btnAnsibleLibGalaxyInstall" class="btn btn-sm btn-primary" data-lib="galaxy">' + esc(T('ans_rs_install')) + '</button></div><pre class="ans-rs-out" id="ansibleLibGalaxyOutput" hidden></pre></div>' +
@@ -206,6 +214,7 @@
       '<div class="ans-field" id="ansibleLibLocalRoleNameWrap" hidden><label for="ansibleLibLocalRoleName">' + esc(T('ans_rs_role_name')) + '</label><input id="ansibleLibLocalRoleName" class="form-input ans-mono" /></div>' +
       '<div class="ans-field" id="ansibleLibLocalFolderField"><input type="file" id="ansibleLibLocalFolder" class="form-input" webkitdirectory multiple /></div><div class="ans-field" id="ansibleLibLocalArchiveField" hidden><input type="file" id="ansibleLibLocalArchive" class="form-input" accept=".tar.gz,application/gzip,application/x-tar" /></div></div>' +
       '<div class="ans-error" id="ansibleLibLocalError" role="alert" hidden></div><div class="ans-row" style="justify-content:flex-end"><button type="button" id="btnAnsibleLibLocalImport" class="btn btn-sm btn-primary" data-lib="local">' + esc(T('ans_rs_import')) + '</button></div><pre class="ans-rs-out" id="ansibleLibLocalOutput" hidden></pre></div></fieldset>';
+    paintSearchResults();
   }
   const gid = function (id) { return R.root.querySelector('#' + id); };
   async function withBusy(btn, busyText, fn) {
@@ -231,7 +240,7 @@
       });
     } else await libLocal();
   }
-  function refreshLibLists() { const lib = R.lib || {}; const c = gid('ansibleLibCollectionsList'), r = gid('ansibleLibRolesList'); if (c) c.innerHTML = libItems('collection', lib.collections || []); if (r) r.innerHTML = libItems('role', lib.roles || []); }
+  function refreshLibLists() { const lib = R.lib || {}; const c = gid('ansibleLibCollectionsList'), r = gid('ansibleLibRolesList'); if (c) c.innerHTML = libItems('collection', lib.collections || []); if (r) r.innerHTML = libItems('role', lib.roles || []); const s = gid('ansibleLibUpdateSummary'); if (s) s.textContent = updateSummary(); paintSearchResults(); }
   function prepareFolder(selection) {
     const sel = Array.from(selection), first = sel[0] && sel[0].webkitRelativePath, root = first ? first.split('/')[0] : '';
     const strip = root && sel.every(function (f) { return (f.webkitRelativePath || '').indexOf(root + '/') === 0; });
@@ -264,10 +273,106 @@
     });
   }
 
+  /* ----- library: update check and Galaxy search ----- */
+  // An "update" entry settles to "current" once the installed version is the one the check found (installed by
+  // Update or by hand), so the badges stay right without a new check.
+  function libStatus(kind, it) {
+    const u = R.updates && R.updates[kind + ':' + it.name];
+    if (!u) return null;
+    return u.status === 'update' && (it.version || '') === u.latest ? 'current' : u.status;
+  }
+  function libStatusHtml(kind, it) {
+    const st = libStatus(kind, it); if (!st) return '';
+    const u = R.updates[kind + ':' + it.name];
+    if (st === 'update') return '<span class="badge badge-warning ans-mono">' + esc('→ ' + u.latest) + '</span><button type="button" class="btn btn-sm btn-primary" data-lib="update">' + esc(T('ans_rs_update')) + '</button>';
+    const label = st === 'current' ? 'ans_rs_upd_current' : st === 'not_on_galaxy' ? 'ans_rs_upd_gone' : st === 'unknown' ? 'ans_rs_upd_unknown' : 'ans_rs_upd_error';
+    const cls = st === 'current' ? 'badge-healthy' : st === 'error' ? 'badge-danger' : 'badge-unknown';
+    return '<span class="badge ' + cls + '"' + (u.error ? ' title="' + esc(u.error) + '"' : '') + '>' + esc(T(label)) + '</span>';
+  }
+  function updateSummary() {
+    if (!R.updates) return '';
+    const c = { update: 0, current: 0, other: 0 }, lib = R.lib || {};
+    [['collection', lib.collections], ['role', lib.roles]].forEach(function (p) {
+      (p[1] || []).forEach(function (it) { const st = libStatus(p[0], it); if (st) c[st === 'update' || st === 'current' ? st : 'other']++; });
+    });
+    return T('ans_rs_upd_summary', '{u} update(s) available · {c} up to date · {o} other', { u: c.update, c: c.current, o: c.other });
+  }
+  function libUpdatesCard() {
+    return '<div class="ans-card" id="ansibleLibUpdatesFields"><div class="ans-card-title">' + esc(T('ans_rs_updates')) + '</div>' +
+      '<div class="ans-row"><button type="button" id="btnAnsibleLibCheck" class="btn btn-sm btn-primary" data-lib="check">' + esc(T('ans_rs_upd_check')) + '</button>' +
+      '<span class="ans-hint" id="ansibleLibUpdateSummary">' + esc(updateSummary()) + '</span></div>' +
+      '<div class="ans-hint">' + esc(T('ans_rs_upd_hint')) + '</div></div>';
+  }
+  function libSearchCard() {
+    return '<div class="ans-card" id="ansibleLibSearchFields"><div class="ans-card-title">' + esc(T('ans_rs_gsearch')) + '</div>' +
+      '<form id="ansibleLibSearchForm" class="ans-row"><input type="search" id="ansibleLibSearchQuery" class="form-input ans-mono" style="flex:1;min-width:200px" placeholder="' + esc(T('ans_rs_gsearch_ph')) + '" aria-label="' + esc(T('ans_rs_gsearch')) + '" value="' + esc(R.search ? R.search.q : '') + '" />' +
+      '<button type="submit" id="btnAnsibleLibSearch" class="btn btn-sm btn-primary">' + esc(T('ans_rs_gsearch_btn')) + '</button></form><div id="ansibleLibSearchResults"></div></div>';
+  }
+  // The installed version of a collection or role, or null when it is not in the library.
+  function installedVersion(kind, name) {
+    const lib = R.lib || {}, list = (kind === 'collection' ? lib.collections : lib.roles) || [];
+    const hit = list.find(function (it) { return it.name.toLowerCase() === name.toLowerCase(); });
+    return hit ? hit.version || '' : null;
+  }
+  function searchSection(kind, hits, total) {
+    if (!hits.length) return '';
+    return '<div class="ans-card"><div class="ans-card-title">' + esc(T(kind === 'collection' ? 'ans_rs_collections' : 'ans_rs_roles')) +
+      ' <span class="ans-hint">' + esc(T('ans_rs_gsearch_count', 'Showing {n} of {total}', { n: hits.length, total: total })) + '</span></div><div class="ans-rs-lib">' +
+      hits.map(function (h) {
+        const inst = installedVersion(kind, h.name);
+        const action = inst === null
+          ? '<button type="button" class="btn btn-sm btn-primary" data-lib="search-install" data-kind="' + kind + '" data-name="' + esc(h.name) + '">' + esc(T('ans_rs_install')) + '</button>'
+          : '<span class="badge badge-healthy ans-mono">' + esc(T('ans_rs_gsearch_installed', 'Installed {v}', { v: inst || '-' })) + '</span>';
+        return '<div class="ans-rs-libitem"><span class="ans-mono" style="font-weight:600">' + esc(h.name) + '</span><span class="badge badge-unknown ans-mono">' + esc(h.version || '-') + '</span><span class="ans-rs-desc">' + esc(h.description || '') + '</span>' + action + '</div>';
+      }).join('') + '</div></div>';
+  }
+  function paintSearchResults() {
+    const box = gid('ansibleLibSearchResults'), s = R.search; if (!box) return;
+    if (!s || (!s.res && !s.err)) { box.innerHTML = ''; return; }
+    if (s.err) { box.innerHTML = Ans.ui.error(s.err); return; }
+    const cols = s.res.collections || [], roles = s.res.roles || [];
+    box.innerHTML = !cols.length && !roles.length
+      ? '<div class="ans-hint">' + esc(T('ans_rs_gsearch_none', 'No collections or roles match "{q}".', { q: s.q })) + '</div>'
+      : searchSection('collection', cols, s.res.collections_total) + searchSection('role', roles, s.res.roles_total);
+  }
+  async function searchGalaxy(q) {
+    if (q.length < 2) { Ans.toast(T('ans_rs_gsearch_short'), 'error'); return; }
+    const btn = gid('btnAnsibleLibSearch'), s = { q: q, res: null, err: '' };
+    R.search = s;
+    const restore = btn ? SP.busy(btn, T('ans_rs_searching')) : function () {};
+    try { s.res = await Ans.api.get('/api/ansible/library/search?q=' + encodeURIComponent(q)); }
+    catch (e) { s.err = T('ans_rs_search_failed') + ': ' + e.message; }
+    finally { restore(); }
+    paintSearchResults();
+  }
+  async function checkUpdates() {
+    const btn = gid('btnAnsibleLibCheck'); if (!btn) return;
+    const restore = SP.busy(btn, T('ans_rs_upd_checking'));
+    try {
+      const d = await Ans.api.get('/api/ansible/library/updates');
+      R.updates = {}; (d.items || []).forEach(function (u) { R.updates[u.kind + ':' + u.name] = u; });
+    } catch (e) { Ans.toast(T('ans_rs_upd_failed') + ': ' + e.message, 'error'); }
+    finally { restore(); }
+    refreshLibLists();
+  }
+  // Installs the newest version of a collection or role (no version given), from an installed row or a search hit.
+  async function installGalaxyItem(btn, kind, name) {
+    await withBusy(btn, T('ans_rs_installing'), async function () {
+      const err = await streamInstall('/api/ansible/library/galaxy', { kind: kind, name: name, version: '' }, gid('ansibleLibGalaxyOutput'));
+      await loadLib(); if (err) Ans.toast(err, 'error'); else Ans.toast(T('ans_rs_install_ok'), 'success'); refreshLibLists();
+    });
+  }
+  function onSubmit(e) {
+    if (e.target.id !== 'ansibleLibSearchForm') return;
+    e.preventDefault();
+    searchGalaxy(gid('ansibleLibSearchQuery').value.trim());
+  }
+
   function renderResources(panel) {
     R.root = panel;
     panel.innerHTML = '<div class="ans-toolbar"><div class="ans-seg" role="group">' + ['templates', 'files', 'library'].map(function (s) { return '<button type="button" data-sub="' + s + '" aria-pressed="' + (R.sub === s) + '">' + esc(T('ans_rs_sub_' + s)) + '</button>'; }).join('') + '</div></div><div class="ans-rs" data-rs="body"></div>';
     panel.addEventListener('click', onClick);
+    panel.addEventListener('submit', onSubmit);
     panel.addEventListener('input', onInput);
     panel.addEventListener('change', onChange);
     panel.addEventListener('dragover', function (e) { if (e.target.closest('[data-fl="drop"]')) { e.preventDefault(); e.target.closest('[data-fl="drop"]').classList.add('over'); } });
@@ -305,6 +410,9 @@
           catch (er) { Ans.toast(T('ans_rs_delete_failed') + ': ' + er.message, 'error'); }
         });
       } else if (a === 'galaxy' || a === 'reqs' || a === 'local') libInstall(a);
+      else if (a === 'check') checkUpdates();
+      else if (a === 'update') { const row = lb.closest('[data-kind]'); installGalaxyItem(lb, row.getAttribute('data-kind'), row.getAttribute('data-name')); }
+      else if (a === 'search-install') installGalaxyItem(lb, lb.getAttribute('data-kind'), lb.getAttribute('data-name'));
     }
   }
   function onInput(e) {

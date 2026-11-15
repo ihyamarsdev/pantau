@@ -93,8 +93,8 @@ func (s *Server) handleAnsibleLibrary(w http.ResponseWriter, r *http.Request) {
 	s.writeLibrary(w)
 }
 
-// handleAnsibleLibraryRoute handles /api/ansible/library/{galaxy|requirements|local} (POST) and
-// /api/ansible/library/{collections|roles}/{name} (DELETE).
+// handleAnsibleLibraryRoute handles /api/ansible/library/{galaxy|requirements|local} (POST),
+// /api/ansible/library/{updates|search} (GET) and /api/ansible/library/{collections|roles}/{name} (DELETE).
 func (s *Server) handleAnsibleLibraryRoute(w http.ResponseWriter, r *http.Request) {
 	if !s.checkAnsibleGate(w) {
 		return
@@ -127,6 +127,15 @@ func (s *Server) handleAnsibleLibraryRoute(w http.ResponseWriter, r *http.Reques
 			logger.Info("ansible", "library", fmt.Sprintf("Removed %s %s", parts[0], parts[1]))
 			writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 		}
+	case len(parts) == 1 && r.Method == http.MethodGet && (parts[0] == "updates" || parts[0] == "search"):
+		if !s.libraryGate(w, true) {
+			return
+		}
+		if parts[0] == "updates" {
+			s.handleLibraryUpdates(w, r)
+		} else {
+			s.handleLibrarySearch(w, r)
+		}
 	case len(parts) == 1 && parts[0] != "":
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	default:
@@ -147,6 +156,31 @@ func (s *Server) handleLibraryGalaxy(w http.ResponseWriter, r *http.Request) {
 	stream := &libraryStream{w: w}
 	// The install outlives a closed browser tab: stopping ansible-galaxy halfway would leave a partial collection.
 	stream.finish(req.Kind+" "+req.Name, ansible.InstallGalaxy(context.WithoutCancel(r.Context()), s.ansibleLibDir, req.Kind, req.Name, req.Version, stream))
+}
+
+// handleLibraryUpdates: GET /api/ansible/library/updates compares every installed item with its newest Galaxy version.
+func (s *Server) handleLibraryUpdates(w http.ResponseWriter, r *http.Request) {
+	lib, err := ansible.ListLibrary(s.ansibleLibDir)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": s.galaxy.CheckUpdates(r.Context(), lib)})
+}
+
+// handleLibrarySearch: GET /api/ansible/library/search?q=... searches Galaxy for collections and roles.
+func (s *Server) handleLibrarySearch(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if len([]rune(q)) < 2 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "search needs at least 2 characters"})
+		return
+	}
+	res, err := s.galaxy.Search(r.Context(), q)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 func (s *Server) handleLibraryRequirements(w http.ResponseWriter, r *http.Request) {

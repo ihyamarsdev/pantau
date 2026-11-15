@@ -108,6 +108,7 @@ type Server struct {
 	hub               *dockerhub.Client
 	vuln              *vulnintel.Client
 	osv               *osv.Client
+	galaxy            *ansible.GalaxyClient
 	agent             agentState
 	ansibleRun        func(ctx context.Context, spec ansible.RunSpec, log io.Writer) (int, error)
 	ansibleAvail      func() (string, string, error)
@@ -154,6 +155,7 @@ func NewServer(db *store.DB, ins *inspector.Inspector, disp *notify.Dispatcher) 
 		hub:            dockerhub.New(dockerhub.DefaultHubURL, dockerhub.DefaultIndexURL),
 		vuln:           vulnintel.New(vulnintel.DefaultKEVURL, vulnintel.DefaultEPSSURL),
 		osv:            osv.New(osv.DefaultBaseURL, osv.DefaultArchURL),
+		galaxy:         ansible.NewGalaxyClient(ansible.DefaultGalaxyURL),
 		ansibleRun:     ansible.Run,
 		ansibleAvail:   ansible.Available,
 		ansibleSync:    ansible.SyncGit,
