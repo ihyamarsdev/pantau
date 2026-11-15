@@ -206,3 +206,35 @@ test('agent: a chat without a provider shows the error and points at Settings', 
   await browser.locator('#agentLog .ag-err .btn').click();
   await expect(browser.locator('#agProvider')).toBeVisible();
 });
+
+test('agent: the button and panel sit above an open modal, and the panel expands to a wider chat', async ({ app, screen, browser }) => {
+  await app.open('/');
+  await initApp(screen, browser);
+
+  // Settings is a modal; the agent button must still be the element under the pointer.
+  await browser.evaluate(() => { (window as unknown as PageGlobals).openSettingsModal('agent'); return null; });
+  await expect(browser.locator('#agProvider')).toBeVisible();
+  const fabOnTop = (await browser.evaluate(() => {
+    const r = document.getElementById('agentFab')!.getBoundingClientRect();
+    return !!document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest('#agentFab');
+  })) as boolean;
+  expect(fabOnTop).toBe(true);
+
+  await browser.locator('#agentFab').click();
+  await expect(browser.locator('#agentPanel')).toBeVisible();
+
+  // Expanded: the panel widens, and the approval cards move above it to its right edge.
+  const panelWidth = async () => (await browser.evaluate(() => document.getElementById('agentPanel')!.getBoundingClientRect().width)) as number;
+  const normalWidth = await panelWidth();
+  await browser.locator('#agentExpand').click();
+  expect(await panelWidth()).toBeGreaterThan(800);
+  const cardsOnRightEdge = (await browser.evaluate(() => {
+    const right = document.getElementById('agentApprovals')!.getBoundingClientRect().right;
+    return Math.abs(right - (document.documentElement.clientWidth - 24)) < 1;
+  })) as boolean;
+  expect(cardsOnRightEdge).toBe(true);
+
+  // Collapsed again: back to the normal width.
+  await browser.locator('#agentExpand').click();
+  expect(await panelWidth()).toBeCloseTo(normalWidth, 0);
+});

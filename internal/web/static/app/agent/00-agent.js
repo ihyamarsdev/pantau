@@ -5,12 +5,12 @@
   'use strict';
 
   const AG = (window.AG = {});
-  const S = { grants: [], enabled: false, open: false, busy: false, session: null, abort: null, approvals: [], timer: null, msgs: [], chatT0: 0, apprT0: 0 };
+  const S = { grants: [], enabled: false, open: false, expanded: false, busy: false, session: null, abort: null, approvals: [], timer: null, msgs: [], chatT0: 0, apprT0: 0 };
   const SESSION_KEY = 'pantau_agent_session';
 
   const I = {
     en: {
-      ag_title: 'AI Agent', ag_ask: 'Ask agent', ag_new: 'New chat', ag_close: 'Close', ag_send: 'Send',
+      ag_title: 'AI Agent', ag_ask: 'Ask agent', ag_new: 'New chat', ag_close: 'Close', ag_expand: 'Expand', ag_collapse: 'Collapse', ag_send: 'Send',
       ag_ph: 'Ask about a service, container, alert or security finding…',
       ag_empty: 'Pantau Operator can read host state and, with your approval, restart services and containers or change settings on your hosts.',
       ag_disabled: 'The AI agent is off. Enable it in Settings → AI Agent.', ag_open_settings: 'Open AI Agent settings',
@@ -37,7 +37,7 @@
       ag_q_security: 'Review the latest security scan of host "{host}" (id {id}): pending security updates and failing hardening checks. Rank what matters and propose safe fixes. Do not change anything until I confirm the plan.'
     },
     id: {
-      ag_title: 'Agen AI', ag_ask: 'Tanya agent', ag_new: 'Chat baru', ag_close: 'Tutup', ag_send: 'Kirim',
+      ag_title: 'Agen AI', ag_ask: 'Tanya agent', ag_new: 'Chat baru', ag_close: 'Tutup', ag_expand: 'Perluas', ag_collapse: 'Perkecil', ag_send: 'Kirim',
       ag_ph: 'Tanyakan soal service, container, alert, atau temuan keamanan…',
       ag_empty: 'Pantau Operator bisa membaca kondisi host dan, dengan persetujuan Anda, me-restart service/container atau mengubah setting host.',
       ag_disabled: 'Agen AI nonaktif. Aktifkan di Pengaturan → AI Agent.', ag_open_settings: 'Buka pengaturan AI Agent',
@@ -101,6 +101,7 @@
       <div id="agentPanel" role="dialog" aria-label="${esc(t('ag_title'))}">
         <div class="ag-head">${svgIcon('bot', 'icon-sm')}<span>${esc(t('ag_title'))}</span><span class="ag-sp"></span>
           <button class="btn btn-sm btn-ghost" onclick="AG.newChat()">${esc(t('ag_new'))}</button>
+          <button class="btn btn-sm btn-icon btn-ghost" id="agentExpand" onclick="AG.expand()"></button>
           <button class="btn btn-sm btn-icon btn-ghost" aria-label="${esc(t('ag_close'))}" onclick="AG.toggle(false)">${svgIcon('x', 'icon-sm')}</button></div>
         <div class="ag-log" id="agentLog"></div>
         <form class="ag-form" onsubmit="AG.submit(event)">
@@ -111,6 +112,7 @@
       <div id="agentApprovals"></div>`;
     while (root.firstChild) document.body.appendChild(root.firstChild);
     renderLog();
+    paintPanel();
   }
 
   function renderLog() {
@@ -139,8 +141,26 @@
 
   AG.toggle = function (force) {
     S.open = force === undefined ? !S.open : !!force;
-    $('agentPanel').classList.toggle('open', S.open);
+    paintPanel();
     if (S.open) setTimeout(() => $('agentInput') && $('agentInput').focus(), 30);
+  };
+
+  // Panel classes and the expand button follow S, so a panel rebuilt by a language switch keeps its state.
+  function paintPanel() {
+    const panel = $('agentPanel');
+    if (!panel) return;
+    panel.classList.toggle('open', S.open);
+    panel.classList.toggle('ag-expanded', S.expanded);
+    const label = t(S.expanded ? 'ag_collapse' : 'ag_expand');
+    const btn = $('agentExpand');
+    btn.innerHTML = svgIcon(S.expanded ? 'minimize-2' : 'maximize-2', 'icon-sm');
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+  }
+
+  AG.expand = function (force) {
+    S.expanded = force === undefined ? !S.expanded : !!force;
+    paintPanel();
   };
 
   AG.newChat = function () {

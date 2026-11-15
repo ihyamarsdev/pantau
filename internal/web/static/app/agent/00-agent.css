@@ -1,9 +1,11 @@
 /* AI agent floating chat, approval cards and settings panel (00-agent.js). Tokens come from index.html :root. */
-#agentFab { position: fixed; right: 24px; bottom: 52px; z-index: 60; width: 48px; height: 48px; border-radius: 50%; border: 1px solid var(--accent-ring); background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: var(--shadow-lg); }
+/* Above every other layer: modals open from 100000 upward, docker progress 999998, toasts 999999. */
+#agentFab { position: fixed; right: 24px; bottom: 52px; z-index: 2147483000; width: 48px; height: 48px; border-radius: 50%; border: 1px solid var(--accent-ring); background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: var(--shadow-lg); }
 #agentFab .icon { width: 22px; height: 22px; }
 #agentFab .ag-badge { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--danger); color: #fff; font-size: 11px; font-weight: 700; display: none; align-items: center; justify-content: center; }
-#agentPanel { position: fixed; right: 24px; bottom: 112px; z-index: 60; width: 420px; max-width: calc(100vw - 32px); height: 560px; max-height: calc(100vh - 160px); display: none; flex-direction: column; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); overflow: hidden; }
+#agentPanel { position: fixed; right: 24px; bottom: 112px; z-index: 2147483000; width: 420px; max-width: calc(100vw - 32px); height: 560px; max-height: calc(100vh - 160px); display: none; flex-direction: column; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); overflow: hidden; }
 #agentPanel.open { display: flex; }
+#agentPanel.ag-expanded { width: min(960px, calc(100vw - 32px)); }
 .ag-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--card-border); font-weight: 600; }
 .ag-head .ag-sp { flex: 1; }
 .ag-log { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
@@ -20,8 +22,10 @@
 .ag-err { align-self: stretch; color: var(--danger); font-size: var(--fs-sm); background: var(--danger-soft); border: 1px solid var(--danger-border); border-radius: var(--radius); padding: 8px 10px; }
 .ag-form { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--card-border); align-items: flex-end; }
 .ag-form textarea { flex: 1; resize: none; min-height: 38px; max-height: 120px; }
-#agentApprovals { position: fixed; right: 24px; bottom: 112px; z-index: 61; display: flex; flex-direction: column; gap: 8px; width: 420px; max-width: calc(100vw - 32px); }
+#agentApprovals { position: fixed; right: 24px; bottom: 112px; z-index: 2147483001; display: flex; flex-direction: column; gap: 8px; width: 420px; max-width: calc(100vw - 32px); }
 #agentPanel.open ~ #agentApprovals { right: 464px; }
+/* expanded panel: cards sit above it (112px offset + 560px panel + 8px gap) */
+#agentPanel.open.ag-expanded ~ #agentApprovals { right: 24px; bottom: 680px; }
 .ag-appr { background: var(--card-bg); border: 1px solid var(--warning-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 .ag-appr.ag-appr-exec { border-color: var(--danger-border); }
 .ag-appr-title { font-weight: 600; font-size: var(--fs-sm); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
