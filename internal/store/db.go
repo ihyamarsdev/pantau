@@ -1111,20 +1111,64 @@ func (d *DB) GetHost(id int64) (*Host, error) {
 	return h, nil
 }
 
+// hostGroupSpelling returns the spelling an existing Host Group already has when name differs from it only in letter
+// case, so a group name is unique regardless of case. Otherwise it returns name trimmed. skipID excludes the host being
+// written: it may be the only member of its group and may change that group's case.
+func hostGroupSpelling(tx *sql.Tx, name string, skipID int64) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", nil
+	}
+	rows, err := tx.Query(`SELECT DISTINCT group_name FROM hosts WHERE group_name <> '' AND id <> ? ORDER BY group_name`, skipID)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	match := name
+	for rows.Next() {
+		var g string
+		if err := rows.Scan(&g); err != nil {
+			return "", err
+		}
+		if g == name {
+			return name, nil
+		}
+		if match == name && strings.EqualFold(g, name) {
+			match = g
+		}
+	}
+	return match, rows.Err()
+}
+
 func (d *DB) CreateHost(h *Host) (int64, error) {
 	if h.KeyID > 0 {
 		h.CustomKey = ""
 	}
-	var maxOrder int
-	_ = d.QueryRow(`SELECT COALESCE(MAX(sort_order), 0) FROM hosts`).Scan(&maxOrder)
 	if h.KubeMode == "" {
 		h.KubeMode = "full"
 	}
-	res, err := d.Exec(`INSERT INTO hosts (name, host, port, user, custom_key, key_id, status, notes, sort_order, group_name, commission_date, bios_date, kube_cluster_id, kube_mode) VALUES (?, ?, ?, ?, ?, ?, 'unknown', ?, ?, ?, ?, ?, ?, ?)`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, maxOrder+1, h.GroupName, h.CommissionDate, h.BIOSDate, h.KubeClusterID, h.KubeMode)
+	tx, err := d.Begin()
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	defer tx.Rollback()
+	if h.GroupName, err = hostGroupSpelling(tx, h.GroupName, 0); err != nil {
+		return 0, err
+	}
+	var maxOrder int
+	_ = tx.QueryRow(`SELECT COALESCE(MAX(sort_order), 0) FROM hosts`).Scan(&maxOrder)
+	res, err := tx.Exec(`INSERT INTO hosts (name, host, port, user, custom_key, key_id, status, notes, sort_order, group_name, commission_date, bios_date, kube_cluster_id, kube_mode) VALUES (?, ?, ?, ?, ?, ?, 'unknown', ?, ?, ?, ?, ?, ?, ?)`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, maxOrder+1, h.GroupName, h.CommissionDate, h.BIOSDate, h.KubeClusterID, h.KubeMode)
+	if err != nil {
+		return 0, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return id, nil
 }
 
 func (d *DB) UpdateHost(h *Host) error {
@@ -1134,8 +1178,18 @@ func (d *DB) UpdateHost(h *Host) error {
 	if h.KubeMode == "" {
 		h.KubeMode = "full"
 	}
-	_, err := d.Exec(`UPDATE hosts SET name=?, host=?, port=?, user=?, custom_key=?, key_id=?, notes=?, group_name=?, commission_date=?, kube_mode=? WHERE id=?`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, h.GroupName, h.CommissionDate, h.KubeMode, h.ID)
-	return err
+	tx, err := d.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if h.GroupName, err = hostGroupSpelling(tx, h.GroupName, h.ID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE hosts SET name=?, host=?, port=?, user=?, custom_key=?, key_id=?, notes=?, group_name=?, commission_date=?, kube_mode=? WHERE id=?`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, h.GroupName, h.CommissionDate, h.KubeMode, h.ID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (d *DB) SetHostKubeClusterID(id int64, clusterID string) error {
@@ -1181,6 +1235,7 @@ type HostGroupAssignment struct {
 
 // UpdateHostGroups applies all assignments atomically: if any host id does not
 // exist nothing is changed.
+// A group name that matches an existing group only in letter case takes that group's spelling (see hostGroupSpelling).
 func (d *DB) UpdateHostGroups(assignments []HostGroupAssignment) error {
 	tx, err := d.Begin()
 	if err != nil {
@@ -1195,7 +1250,11 @@ func (d *DB) UpdateHostGroups(assignments []HostGroupAssignment) error {
 	defer stmt.Close()
 
 	for _, a := range assignments {
-		res, err := stmt.Exec(strings.TrimSpace(a.GroupName), a.ID)
+		group, err := hostGroupSpelling(tx, a.GroupName, a.ID)
+		if err != nil {
+			return err
+		}
+		res, err := stmt.Exec(group, a.ID)
 		if err != nil {
 			return err
 		}

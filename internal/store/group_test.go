@@ -45,3 +45,66 @@ func TestPlaybookAndWorkspaceGroupNameRoundTrip(t *testing.T) {
 		t.Fatalf("restored workspace = %+v, %v", ws, err)
 	}
 }
+
+// Host Group names are unique regardless of letter case: a name that matches an existing group only in case takes that
+// group's spelling on create, edit and bulk assign. A host that is the only member of its group may change its case.
+func TestHostGroupNamesAreUniqueRegardlessOfCase(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	add := func(name, group string) int64 {
+		t.Helper()
+		id, err := db.CreateHost(&store.Host{Name: name, Host: name + ".lan", Port: 22, User: "root", GroupName: group})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	groupOf := func(id int64) string {
+		t.Helper()
+		h, err := db.GetHost(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return h.GroupName
+	}
+
+	alpha := add("alpha", "Prod")
+	beta := add("beta", "prod")
+	if got := groupOf(beta); got != "Prod" {
+		t.Fatalf("create stored %q, want Prod", got)
+	}
+
+	gamma := add("gamma", "")
+	h, err := db.GetHost(gamma)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.GroupName = " PROD "
+	if err := db.UpdateHost(h); err != nil {
+		t.Fatal(err)
+	}
+	if got := groupOf(gamma); got != "Prod" {
+		t.Fatalf("edit stored %q, want Prod", got)
+	}
+
+	if err := db.UpdateHostGroups([]store.HostGroupAssignment{{ID: alpha, GroupName: "staging"}, {ID: gamma, GroupName: "STAGING"}}); err != nil {
+		t.Fatal(err)
+	}
+	if a, g := groupOf(alpha), groupOf(gamma); a != "staging" || g != "staging" {
+		t.Fatalf("bulk assign stored %q and %q, want staging for both", a, g)
+	}
+
+	solo := add("delta", "edge")
+	h, err = db.GetHost(solo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.GroupName = "Edge"
+	if err := db.UpdateHost(h); err != nil {
+		t.Fatal(err)
+	}
+	if got := groupOf(solo); got != "Edge" {
+		t.Fatalf("sole member re-cased to %q, want Edge", got)
+	}
+}

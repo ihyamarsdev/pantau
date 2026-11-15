@@ -200,7 +200,7 @@ Dialog aksi ringkas berbasis Promise yang menyajikan konfirmasi eksplisit sebelu
 _Avoid_: Confirm popup, prompt dialog, native confirmation
 
 **Host Group**:
-Pengelompokan logis untuk satu atau lebih Host pada dashboard Pantau berdasarkan fungsi server, lingkungan (environment), atau lokasi (misal: "Server Utama", "Testing", "Database Cluster").
+Pengelompokan logis untuk satu atau lebih Host pada dashboard Pantau berdasarkan fungsi server, lingkungan (environment), atau lokasi (misal: "Server Utama", "Testing", "Database Cluster"). Nama Host Group tidak membedakan huruf besar/kecil: nama yang hanya berbeda huruf besar/kecil dari grup yang sudah ada memakai penulisan grup tersebut.
 _Avoid_: Server cluster, host tag, machine folder
 
 **Terminal Maximize**:
