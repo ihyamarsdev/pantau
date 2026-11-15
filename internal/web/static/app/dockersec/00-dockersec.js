@@ -802,19 +802,22 @@
     return S.section === 'images' ? imageSectionHtml() : auditSectionHtml();
   }
 
-  // The security panel of the Docker tab (the "Security" sub-tab).
-  DS.panelHtml = function () {
+  // The toolbar buttons depend on S.busy / S.job: they are repainted by setJob (the #dsJob banner alone
+  // is not enough, or a button stays disabled with its spinner after the job has finished).
+  function toolbarHtml() {
     const scanAll = `<button class="btn btn-sm btn-ghost" onclick="DS.scanAll()" ${S.busy ? 'disabled' : ''}>${icon('shield')} <span>${esc(t('ds_scan_all'))}</span></button>`;
     const auditBtn = `<button class="btn btn-sm btn-primary" onclick="DS.runAudit()" ${S.busy ? 'disabled' : ''}>${S.job && S.job.kind === 'audit' ? SP.html(t('ds_auditing'), S.job.t0) : icon('shield') + ' <span>' + esc(t('ds_audit')) + '</span>'}</button>`;
+    return scanAll + auditBtn;
+  }
+
+  // The security panel of the Docker tab (the "Security" sub-tab).
+  DS.panelHtml = function () {
     // The error banner sits above the data: a failed reload never hides what is already on screen, and
     // it is never shown as an empty result (panelBodyHtml).
     return `
       <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;">
         <h3 style="margin: 0; display: flex; align-items: center; gap: 6px;">${icon('shield')} <span>${esc(t('ds_title'))}</span></h3>
-        <div class="dk-toolbar">
-          ${scanAll}
-          ${auditBtn}
-        </div>
+        <div class="dk-toolbar" id="dsToolbar">${toolbarHtml()}</div>
       </div>
       <div id="dsJob">${jobHtml()}</div>
       <div id="dsPanel">${panelBodyHtml()}</div>`;
@@ -847,6 +850,8 @@
     S.job = j;
     const el = document.getElementById('dsJob');
     if (el) el.innerHTML = jobHtml();
+    const tb = document.getElementById('dsToolbar');
+    if (tb) tb.innerHTML = toolbarHtml();
   }
 
   DS.runAudit = async function () {
