@@ -1,5 +1,7 @@
 # 0048. Manajemen Cloudflare via REST API v4
 
+> Diperluas oleh [ADR 0075](0075-cloudflare-access-rules-tunnels-dns-export-token-permissions.md): IP Access Rules, Tunnels (baca), ekspor DNS, pengaturan zone tambahan, dan panduan izin token per fitur. Daftar izin di bawah adalah daftar awal.
+
 Menambahkan pengelolaan akun Cloudflare langsung dari Pantau lewat Cloudflare REST API v4 resmi (`https://api.cloudflare.com/client/v4`): manajemen Zone, pengelolaan DNS Record, pembersihan cache (*Purge Cache*), dan konfigurasi zone (*Zone Settings*).
 
 Melengkapi [ADR 0035](0035-ssh-key-library.md) (pola penyimpanan kredensial aman), [ADR 0006](0006-encrypted-system-snapshot-and-github-sync.md) (cadangan snapshot terenkripsi), dan [ADR 0047](0047-external-kubernetes-clusters-from-kubeconfig.md) (pengelolaan layanan infrastruktur eksternal).

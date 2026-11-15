@@ -163,3 +163,11 @@ func (c *Client) DeleteDNSRecord(ctx context.Context, zoneID, recordID string) e
 	_, err := c.do(ctx, http.MethodDelete, fmt.Sprintf("/zones/%s/dns_records/%s", zoneID, recordID), nil, nil, nil)
 	return err
 }
+
+// ExportDNSRecords returns the zone's records as a BIND zone file (GET /zones/{id}/dns_records/export).
+func (c *Client) ExportDNSRecords(ctx context.Context, zoneID string) (string, error) {
+	if !ValidID(zoneID) {
+		return "", errors.New("invalid zone id")
+	}
+	return c.doText(ctx, fmt.Sprintf("/zones/%s/dns_records/export", zoneID))
+}

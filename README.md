@@ -260,6 +260,8 @@ Pantau inspects remote hosts via non-interactive SSH commands, continuously vali
 - **DNS Records Lifecycle**: Comprehensive view and search across DNS records (A, AAAA, CNAME, TXT, MX, NS, SRV, CAA). Add, edit, and delete records with inline proxied toggle (Cloudflare orange cloud proxying).
 - **Cache Purge Controls**: Instant cache clearing with two dedicated modes: Purge Everything (with confirmation guardrail) and Purge by URL (up to 30 URLs per batch).
 - **Curated Zone Settings Allowlist**: Safely toggle essential security and performance options: SSL Mode (`off`, `flexible`, `full`, `strict`), Always Use HTTPS, Security Level, Development Mode, Minimum TLS Version, and Automatic HTTPS Rewrites.
+- **IP Access Rules, Tunnels & DNS Export**: Block, challenge or allow an IP, range, ASN or country per zone; see the health of Cloudflare Tunnels (read-only); download a zone as a BIND file.
+- **Permission Guide**: the User Guide and the Add Account dialog list the exact API Token permission each feature needs (`Zone → DNS → Edit`, `Zone → Firewall Services → Edit`, `Account → Cloudflare Tunnel → Read`, ...), and a missing one is reported by name.
 - **Zero-Exposure Credential Safety**: Scoped API Tokens are stored securely in SQLite like SSH private keys, excluded from API JSON responses, and protected inside encrypted System Snapshots.
 
 ### 30. 📜 Ansible Playbooks (Semaphore-Style, Agentless)

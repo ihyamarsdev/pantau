@@ -565,13 +565,34 @@ Pantau memungkinkan operator mengelola multi-akun Cloudflare, memeriksa status d
 3. Masukkan nama akun yang deskriptif (misal `Cloudflare Produksi`, `Domain Pribadi`), **Account ID** (opsional, hanya jika menggunakan token tingkat akun), serta **API Token**.
 4. Pantau akan memverifikasi token terlebih dahulu ke endpoint Cloudflare (`/user/tokens/verify` atau `/accounts/{id}/tokens/verify`) sebelum menyimpannya ke database SQLite lokal.
 
+#### Izin API Token (Permissions)
+
+Pantau hanya menerima **API Token berlingkup** (bukan Global API Key). Buat di **dash.cloudflare.com → My Profile → API Tokens → Create Token → Create Custom Token**, lalu tambahkan hanya baris izin untuk fitur yang akan dipakai. Izin yang kurang tidak menggagalkan penyimpanan akun (Pantau hanya memeriksa bahwa token valid dan aktif); kekurangannya tampil sebagai peringatan kuning yang menyebut izin yang hilang saat tab terkait pertama kali dibuka.
+
+| Fitur Pantau | Izin yang ditambahkan di token | Lingkup resource |
+|---|---|---|
+| Daftar zone, status, name server (selalu diperlukan) | `Zone → Zone → Read` | Zone |
+| DNS Records: lihat dan **Export** (BIND) | `Zone → DNS → Read` | Zone |
+| DNS Records: tambah, ubah, hapus | `Zone → DNS → Edit` (sudah termasuk Read) | Zone |
+| Cache: Purge Everything / Purge by URL | `Zone → Cache Purge → Purge` | Zone |
+| Zone Settings: lihat | `Zone → Zone Settings → Read` | Zone |
+| Zone Settings: ubah | `Zone → Zone Settings → Edit` (sudah termasuk Read) | Zone |
+| Access Rules: lihat | `Zone → Firewall Services → Read` | Zone |
+| Access Rules: tambah, hapus | `Zone → Firewall Services → Edit` (sudah termasuk Read) | Zone |
+| Tunnels: lihat status (hanya baca) | `Account → Cloudflare Tunnel → Read` | Account |
+
+**Token awal yang disarankan** (semua fitur kecuali Tunnels): `Zone → Zone → Read`, `Zone → DNS → Edit`, `Zone → Cache Purge → Purge`, `Zone → Zone Settings → Edit`, `Zone → Firewall Services → Edit`. Untuk token khusus pemantauan, pakai baris `Read` saja.
+
+Membatasi lingkup token:
+- **Zone Resources**: *Include → Specific zone* (satu entri per domain yang dikelola Pantau) atau *All zones from an account*. Zone di luar lingkup ini tidak muncul di Pantau.
+- **Account Resources**: hanya diperlukan untuk **Tunnels**: *Include → akun Cloudflare Anda*.
+- **Client IP Address Filtering** (opsional, disarankan): tambahkan IP publik server tempat Pantau berjalan agar token yang bocor tidak berguna di tempat lain.
+- **TTL** (opsional): beri masa berlaku dan ganti token sebelum kedaluwarsa (ubah akun lalu tempel token baru; kolom kosong mempertahankan token lama).
+
+**Kolom Account ID**: kosongkan untuk API Token *User* biasa (My Profile → API Tokens); Pantau lalu mencari akun Cloudflare dari zone yang terlihat oleh token, dan itu yang dipakai Tunnels. Isi hanya untuk token *milik Account* (Manage Account → Account API Tokens), atau bila token melihat zone dari beberapa akun. Dengan Account ID, Pantau memverifikasi token di `/accounts/{id}/tokens/verify` yang hanya berfungsi untuk token milik Account.
+
 > [!IMPORTANT]
-> **Rekomendasi Hak Akses Minimal (*Least Privilege Token Scopes*)**:
-> Hindari penggunaan Global API Key. Pada dashboard Cloudflare di bawah **My Profile → API Tokens**, buat API Token kustom dengan izin minimal pada zone target:
-> - `Zone - Zone - Read`: membaca daftar zone dan informasi statusnya.
-> - `Zone - DNS - Edit`: melihat, menambah, mengubah, dan menghapus entri DNS.
-> - `Zone - Cache Purge - Purge`: melakukan purge cache seluruh zone atau URL tertentu.
-> - `Zone - Zone Settings - Edit`: mengatur konfigurasi SSL, pengalihan HTTPS, tingkat keamanan, dan versi TLS.
+> Siapa pun yang dapat memakai Pantau dengan izin *DNS Edit*, *Firewall Services Edit*, atau *Cache Purge* dapat mengubah lalu lintas langsung zone tersebut. Pakai satu token per lingkungan yang dibatasi ke zone-nya, dan berikan AI Agent hanya akun yang ingin Anda serahkan: tool perubahan Cloudflare miliknya selalu menunggu persetujuan Anda.
 
 #### Manajemen Zone & Record DNS
 
@@ -579,6 +600,7 @@ Pantau memungkinkan operator mengelola multi-akun Cloudflare, memeriksa status d
 - **Tabel DNS Records**: Menampilkan seluruh record DNS beserta nama host, jenis tipe (`A`, `AAAA`, `CNAME`, `TXT`, `MX`, `NS`, `SRV`, `CAA`), nilai konten, dan nilai TTL (Auto atau nilai detik).
 - **Tambah & Edit Record**: Dialog formulir memvalidasi batasan nama dan konten (maksimal 255/2048 karakter), mewajibkan prioritas untuk record MX, serta menyediakan sakelar proxy Cloudflare (*orange cloud*).
 - **Konfirmasi Hapus**: Penghapusan record DNS dilindungi dialog konfirmasi untuk mencegah hilangnya record secara tidak disengaja.
+- **Export**: tombol **Export** mengunduh zone sebagai berkas zone BIND (`<zone id>.zone`), berguna sebagai cadangan sebelum perubahan massal. Memerlukan `Zone → DNS → Read`.
 
 #### Pembersihan Cache (Purge Cache)
 
@@ -595,12 +617,27 @@ Tab **Settings** menyajikan pengaturan terpilih dari daftar izin (*allowlist*):
 - **Development Mode**: melewati cache Cloudflare selama 3 jam untuk keperluan uji coba origin secara live (`on` / `off`).
 - **Minimum TLS Version**: membatasi versi minimal protokol TLS (`1.0`, `1.1`, `1.2`, `1.3`).
 - **Automatic HTTPS Rewrites**: memperbaiki tautan konten campuran (*mixed-content*) secara otomatis (`on` / `off`).
+- **TLS 1.3** (`on`, `off`, `zrt` = aktif dengan 0-RTT), **HTTP/3**, **0-RTT Connection Resumption**, **IPv6**, **WebSockets**, **Brotli**, **Email Address Obfuscation**, **Hotlink Protection**, dan **Always Online** (masing-masing `on` / `off`).
+
+Pengaturan yang tidak boleh diubah oleh paket Cloudflare Anda tetap tampil tetapi tidak dapat diedit.
+
+#### IP Access Rules
+
+Tab **Access Rules** pada sebuah zone menampilkan, menambah, dan menghapus **IP Access Rule**: blokir, challenge, JavaScript challenge, managed challenge, atau izinkan (`whitelist`) satu IP (IPv4/IPv6), rentang IP (CIDR, misal `203.0.113.0/24`), ASN (`AS13335` atau `13335`), atau negara (kode dua huruf, misal `ID`), dengan catatan opsional. Aturan hanya berlaku untuk **zone ini** dan langsung aktif. Pantau memvalidasi nilai sebelum mengirimnya, dan penghapusan aturan meminta konfirmasi. Memerlukan `Zone → Firewall Services → Edit` (`Read` cukup untuk melihat daftar). Jangan memblokir IP atau rentang kantor Anda sendiri: aturan `block` juga berlaku untuk Anda.
+
+#### Cloudflare Tunnels (hanya baca)
+
+Kartu **Tunnels** di bawah daftar zone menampilkan semua Cloudflare Tunnel (`cloudflared`) akun yang belum dihapus beserta kesehatannya (`healthy`, `degraded`, `down`, `inactive`), tipe, waktu pembuatan, dan aktivitas terakhir. Pantau tidak membuat, mengubah, atau menghapus tunnel. Memerlukan `Account → Cloudflare Tunnel → Read` dan lingkup akun pada token; lihat catatan **Kolom Account ID** di atas.
+
+#### AI Agent
+
+Saat AI Agent aktif, `cf_accounts`, `cf_zones`, `cf_dns_list`, `cf_zone_settings`, `cf_access_rules`, dan `cf_tunnels` membaca Cloudflare; `cf_dns_change`, `cf_purge_cache`, `cf_zone_setting_set`, dan `cf_access_rule_change` mengubahnya. Setiap perubahan menampilkan kartu persetujuan dan selalu menunggu Anda (tidak pernah disetujui otomatis, tanpa izin sesi). Agent menyebut akun dan zone seperti di Pantau dan tidak pernah melihat API token. Izin token yang dibutuhkan sama dengan tab terkait.
 
 #### Model Keamanan & Non-Goals
 
 - **Perlindungan Token**: API Token disimpan di basis data SQLite lokal setara dengan kunci privat SSH, tidak pernah diekspos melalui respons REST API (`json:"-"`), disensor dari logging, serta terenkripsi di dalam **System Snapshot** (AES-256-GCM).
 - **Pencegahan SSRF & Path Injection**: Panggilan keluar dipatok tetap ke `https://api.cloudflare.com/client/v4`, dan identifier URL divalidasi dengan regex heksadesimal 32 karakter `^[0-9a-f]{32}$`.
-- **Batas Non-Goals**: Cloudflare Workers, R2 Storage, Cloudflare Tunnels (`cloudflared`), aturan WAF/Firewall kustom, dan Page Rules berada di luar cakupan Pantau dan tetap dikelola melalui dasbor resmi Cloudflare.
+- **Batas Non-Goals**: Cloudflare Workers, R2 Storage, pembuatan atau perubahan Cloudflare Tunnels (`cloudflared`; hanya ditampilkan), aturan WAF/Firewall kustom (hanya IP Access Rules yang didukung), dan Page Rules berada di luar cakupan Pantau dan tetap dikelola melalui dasbor resmi Cloudflare.
 
 ### Ansible Playbooks (Gaya Semaphore, Agentless)
 

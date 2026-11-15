@@ -17,7 +17,8 @@ type Setting struct {
 // EditableSettings defines the allowlisted settings that can be modified via Pantau.
 // ssl{off,flexible,full,strict}, always_use_https{on,off},
 // security_level{off,essentially_off,low,medium,high,under_attack}, development_mode{on,off},
-// min_tls_version{1.0,1.1,1.2,1.3}, automatic_https_rewrites{on,off}
+// min_tls_version{1.0,1.1,1.2,1.3}, automatic_https_rewrites{on,off}, tls_1_3{on,off,zrt}, and on/off switches for
+// http3, 0rtt, ipv6, websockets, brotli, email_obfuscation, hotlink_protection and always_online.
 var EditableSettings = map[string][]string{
 	"ssl":                      {"off", "flexible", "full", "strict"},
 	"always_use_https":         {"on", "off"},
@@ -25,6 +26,15 @@ var EditableSettings = map[string][]string{
 	"development_mode":         {"on", "off"},
 	"min_tls_version":          {"1.0", "1.1", "1.2", "1.3"},
 	"automatic_https_rewrites": {"on", "off"},
+	"tls_1_3":                  {"on", "off", "zrt"},
+	"http3":                    {"on", "off"},
+	"0rtt":                     {"on", "off"},
+	"ipv6":                     {"on", "off"},
+	"websockets":               {"on", "off"},
+	"brotli":                   {"on", "off"},
+	"email_obfuscation":        {"on", "off"},
+	"hotlink_protection":       {"on", "off"},
+	"always_online":            {"on", "off"},
 }
 
 // ValidateSetting validates id and value against EditableSettings allowlist.

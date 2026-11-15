@@ -28,7 +28,8 @@ func (s *Server) writeCFError(w http.ResponseWriter, err error) {
 	var apiErr *cloudflare.APIError
 	if errors.As(err, &apiErr) {
 		if apiErr.Status == http.StatusUnauthorized || apiErr.Status == http.StatusForbidden {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": apiErr.Error()})
+			// "forbidden" lets the UI say which token permission is missing (a 4xx other than 401 would look like an expired Pantau session).
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": apiErr.Error(), "forbidden": true})
 			return
 		}
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": apiErr.Error()})
@@ -138,8 +139,12 @@ func (s *Server) handleCloudflareAccounts(w http.ResponseWriter, r *http.Request
 //	/api/cloudflare/accounts/{id}/zones
 //	/api/cloudflare/accounts/{id}/zones/{zid}/dns
 //	/api/cloudflare/accounts/{id}/zones/{zid}/dns/{rid}
+//	/api/cloudflare/accounts/{id}/zones/{zid}/dns/export
 //	/api/cloudflare/accounts/{id}/zones/{zid}/purge
 //	/api/cloudflare/accounts/{id}/zones/{zid}/settings
+//	/api/cloudflare/accounts/{id}/zones/{zid}/access-rules
+//	/api/cloudflare/accounts/{id}/zones/{zid}/access-rules/{rid}
+//	/api/cloudflare/accounts/{id}/tunnels
 func (s *Server) handleCloudflareAccountRoute(w http.ResponseWriter, r *http.Request) {
 	subpath := strings.TrimPrefix(r.URL.Path, "/api/cloudflare/accounts/")
 	parts := strings.Split(subpath, "/")
@@ -167,6 +172,11 @@ func (s *Server) handleCloudflareAccountRoute(w http.ResponseWriter, r *http.Req
 	// Route dispatch based on path depth
 	if len(parts) == 1 {
 		s.handleAccountDetail(w, r, account)
+		return
+	}
+
+	if parts[1] == "tunnels" && len(parts) == 2 {
+		s.handleAccountTunnels(w, r, account)
 		return
 	}
 
@@ -198,14 +208,29 @@ func (s *Server) handleCloudflareAccountRoute(w http.ResponseWriter, r *http.Req
 		case "settings":
 			s.handleZoneSettings(w, r, account, zid)
 			return
+		case "access-rules":
+			s.handleZoneAccessRules(w, r, account, zid)
+			return
 		}
 	} else if len(parts) == 5 && parts[3] == "dns" {
+		if parts[4] == "export" {
+			s.handleZoneDNSExport(w, r, account, zid)
+			return
+		}
 		rid := parts[4]
 		if !cloudflare.ValidID(rid) {
 			http.Error(w, "invalid record id", http.StatusBadRequest)
 			return
 		}
 		s.handleZoneDNSRecord(w, r, account, zid, rid)
+		return
+	} else if len(parts) == 5 && parts[3] == "access-rules" {
+		rid := parts[4]
+		if !cloudflare.ValidID(rid) {
+			http.Error(w, "invalid rule id", http.StatusBadRequest)
+			return
+		}
+		s.handleZoneAccessRule(w, r, account, zid, rid)
 		return
 	}
 
@@ -469,4 +494,141 @@ func (s *Server) handleZoneSettings(w http.ResponseWriter, r *http.Request, acco
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// handleZoneDNSExport streams the zone as a BIND file (Zone - DNS - Read).
+func (s *Server) handleZoneDNSExport(w http.ResponseWriter, r *http.Request, account *store.CloudflareAccount, zid string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	text, err := s.getCFClient(account).ExportDNSRecords(r.Context(), zid)
+	if err != nil {
+		s.writeCFError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+zid+`.zone"`)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write([]byte(text))
+}
+
+func (s *Server) handleZoneAccessRules(w http.ResponseWriter, r *http.Request, account *store.CloudflareAccount, zid string) {
+	cf := s.getCFClient(account)
+	switch r.Method {
+	case http.MethodGet:
+		rules, err := cf.ListAccessRules(r.Context(), zid)
+		if err != nil {
+			s.writeCFError(w, err)
+			return
+		}
+		if rules == nil {
+			rules = []cloudflare.AccessRule{}
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"rules":   rules,
+			"modes":   cloudflare.AccessRuleModes,
+			"targets": cloudflare.AccessRuleTargets,
+		})
+
+	case http.MethodPost:
+		var in cloudflare.AccessRuleInput
+		if !decodeCFBody(w, r, &in) {
+			return
+		}
+		if err := in.Validate(); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+
+		rule, err := cf.CreateAccessRule(r.Context(), zid, in)
+		if err != nil {
+			s.writeCFError(w, err)
+			return
+		}
+
+		logger.Info("cloudflare", account.Name, fmt.Sprintf("Created access rule %s %s=%s in zone %s", in.Mode, in.Target, in.Value, zid))
+		writeJSON(w, http.StatusCreated, map[string]interface{}{
+			"rule": rule,
+		})
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleZoneAccessRule(w http.ResponseWriter, r *http.Request, account *store.CloudflareAccount, zid, rid string) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := s.getCFClient(account).DeleteAccessRule(r.Context(), zid, rid); err != nil {
+		s.writeCFError(w, err)
+		return
+	}
+
+	logger.Info("cloudflare", account.Name, fmt.Sprintf("Deleted access rule %s in zone %s", rid, zid))
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok": true,
+	})
+}
+
+// cfTunnelAccountID returns the Cloudflare account id for account-level endpoints: the one stored with the account,
+// otherwise the single account that owns the token's zones.
+func (s *Server) cfTunnelAccountID(r *http.Request, cf *cloudflare.Client, account *store.CloudflareAccount) (string, error) {
+	if account.AccountID != "" {
+		return account.AccountID, nil
+	}
+	zones, err := cf.ListZones(r.Context(), "")
+	if err != nil {
+		return "", err
+	}
+	ids := map[string]bool{}
+	for _, z := range zones {
+		if z.AccountID != "" {
+			ids[z.AccountID] = true
+		}
+	}
+	if len(ids) != 1 {
+		return "", errors.New("Cloudflare Account ID is needed for tunnels: edit this account and fill in Account ID")
+	}
+	for id := range ids {
+		return id, nil
+	}
+	return "", nil
+}
+
+// handleAccountTunnels lists the account's Cloudflare Tunnels (read-only; Account - Cloudflare Tunnel - Read).
+func (s *Server) handleAccountTunnels(w http.ResponseWriter, r *http.Request, account *store.CloudflareAccount) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	cf := s.getCFClient(account)
+	cfAccountID, err := s.cfTunnelAccountID(r, cf, account)
+	if err != nil {
+		var apiErr *cloudflare.APIError
+		if errors.As(err, &apiErr) {
+			s.writeCFError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	tunnels, err := cf.ListTunnels(r.Context(), cfAccountID)
+	if err != nil {
+		s.writeCFError(w, err)
+		return
+	}
+	if tunnels == nil {
+		tunnels = []cloudflare.Tunnel{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"tunnels": tunnels,
+	})
 }

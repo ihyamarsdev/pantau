@@ -259,6 +259,8 @@ Pantau menginspeksi Host remote melalui perintah SSH non-interaktif, memvalidasi
 - **Siklus Hidup DNS Record**: Tinjau dan cari record DNS (A, AAAA, CNAME, TXT, MX, NS, SRV, CAA). Tambah, ubah, dan hapus record dengan sakelar proxy Cloudflare (*orange cloud*) langsung di tabel.
 - **Kontrol Pembersihan Cache (*Cache Purge*)**: Bersihkan cache seketika dengan dua mode aman: *Purge Everything* (dengan konfirmasi dialog) dan *Purge by URL* (hingga 30 URL per permintaan).
 - **Daftar Putih Pengaturan Zone (*Zone Settings*)**: Sesuaikan opsi keamanan dan performa esensial secara aman: SSL Mode (`off`, `flexible`, `full`, `strict`), Always Use HTTPS, Security Level, Development Mode, Minimum TLS Version, dan Automatic HTTPS Rewrites.
+- **IP Access Rules, Tunnels & Ekspor DNS**: Blokir, challenge, atau izinkan IP, rentang, ASN, atau negara per zone; pantau kesehatan Cloudflare Tunnels (hanya baca); unduh zone sebagai berkas BIND.
+- **Panduan Izin**: Panduan Pengguna dan dialog Tambah Akun memuat izin API Token yang persis dibutuhkan tiap fitur (`Zone → DNS → Edit`, `Zone → Firewall Services → Edit`, `Account → Cloudflare Tunnel → Read`, ...), dan izin yang kurang disebut namanya.
 - **Keamanan Kredensial Tanpa Paparan**: API Token berlingkup disimpan aman di SQLite lokal seperti kunci privat SSH, tidak pernah dikembalikan oleh endpoint API, dan dilindungi dalam System Snapshot terenkripsi.
 
 ### 30. 📜 Ansible Playbooks (Gaya Semaphore, Agentless)

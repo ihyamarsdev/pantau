@@ -565,13 +565,34 @@ Pantau allows operators to connect multiple Cloudflare accounts and manage domai
 3. Provide an identifiable name (e.g., `Production Cloudflare`, `Personal Projects`), an optional **Account ID** (required only if using account-scoped tokens), and your **API Token**.
 4. Pantau automatically performs pre-flight verification against `https://api.cloudflare.com/client/v4/user/tokens/verify` (or `/accounts/{id}/tokens/verify`) before persisting the record in SQLite.
 
+#### API Token Permissions
+
+Pantau accepts only **scoped API Tokens** (never the Global API Key). Create one at **dash.cloudflare.com → My Profile → API Tokens → Create Token → Create Custom Token** and add only the rows for the features you will use. A missing permission is not an error when saving the account (Pantau only checks that the token is valid and active); it shows up as a yellow warning naming the missing permission the first time you open the matching tab.
+
+| Pantau feature | Permission to add in the token | Resource scope |
+|---|---|---|
+| Zones list, status, name servers (always needed) | `Zone → Zone → Read` | Zone |
+| DNS Records: view and **Export** (BIND) | `Zone → DNS → Read` | Zone |
+| DNS Records: add, edit, delete | `Zone → DNS → Edit` (includes Read) | Zone |
+| Cache: Purge Everything / Purge by URL | `Zone → Cache Purge → Purge` | Zone |
+| Zone Settings: view | `Zone → Zone Settings → Read` | Zone |
+| Zone Settings: change | `Zone → Zone Settings → Edit` (includes Read) | Zone |
+| Access Rules: view | `Zone → Firewall Services → Read` | Zone |
+| Access Rules: add, delete | `Zone → Firewall Services → Edit` (includes Read) | Zone |
+| Tunnels: view status (read-only) | `Account → Cloudflare Tunnel → Read` | Account |
+
+**Recommended starting token** (everything except Tunnels): `Zone → Zone → Read`, `Zone → DNS → Edit`, `Zone → Cache Purge → Purge`, `Zone → Zone Settings → Edit`, `Zone → Firewall Services → Edit`. For a monitoring-only token use the `Read` rows only.
+
+Scoping the token:
+- **Zone Resources**: *Include → Specific zone* (one entry per domain Pantau should manage) or *All zones from an account*. Zones outside this scope do not appear in Pantau.
+- **Account Resources**: only needed for **Tunnels**: *Include → the Cloudflare account*.
+- **Client IP Address Filtering** (optional, recommended): add the public IP of the server running Pantau, so a leaked token is useless elsewhere.
+- **TTL** (optional): set an expiry and replace the token before it lapses (edit the account and paste the new token; leaving the field empty keeps the old one).
+
+**Account ID field**: leave it empty for a normal *User* API Token (My Profile → API Tokens); Pantau then finds the Cloudflare account from the zones the token can see, which is what Tunnels uses. Fill it in only for an *Account-owned* token (Manage Account → Account API Tokens), or when the token sees zones of several accounts. With an Account ID Pantau verifies the token at `/accounts/{id}/tokens/verify`, which only works for Account-owned tokens.
+
 > [!IMPORTANT]
-> **Recommended Least-Privilege API Token Permissions**:
-> Never use unscoped Global API Keys. In your Cloudflare dashboard under **My Profile → API Tokens**, create a custom token limited to your specific zones with the following minimum permissions:
-> - `Zone - Zone - Read`: view zone list and status.
-> - `Zone - DNS - Edit`: view, add, update, and delete DNS records.
-> - `Zone - Cache Purge - Purge`: purge entire zone cache or specific URLs.
-> - `Zone - Zone Settings - Edit`: modify SSL mode, HTTPS redirects, security levels, and TLS versions.
+> Anyone who can use Pantau with the *DNS Edit*, *Firewall Services Edit* or *Cache Purge* permissions can change live traffic of those zones. Prefer one token per environment, scoped to its zones, and give the AI Agent no more than the account you want it to manage: its Cloudflare change tools always wait for your approval.
 
 #### Zone & DNS Records Management
 
@@ -579,6 +600,7 @@ Pantau allows operators to connect multiple Cloudflare accounts and manage domai
 - **DNS Records Table**: View records by name, type (`A`, `AAAA`, `CNAME`, `TXT`, `MX`, `NS`, `SRV`, `CAA`), content, and TTL (Auto / custom seconds).
 - **Add & Edit Records**: Modal forms validate required names and contents (bounded up to 255/2048 characters), enforce priority for MX records, and provide a toggle for Cloudflare proxying (orange cloud).
 - **Delete Confirmation**: Deleting a record triggers a confirmation modal to avoid accidental record loss.
+- **Export**: the **Export** button downloads the zone as a BIND zone file (`<zone id>.zone`), handy as a backup before bulk changes. Needs `Zone → DNS → Read`.
 
 #### Cache Invalidation (Purge Cache)
 
@@ -595,12 +617,27 @@ Pantau exposes an allowlist of high-impact zone settings via the **Settings** ta
 - **Development Mode**: bypass edge cache for 3 hours for real-time origin asset updates (`on` / `off`).
 - **Minimum TLS Version**: enforce legacy cipher deprecation (`1.0`, `1.1`, `1.2`, `1.3`).
 - **Automatic HTTPS Rewrites**: upgrade mixed content links automatically (`on` / `off`).
+- **TLS 1.3** (`on`, `off`, `zrt` = on with 0-RTT), **HTTP/3**, **0-RTT Connection Resumption**, **IPv6**, **WebSockets**, **Brotli**, **Email Address Obfuscation**, **Hotlink Protection** and **Always Online** (each `on` / `off`).
+
+A setting your Cloudflare plan does not allow to change is shown but cannot be edited.
+
+#### IP Access Rules
+
+The **Access Rules** tab of a zone lists, adds and deletes **IP Access Rules**: block, challenge, JavaScript challenge, managed challenge or allow (`whitelist`) a single IP (IPv4/IPv6), an IP range (CIDR, e.g. `203.0.113.0/24`), an ASN (`AS13335` or `13335`) or a country (two-letter code, e.g. `ID`), with an optional note. Rules apply to **this zone only** and take effect at once. Pantau validates the value before sending it, and deleting a rule asks for confirmation. Requires `Zone → Firewall Services → Edit` (`Read` is enough to list). Do not block your own IP or office range: a `block` rule also applies to you.
+
+#### Cloudflare Tunnels (read-only)
+
+The **Tunnels** card under the zone list shows every non-deleted Cloudflare Tunnel (`cloudflared`) of the account with its health (`healthy`, `degraded`, `down`, `inactive`), type, creation time and last activity. Pantau does not create, edit or delete tunnels. Requires `Account → Cloudflare Tunnel → Read` and an account scope on the token; see the **Account ID field** note above.
+
+#### AI Agent
+
+With the AI Agent enabled, `cf_accounts`, `cf_zones`, `cf_dns_list`, `cf_zone_settings`, `cf_access_rules` and `cf_tunnels` read Cloudflare; `cf_dns_change`, `cf_purge_cache`, `cf_zone_setting_set` and `cf_access_rule_change` change it. Every change shows an approval card and always waits for you (never auto-approved, no session grant). The agent names accounts and zones as Pantau does and never sees the API token. It needs the same token permissions as the matching tab.
 
 #### Security Model & Non-Goals
 
 - **Credential Protection**: API tokens are stored in the local SQLite database similarly to SSH private keys, excluded from all REST API responses (`json:"-"`), redacted in logs, and included in encrypted **System Snapshots** (AES-256-GCM).
 - **Hardcoded Endpoint & Input Validation**: All outbound requests strictly target `https://api.cloudflare.com/client/v4` (mitigating SSRF), and URL identifiers (`zoneID`, `recordID`) are validated against `^[0-9a-f]{32}$` to prevent path injection.
-- **Explicit Non-Goals**: Cloudflare Workers, R2 Storage, Cloudflare Tunnels (`cloudflared`), custom WAF/Firewall rules, and Page Rules remain out of scope and must be managed via Cloudflare's dashboard.
+- **Explicit Non-Goals**: Cloudflare Workers, R2 Storage, creating or changing Cloudflare Tunnels (`cloudflared`; they are only listed), custom WAF/Firewall rules (only IP Access Rules are supported), and Page Rules remain out of scope and must be managed via Cloudflare's dashboard.
 
 ### Ansible Playbooks (Semaphore-Style, Agentless)
 

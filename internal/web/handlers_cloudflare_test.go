@@ -42,6 +42,8 @@ func setupCFTestServer(t *testing.T) (*Server, func(*http.Request)) {
 	return srv, authReq
 }
 
+const cfFakeAccountID = "aaaaaaaabbbbbbbbaaaaaaaabbbbbbbb"
+
 func fakeCloudflareServer(t *testing.T, verifyOk bool) *httptest.Server {
 	t.Helper()
 	validZid := "0123456789abcdef0123456789abcdef"
@@ -97,7 +99,7 @@ func fakeCloudflareServer(t *testing.T, verifyOk bool) *httptest.Server {
 						"type":         "full",
 						"name_servers": []string{"ns1.cloudflare.com", "ns2.cloudflare.com"},
 						"plan":         map[string]interface{}{"name": "Free Plan"},
-						"account":      map[string]interface{}{"name": "My Account"},
+						"account":      map[string]interface{}{"id": cfFakeAccountID, "name": "My Account"},
 					},
 				},
 				"result_info": map[string]interface{}{"page": 1, "total_pages": 1},
@@ -212,6 +214,53 @@ func fakeCloudflareServer(t *testing.T, verifyOk bool) *httptest.Server {
 					"value":    body["value"],
 					"editable": true,
 				},
+			})
+			return
+		}
+
+		// IP access rules
+		if path == "/zones/"+validZid+"/firewall/access_rules/rules" {
+			switch r.Method {
+			case http.MethodGet:
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
+					"success": true, "errors": []interface{}{},
+					"result": []map[string]interface{}{{
+						"id": validRid, "mode": "block", "notes": "scanner",
+						"configuration": map[string]interface{}{"target": "ip", "value": "203.0.113.7"},
+					}},
+					"result_info": map[string]interface{}{"page": 1, "total_pages": 1},
+				})
+				return
+			case http.MethodPost:
+				var body map[string]interface{}
+				_ = json.NewDecoder(r.Body).Decode(&body)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
+					"success": true, "errors": []interface{}{},
+					"result": map[string]interface{}{"id": validRid, "mode": body["mode"], "notes": body["notes"], "configuration": body["configuration"]},
+				})
+				return
+			}
+		}
+		if path == "/zones/"+validZid+"/firewall/access_rules/rules/"+validRid && r.Method == http.MethodDelete {
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "errors": []interface{}{}, "result": map[string]interface{}{"id": validRid}})
+			return
+		}
+
+		// DNS export
+		if path == "/zones/"+validZid+"/dns_records/export" && r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = w.Write([]byte("example.com.\t1\tIN\tA\t1.2.3.4\n"))
+			return
+		}
+
+		// Tunnels
+		if path == "/accounts/"+cfFakeAccountID+"/cfd_tunnel" && r.Method == http.MethodGet {
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": true, "errors": []interface{}{},
+				"result": []map[string]interface{}{{
+					"id": "f70ff985-a4ef-4643-bbbc-4a0ed4fc8415", "name": "edge-tunnel", "status": "healthy", "tun_type": "cfd_tunnel",
+				}},
+				"result_info": map[string]interface{}{"page": 1, "total_pages": 1},
 			})
 			return
 		}

@@ -29,7 +29,7 @@ var cloudflareTools = []agentTool{
 		InputSchema: schema(nil, map[string]interface{}{"account": pCFAccount}), run: toolCFZones},
 	{Name: "cf_dns_list", Description: "DNS records of a zone. type and name (substring) are optional filters.",
 		InputSchema: schema([]string{"zone"}, map[string]interface{}{"account": pCFAccount, "zone": pCFZone, "type": str, "name": str}), run: toolCFDNSList},
-	{Name: "cf_zone_settings", Description: "The zone settings Pantau can change (ssl, always_use_https, security_level, development_mode, min_tls_version, automatic_https_rewrites) with current values and allowed values.",
+	{Name: "cf_zone_settings", Description: "The zone settings Pantau can change (ssl, always_use_https, security_level, development_mode, min_tls_version, tls_1_3, http3, ipv6, brotli, ...) with current values and allowed values.",
 		InputSchema: schema([]string{"zone"}, map[string]interface{}{"account": pCFAccount, "zone": pCFZone}), run: toolCFZoneSettings},
 	{Name: "cf_dns_change", Description: "create, update or delete one DNS record. create needs type, name and content (MX also priority); update needs record_id from cf_dns_list and only the fields to change (the rest is kept); delete needs record_id. ttl 1 = auto. Always waits for operator approval.", gate: gateHigh,
 		InputSchema: schema([]string{"zone", "action"}, map[string]interface{}{"account": pCFAccount, "zone": pCFZone, "action": map[string]interface{}{"type": "string", "enum": []string{"create", "update", "delete"}}, "record_id": str, "type": map[string]interface{}{"type": "string", "enum": []string{"A", "AAAA", "CNAME", "TXT", "MX", "NS", "SRV", "CAA"}}, "name": str, "content": str, "ttl": map[string]interface{}{"type": "integer"}, "proxied": map[string]interface{}{"type": "boolean"}, "priority": map[string]interface{}{"type": "integer"}, "comment": str}), run: toolCFDNSChange},
@@ -37,6 +37,12 @@ var cloudflareTools = []agentTool{
 		InputSchema: schema([]string{"zone"}, map[string]interface{}{"account": pCFAccount, "zone": pCFZone, "everything": map[string]interface{}{"type": "boolean"}, "files": pCFList, "hosts": pCFList, "tags": pCFList, "prefixes": pCFList}), run: toolCFPurge},
 	{Name: "cf_zone_setting_set", Description: "Change one zone setting listed by cf_zone_settings to one of its allowed values. Always waits for operator approval.", gate: gateHigh,
 		InputSchema: schema([]string{"zone", "setting", "value"}, map[string]interface{}{"account": pCFAccount, "zone": pCFZone, "setting": str, "value": str}), run: toolCFZoneSettingSet},
+	{Name: "cf_access_rules", Description: "IP Access Rules of a zone (mode, target ip/ip_range/asn/country, value, notes).",
+		InputSchema: schema([]string{"zone"}, map[string]interface{}{"account": pCFAccount, "zone": pCFZone}), run: toolCFAccessRules},
+	{Name: "cf_access_rule_change", Description: "create or delete one IP Access Rule. create needs mode (block, challenge, js_challenge, managed_challenge, whitelist), target (ip, ip_range, asn, country) and value (203.0.113.7, 203.0.113.0/24, AS13335, ID); notes optional. delete needs rule_id from cf_access_rules. Always waits for operator approval.", gate: gateHigh,
+		InputSchema: schema([]string{"zone", "action"}, map[string]interface{}{"account": pCFAccount, "zone": pCFZone, "action": map[string]interface{}{"type": "string", "enum": []string{"create", "delete"}}, "rule_id": str, "mode": map[string]interface{}{"type": "string", "enum": cloudflare.AccessRuleModes}, "target": map[string]interface{}{"type": "string", "enum": cloudflare.AccessRuleTargets}, "value": str, "notes": str}), run: toolCFAccessRuleChange},
+	{Name: "cf_tunnels", Description: "Cloudflare Tunnels (cloudflared) of an account with their health status (healthy, degraded, down, inactive). Read-only.",
+		InputSchema: schema(nil, map[string]interface{}{"account": pCFAccount}), run: toolCFTunnels},
 }
 
 type cfZone struct {
@@ -300,4 +306,87 @@ func toolCFZoneSettingSet(s *Server, r *http.Request, args map[string]interface{
 		return "", err
 	}
 	return jsonText(m["setting"])
+}
+
+func toolCFAccessRules(s *Server, r *http.Request, args map[string]interface{}) (string, error) {
+	z, err := s.cfZoneOf(r, args)
+	if err != nil {
+		return "", err
+	}
+	m, err := s.loopJSON(r.Context(), http.MethodGet, z.path("/access-rules"), nil)
+	if err != nil {
+		return "", err
+	}
+	return jsonText(pickAll(m["rules"], "id", "mode", "target", "value", "notes"))
+}
+
+func toolCFAccessRuleChange(s *Server, r *http.Request, args map[string]interface{}) (string, error) {
+	action := argStr(args, "action")
+	if action != "create" && action != "delete" {
+		return "", fmt.Errorf("action must be create or delete")
+	}
+	z, err := s.cfZoneOf(r, args)
+	if err != nil {
+		return "", err
+	}
+
+	if action == "delete" {
+		rid := argStr(args, "rule_id")
+		if rid == "" {
+			return "", fmt.Errorf("rule_id is required for delete (see cf_access_rules)")
+		}
+		m, err := s.loopJSON(r.Context(), http.MethodGet, z.path("/access-rules"), nil)
+		if err != nil {
+			return "", err
+		}
+		var cur map[string]interface{}
+		rules, _ := m["rules"].([]interface{})
+		for _, it := range rules {
+			if rule, _ := it.(map[string]interface{}); rule["id"] == rid {
+				cur = rule
+			}
+		}
+		if cur == nil {
+			return "", fmt.Errorf("access rule %q not found in zone %s", rid, z.zoneName)
+		}
+		summary := fmt.Sprintf("Cloudflare %s: delete access rule %v %v=%v", z.zoneName, cur["mode"], cur["target"], cur["value"])
+		if err := s.agentGateAs(r, 0, "Cloudflare", "cf_access_rule_change", summary, gateHigh); err != nil {
+			return "", err
+		}
+		if _, err := s.loopJSON(r.Context(), http.MethodDelete, z.path("/access-rules/"+url.PathEscape(rid)), nil); err != nil {
+			return "", err
+		}
+		return "deleted", nil
+	}
+
+	in := cloudflare.AccessRuleInput{Mode: argStr(args, "mode"), Target: argStr(args, "target"), Value: argStr(args, "value"), Notes: argStr(args, "notes")}
+	// The handler validates again; checking here keeps the approval card for requests that can run.
+	if err := in.Validate(); err != nil {
+		return "", err
+	}
+	summary := fmt.Sprintf("Cloudflare %s: create access rule %s %s=%s", z.zoneName, in.Mode, in.Target, in.Value)
+	if in.Notes != "" {
+		summary += " (" + in.Notes + ")"
+	}
+	if err := s.agentGateAs(r, 0, "Cloudflare", "cf_access_rule_change", summary, gateHigh); err != nil {
+		return "", err
+	}
+	m, err := s.loopJSON(r.Context(), http.MethodPost, z.path("/access-rules"), in)
+	if err != nil {
+		return "", err
+	}
+	rule, _ := m["rule"].(map[string]interface{})
+	return jsonText(pick(rule, "id", "mode", "target", "value", "notes"))
+}
+
+func toolCFTunnels(s *Server, r *http.Request, args map[string]interface{}) (string, error) {
+	acc, err := s.cfAccountOf(args)
+	if err != nil {
+		return "", err
+	}
+	m, err := s.loopJSON(r.Context(), http.MethodGet, fmt.Sprintf("/api/cloudflare/accounts/%d/tunnels", acc), nil)
+	if err != nil {
+		return "", err
+	}
+	return jsonText(pickAll(m["tunnels"], "name", "status", "tun_type", "created_at", "conns_active_at", "conns_inactive_at"))
 }

@@ -93,4 +93,32 @@ func TestAgentCloudflareTools(t *testing.T) {
 	if out, _ := callTool(t, srv, "cf_zone_setting_set", `{"zone":"example.com","setting":"waf","value":"off"}`); !strings.Contains(out, "non-editable") || pendingCount(srv) != 0 {
 		t.Fatalf("bad setting: %s", out)
 	}
+
+	// Access rules: reads need no approval; a change shows what it does and an invalid one never asks.
+	if out, _ := callTool(t, srv, "cf_access_rules", `{"zone":"example.com"}`); !strings.Contains(out, "203.0.113.7") {
+		t.Fatalf("cf_access_rules: %s", out)
+	}
+	if out, _ := callTool(t, srv, "cf_access_rule_change", `{"zone":"example.com","action":"create","mode":"block","target":"ip","value":"nope"}`); !strings.Contains(out, "invalid IP") || pendingCount(srv) != 0 {
+		t.Fatalf("invalid access rule: %s", out)
+	}
+	if out, _ := callTool(t, srv, "cf_access_rule_change", `{"zone":"example.com","action":"delete"}`); !strings.Contains(out, "rule_id") || pendingCount(srv) != 0 {
+		t.Fatalf("delete without rule_id: %s", out)
+	}
+	card = make(chan string, 1)
+	go func() { card <- decideNext(t, srv, true) }()
+	if out, isErr := callTool(t, srv, "cf_access_rule_change", `{"zone":"example.com","action":"create","mode":"block","target":"asn","value":"13335"}`); isErr || !strings.Contains(out, "AS13335") {
+		t.Fatalf("create access rule: %s", out)
+	}
+	if c := <-card; !strings.Contains(c, "block") || !strings.Contains(c, "AS13335") {
+		t.Fatalf("access rule card: %s", c)
+	}
+	go func() { decideNext(t, srv, false) }()
+	if out, _ := callTool(t, srv, "cf_access_rule_change", `{"zone":"example.com","action":"delete","rule_id":"`+rid+`"}`); !strings.Contains(out, "denied") {
+		t.Fatalf("denied access rule delete must not run: %s", out)
+	}
+
+	// Tunnels are read-only; the account id is derived from the zones.
+	if out, _ := callTool(t, srv, "cf_tunnels", `{}`); !strings.Contains(out, "edge-tunnel") || !strings.Contains(out, "healthy") {
+		t.Fatalf("cf_tunnels: %s", out)
+	}
 }

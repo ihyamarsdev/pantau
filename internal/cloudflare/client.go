@@ -94,7 +94,8 @@ type resultInfo struct {
 
 const maxResponseBody = 4 * 1024 * 1024 // 4 MiB limit
 
-func (c *Client) do(ctx context.Context, method, relPath string, query url.Values, body interface{}, out interface{}) (*resultInfo, error) {
+// send performs one request and returns the HTTP status and the (size-limited) body.
+func (c *Client) send(ctx context.Context, method, relPath string, query url.Values, body interface{}) (int, []byte, error) {
 	baseURL := c.BaseURL
 	if baseURL == "" {
 		baseURL = DefaultBaseURL
@@ -111,14 +112,14 @@ func (c *Client) do(ctx context.Context, method, relPath string, query url.Value
 	if body != nil {
 		buf, err := json.Marshal(body)
 		if err != nil {
-			return nil, err
+			return 0, nil, err
 		}
 		bodyReader = bytes.NewReader(buf)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, reqURL, bodyReader)
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+c.token)
@@ -131,12 +132,19 @@ func (c *Client) do(ctx context.Context, method, relPath string, query url.Value
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
 	defer resp.Body.Close()
 
-	lr := io.LimitReader(resp.Body, maxResponseBody)
-	raw, err := io.ReadAll(lr)
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
+	if err != nil {
+		return 0, nil, err
+	}
+	return resp.StatusCode, raw, nil
+}
+
+func (c *Client) do(ctx context.Context, method, relPath string, query url.Values, body interface{}, out interface{}) (*resultInfo, error) {
+	status, raw, err := c.send(ctx, method, relPath, query, body)
 	if err != nil {
 		return nil, err
 	}
@@ -145,13 +153,13 @@ func (c *Client) do(ctx context.Context, method, relPath string, query url.Value
 	if jsonErr := json.Unmarshal(raw, &env); jsonErr != nil {
 		// Non-JSON response (e.g. HTML 502/503/504)
 		return nil, &APIError{
-			Status: resp.StatusCode,
+			Status: status,
 		}
 	}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 || !env.Success {
+	if status < 200 || status >= 300 || !env.Success {
 		return nil, &APIError{
-			Status: resp.StatusCode,
+			Status: status,
 			Errors: env.Errors,
 		}
 	}
@@ -163,6 +171,21 @@ func (c *Client) do(ctx context.Context, method, relPath string, query url.Value
 	}
 
 	return env.ResultInfo, nil
+}
+
+// doText is for the few endpoints that answer with plain text instead of the JSON envelope (DNS export).
+// A failed call still carries a JSON envelope, which becomes the APIError.
+func (c *Client) doText(ctx context.Context, relPath string) (string, error) {
+	status, raw, err := c.send(ctx, http.MethodGet, relPath, nil, nil)
+	if err != nil {
+		return "", err
+	}
+	if status >= 200 && status < 300 {
+		return string(raw), nil
+	}
+	var env apiEnvelope
+	_ = json.Unmarshal(raw, &env)
+	return "", &APIError{Status: status, Errors: env.Errors}
 }
 
 // VerifyToken verifies the client's API token.

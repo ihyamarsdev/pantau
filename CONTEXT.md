@@ -597,7 +597,19 @@ Domain yang dikelola di akun Cloudflare (nama, status, plan, name server).
 _Avoid_: Site, domain entry
 
 **Zone Setting**:
-Pengaturan zone yang boleh diubah Pantau (allowlist: ssl, always_use_https, security_level, development_mode, min_tls_version, automatic_https_rewrites).
+Pengaturan zone yang boleh diubah Pantau (allowlist: ssl, always_use_https, security_level, development_mode, min_tls_version, automatic_https_rewrites, tls_1_3, http3, 0rtt, ipv6, websockets, brotli, email_obfuscation, hotlink_protection, always_online).
+
+**IP Access Rule**:
+Aturan tingkat zone Cloudflare yang memblokir, menantang (*challenge*), atau mengizinkan satu IP, rentang IP (CIDR), ASN, atau negara; dikelola dari tab Access Rules sebuah Cloudflare Zone.
+_Avoid_: Firewall rule, WAF rule, ban
+
+**Cloudflare Tunnel**:
+Koneksi `cloudflared` antara origin dan edge Cloudflare milik sebuah akun; Pantau hanya menampilkan statusnya (*healthy*, *degraded*, *down*, *inactive*), tidak membuat atau mengubahnya.
+_Avoid_: VPN, proxy
+
+**Token Permission**:
+Izin yang harus dimiliki API Token Cloudflare agar satu fitur Pantau berfungsi (misal `Zone → DNS → Edit`); dicatat per fitur di Panduan Pengguna dan di dialog Tambah Akun, dan izin yang kurang dilaporkan dengan namanya.
+_Avoid_: Scope, role
 _Avoid_: CF option, domain configuration
 
 **Ansible Playbook**:

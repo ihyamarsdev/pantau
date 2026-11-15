@@ -16,8 +16,9 @@ type Zone struct {
 	Paused      bool     `json:"paused"`
 	Type        string   `json:"type"`
 	NameServers []string `json:"name_servers"`
-	Plan        string   `json:"plan"`         // from plan.name
-	AccountName string   `json:"account_name"` // from account.name
+	Plan        string   `json:"plan"`                 // from plan.name
+	AccountName string   `json:"account_name"`         // from account.name
+	AccountID   string   `json:"account_id,omitempty"` // from account.id
 }
 
 type cfZoneRaw struct {
@@ -31,6 +32,7 @@ type cfZoneRaw struct {
 		Name string `json:"name"`
 	} `json:"plan"`
 	Account struct {
+		ID   string `json:"id"`
 		Name string `json:"name"`
 	} `json:"account"`
 }
@@ -45,6 +47,7 @@ func (raw *cfZoneRaw) toZone() Zone {
 		NameServers: raw.NameServers,
 		Plan:        raw.Plan.Name,
 		AccountName: raw.Account.Name,
+		AccountID:   raw.Account.ID,
 	}
 }
 

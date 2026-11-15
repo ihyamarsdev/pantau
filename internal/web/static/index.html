@@ -3306,6 +3306,13 @@ header {
 .cf-set-ctl select { height: 32px; min-width: 150px; font-size: var(--fs-xs); }
 .cf-set-flag { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 999px; background: var(--warning-soft); border: 1px solid var(--warning-border); color: var(--warning); }
 @media (max-width: 560px) { .cf-set-row { flex-direction: column; align-items: flex-start; } }
+.cf-perm { display: none; gap: 10px; align-items: flex-start; padding: 10px 14px; border: 1px solid var(--warning-border); background: var(--warning-soft); color: var(--warning); border-radius: var(--radius-sm); font-size: var(--fs-xs); line-height: 1.45; }
+.cf-perm .icon { flex: none; margin-top: 1px; }
+.cf-perm-guide { border: 1px solid var(--card-border); border-radius: var(--radius-sm); }
+.cf-perm-guide > summary { cursor: pointer; padding: 8px 12px; font-size: var(--fs-xs); font-weight: 600; }
+.cf-perm-body { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+.cf-perm-table { width: 100%; font-size: var(--fs-xs); }
+.cf-perm-table code { font-family: var(--font-mono); }
 
 /* --- Terraform Management Styles --- */
 #tfTabs { border-bottom: 1px solid var(--card-border); margin-bottom: 20px; }
@@ -4069,6 +4076,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
       </div>
 
       <div id="cfZonesContainer" style="display:none;flex-direction:column;gap:16px;">
+        <div id="cfZonesPerm" class="cf-perm" role="alert"></div>
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
           <div class="search-box" style="margin:0;max-width:320px;">
             <svg class="icon icon-sm text-muted"><use href="#i-search"/></svg>
@@ -4081,6 +4089,33 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
           <div class="empty-state-icon"><svg class="icon icon-xl"><use href="#i-cloud"/></svg></div>
           <div class="empty-state-desc" data-i18n="cf_no_zones_found">No zones found</div>
         </div>
+        <details id="cfTunnelsContainer" class="card" style="padding:0;" ontoggle="onCfTunnelsToggle(this)">
+          <summary style="cursor:pointer;padding:12px 16px;display:flex;align-items:center;gap:8px;font-weight:600;">
+            <svg class="icon icon-sm"><use href="#i-cable"/></svg> <span data-i18n="cf_tunnels_title">Cloudflare Tunnels</span>
+            <span id="cfTunnelsCount" class="badge" style="background:var(--surface-2);border:1px solid var(--card-border);font-family:var(--font-mono);">-</span>
+          </summary>
+          <div style="padding:0 16px 16px 16px;display:flex;flex-direction:column;gap:10px;">
+            <div style="font-size:var(--fs-xs);color:var(--text-muted);" data-i18n="cf_tunnels_desc">Read-only status of the cloudflared tunnels of this account.</div>
+            <div id="cfTunnelsPerm" class="cf-perm" role="alert"></div>
+            <div style="overflow-x:auto;border:1px solid var(--card-border);border-radius:var(--radius-md);">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="cf_tunnels_col_name">Name</th>
+                    <th style="width:110px;" data-i18n="cf_tunnels_col_status">Status</th>
+                    <th style="width:120px;" data-i18n="cf_tunnels_col_type">Type</th>
+                    <th data-i18n="cf_tunnels_col_created">Created</th>
+                    <th data-i18n="cf_tunnels_col_active">Last activity</th>
+                  </tr>
+                </thead>
+                <tbody id="cfTunnelsTableBody"></tbody>
+              </table>
+            </div>
+            <div id="cfTunnelsEmpty" class="empty-state" style="display:none;padding:16px;">
+              <div class="empty-state-desc" data-i18n="cf_tunnels_empty">No tunnels in this account.</div>
+            </div>
+          </div>
+        </details>
       </div>
     </div>
     <div id="sectionAnsible" class="app-section" style="display:none;"></div>
@@ -4660,6 +4695,25 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <input type="password" id="cfAccountToken" class="form-input mono" autocomplete="new-password" style="width: 100%; box-sizing: border-box;" placeholder="Bearer token from dash.cloudflare.com/profile/api-tokens" />
         <div id="cfAccountTokenHint" class="dk-hint" data-i18n="cf_account_token_hint">In edit mode, leave empty to keep the existing token.</div>
       </div>
+      <details id="cfAccountPermsGuide" class="cf-perm-guide">
+        <summary data-i18n="cf_perm_guide_title">Permissions the API token needs</summary>
+        <div class="cf-perm-body">
+          <div class="dk-hint" data-i18n="cf_perm_note_create">Create the token at dash.cloudflare.com → My Profile → API Tokens → Create Token → Custom token. Add only the rows for the features you use. Never use the Global API Key.</div>
+          <table class="cf-perm-table">
+            <thead><tr><th data-i18n="cf_perm_col_feature">Pantau feature</th><th data-i18n="cf_perm_col_perm">Token permission</th></tr></thead>
+            <tbody>
+              <tr><td data-i18n="cf_perm_row_zones">Zones list (always needed)</td><td><code>Zone → Zone → Read</code></td></tr>
+              <tr><td data-i18n="cf_perm_row_dns_read">DNS records: view, Export</td><td><code>Zone → DNS → Read</code></td></tr>
+              <tr><td data-i18n="cf_perm_row_dns_edit">DNS records: add, edit, delete</td><td><code>Zone → DNS → Edit</code></td></tr>
+              <tr><td data-i18n="cf_perm_row_cache">Purge Cache</td><td><code>Zone → Cache Purge → Purge</code></td></tr>
+              <tr><td data-i18n="cf_perm_row_settings">Zone Settings: view / change</td><td><code>Zone → Zone Settings → Read / Edit</code></td></tr>
+              <tr><td data-i18n="cf_perm_row_access">Access Rules: view / add, delete</td><td><code>Zone → Firewall Services → Read / Edit</code></td></tr>
+              <tr><td data-i18n="cf_perm_row_tunnels">Tunnels (read-only)</td><td><code>Account → Cloudflare Tunnel → Read</code></td></tr>
+            </tbody>
+          </table>
+          <div class="dk-hint" data-i18n="cf_perm_note_scope">Zone Resources: include only the zones Pantau should manage. Account Resources: needed only for Tunnels. Optionally restrict the token to the public IP of this Pantau server (Client IP Address Filtering).</div>
+        </div>
+      </details>
       <div id="cfAccountError" role="alert" style="display: none; background: var(--danger-soft); border: 1px solid var(--danger-border); border-radius: var(--radius-sm); padding: 8px 12px; font-size: var(--fs-xs); color: var(--danger); white-space: pre-wrap; word-break: break-all;"></div>
     </div>
     <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end; align-items: center;">
@@ -4752,9 +4806,11 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <div class="tab active" id="tabCfZoneDns" onclick="switchCfZoneTab('dns')"><svg class="icon icon-sm"><use href="#i-globe"/></svg> <span data-i18n="cf_tab_dns">DNS Records</span></div>
         <div class="tab" id="tabCfZoneCache" onclick="switchCfZoneTab('cache')"><svg class="icon icon-sm"><use href="#i-zap"/></svg> <span data-i18n="cf_tab_cache">Purge Cache</span></div>
         <div class="tab" id="tabCfZoneSettings" onclick="switchCfZoneTab('settings')"><svg class="icon icon-sm"><use href="#i-sliders-horizontal"/></svg> <span data-i18n="cf_tab_settings">Zone Settings</span></div>
+        <div class="tab" id="tabCfZoneAccess" onclick="switchCfZoneTab('access')"><svg class="icon icon-sm"><use href="#i-shield"/></svg> <span data-i18n="cf_tab_access">Access Rules</span></div>
       </div>
     </div>
     <div class="modal-body" style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px 20px;">
+      <div id="cfZonePerm" class="cf-perm" role="alert" style="margin-bottom: 12px;"></div>
       <!-- Tab 1: DNS -->
       <div id="cfZonePanelDns" style="display: flex; flex-direction: column; gap: 14px;">
         <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
@@ -4762,9 +4818,14 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
             <svg class="icon icon-sm text-muted"><use href="#i-search"/></svg>
             <input type="text" id="cfDnsSearchInput" placeholder="Filter by type, name, content..." data-i18n-placeholder="cf_dns_search_ph" style="height: 32px; font-size: var(--fs-xs);" oninput="renderCfDnsTable()" />
           </div>
-          <button type="button" class="btn btn-sm btn-primary" onclick="openCfRecordModal()" style="display: inline-flex; align-items: center; gap: 6px;">
-            <svg class="icon icon-sm"><use href="#i-plus"/></svg> <span data-i18n="cf_add_dns_record">Add Record</span>
-          </button>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button type="button" class="btn btn-sm" id="btnCfDnsExport" onclick="exportCfDns()" title="BIND zone file" style="display: inline-flex; align-items: center; gap: 6px;">
+              <svg class="icon icon-sm"><use href="#i-download"/></svg> <span data-i18n="cf_btn_export">Export</span>
+            </button>
+            <button type="button" class="btn btn-sm btn-primary" onclick="openCfRecordModal()" style="display: inline-flex; align-items: center; gap: 6px;">
+              <svg class="icon icon-sm"><use href="#i-plus"/></svg> <span data-i18n="cf_add_dns_record">Add Record</span>
+            </button>
+          </div>
         </div>
         <div style="overflow-x: auto; border: 1px solid var(--card-border); border-radius: var(--radius-md);">
           <table>
@@ -4818,6 +4879,56 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
       <div id="cfZonePanelSettings" style="display: none; flex-direction: column; gap: 12px; max-width: 800px;">
         <div style="font-size: var(--fs-xs); color: var(--text-muted); margin-bottom: 4px;" data-i18n="cf_settings_intro">Allowed Cloudflare Zone settings. Changes take effect on Cloudflare immediately.</div>
         <div id="cfSettingsContainer" style="display: flex; flex-direction: column; gap: 16px;"></div>
+      </div>
+
+      <!-- Tab 4: IP Access Rules -->
+      <div id="cfZonePanelAccess" style="display: none; flex-direction: column; gap: 14px;">
+        <div style="font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.45;" data-i18n="cf_access_intro">IP Access Rules apply to this zone only and take effect immediately. A block rule also applies to you: do not block your own IP or office range.</div>
+        <div class="card" style="padding: 12px 14px; border: 1px solid var(--card-border);">
+          <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end;">
+            <div class="dk-field" style="margin: 0;">
+              <label for="cfAccessMode" data-i18n="cf_access_mode">Action</label>
+              <select id="cfAccessMode" class="form-input" style="height: 32px; font-size: var(--fs-xs);"></select>
+            </div>
+            <div class="dk-field" style="margin: 0;">
+              <label for="cfAccessTarget" data-i18n="cf_access_target">Target</label>
+              <select id="cfAccessTarget" class="form-input" style="height: 32px; font-size: var(--fs-xs);" onchange="onCfAccessTargetChange()"></select>
+            </div>
+            <div class="dk-field" style="margin: 0; flex: 1; min-width: 180px;">
+              <label for="cfAccessValue" data-i18n="cf_access_value">Value</label>
+              <input type="text" id="cfAccessValue" class="form-input mono" style="width: 100%; box-sizing: border-box; height: 32px; font-size: var(--fs-xs);" autocomplete="off" onkeydown="if(event.key==='Enter'){submitCfAccessRule();}" />
+            </div>
+            <div class="dk-field" style="margin: 0; flex: 1; min-width: 160px;">
+              <label for="cfAccessNotes" data-i18n="cf_access_notes">Note (optional)</label>
+              <input type="text" id="cfAccessNotes" class="form-input" maxlength="200" style="width: 100%; box-sizing: border-box; height: 32px; font-size: var(--fs-xs);" autocomplete="off" onkeydown="if(event.key==='Enter'){submitCfAccessRule();}" />
+            </div>
+            <button type="button" class="btn btn-sm btn-primary" id="btnCfAccessAdd" onclick="submitCfAccessRule()" style="display: inline-flex; align-items: center; gap: 6px; height: 32px;">
+              <svg class="icon icon-sm"><use href="#i-plus"/></svg> <span data-i18n="cf_access_add">Add rule</span>
+            </button>
+          </div>
+        </div>
+        <div class="search-box" style="margin: 0; max-width: 320px;">
+          <svg class="icon icon-sm text-muted"><use href="#i-search"/></svg>
+          <input type="text" id="cfAccessSearchInput" placeholder="Filter by value, note..." data-i18n-placeholder="cf_access_search_ph" style="height: 32px; font-size: var(--fs-xs);" oninput="renderCfAccessTable()" />
+        </div>
+        <div style="overflow-x: auto; border: 1px solid var(--card-border); border-radius: var(--radius-md);">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 140px;" data-i18n="cf_access_mode">Action</th>
+                <th style="width: 130px;" data-i18n="cf_access_target">Target</th>
+                <th data-i18n="cf_access_value">Value</th>
+                <th data-i18n="cf_access_col_note">Note</th>
+                <th style="width: 160px;" data-i18n="cf_access_col_created">Created</th>
+                <th style="width: 70px; text-align: right;" data-i18n="cf_col_actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="cfAccessTableBody"></tbody>
+          </table>
+        </div>
+        <div id="cfAccessEmptyState" class="empty-state" style="display: none; padding: 24px;">
+          <div class="empty-state-desc" data-i18n="cf_access_empty">No access rules in this zone.</div>
+        </div>
       </div>
     </div>
   </div>
@@ -8244,7 +8355,7 @@ const I18N = {
     "cf_account_modal_intro": "Register a Cloudflare API Token to manage Zones, DNS, cache, and settings. Tokens are verified before saving and never returned by the API.",
     "cf_account_name_label": "Account Name",
     "cf_account_cfid_label": "Account ID (Optional)",
-    "cf_account_cfid_hint": "Found on Cloudflare dashboard sidebar under Zone Overview or Account ID.",
+    "cf_account_cfid_hint": "Leave empty for a normal User API Token: Pantau finds the Cloudflare account from the zones the token can see (used for Tunnels). Fill in only for an Account-owned token, or when the token sees zones of several accounts.",
     "cf_account_token_label": "API Token",
     "cf_account_token_hint": "In edit mode, leave empty to keep the existing token.",
     "cf_btn_save": "Verify & Save",
@@ -8288,6 +8399,84 @@ const I18N = {
     "cf_set_security_level_desc": "Challenge threshold for visitors by IP reputation. Under Attack shows an interstitial challenge to everyone.",
     "cf_set_development_mode_title": "Development Mode",
     "cf_set_development_mode_desc": "Bypass Cloudflare cache so origin changes appear immediately. Turns off automatically after 3 hours.",
+    "cf_set_group_performance": "Performance & Network",
+    "cf_set_tls_1_3_title": "TLS 1.3",
+    "cf_set_tls_1_3_desc": "Allow TLS 1.3 for visitors. zrt turns it on together with 0-RTT.",
+    "cf_set_http3_title": "HTTP/3 (QUIC)",
+    "cf_set_http3_desc": "Serve visitors over HTTP/3.",
+    "cf_set_0rtt_title": "0-RTT Connection Resumption",
+    "cf_set_0rtt_desc": "Faster repeat connections. Replayable requests can reach the origin, so keep it off if non-idempotent endpoints are not protected.",
+    "cf_set_ipv6_title": "IPv6 Compatibility",
+    "cf_set_ipv6_desc": "Serve the zone over IPv6 as well as IPv4.",
+    "cf_set_websockets_title": "WebSockets",
+    "cf_set_websockets_desc": "Allow WebSocket connections to the origin.",
+    "cf_set_brotli_title": "Brotli",
+    "cf_set_brotli_desc": "Compress responses with Brotli for browsers that support it.",
+    "cf_set_always_online_title": "Always Online",
+    "cf_set_always_online_desc": "Serve a cached copy of the site when the origin is down.",
+    "cf_set_email_obfuscation_title": "Email Address Obfuscation",
+    "cf_set_email_obfuscation_desc": "Hide email addresses in page HTML from scrapers.",
+    "cf_set_hotlink_protection_title": "Hotlink Protection",
+    "cf_set_hotlink_protection_desc": "Stop other sites from embedding your images.",
+    "cf_perm_guide_title": "Permissions the API token needs",
+    "cf_perm_note_create": "Create the token at dash.cloudflare.com → My Profile → API Tokens → Create Token → Custom token. Add only the rows for the features you use. Never use the Global API Key.",
+    "cf_perm_note_scope": "Zone Resources: include only the zones Pantau should manage. Account Resources: needed only for Tunnels. Optionally restrict the token to the public IP of this Pantau server (Client IP Address Filtering).",
+    "cf_perm_col_feature": "Pantau feature",
+    "cf_perm_col_perm": "Token permission",
+    "cf_perm_row_zones": "Zones list (always needed)",
+    "cf_perm_row_dns_read": "DNS records: view, Export",
+    "cf_perm_row_dns_edit": "DNS records: add, edit, delete",
+    "cf_perm_row_cache": "Purge Cache",
+    "cf_perm_row_settings": "Zone Settings: view / change",
+    "cf_perm_row_access": "Access Rules: view / add, delete",
+    "cf_perm_row_tunnels": "Tunnels (read-only)",
+    "cf_perm_missing": "The API token lacks a permission: {perm}. In Cloudflare open My Profile → API Tokens → Edit on this token and add it; the token value stays the same.",
+    "cf_tab_access": "Access Rules",
+    "cf_access_intro": "IP Access Rules apply to this zone only and take effect immediately. A block rule also applies to you: do not block your own IP or office range.",
+    "cf_access_mode": "Action",
+    "cf_access_target": "Target",
+    "cf_access_value": "Value",
+    "cf_access_notes": "Note (optional)",
+    "cf_access_col_note": "Note",
+    "cf_access_col_created": "Created",
+    "cf_access_add": "Add rule",
+    "cf_access_search_ph": "Filter by value, note...",
+    "cf_access_empty": "No access rules in this zone.",
+    "cf_access_mode_block": "Block",
+    "cf_access_mode_challenge": "Challenge",
+    "cf_access_mode_js_challenge": "JS Challenge",
+    "cf_access_mode_managed_challenge": "Managed Challenge",
+    "cf_access_mode_whitelist": "Allow",
+    "cf_access_target_ip": "IP address",
+    "cf_access_target_ip_range": "IP range (CIDR)",
+    "cf_access_target_asn": "ASN",
+    "cf_access_target_country": "Country",
+    "cf_access_ph_ip": "203.0.113.7 or 2001:db8::1",
+    "cf_access_ph_ip_range": "203.0.113.0/24",
+    "cf_access_ph_asn": "AS13335",
+    "cf_access_ph_country": "ID",
+    "cf_err_access_value": "Enter a value for the rule",
+    "cf_confirm_access_add_title": "Block traffic",
+    "cf_confirm_access_add_msg": "Block {target} {value} on zone \"{zone}\"? It takes effect immediately and also applies to you if it matches your own address.",
+    "cf_confirm_access_delete_title": "Delete access rule",
+    "cf_confirm_access_delete_msg": "Delete the access rule \"{rule}\" from zone \"{zone}\"? It takes effect immediately.",
+    "cf_access_added": "Access rule added",
+    "cf_access_deleted": "Access rule deleted",
+    "cf_btn_export": "Export",
+    "cf_exporting": "Exporting...",
+    "cf_dns_exported": "DNS records exported",
+    "cf_tunnels_title": "Cloudflare Tunnels",
+    "cf_tunnels_desc": "Read-only status of the cloudflared tunnels of this account.",
+    "cf_tunnels_col_name": "Name",
+    "cf_tunnels_col_status": "Status",
+    "cf_tunnels_col_type": "Type",
+    "cf_tunnels_col_created": "Created",
+    "cf_tunnels_col_active": "Last activity",
+    "cf_tunnels_empty": "No tunnels in this account.",
+    "cf_tunnel_status_healthy": "Healthy",
+    "cf_tunnel_status_degraded": "Degraded",
+    "cf_tunnel_status_down": "Down",
+    "cf_tunnel_status_inactive": "Inactive",
     "cf_record_modal_add": "Add DNS Record",
     "cf_record_modal_edit": "Edit DNS Record",
     "cf_record_type": "Type",
@@ -9969,7 +10158,7 @@ const I18N = {
     "cf_account_modal_intro": "Daftarkan API Token Cloudflare untuk mengelola Zone, DNS, cache, dan pengaturan. Token diverifikasi sebelum disimpan dan tidak pernah dikembalikan oleh API.",
     "cf_account_name_label": "Nama Akun",
     "cf_account_cfid_label": "Account ID (Opsional)",
-    "cf_account_cfid_hint": "Ditemukan pada bilah sisi dashboard Cloudflare di bawah Zone Overview atau Account ID.",
+    "cf_account_cfid_hint": "Kosongkan untuk API Token User biasa: Pantau mencari akun Cloudflare dari zone yang terlihat oleh token (dipakai Tunnels). Isi hanya untuk token milik Account, atau bila token melihat zone dari beberapa akun.",
     "cf_account_token_label": "API Token",
     "cf_account_token_hint": "Dalam mode edit, biarkan kosong untuk mempertahankan token yang sudah ada.",
     "cf_btn_save": "Verifikasi & Simpan",
@@ -10013,6 +10202,84 @@ const I18N = {
     "cf_set_security_level_desc": "Ambang tantangan bagi pengunjung berdasarkan reputasi IP. Under Attack menampilkan halaman tantangan ke semua pengunjung.",
     "cf_set_development_mode_title": "Mode Pengembangan",
     "cf_set_development_mode_desc": "Lewati cache Cloudflare agar perubahan di origin langsung terlihat. Mati otomatis setelah 3 jam.",
+    "cf_set_group_performance": "Performa & Jaringan",
+    "cf_set_tls_1_3_title": "TLS 1.3",
+    "cf_set_tls_1_3_desc": "Izinkan TLS 1.3 untuk pengunjung. zrt mengaktifkannya bersama 0-RTT.",
+    "cf_set_http3_title": "HTTP/3 (QUIC)",
+    "cf_set_http3_desc": "Layani pengunjung lewat HTTP/3.",
+    "cf_set_0rtt_title": "0-RTT Connection Resumption",
+    "cf_set_0rtt_desc": "Koneksi ulang lebih cepat. Request yang dapat diputar ulang bisa sampai ke origin, jadi matikan bila endpoint non-idempoten belum terlindungi.",
+    "cf_set_ipv6_title": "Kompatibilitas IPv6",
+    "cf_set_ipv6_desc": "Layani zone lewat IPv6 selain IPv4.",
+    "cf_set_websockets_title": "WebSockets",
+    "cf_set_websockets_desc": "Izinkan koneksi WebSocket ke origin.",
+    "cf_set_brotli_title": "Brotli",
+    "cf_set_brotli_desc": "Kompres respons dengan Brotli untuk browser yang mendukungnya.",
+    "cf_set_always_online_title": "Always Online",
+    "cf_set_always_online_desc": "Sajikan salinan cache situs saat origin mati.",
+    "cf_set_email_obfuscation_title": "Penyamaran Alamat Email",
+    "cf_set_email_obfuscation_desc": "Sembunyikan alamat email di HTML halaman dari scraper.",
+    "cf_set_hotlink_protection_title": "Hotlink Protection",
+    "cf_set_hotlink_protection_desc": "Cegah situs lain menyematkan gambar Anda.",
+    "cf_perm_guide_title": "Izin yang dibutuhkan API token",
+    "cf_perm_note_create": "Buat token di dash.cloudflare.com → My Profile → API Tokens → Create Token → Custom token. Tambahkan hanya baris untuk fitur yang dipakai. Jangan pernah memakai Global API Key.",
+    "cf_perm_note_scope": "Zone Resources: sertakan hanya zone yang dikelola Pantau. Account Resources: hanya perlu untuk Tunnels. Opsional, batasi token ke IP publik server Pantau ini (Client IP Address Filtering).",
+    "cf_perm_col_feature": "Fitur Pantau",
+    "cf_perm_col_perm": "Izin token",
+    "cf_perm_row_zones": "Daftar zone (selalu diperlukan)",
+    "cf_perm_row_dns_read": "DNS record: lihat, Export",
+    "cf_perm_row_dns_edit": "DNS record: tambah, ubah, hapus",
+    "cf_perm_row_cache": "Purge Cache",
+    "cf_perm_row_settings": "Zone Settings: lihat / ubah",
+    "cf_perm_row_access": "Access Rules: lihat / tambah, hapus",
+    "cf_perm_row_tunnels": "Tunnels (hanya baca)",
+    "cf_perm_missing": "API token kekurangan izin: {perm}. Di Cloudflare buka My Profile → API Tokens → Edit pada token ini lalu tambahkan; nilai token tetap sama.",
+    "cf_tab_access": "Access Rules",
+    "cf_access_intro": "IP Access Rule hanya berlaku untuk zone ini dan langsung aktif. Aturan block juga berlaku untuk Anda: jangan memblokir IP atau rentang kantor Anda sendiri.",
+    "cf_access_mode": "Aksi",
+    "cf_access_target": "Target",
+    "cf_access_value": "Nilai",
+    "cf_access_notes": "Catatan (opsional)",
+    "cf_access_col_note": "Catatan",
+    "cf_access_col_created": "Dibuat",
+    "cf_access_add": "Tambah aturan",
+    "cf_access_search_ph": "Filter menurut nilai, catatan...",
+    "cf_access_empty": "Belum ada access rule di zone ini.",
+    "cf_access_mode_block": "Blokir",
+    "cf_access_mode_challenge": "Challenge",
+    "cf_access_mode_js_challenge": "JS Challenge",
+    "cf_access_mode_managed_challenge": "Managed Challenge",
+    "cf_access_mode_whitelist": "Izinkan",
+    "cf_access_target_ip": "Alamat IP",
+    "cf_access_target_ip_range": "Rentang IP (CIDR)",
+    "cf_access_target_asn": "ASN",
+    "cf_access_target_country": "Negara",
+    "cf_access_ph_ip": "203.0.113.7 atau 2001:db8::1",
+    "cf_access_ph_ip_range": "203.0.113.0/24",
+    "cf_access_ph_asn": "AS13335",
+    "cf_access_ph_country": "ID",
+    "cf_err_access_value": "Isi nilai untuk aturan",
+    "cf_confirm_access_add_title": "Blokir lalu lintas",
+    "cf_confirm_access_add_msg": "Blokir {target} {value} di zone \"{zone}\"? Langsung berlaku dan juga mengenai Anda bila cocok dengan alamat Anda sendiri.",
+    "cf_confirm_access_delete_title": "Hapus access rule",
+    "cf_confirm_access_delete_msg": "Hapus access rule \"{rule}\" dari zone \"{zone}\"? Langsung berlaku.",
+    "cf_access_added": "Access rule ditambahkan",
+    "cf_access_deleted": "Access rule dihapus",
+    "cf_btn_export": "Ekspor",
+    "cf_exporting": "Mengekspor...",
+    "cf_dns_exported": "DNS record diekspor",
+    "cf_tunnels_title": "Cloudflare Tunnels",
+    "cf_tunnels_desc": "Status hanya-baca dari tunnel cloudflared akun ini.",
+    "cf_tunnels_col_name": "Nama",
+    "cf_tunnels_col_status": "Status",
+    "cf_tunnels_col_type": "Tipe",
+    "cf_tunnels_col_created": "Dibuat",
+    "cf_tunnels_col_active": "Aktivitas terakhir",
+    "cf_tunnels_empty": "Belum ada tunnel di akun ini.",
+    "cf_tunnel_status_healthy": "Sehat",
+    "cf_tunnel_status_degraded": "Terdegradasi",
+    "cf_tunnel_status_down": "Mati",
+    "cf_tunnel_status_inactive": "Tidak aktif",
     "cf_record_modal_add": "Tambah Record DNS",
     "cf_record_modal_edit": "Ubah Record DNS",
     "cf_record_type": "Tipe",
@@ -26386,6 +26653,7 @@ async function onSelectCfAccount(accId, keep) {
   }
   if (prompt) prompt.style.display = 'none';
   if (container) container.style.display = 'flex';
+  cfTunnelsReset();
   if (!keep) {
     await loadCfZones(selectedCfAccountId);
   }
@@ -26395,6 +26663,7 @@ async function refreshCfSection() {
   await loadCfAccounts();
   if (selectedCfAccountId) {
     await loadCfZones(selectedCfAccountId);
+    if (document.getElementById('cfTunnelsContainer')?.open) await loadCfTunnels();
   }
 }
 
@@ -26407,9 +26676,11 @@ async function loadCfZones(accId) {
     const res = await fetch(`/api/cloudflare/accounts/${accId}/zones`);
     const data = await res.json();
     if (!res.ok) {
-      showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to load zones'), 'error');
+      setCfPerm('cfZonesPerm', 'zones', data);
+      if (!data.forbidden) showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to load zones'), 'error');
       cfZonesCache = [];
     } else {
+      setCfPerm('cfZonesPerm', null);
       cfZonesCache = Array.isArray(data.zones) ? data.zones : [];
     }
   } catch (e) {
@@ -26619,16 +26890,21 @@ function switchCfZoneTab(tab) {
   const pDns = document.getElementById('cfZonePanelDns');
   const pCache = document.getElementById('cfZonePanelCache');
   const pSettings = document.getElementById('cfZonePanelSettings');
+  const pAccess = document.getElementById('cfZonePanelAccess');
   if (pDns) pDns.style.display = tab === 'dns' ? 'flex' : 'none';
   if (pCache) pCache.style.display = tab === 'cache' ? 'flex' : 'none';
   if (pSettings) pSettings.style.display = tab === 'settings' ? 'flex' : 'none';
+  if (pAccess) pAccess.style.display = tab === 'access' ? 'flex' : 'none';
+  setCfPerm('cfZonePerm', null);
   if (tab === 'dns') loadCfDnsRecords();
   else if (tab === 'settings') loadCfZoneSettings();
+  else if (tab === 'access') loadCfAccessRules();
 }
 
 async function refreshCurrentCfZoneTab() {
   if (currentCfZoneTab === 'dns') await loadCfDnsRecords();
   else if (currentCfZoneTab === 'settings') await loadCfZoneSettings();
+  else if (currentCfZoneTab === 'access') await loadCfAccessRules();
 }
 
 async function loadCfDnsRecords() {
@@ -26640,9 +26916,11 @@ async function loadCfDnsRecords() {
     const res = await fetch(`/api/cloudflare/accounts/${selectedCfAccountId}/zones/${currentCfZone.id}/dns`);
     const data = await res.json();
     if (!res.ok) {
-      showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to load DNS records'), 'error');
+      setCfPerm('cfZonePerm', 'dns_read', data);
+      if (!data.forbidden) showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to load DNS records'), 'error');
       cfDnsRecords = [];
     } else {
+      setCfPerm('cfZonePerm', null);
       cfDnsRecords = Array.isArray(data.records) ? data.records : [];
     }
   } catch (e) {
@@ -26710,7 +26988,7 @@ async function toggleCfRecordProxied(recordId, btn) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to update record'), 'error');
+      showToast(t('error_prefix', 'Error: ') + cfErrMsg(data, 'Failed to update record', 'dns'), 'error');
       return;
     }
     showToast(t('cf_record_saved', 'DNS record saved successfully'), 'success');
@@ -26823,7 +27101,7 @@ async function submitCfRecordModal() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      setError(data.error || 'Server error');
+      setError(cfErrMsg(data, 'Server error', 'dns'));
       return;
     }
     closeModal('cfRecordModal');
@@ -26852,7 +27130,7 @@ async function deleteCfRecord(recordId, btn) {
     const res = await fetch(`/api/cloudflare/accounts/${selectedCfAccountId}/zones/${currentCfZone.id}/dns/${recordId}`, { method: 'DELETE' });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) {
-      showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to delete record'), 'error');
+      showToast(t('error_prefix', 'Error: ') + cfErrMsg(data, 'Failed to delete record', 'dns'), 'error');
       return;
     }
     showToast(t('cf_record_deleted', 'DNS record deleted'), 'info');
@@ -26883,7 +27161,7 @@ async function submitCfPurgeEverything() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) {
-      showToast(t('error_prefix', 'Error: ') + (data.error || 'Purge failed'), 'error');
+      showToast(t('error_prefix', 'Error: ') + cfErrMsg(data, 'Purge failed', 'cache'), 'error');
       return;
     }
     showToast(t('cf_cache_purged', 'Cache purged successfully'), 'success');
@@ -26920,7 +27198,7 @@ async function submitCfPurgeUrls() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) {
-      showToast(t('error_prefix', 'Error: ') + (data.error || 'Purge failed'), 'error');
+      showToast(t('error_prefix', 'Error: ') + cfErrMsg(data, 'Purge failed', 'cache'), 'error');
       return;
     }
     showToast(t('cf_cache_purged', 'Cache purged successfully'), 'success');
@@ -26941,10 +27219,12 @@ async function loadCfZoneSettings() {
     const res = await fetch(`/api/cloudflare/accounts/${selectedCfAccountId}/zones/${currentCfZone.id}/settings`);
     const data = await res.json();
     if (!res.ok) {
-      showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to load settings'), 'error');
+      setCfPerm('cfZonePerm', 'settings', data);
+      if (!data.forbidden) showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to load settings'), 'error');
       cfZoneSettings = [];
       cfZoneSettingsOptions = {};
     } else {
+      setCfPerm('cfZonePerm', null);
       cfZoneSettings = Array.isArray(data.settings) ? data.settings : [];
       cfZoneSettingsOptions = data.options || {};
     }
@@ -26957,7 +27237,8 @@ async function loadCfZoneSettings() {
 }
 
 const CF_SETTING_GROUPS = [
-  { key: 'security', ids: ['ssl', 'min_tls_version', 'always_use_https', 'automatic_https_rewrites', 'security_level'] },
+  { key: 'security', ids: ['ssl', 'min_tls_version', 'tls_1_3', 'always_use_https', 'automatic_https_rewrites', 'security_level'] },
+  { key: 'performance', ids: ['http3', '0rtt', 'ipv6', 'websockets', 'brotli', 'always_online'] },
   { key: 'development', ids: ['development_mode'] }
 ];
 
@@ -27033,7 +27314,7 @@ async function updateCfZoneSetting(settingId, nextValue, el) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      showToast(t('error_prefix', 'Error: ') + (data.error || 'Failed to update setting'), 'error');
+      showToast(t('error_prefix', 'Error: ') + cfErrMsg(data, 'Failed to update setting', 'settings'), 'error');
       await loadCfZoneSettings();
       return;
     }
@@ -27048,6 +27329,303 @@ async function updateCfZoneSetting(settingId, nextValue, el) {
     if (spinner && spinner.parentElement) spinner.parentElement.removeChild(spinner);
     if (ctl) ctl.disabled = false;
   }
+}
+
+// ---- Permission hints, IP Access Rules, DNS export and Tunnels (ADR-0075) ----
+// The API answers 400 + forbidden:true when Cloudflare refused the token (401/403), so the UI can name the missing permission.
+const CF_PERM = {
+  zones: 'Zone → Zone → Read',
+  dns_read: 'Zone → DNS → Read',
+  dns: 'Zone → DNS → Edit (Read to view / export)',
+  cache: 'Zone → Cache Purge → Purge',
+  settings: 'Zone → Zone Settings → Edit (Read to view)',
+  access: 'Zone → Firewall Services → Edit (Read to view)',
+  tunnels: 'Account → Cloudflare Tunnel → Read'
+};
+
+function cfPermHint(kind) {
+  const perm = CF_PERM[kind];
+  if (!perm) return '';
+  return t('cf_perm_missing', 'The API token lacks a permission: {perm}. In Cloudflare open My Profile → API Tokens → Edit on this token and add it; the token value stays the same.').replace('{perm}', perm);
+}
+
+// cfErrMsg: the server's message, plus the permission to add when Cloudflare refused the token.
+function cfErrMsg(data, fallback, kind) {
+  const msg = (data && data.error) || fallback;
+  return data && data.forbidden && kind ? msg + ' — ' + cfPermHint(kind) : msg;
+}
+
+// setCfPerm fills a .cf-perm banner. Without data it hides it. A forbidden answer shows the missing permission;
+// any other error is shown too when `always` is set (panels that have no toast of their own).
+function setCfPerm(elId, kind, data, always) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const forbidden = !!(data && data.forbidden && kind);
+  if (!data || !data.error || (!forbidden && !always)) {
+    el.style.display = 'none';
+    el.textContent = '';
+    return;
+  }
+  const head = forbidden ? `<div>${escapeHtml(cfPermHint(kind))}</div>` : '';
+  el.innerHTML = `${svgIcon('shield-alert', 'icon-sm')}<div>${head}<div class="mono" style="opacity:.85;${forbidden ? 'margin-top:2px;' : ''}">${escapeHtml(data.error)}</div></div>`;
+  el.style.display = 'flex';
+}
+
+function cfFmtDate(iso) {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? '-' : d.toLocaleString();
+}
+
+// --- IP Access Rules ---
+const CF_ACCESS_MODES = ['block', 'challenge', 'js_challenge', 'managed_challenge', 'whitelist'];
+const CF_ACCESS_TARGETS = ['ip', 'ip_range', 'asn', 'country'];
+let cfAccessRules = [];
+
+function fillCfAccessSelects(modes, targets) {
+  const fill = (id, list, prefix) => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const prev = sel.value;
+    sel.innerHTML = list.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(t(prefix + v, cfOptionLabel(v)))}</option>`).join('');
+    if (prev && list.includes(prev)) sel.value = prev;
+  };
+  fill('cfAccessMode', modes, 'cf_access_mode_');
+  fill('cfAccessTarget', targets, 'cf_access_target_');
+  onCfAccessTargetChange();
+}
+
+function onCfAccessTargetChange() {
+  const target = document.getElementById('cfAccessTarget')?.value || 'ip';
+  const input = document.getElementById('cfAccessValue');
+  if (input) input.placeholder = t('cf_access_ph_' + target, '');
+}
+
+async function loadCfAccessRules() {
+  if (!selectedCfAccountId || !currentCfZone) return;
+  const tbody = document.getElementById('cfAccessTableBody');
+  if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-muted);">${t('loading', 'Loading...')}</td></tr>`;
+  let data = {};
+  try {
+    const res = await fetch(`/api/cloudflare/accounts/${selectedCfAccountId}/zones/${currentCfZone.id}/access-rules`);
+    data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setCfPerm('cfZonePerm', 'access', data, true);
+      cfAccessRules = [];
+    } else {
+      setCfPerm('cfZonePerm', null);
+      cfAccessRules = Array.isArray(data.rules) ? data.rules : [];
+    }
+  } catch (e) {
+    setCfPerm('cfZonePerm', 'access', { error: e.message }, true);
+    cfAccessRules = [];
+  }
+  fillCfAccessSelects(Array.isArray(data.modes) && data.modes.length ? data.modes : CF_ACCESS_MODES, Array.isArray(data.targets) && data.targets.length ? data.targets : CF_ACCESS_TARGETS);
+  renderCfAccessTable();
+}
+
+function renderCfAccessTable() {
+  const tbody = document.getElementById('cfAccessTableBody');
+  const empty = document.getElementById('cfAccessEmptyState');
+  if (!tbody || !empty) return;
+  const q = (document.getElementById('cfAccessSearchInput')?.value || '').toLowerCase().trim();
+  const rows = q ? cfAccessRules.filter(r => (r.value || '').toLowerCase().includes(q) || (r.notes || '').toLowerCase().includes(q) || (r.mode || '').toLowerCase().includes(q) || (r.target || '').toLowerCase().includes(q)) : cfAccessRules;
+  if (rows.length === 0) {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  tbody.innerHTML = rows.map(r => {
+    const badge = r.mode === 'block' ? 'badge-down' : (r.mode === 'whitelist' ? 'badge-healthy' : 'badge-warning');
+    return `<tr>
+      <td><span class="badge ${badge}">${escapeHtml(t('cf_access_mode_' + r.mode, cfOptionLabel(r.mode)))}</span></td>
+      <td style="font-size:var(--fs-xs);">${escapeHtml(t('cf_access_target_' + r.target, r.target))}</td>
+      <td class="mono" style="font-weight:600;word-break:break-all;">${escapeHtml(r.value)}</td>
+      <td style="font-size:var(--fs-xs);color:var(--text-muted);">${escapeHtml(r.notes || '-')}</td>
+      <td style="font-size:var(--fs-xs);color:var(--text-muted);">${escapeHtml(cfFmtDate(r.created_on))}</td>
+      <td style="text-align:right;white-space:nowrap;"><button type="button" class="btn btn-sm btn-ghost btn-icon text-danger" title="Delete" onclick="deleteCfAccessRule(${jsArg(r.id)}, this)">${svgIcon('trash-2', 'icon-sm')}</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function submitCfAccessRule() {
+  if (!selectedCfAccountId || !currentCfZone) return;
+  const mode = document.getElementById('cfAccessMode')?.value || 'block';
+  const target = document.getElementById('cfAccessTarget')?.value || 'ip';
+  const value = (document.getElementById('cfAccessValue')?.value || '').trim();
+  const notes = (document.getElementById('cfAccessNotes')?.value || '').trim();
+  if (!value) {
+    showToast(t('cf_err_access_value', 'Enter a value for the rule'), 'warning');
+    return;
+  }
+  if (mode === 'block') {
+    const confirmed = await showConfirm({
+      title: t('cf_confirm_access_add_title', 'Block traffic'),
+      message: t('cf_confirm_access_add_msg', 'Block {target} {value} on zone "{zone}"? It takes effect immediately and also applies to you if it matches your own address.')
+        .replace('{target}', t('cf_access_target_' + target, target)).replace('{value}', value).replace('{zone}', currentCfZone.name || ''),
+      confirmText: t('cf_access_mode_block', 'Block'),
+      danger: true
+    });
+    if (!confirmed) return;
+  }
+  const btn = document.getElementById('btnCfAccessAdd');
+  const restore = SP.busy(btn, t('working', 'Working...'));
+  try {
+    const res = await fetch(`/api/cloudflare/accounts/${selectedCfAccountId}/zones/${currentCfZone.id}/access-rules`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode, target, value, notes })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(t('error_prefix', 'Error: ') + cfErrMsg(data, 'Failed to add rule', 'access'), 'error');
+      return;
+    }
+    const v = document.getElementById('cfAccessValue');
+    const n = document.getElementById('cfAccessNotes');
+    if (v) v.value = '';
+    if (n) n.value = '';
+    showToast(t('cf_access_added', 'Access rule added'), 'success');
+    await loadCfAccessRules();
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+  } finally {
+    restore();
+  }
+}
+
+async function deleteCfAccessRule(ruleId, btn) {
+  if (!selectedCfAccountId || !currentCfZone) return;
+  const rule = cfAccessRules.find(r => r.id === ruleId);
+  const label = rule ? `${t('cf_access_mode_' + rule.mode, rule.mode)} ${rule.value}` : `#${ruleId}`;
+  const confirmed = await showConfirm({
+    title: t('cf_confirm_access_delete_title', 'Delete access rule'),
+    message: t('cf_confirm_access_delete_msg', 'Delete the access rule "{rule}" from zone "{zone}"? It takes effect immediately.').replace('{rule}', label).replace('{zone}', currentCfZone.name || ''),
+    confirmText: t('delete', 'Delete'),
+    danger: true
+  });
+  if (!confirmed) return;
+  const restore = SP.busy(btn, t('cf_deleting_record', 'Deleting...'));
+  try {
+    const res = await fetch(`/api/cloudflare/accounts/${selectedCfAccountId}/zones/${currentCfZone.id}/access-rules/${ruleId}`, { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      showToast(t('error_prefix', 'Error: ') + cfErrMsg(data, 'Failed to delete rule', 'access'), 'error');
+      return;
+    }
+    showToast(t('cf_access_deleted', 'Access rule deleted'), 'info');
+    await loadCfAccessRules();
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+  } finally {
+    restore();
+  }
+}
+
+// --- DNS export (BIND file) ---
+async function exportCfDns() {
+  if (!selectedCfAccountId || !currentCfZone) return;
+  const btn = document.getElementById('btnCfDnsExport');
+  const restore = SP.busy(btn, t('cf_exporting', 'Exporting...'));
+  try {
+    const res = await fetch(`/api/cloudflare/accounts/${selectedCfAccountId}/zones/${currentCfZone.id}/dns/export`);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setCfPerm('cfZonePerm', 'dns_read', data);
+      showToast(t('error_prefix', 'Error: ') + cfErrMsg(data, 'Export failed', 'dns_read'), 'error');
+      return;
+    }
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = (currentCfZone.name || currentCfZone.id) + '.zone';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    showToast(t('cf_dns_exported', 'DNS records exported'), 'success');
+  } catch (e) {
+    showToast(t('error_prefix', 'Error: ') + e.message, 'error');
+  } finally {
+    restore();
+  }
+}
+
+// --- Tunnels (read-only, loaded when the card is opened) ---
+let cfTunnels = [];
+let cfTunnelsAcc = null;
+
+function cfTunnelsReset() {
+  if (cfTunnelsAcc === selectedCfAccountId) return;
+  cfTunnelsAcc = selectedCfAccountId;
+  cfTunnels = [];
+  const tbody = document.getElementById('cfTunnelsTableBody');
+  if (tbody) tbody.innerHTML = '';
+  const cnt = document.getElementById('cfTunnelsCount');
+  if (cnt) cnt.textContent = '-';
+  const empty = document.getElementById('cfTunnelsEmpty');
+  if (empty) empty.style.display = 'none';
+  setCfPerm('cfTunnelsPerm', null);
+  const det = document.getElementById('cfTunnelsContainer');
+  if (det && det.open && selectedCfAccountId) loadCfTunnels();
+}
+
+function onCfTunnelsToggle(el) {
+  if (el.open && selectedCfAccountId && !cfTunnels.length && !document.getElementById('cfTunnelsTableBody')?.children.length) loadCfTunnels();
+}
+
+async function loadCfTunnels() {
+  if (!selectedCfAccountId) return;
+  const accId = selectedCfAccountId;
+  const tbody = document.getElementById('cfTunnelsTableBody');
+  const empty = document.getElementById('cfTunnelsEmpty');
+  if (tbody) tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-muted);">${t('loading', 'Loading...')}</td></tr>`;
+  if (empty) empty.style.display = 'none';
+  try {
+    const res = await fetch(`/api/cloudflare/accounts/${accId}/tunnels`);
+    const data = await res.json().catch(() => ({}));
+    if (accId !== selectedCfAccountId) return;
+    if (!res.ok) {
+      setCfPerm('cfTunnelsPerm', 'tunnels', data, true);
+      cfTunnels = [];
+    } else {
+      setCfPerm('cfTunnelsPerm', null);
+      cfTunnels = Array.isArray(data.tunnels) ? data.tunnels : [];
+    }
+  } catch (e) {
+    if (accId !== selectedCfAccountId) return;
+    setCfPerm('cfTunnelsPerm', 'tunnels', { error: e.message }, true);
+    cfTunnels = [];
+  }
+  renderCfTunnels();
+}
+
+function renderCfTunnels() {
+  const tbody = document.getElementById('cfTunnelsTableBody');
+  const empty = document.getElementById('cfTunnelsEmpty');
+  const cnt = document.getElementById('cfTunnelsCount');
+  if (cnt) cnt.textContent = String(cfTunnels.length);
+  if (!tbody || !empty) return;
+  const failed = document.getElementById('cfTunnelsPerm')?.style.display === 'flex';
+  if (cfTunnels.length === 0) {
+    tbody.innerHTML = '';
+    empty.style.display = failed ? 'none' : 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  const cls = { healthy: 'badge-healthy', degraded: 'badge-degraded', down: 'badge-down', inactive: 'badge-unknown' };
+  tbody.innerHTML = cfTunnels.map(tn => {
+    const st = tn.status || 'inactive';
+    const last = st === 'healthy' || st === 'degraded' ? tn.conns_active_at : tn.conns_inactive_at;
+    return `<tr>
+      <td style="font-weight:600;word-break:break-all;">${escapeHtml(tn.name)}</td>
+      <td><span class="badge ${cls[st] || 'badge-unknown'}">${escapeHtml(t('cf_tunnel_status_' + st, st))}</span></td>
+      <td class="mono" style="font-size:var(--fs-xs);">${escapeHtml(tn.tun_type || '-')}</td>
+      <td style="font-size:var(--fs-xs);color:var(--text-muted);">${escapeHtml(cfFmtDate(tn.created_at))}</td>
+      <td style="font-size:var(--fs-xs);color:var(--text-muted);">${escapeHtml(cfFmtDate(last))}</td>
+    </tr>`;
+  }).join('');
 }
 
 /* ===================== Terraform Management ===================== */
