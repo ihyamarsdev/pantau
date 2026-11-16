@@ -29126,7 +29126,7 @@ async function loadTfVarsets() {
   tfVarsets = r.ok ? (r.data.varsets || []) : [];
   const box = tfEl('tfVarsetsList');
   box.style.display = 'flex';
-  if (!tfVarsets.length) { box.innerHTML = tfEmpty(tx('tfx_no_varsets')); return; }
+  if (!tfVarsets.length) { box.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><div class="empty-state-icon">${svgIcon('sliders-horizontal', 'icon-xl')}</div><div class="empty-state-desc">${tfE(tx('tfx_no_varsets'))}</div></div>`; return; }
   box.innerHTML = tfVarsets.map(s => `<div class="card" style="flex-direction:row;align-items:center;justify-content:space-between;gap:12px;">
     <div style="min-width:0;"><b>${tfE(s.name)}</b> ${s.global ? `<span class="badge badge-healthy">${tfE(tx('tfx_global'))}</span>` : ''}
       <div style="font-size:var(--fs-xs);color:var(--text-muted);">${tfE(s.description || '')}</div>
