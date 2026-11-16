@@ -1,0 +1,50 @@
+# VPN / tunnel networks for a containerised Pantau (Settings -> Networks).
+#
+# Two recipes; pick ONE by how the tunnel should live.
+#
+# Recipe A - reuse the host's NetBird daemon (no extra privileges in the container):
+#   the container must share the host network namespace, otherwise the wt0 interface it binds to
+#   does not exist inside the container. Replace the service below with:
+#
+#   services:
+#     pantau:
+#       network_mode: host
+#       volumes:
+#         - ./data:/app/data
+#         - ${HOME}/.ssh/config:/root/.ssh/config:ro
+#         - /usr/bin/netbird:/usr/local/bin/netbird:ro
+#         - /var/run/netbird.sock:/var/run/netbird.sock
+#         - /var/lib/netbird:/var/lib/netbird
+#       environment:
+#         - PANTAU_PORT=8080
+#         - PANTAU_DB=/app/data/pantau.db
+#       # host networking replaces the published ports above: Pantau listens on the host directly.
+#   In Settings -> Networks create the network with driver netbird, mode "shared".
+#   The socket and state are what the CLI uses to reach the daemon: "netbird status" inside the
+#   container must print the host's peer before Pantau can use it (docker exec pantau netbird status).
+#
+# Recipe B - Pantau runs its own NetBird client (this file):
+#   docker compose -f docker-compose.yml -f docker-compose.vpn.yml up -d --build
+#   The image gets the NetBird CLI (checksum-verified), the container may create the interface, and
+#   /var/lib/netbird is a named volume so the peer identity survives a recreate.
+#   In Settings -> Networks create the network with driver netbird, mode "instance", for example
+#   interface wt1 and WireGuard port 51821 (a second account next to the host daemon in recipe A
+#   would also need the host socket, which recipe A already mounts).
+services:
+  pantau:
+    build:
+      context: .
+      args:
+        WITH_NETBIRD: "1"
+    cap_add:
+      - NET_ADMIN # create the WireGuard interface (netbird instance, wg-quick, openvpn)
+      - NET_RAW   # bind an SSH socket to that interface (SO_BINDTODEVICE)
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - ./data:/app/data
+      - ${HOME}/.ssh/config:/root/.ssh/config:ro
+      - netbird-state:/var/lib/netbird
+
+volumes:
+  netbird-state:

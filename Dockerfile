@@ -22,8 +22,25 @@ RUN apk --no-cache add ca-certificates unzip \
  && grep " terraform_${TERRAFORM_VERSION}_linux_${TARGETARCH}.zip\$" "terraform_${TERRAFORM_VERSION}_SHA256SUMS" | sha256sum -c - \
  && unzip -q "terraform_${TERRAFORM_VERSION}_linux_${TARGETARCH}.zip" terraform -d /usr/local/bin
 
+# Optional VPN client binaries for Settings -> Networks. WITH_NETBIRD=1 bakes the NetBird CLI in, so a
+# container can run its own NetBird account (driver mode "instance") without the host's daemon.
+FROM alpine:latest AS vpn
+ARG TARGETARCH
+ARG WITH_NETBIRD=0
+ARG NETBIRD_VERSION=0.83.1
+RUN apk --no-cache add ca-certificates curl tar \
+ && mkdir -p /vpn \
+ && if [ "$WITH_NETBIRD" = "1" ]; then \
+      cd /tmp \
+      && curl -fsSLO "https://github.com/netbirdio/netbird/releases/download/v${NETBIRD_VERSION}/netbird_${NETBIRD_VERSION}_linux_${TARGETARCH}.tar.gz" \
+      && curl -fsSLO "https://github.com/netbirdio/netbird/releases/download/v${NETBIRD_VERSION}/netbird_${NETBIRD_VERSION}_checksums.txt" \
+      && grep " netbird_${NETBIRD_VERSION}_linux_${TARGETARCH}.tar.gz\$" "netbird_${NETBIRD_VERSION}_checksums.txt" | sha256sum -c - \
+      && tar -xzf "netbird_${NETBIRD_VERSION}_linux_${TARGETARCH}.tar.gz" -C /vpn netbird; \
+    fi
+
 FROM alpine:latest
-RUN apk --no-cache add ca-certificates tzdata kubectl ansible-core openssh-client git opentofu
+RUN apk --no-cache add ca-certificates tzdata kubectl ansible-core openssh-client git opentofu openvpn wireguard-tools
+COPY --from=vpn /vpn/ /usr/local/bin/
 COPY --from=infracost /usr/local/bin/infracost /usr/local/bin/infracost
 COPY --from=terraform /usr/local/bin/terraform /usr/local/bin/terraform
 WORKDIR /app
