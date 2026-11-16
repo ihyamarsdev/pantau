@@ -146,42 +146,10 @@ Aturan yang ditegakkan API (400 dengan pesan jelas):
 3. `mode: instance` selalu menambahkan `--disable-dns` (dua instance tidak boleh sama-sama menulis resolver master); `--disable-firewall` disediakan sebagai opsi bila admin mengelola aturan sendiri.
 4. Jumlah proses anak total (`openvpn`, `netbird service run` mode `instance`, `tailscaled` instance, `custom`) maksimal 5.
 
-
-Fakta yang diukur di mesin ini (`netbird` 0.64.1) dan di tracker resmi:
-
-- Satu daemon NetBird = **satu profil aktif**. `netbird profile` hanya menukar akun (`select`), bukan menjalankan dua akun bersamaan (`docs.netbird.io/client/profiles`: "Only one profile is active at a time"). Permintaan multi-akun paralel masih terbuka sejak 2022 (`netbirdio/netbird#446`).
-- Karena itu dua server NetBird **tidak** dilayani oleh dua Network `mode: shared`; `up` kedua akan memindahkan akun dan memutus yang pertama.
-- Jalur yang didukung (dan disarankan tim NetBird di issue tersebut): satu daemon **per** akun — config/state, socket `--daemon-addr`, `--interface-name`, dan `--wireguard-port` sendiri. Itulah `mode: instance`: Pantau menjalankan/mengawasi daemon itu sebagai proses anak, bukan memakai service sistem.
-- **Netmaker tidak butuh ini**: satu `netclient` boleh join banyak network (`join -n <net>`, `list`, `disconnect <network>`, `leave <network>`) dan tiap network dapat interface sendiri. Jadi dua server Netmaker cukup dua Network `netmaker` di daemon yang sama.
-- **Tailscale**: satu tailnet per instance; dua tailnet = dua `tailscaled` dengan state dir + `--socket` sendiri (pola sama dengan `instance`).
-
-Aturan yang ditegakkan API (400 dengan pesan jelas):
-
-1. Paling banyak **satu** Network `netbird` `mode: shared`; Network `netbird` `mode: instance` tanpa batas selain limit proses anak.
-2. `interface_name` dan `wireguard_port` unik di antara semua Network (bind ke iface yang sama = dua jalur bertabrakan).
-3. `mode: instance` selalu menambahkan `--disable-dns` (dua instance tidak boleh sama-sama menulis resolver master); `--disable-firewall` disediakan sebagai opsi bila admin mengelola aturan sendiri.
-4. Jumlah proses anak total (`openvpn`, `netbird service run` mode `instance`, `tailscaled` instance, `custom`) maksimal 5.
-
-
-Fakta yang diukur di mesin ini (`netbird` 0.64.1) dan di tracker resmi:
-
-- Satu daemon NetBird = **satu profil aktif**. `netbird profile` hanya menukar akun (`select`), bukan menjalankan dua akun bersamaan (`docs.netbird.io/client/profiles`: "Only one profile is active at a time"). Permintaan multi-akun paralel masih terbuka sejak 2022 (`netbirdio/netbird#446`).
-- Karena itu dua server NetBird **tidak** dilayani oleh dua Network `mode: shared`; `up` kedua akan memindahkan akun dan memutus yang pertama.
-- Jalur yang didukung (dan disarankan tim NetBird di issue tersebut): satu daemon **per** akun — config/state, socket `--daemon-addr`, `--interface-name`, dan `--wireguard-port` sendiri. Itulah `mode: instance`: Pantau menjalankan/mengawasi daemon itu sebagai proses anak, bukan memakai service sistem.
-- **Netmaker tidak butuh ini**: satu `netclient` boleh join banyak network (`join -n <net>`, `list`, `disconnect <network>`, `leave <network>`) dan tiap network dapat interface sendiri. Jadi dua server Netmaker cukup dua Network `netmaker` di daemon yang sama.
-- **Tailscale**: satu tailnet per instance; dua tailnet = dua `tailscaled` dengan state dir + `--socket` sendiri (pola sama dengan `instance`).
-
-Aturan yang ditegakkan API (400 dengan pesan jelas):
-
-1. Paling banyak **satu** Network `netbird` `mode: shared`; Network `netbird` `mode: instance` tanpa batas selain limit proses anak.
-2. `interface_name` dan `wireguard_port` unik di antara semua Network (bind ke iface yang sama = dua jalur bertabrakan).
-3. `mode: instance` selalu menambahkan `--disable-dns` (dua instance tidak boleh sama-sama menulis resolver master); `--disable-firewall` disediakan sebagai opsi bila admin mengelola aturan sendiri.
-4. Jumlah proses anak total (`openvpn`, `netbird service run` mode `instance`, `tailscaled` instance, `custom`) maksimal 5.
-
 ## Safety dan batas
 
 1. **Gate `vpn_enabled`** (setting, default `0`) harus aktif sebelum `up`/`down`/`Ensure` boleh menjalankan biner vendor; sejajar Terraform Gate. `PUT /api/vpn/gate {enabled}`; UI menampilkan peringatan: driver menjalankan biner dengan privilese master, `custom` menjalankan string shell, `netclient`/`wg-quick` menolak tanpa root.
-2. Validasi: `name` `^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$`; `driver` salah satu nilai; `iface` `^[A-Za-z0-9_.-]{0,15}$`; `config` ≤ 64 KiB (`.ovpn`/`.conf` ≤ 64 KiB), perintah `custom` ≤ 512 byte; maksimal 20 Network dan 3 proses anak (`openvpn`/`wireguard`) bersamaan (409 bila lewat).
+2. Validasi: `name` `^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$`; `driver` salah satu nilai; `iface` `^[A-Za-z0-9_.-]{0,15}$`; `config` ≤ 64 KiB (`.ovpn`/`.conf` ≤ 64 KiB), perintah `custom` ≤ 512 byte; maksimal 20 Network dan 5 proses anak (`openvpn`, `netbird` instance, `tailscaled` instance, `custom`) bersamaan (409 bila lewat), plus aturan unik `iface`/`wireguard_port` di § Multi-akun paralel.
 3. `sh -c` hanya untuk driver `custom` (perintah ditulis admin, di balik gate); driver lain **wajib** `exec.CommandContext` dengan argumen terpisah, tanpa shell.
 4. `Env` proses anak: `PATH`, `HOME=<root>/home`, `LANG=C.UTF-8` (Windows: `PATH`, `USERPROFILE`, `SYSTEMROOT`). Env Pantau lain tidak diwariskan.
 5. Timeout: `Up` 60 detik (openvpn 90 detik, karena handshake), `Down` 20 detik, `Status` 10 detik. Backoff: setelah galat, `Ensure` tidak mencoba lagi sebelum 30 detik; 3 galat berturut → state `error` (auto-up berhenti sampai `Up` manual atau 5 menit).
@@ -243,7 +211,7 @@ Semua di balik `authMiddleware`; `up`/`down` menolak (`409`) bila gate mati. `ho
 
 ## Tiket
 
-Lihat `.scratch/vpn-networks/issues/` (01–10). Urutan: 01 (skema+CRUD) → 02 (dial per OS) → 03 (driver+Detect) → 04 (supervisor+gate) → 05 (choke point) → 06 (API) → 07 (UI settings) → 08 (host form+import) → 09 (inspeksi/status) → 10 (e2e).
+Lihat `.scratch/vpn-networks/issues/` (01–11). Urutan: 01 (skema+CRUD) → 02 (dial per OS) → 03 (driver+Detect) → 04 (supervisor+gate) → 05 (choke point) → 06 (API) → 07 (UI settings) → 08 (host form+import) → 09 (inspeksi/status) → 10 (e2e) → 11 (netbird instance/multi-akun, boleh paralel setelah 04).
 
 ## Verifikasi yang diharapkan
 
