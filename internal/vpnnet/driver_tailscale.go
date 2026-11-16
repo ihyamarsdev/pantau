@@ -35,17 +35,29 @@ func (d tailscaleDriver) Up(ctx context.Context, m *Manager, n Network) error {
 	if v := n.cfg("hostname", ""); v != "" {
 		args = append(args, "--hostname", v)
 	}
-	_, err := m.runCmd(ctx, upTimeout, "tailscale", args...)
+	bin, err := m.vendorBin(n)
+	if err != nil {
+		return err
+	}
+	_, err = m.runCmd(ctx, upTimeout, bin, args...)
 	return err
 }
 
 func (d tailscaleDriver) Down(ctx context.Context, m *Manager, n Network) error {
-	_, err := m.runCmd(ctx, downTimeout, "tailscale", append(d.socketArgs(n), "down")...)
+	bin, err := m.vendorBin(n)
+	if err != nil {
+		return err
+	}
+	_, err = m.runCmd(ctx, downTimeout, bin, append(d.socketArgs(n), "down")...)
 	return err
 }
 
 func (d tailscaleDriver) Status(ctx context.Context, m *Manager, n Network) (Status, error) {
-	out, err := m.runCmd(ctx, statusTimeout, "tailscale", append(d.socketArgs(n), "status", "--json")...)
+	bin, err := m.vendorBin(n)
+	if err != nil {
+		return Status{State: StateDown, Iface: d.DefaultIface(n), Detail: err.Error()}, nil
+	}
+	out, err := m.runCmd(ctx, statusTimeout, bin, append(d.socketArgs(n), "status", "--json")...)
 	if err != nil {
 		return Status{}, err
 	}

@@ -5719,6 +5719,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
               <button class="btn btn-primary btn-sm" onclick="openVpnNetworkModal(0)" data-i18n="vpn_btn_new">New Network</button>
             </div>
             <div id="vpnNetworkList" style="display: flex; flex-direction: column; gap: 10px;"></div>
+            <div id="vpnDriverStatus" style="display: flex; flex-wrap: wrap; gap: 6px; font-size: var(--fs-xs); color: var(--text-muted);"></div>
           </div>
         </div>
         <!-- General Tab -->
@@ -6921,6 +6922,7 @@ const I18N = {
     "vpn_edit_title": "Edit Network",
     "vpn_name_required": "Name is required",
     "vpn_saved": "Network saved",
+    "vpn_driver_missing": "not installed",
     "vpn_saved_value": "stored",
     "vpn_keep_secret": "stored - leave blank to keep",
     "vpn_delete_confirm": "Delete network",
@@ -8764,6 +8766,7 @@ const I18N = {
     "vpn_edit_title": "Ubah Jaringan",
     "vpn_name_required": "Nama wajib diisi",
     "vpn_saved": "Jaringan tersimpan",
+    "vpn_driver_missing": "tidak terpasang",
     "vpn_saved_value": "tersimpan",
     "vpn_keep_secret": "tersimpan - kosongkan untuk mempertahankan",
     "vpn_delete_confirm": "Hapus jaringan",
@@ -12250,6 +12253,7 @@ const VPN_DRIVER_META = {
       { key: 'hostname', label: 'Hostname' },
       { key: 'interface_name', label: 'Interface name', placeholder: 'wt0' },
       { key: 'wireguard_port', label: 'WireGuard port (instance)', placeholder: '51820' },
+      { key: 'bin', label: 'Binary path (optional)', placeholder: '/usr/local/bin/netbird' },
     ],
   },
   netmaker: {
@@ -12259,6 +12263,7 @@ const VPN_DRIVER_META = {
       { key: 'network', label: 'Network name (for disconnect)' },
       { key: 'server', label: 'Server (optional)' },
       { key: 'interface', label: 'Interface (optional)', placeholder: 'netmaker' },
+      { key: 'bin', label: 'Binary path (optional)', placeholder: '/usr/bin/netclient' },
     ],
   },
   openvpn: {
@@ -12267,6 +12272,7 @@ const VPN_DRIVER_META = {
       { key: 'config', label: '.ovpn file content', secret: true, textarea: true },
       { key: 'username', label: 'Username (optional)', secret: true },
       { key: 'password', label: 'Password (optional)', secret: true, password: true },
+      { key: 'bin', label: 'Binary path (optional)', placeholder: '/usr/sbin/openvpn' },
     ],
   },
   wireguard: {
@@ -12274,6 +12280,7 @@ const VPN_DRIVER_META = {
     fields: [
       { key: 'config', label: '.conf file content', secret: true, textarea: true },
       { key: 'interface_name', label: 'Interface name', placeholder: 'wg0' },
+      { key: 'bin', label: 'Binary path (optional)', placeholder: '/usr/bin/wg-quick' },
     ],
   },
   tailscale: {
@@ -12284,6 +12291,7 @@ const VPN_DRIVER_META = {
       { key: 'hostname', label: 'Hostname' },
       { key: 'socket', label: 'tailscaled socket (optional)' },
       { key: 'interface_name', label: 'Interface name', placeholder: 'tailscale0' },
+      { key: 'bin', label: 'Binary path (optional)', placeholder: '/usr/bin/tailscale' },
     ],
   },
   custom: {
@@ -12313,6 +12321,13 @@ async function loadVpnNetworks() {
     state.textContent = vpnGatewayEnabled
       ? t('vpn_gate_on_hint', 'Enabled: vendors run with master privileges on this server.')
       : t('vpn_gate_off_hint', 'Disabled: hosts on a network cannot be reached.');
+  }
+  const drvBox = document.getElementById('vpnDriverStatus');
+  if (drvBox && gate) {
+    drvBox.innerHTML = (gate.drivers || []).map(d => {
+      const ok = !d.error;
+      return `<span class="badge ${ok ? 'badge-healthy' : 'badge-degraded'}" title="${escapeHtml(d.error || d.binary || '')}">${escapeHtml(d.driver)}${ok ? ': ' + escapeHtml((d.version || '').slice(0, 28)) : ': ' + escapeHtml(t('vpn_driver_missing', 'not installed'))}</span>`;
+    }).join('');
   }
   const res = await fetch('/api/vpn/networks');
   vpnNetworks = res.ok ? (await res.json() || []) : [];

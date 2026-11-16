@@ -55,10 +55,14 @@ func (d netbirdDriver) statusArgs(n Network) []string {
 }
 
 func (d netbirdDriver) Up(ctx context.Context, m *Manager, n Network) error {
+	bin, err := m.vendorBin(n)
+	if err != nil {
+		return err
+	}
 	if d.instance(n) {
 		addr := d.daemonAddr(n)
 		if !m.childRunning(n.ID) {
-			if err := m.spawn(n, "netbird", "service", "run",
+			if err := m.spawn(n, bin, "service", "run",
 				"--config", n.Root+"/config.json",
 				"--daemon-addr", addr,
 				"--log-file", n.Root+"/netbird.log"); err != nil {
@@ -97,16 +101,21 @@ func (d netbirdDriver) Up(ctx context.Context, m *Manager, n Network) error {
 			args = append(args, "--disable-firewall")
 		}
 	}
-	_, err := m.runCmd(ctx, upTimeout, "netbird", args...)
+	_, err = m.runCmd(ctx, upTimeout, bin, args...)
 	return err
 }
 
 func (d netbirdDriver) Down(ctx context.Context, m *Manager, n Network) error {
+	bin, binErr := m.vendorBin(n)
 	args := []string{"down"}
 	if addr := d.daemonAddr(n); addr != "" {
 		args = append(args, "--daemon-addr", addr)
 	}
-	out, err := m.runCmd(ctx, downTimeout, "netbird", args...)
+	if binErr != nil {
+		m.stopChild(n.ID)
+		return binErr
+	}
+	out, err := m.runCmd(ctx, downTimeout, bin, args...)
 	m.logf(n, "netbird down: %s", out)
 	m.stopChild(n.ID)
 	return err
@@ -116,7 +125,11 @@ func (d netbirdDriver) Status(ctx context.Context, m *Manager, n Network) (Statu
 	if d.instance(n) && !m.childRunning(n.ID) {
 		return Status{State: StateDown, Iface: d.DefaultIface(n), Detail: "instance not running"}, nil
 	}
-	out, err := m.runCmd(ctx, statusTimeout, "netbird", d.statusArgs(n)...)
+	bin, err := m.vendorBin(n)
+	if err != nil {
+		return Status{State: StateDown, Iface: d.DefaultIface(n), Detail: err.Error()}, nil
+	}
+	out, err := m.runCmd(ctx, statusTimeout, bin, d.statusArgs(n)...)
 	if err != nil {
 		return Status{}, err
 	}

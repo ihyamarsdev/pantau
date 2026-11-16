@@ -36,7 +36,11 @@ func (d openvpnDriver) Up(ctx context.Context, m *Manager, n Network) error {
 		}
 		args = append(args, "--auth-user-pass", auth)
 	}
-	if err := m.spawn(n, "openvpn", args...); err != nil {
+	bin, err := m.vendorBin(n)
+	if err != nil {
+		return err
+	}
+	if err := m.spawn(n, bin, args...); err != nil {
 		return err
 	}
 	if iface := d.iface(n, m); iface != "" {

@@ -26,7 +26,11 @@ func (d wireguardDriver) Up(ctx context.Context, m *Manager, n Network) error {
 	if err := os.WriteFile(d.configPath(n), []byte(cfg), 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", d.configPath(n), err)
 	}
-	out, err := m.runCmd(ctx, upTimeout, "wg-quick", "up", d.configPath(n))
+	bin, err := m.vendorBin(n)
+	if err != nil {
+		return err
+	}
+	out, err := m.runCmd(ctx, upTimeout, bin, "up", d.configPath(n))
 	m.logf(n, "wg-quick up: %s", out)
 	if err != nil {
 		return err
@@ -36,7 +40,11 @@ func (d wireguardDriver) Up(ctx context.Context, m *Manager, n Network) error {
 }
 
 func (d wireguardDriver) Down(ctx context.Context, m *Manager, n Network) error {
-	out, err := m.runCmd(ctx, downTimeout, "wg-quick", "down", d.configPath(n))
+	bin, err := m.vendorBin(n)
+	if err != nil {
+		return err
+	}
+	out, err := m.runCmd(ctx, downTimeout, bin, "down", d.configPath(n))
 	m.logf(n, "wg-quick down: %s", out)
 	return err
 }

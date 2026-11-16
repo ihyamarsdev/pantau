@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -240,32 +241,113 @@ func firstArgLine(out, prefix string) string {
 	return ""
 }
 
+// vendorBins maps a driver to the binary it runs (the custom driver runs commands, not a binary).
+var vendorBins = map[string]string{
+	DriverNetBird:   "netbird",
+	DriverNetMaker:  "netclient",
+	DriverOpenVPN:   "openvpn",
+	DriverWireGuard: "wg-quick",
+	DriverTailscale: "tailscale",
+}
+
+// commonBinDirs covers service managers that hand Pantau a minimal PATH (systemd, containers) and
+// package managers with their own prefix; without them an installed binary looks missing.
+var commonBinDirs = func() []string {
+	dirs := []string{"/usr/local/bin", "/usr/bin", "/bin", "/usr/local/sbin", "/usr/sbin", "/sbin", "/opt/homebrew/bin", "/snap/bin"}
+	if runtime.GOOS == "windows" {
+		for _, env := range []string{"ProgramFiles", "ProgramFiles(x86)", "ProgramData"} {
+			if base := os.Getenv(env); base != "" {
+				dirs = append(dirs, base+"\\NetBird", base+"\\Tailscale", base+"\\OpenVPN\\bin", base+"\\WireGuard")
+			}
+		}
+	}
+	return dirs
+}()
+
+// vendorPATH keeps the inherited PATH but always appends the standard install dirs: a service or container
+// often hands Pantau a minimal PATH, and vendor CLIs are shell scripts that need coreutils too.
+func vendorPATH() string {
+	parts := []string{}
+	seen := map[string]bool{}
+	add := func(dir string) {
+		if dir == "" || seen[dir] {
+			return
+		}
+		seen[dir] = true
+		parts = append(parts, dir)
+	}
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+		add(dir)
+	}
+	for _, dir := range commonBinDirs {
+		add(dir)
+	}
+	return strings.Join(parts, string(os.PathListSeparator))
+}
+
+// resolveVendorBin finds the driver binary: an explicit "bin" config wins, then PATH, then the usual install
+// directories. The error names the binary and where it looked, so the UI can tell the admin what to install.
+func resolveVendorBin(driverName, override string) (string, error) {
+	name := vendorBins[driverName]
+	if name == "" {
+		return "", fmt.Errorf("%s has no binary", driverName)
+	}
+	if override = strings.TrimSpace(override); override != "" {
+		if st, err := os.Stat(override); err == nil && !st.IsDir() {
+			return override, nil
+		}
+		return "", fmt.Errorf("%q does not exist on the Pantau server", override)
+	}
+	if p, err := exec.LookPath(name); err == nil {
+		return p, nil
+	}
+	for _, dir := range commonBinDirs {
+		candidate := filepath.Join(dir, name)
+		if st, err := os.Stat(candidate); err == nil && !st.IsDir() {
+			return candidate, nil
+		}
+		if runtime.GOOS == "windows" {
+			if st, err := os.Stat(candidate + ".exe"); err == nil && !st.IsDir() {
+				return candidate + ".exe", nil
+			}
+		}
+	}
+	return "", fmt.Errorf("%s is not installed on the Pantau server: install it on this machine, or set the network's \"bin\" field to its full path (PATH=%s)", name, os.Getenv("PATH"))
+}
+
+// vendorBin resolves this network's binary, honouring the per-network "bin" override.
+func (m *Manager) vendorBin(n Network) (string, error) {
+	if n.Driver == DriverCustom {
+		return "", fmt.Errorf("the custom driver runs commands, not a binary")
+	}
+	return resolveVendorBin(n.Driver, n.Config["bin"])
+}
+
 // DetectBinary returns the resolved path and version of a vendor binary, for GET /api/vpn/status.
 func DetectBinary(driverName string) (path, version, errText string) {
-	bin := map[string]string{
-		DriverNetBird:   "netbird",
-		DriverNetMaker:  "netclient",
-		DriverOpenVPN:   "openvpn",
-		DriverWireGuard: "wg-quick",
-		DriverTailscale: "tailscale",
-	}[driverName]
-	if bin == "" {
+	if vendorBins[driverName] == "" {
 		return "", "", ""
 	}
-	p, err := exec.LookPath(bin)
+	p, err := resolveVendorBin(driverName, "")
 	if err != nil {
-		return "", "", bin + " not installed"
+		return "", "", err.Error()
+	}
+	if runtime.GOOS == "windows" && driverName == DriverWireGuard {
+		return p, "", "wg-quick is not supported on windows"
+	}
+	if driverName == DriverWireGuard {
+		// wg-quick has no --version: it prints its usage, so the resolved path is the answer.
+		return p, "", ""
 	}
 	args := []string{"version"}
 	if driverName == DriverOpenVPN {
 		args = []string{"--version"}
 	}
-	if driverName == DriverWireGuard {
-		args = []string{"--version"}
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, p, args...).CombinedOutput()
+	cmd := exec.CommandContext(ctx, p, args...)
+	cmd.Env = append(os.Environ(), "PATH="+vendorPATH())
+	out, err := cmd.CombinedOutput()
 	line := strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0])
 	if err != nil {
 		// netclient refuses to even print its version without root; report that instead of a fake version.
@@ -276,9 +358,6 @@ func DetectBinary(driverName string) (path, version, errText string) {
 	}
 	if line == "" {
 		line = p
-	}
-	if runtime.GOOS == "windows" && driverName == DriverWireGuard {
-		return p, line, "wg-quick is not supported on windows"
 	}
 	return p, line, ""
 }

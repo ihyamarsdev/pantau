@@ -22,7 +22,11 @@ func (netmakerDriver) Up(ctx context.Context, m *Manager, n Network) error {
 	if v := n.cfg("interface", ""); v != "" {
 		args = append(args, "-I", v)
 	}
-	out, err := m.runCmd(ctx, upTimeout, "netclient", args...)
+	bin, err := m.vendorBin(n)
+	if err != nil {
+		return err
+	}
+	out, err := m.runCmd(ctx, upTimeout, bin, args...)
 	m.logf(n, "netclient join: %s", out)
 	if err != nil {
 		return err
@@ -35,7 +39,11 @@ func (netmakerDriver) Down(ctx context.Context, m *Manager, n Network) error {
 	if netName == "" {
 		return fmt.Errorf("netclient needs the network name to disconnect: set \"network\"")
 	}
-	out, err := m.runCmd(ctx, downTimeout, "netclient", "disconnect", netName)
+	bin, err := m.vendorBin(n)
+	if err != nil {
+		return err
+	}
+	out, err := m.runCmd(ctx, downTimeout, bin, "disconnect", netName)
 	m.logf(n, "netclient disconnect: %s", out)
 	return err
 }
