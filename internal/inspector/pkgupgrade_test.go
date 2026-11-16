@@ -324,7 +324,7 @@ func TestGetUpgradePreviewHonorsContextCancel(t *testing.T) {
 		}
 		return "", "", 0, nil
 	}
-	ins.factory = func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	ins.factory = func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return mock, nil
 	}
 

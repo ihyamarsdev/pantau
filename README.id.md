@@ -305,6 +305,16 @@ Pantau menginspeksi Host remote melalui perintah SSH non-interaktif, memvalidasi
 - **File Integrity Monitoring**: rule Desired State `file_integrity` membandingkan sha256 berkas pilihan, `preset:auth`, atau semua biner SUID/SGID dengan baseline yang Anda ambil dan konfirmasi; drift menyebut berkas yang berubah, berkas tak terbaca berstatus *not assessed*.
 - **Audit Akun & Kunci SSH**: inventaris read-only akun login, `authorized_keys`, status kata sandi, dan hak sudo yang dicocokkan dengan SSH Key Library lewat sidik jari; menandai kunci lemah dan tidak dikenal, akun UID 0 tambahan, dan kata sandi kosong, plus tampilan **Fleet keys** untuk semua kunci lintas host.
 
+### 34. 🌍 Jaringan VPN / Tunnel per Host (Rute Bertumpuk, Tiap Host Jalurnya Sendiri)
+
+Host privat yang hanya hidup di balik VPN kini dikelola seperti host biasa: **Settings → Networks** mendefinisikan satu jaringan per tunnel, dan host memilih jaringannya di **Add/Edit Host** atau di dialog import. Setiap koneksi SSH ke host itu keluar **terikat ke interface tunnel** (`SO_BINDTODEVICE` di Linux, `IP_UNICAST_IF` di Windows, `IP_BOUND_IF` di macOS), sehingga dua VPN yang mendorong subnet sama — termasuk dua akun NetBird yang membagikan alamat `100.100.x` yang sama — tidak lagi berebut tabel rute.
+
+- **Driver**: `netbird`, `netmaker`, `openvpn` (tempel `.ovpn`, opsional user/password), `wireguard` (`wg-quick`), `tailscale`, dan `custom` (perintah up/down/status milik Anda). Biner dideteksi di **Settings → Networks**; Pantau tidak memasang apa pun.
+- **Menyalakan**: `auto_up` menyalakan tunnel saat host membutuhkannya (singleflight, backoff 30 detik, tiga kali gagal lalu jeda 5 menit), tombol **Up**/**Down** untuk manual, dan 200 baris log terakhir sekali klik. Driver yang memiliki proses (OpenVPN, instance NetBird) adalah anak proses Pantau dan ikut berhenti saat Pantau berhenti.
+- **Dua akun NetBird sekaligus**: satu daemon NetBird hanya memegang satu profil aktif, jadi driver punya `mode: instance` — Pantau menjalankan `netbird service run --config … --daemon-addr …` per jaringan dengan interface dan port WireGuard sendiri (plus `--disable-dns`, agar dua instance tidak berebut resolver). Hanya satu jaringan yang boleh memakai `mode: shared`.
+- **Kegagalan terbaca benar**: tunnel mati menandai host **stale** dengan `network down: <jaringan>`, bukan `down`; bind yang tidak diizinkan gagal tertutup (tidak pernah diam-diam memakai rute default).
+- **Opt-in**: `vpn_enabled` default mati (seperti Terraform Gate) karena biner vendor berjalan dengan privilese master. Kredensial hanya bisa ditulis (`setup_key_set`, `token_set`, …), tidak pernah masuk log, dan ikut System Snapshot terenkripsi (`hosts.network_id` + `vpn_networks`).
+
 ---
 
 ## 🤖 AI Agent (opsional, bawaan Pantau)

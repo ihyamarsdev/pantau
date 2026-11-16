@@ -33,7 +33,7 @@ func hostOpsServer(t *testing.T) (*Server, *store.DB, *sshrunner.MockRunner, int
 func newSFTPRunnerInspector(t *testing.T, db *store.DB, runner *sshrunner.MockRunner, dir string) *inspector.Inspector {
 	t.Helper()
 	runner.SFTPProvider = func() (*sftp.Client, error) { return sftpOverPipe() }
-	return inspector.New(db, func(string, int, string, string) (sshrunner.Runner, error) { return runner, nil }, nil)
+	return inspector.New(db, func(sshrunner.Target) (sshrunner.Runner, error) { return runner, nil }, nil)
 }
 
 // copyFiles is the mock's answer to `cp -a src dst`: it copies the last file of the command into the
@@ -387,7 +387,7 @@ func TestAgentHostOpsTransferJobs(t *testing.T) {
 	defer db.Close()
 	_ = db.SetSetting("agent_approval", "auto")
 	h := itoa(hostID)
-	srv.SetTransferManager(transfer.NewManager(db, func(string, int, string, string) (sshrunner.Runner, error) { return runner, nil }))
+	srv.SetTransferManager(transfer.NewManager(db, func(sshrunner.Target) (sshrunner.Runner, error) { return runner, nil }))
 	destID, err := db.CreateHost(&store.Host{Name: "web-2", Host: "10.0.0.2", Port: 22, User: "root"})
 	if err != nil {
 		t.Fatal(err)

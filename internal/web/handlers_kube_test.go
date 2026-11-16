@@ -29,7 +29,7 @@ func setupKubeTestServer(t *testing.T) (*Server, func(*http.Request)) {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	ins := inspector.New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	ins := inspector.New(db, func(t sshrunner.Target) (sshrunner.Runner, error) {
 		mock := sshrunner.NewMockRunner()
 		mock.DefaultExec = func(cmd string) (string, string, int, error) {
 			return "ok", "", 0, nil
@@ -441,8 +441,8 @@ func TestKubeFailoverReadAndWriteRules(t *testing.T) {
 	}
 
 	// Mock runner factory: fails for 192.0.2.1 (dead), succeeds for 192.0.2.2 (live)
-	factory := func(host string, port int, user, key string) (sshrunner.Runner, error) {
-		if host == "192.0.2.1" {
+	factory := func(target sshrunner.Target) (sshrunner.Runner, error) {
+		if target.Host == "192.0.2.1" {
 			return nil, errors.New("dial tcp: host unreachable")
 		}
 		mock := sshrunner.NewMockRunner()
@@ -517,8 +517,8 @@ func TestKubeFailoverReadAndWriteRules(t *testing.T) {
 	})
 	// Factory connects to 192.0.2.3, but command returns error
 	commandExecuted := false
-	insCommandFail := inspector.New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) {
-		if host == "192.0.2.3" {
+	insCommandFail := inspector.New(db, func(target sshrunner.Target) (sshrunner.Runner, error) {
+		if target.Host == "192.0.2.3" {
 			mock := sshrunner.NewMockRunner()
 			mock.DefaultExec = func(cmd string) (string, string, int, error) {
 				commandExecuted = true
@@ -629,9 +629,9 @@ func TestKubeRunReadFailoverBudget(t *testing.T) {
 
 	var mu sync.Mutex
 	execCounts := map[string]int{}
-	ins := inspector.New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	ins := inspector.New(db, func(target sshrunner.Target) (sshrunner.Runner, error) {
 		m := sshrunner.NewMockRunner()
-		h := host
+		h := target.Host
 		m.DefaultExec = func(cmd string) (string, string, int, error) {
 			mu.Lock()
 			execCounts[h]++

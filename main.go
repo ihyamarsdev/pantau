@@ -28,6 +28,7 @@ import (
 	"pantau/internal/sshrunner"
 	"pantau/internal/store"
 	"pantau/internal/updater"
+	"pantau/internal/vpnnet"
 	"pantau/internal/web"
 )
 
@@ -414,6 +415,16 @@ func main() {
 	server.SetReposDir(filepath.Join(filepath.Dir(dbPath), "repos"))
 	tfDataDir := filepath.Join(filepath.Dir(dbPath), "terraform")
 	server.SetTerraformDataDir(tfDataDir)
+	vpnMgr := vpnnet.NewManager(vpnnet.Options{
+		Root: filepath.Join(filepath.Dir(dbPath), "vpn"),
+		DB:   db,
+		Gate: func() bool {
+			v, err := db.GetSetting("vpn_enabled")
+			return err == nil && v == "1"
+		},
+	})
+	server.SetVPNManager(vpnMgr)
+	defer vpnMgr.Shutdown()
 	_, _ = db.MarkTFRunsInterrupted()
 	// Clean up awaiting_approval runs whose run directory was lost
 	if awaitingRuns, err := db.ListTFRuns(0, 200); err == nil {

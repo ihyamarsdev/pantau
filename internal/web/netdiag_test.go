@@ -217,7 +217,7 @@ Resume: pmtu 1500 hops 3 back 3`, "", 0, nil
 		return "", "", 0, nil
 	}
 
-	factory := func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	factory := func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return mockRunner, nil
 	}
 	ins := inspector.New(db, factory, nil)

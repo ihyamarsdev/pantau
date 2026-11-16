@@ -45,10 +45,10 @@ CREATE TABLE IF NOT EXISTS vpn_networks (
 
 - `hosts.network_id INTEGER NOT NULL DEFAULT 0` via `d.alterAddColumn("hosts","network_id","INTEGER NOT NULL DEFAULT 0")` di `migrate()` (`internal/store/db.go`), ditambahkan ke `hostSelectCols`, `CreateHost`, `UpdateHost`, `scanHost`; `0` = langsung (perilaku lama, tanpa migrasi data).
 - `store.Host` mendapat `NetworkID int64 \`json:"network_id"\``.
-- `SnapshotPayload` mendapat `VPNNetworks []SnapshotVPNNetwork` (semua kolom, `config` mentah) agar restore membawa jalur; urutan restore: Network sebelum Host. Berkas ini ikut terenkripsi seperti `ssh_keys.private_key`.
+- `SnapshotPayload` mendapat `VPNNetworks []store.VPNNetwork` (semua kolom, `config` mentah) agar restore membawa jalur; urutan restore: Network sebelum Host. Berkas ini ikut terenkripsi seperti `ssh_keys.private_key`.
 - Hapus Network yang masih dipakai Host: `409` dengan jumlah Host pemakai; tidak ada cascade diam-diam. `DELETE /api/vpn/networks/{id}?force=1` melepas Host (`network_id=0`) setelah konfirmasi UI.
 
-## Kontrak Go: paket `internal/vpnnet` (stdlib + `golang.org/x/sys`; TANPA akses DB)
+## Kontrak Go: paket `internal/vpnnet` (stdlib + `golang.org/x/sys` + `internal/store` untuk baris `vpn_networks`)
 
 ```go
 package vpnnet
@@ -101,7 +101,7 @@ func (m *Manager) Refresh(ctx context.Context, networkID int64) (Status, error)
 func (m *Manager) Up(ctx context.Context, networkID int64) (Status, error)
 func (m *Manager) Down(ctx context.Context, networkID int64) error
 func (m *Manager) Status(networkID int64) Status                   // dari cache
-func (m *Manager) ForEach(fn func(Network, Status))                 // untuk loop status latar
+func (m *Manager) ForEach(fn func(store.VPNNetwork, Status))        // untuk daftar/loop status
 func (m *Manager) Shutdown()                                       // matikan proses anak (openvpn/wireguard)
 ```
 
@@ -206,8 +206,12 @@ Semua di balik `authMiddleware`; `up`/`down` menolak (`409`) bila gate mati. `ho
 1. **Settings → Networks** (tab baru di `#settingsTabs`, pola `switchSettingsTab`): daftar kartu Network (nama, driver, badge `Tunnel State`, interface, jumlah Host, tombol Up/Down/Edit/Hapus, log terakhir). Dialog tambah/edit: pilih driver → bidang `config` yang sesuai (rahasia write-only, tampil `•••• sudah disimpan`), pilih `iface` dari `GET /api/vpn/interfaces` (opsi "default driver" = kosong), `enabled`, `auto_up`. Peringatan gate di atas tab bila `vpn_enabled` mati.
 2. **Add/Edit Host**: select **Network** di antara *Host Group* dan *Kubernetes Mode* (`#hostNetwork`), opsi pertama "Direct (tanpa VPN)". Badge kecil di kartu Host pada grid yang menampilkan nama Network; badge merah bila `last_state != up`.
 3. **Baris diagnostik**: bila `POST /api/hosts/{id}/test` gagal karena jalur, toast menampilkan `network down: <name>` + tombol ke tab Networks.
-4. **Import** (`#importHostsModal`): select `#importNetworkId` "Network untuk host yang diimpor" (default Direct), di samping `#importKeyId`, dikirim pada `importSubmit()` commit; tabel `#importPreviewBody` menampilkan kolom Network dan mengizinkannya diubah per baris (pola input `import-group-input` yang sudah ada). `importHostInput` mendapat `network_id`.
+4. **Import** (`#importHostsModal`): select `#importNetworkId` "Network untuk host yang diimpor" (default Direct), di samping `#importKeyId`, dikirim pada `importSubmit()` commit; tabel `#importPreviewBody` menampilkan kolom Network per baris (`.import-net`); memilih di select global mengisi semua baris, dan pilihan per baris menang (`network_id` per `importHostInput`). `importHostInput` mendapat `network_id`.
 5. i18n: semua string lewat `t()`/`tx()` dengan entri `vpn_*` di kedua bahasa (EN/ID), bukan teks keras.
+
+## Status implementasi
+
+Sudah diimplementasikan: skema + store, dial per OS, keenam driver (termasuk `mode: instance`), manager + gate, choke point `sshrunner.Target`, API `/api/vpn/*`, UI Settings → Networks + select Network di form host & import, badge di kartu host, `stale` saat `network down`, tes unit (`vpnnet/path_test.go`, `store/vpn_test.go`) dan e2e (`e2e/tests/vpn-networks.e2e.ts`).
 
 ## Tiket
 

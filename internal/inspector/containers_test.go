@@ -79,7 +79,7 @@ func TestInspectHostStoresContainers(t *testing.T) {
 		t.Fatal(err)
 	}
 	mock := inspectionDockerMock("db-main|postgres:13|Up 3 hours (healthy)|5432/tcp\n", "", 0)
-	ins := New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	ins := New(db, func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return mock, nil
 	}, nil)
 
@@ -118,7 +118,7 @@ func TestInspectHostStoresEmptyContainersWhenDockerIsMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 	mock := inspectionDockerMock(dockerNotInstalled+"\n", "", 0)
-	ins := New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	ins := New(db, func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return mock, nil
 	}, nil)
 
@@ -151,7 +151,7 @@ func TestInspectHostKeepsContainersWhenDockerFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	mock := inspectionDockerMock("", "permission denied while trying to connect to the Docker daemon socket", 1)
-	ins := New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	ins := New(db, func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return mock, nil
 	}, nil)
 

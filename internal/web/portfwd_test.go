@@ -35,7 +35,7 @@ func setupPortFwdTestServer(t *testing.T, runner *sshrunner.MockRunner) (*Server
 	}
 	t.Cleanup(func() { db.Close() })
 
-	factory := func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	factory := func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return runner, nil
 	}
 	ins := inspector.New(db, factory, nil)

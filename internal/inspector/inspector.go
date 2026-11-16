@@ -18,6 +18,7 @@ import (
 	"pantau/internal/notify"
 	"pantau/internal/sshrunner"
 	"pantau/internal/store"
+	"pantau/internal/vpnnet"
 )
 
 func shellQuote(s string) string {
@@ -44,6 +45,7 @@ var sensitivePorts = map[string]bool{
 type Inspector struct {
 	db                *store.DB
 	factory           sshrunner.RunnerFactory
+	paths             PathResolver
 	notifier          *notify.Dispatcher
 	inFlight          sync.Map
 	packageInFlight   sync.Map
@@ -70,6 +72,25 @@ func New(db *store.DB, factory sshrunner.RunnerFactory, notifier *notify.Dispatc
 	}
 }
 
+// PathResolver turns a Host's VPN network into a dial path; nil keeps every Host on the OS routing table.
+type PathResolver interface {
+	Ensure(ctx context.Context, networkID int64) (*vpnnet.Path, error)
+}
+
+func (ins *Inspector) SetPathResolver(r PathResolver) { ins.paths = r }
+
+// netPath resolves the Host's network, tagging failures as network problems rather than a dead Host.
+func (ins *Inspector) netPath(h *store.Host) (*vpnnet.Path, error) {
+	if h.NetworkID == 0 || ins.paths == nil {
+		return nil, nil
+	}
+	path, err := ins.paths.Ensure(context.Background(), h.NetworkID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: network down: %v", sshrunner.ErrNetworkUnavailable, err)
+	}
+	return path, nil
+}
+
 // IsInspecting reports whether an inspection is currently in-flight for the given host.
 func (ins *Inspector) IsInspecting(hostID int64) bool {
 	_, loaded := ins.inFlight.Load(hostID)
@@ -91,7 +112,11 @@ func (ins *Inspector) GetRunnerForHost(h *store.Host) (sshrunner.Runner, error) 
 	if err != nil {
 		return nil, err
 	}
-	return ins.factory(h.Host, h.Port, h.User, key)
+	path, err := ins.netPath(h)
+	if err != nil {
+		return nil, err
+	}
+	return ins.factory(sshrunner.Target{Host: h.Host, Port: h.Port, User: h.User, Key: key, Net: path})
 }
 
 // InspectHost performs a full health check, metrics scrape, and drift detection on a single host.
@@ -126,19 +151,30 @@ func (ins *Inspector) InspectHostWithTimeout(hostID int64, timeout time.Duration
 	runner, err := ins.GetRunnerForHost(host)
 	if err != nil {
 		duration := time.Since(startTime).Milliseconds()
+		// A dead VPN path is not a dead Host: keep the last known state and say so.
+		networkDown := errors.Is(err, sshrunner.ErrNetworkUnavailable)
 		host.Status = "down"
+		summary := "SSH connection failed"
+		if networkDown {
+			host.Status = "stale"
+			summary = "Network path unavailable"
+		}
 		host.LastDurationMs = duration
-		host.LifecycleNotes = fmt.Sprintf("SSH connection failed: %v", err)
+		host.LifecycleNotes = fmt.Sprintf("%s: %v", summary, err)
 		_ = ins.db.UpdateHostInspection(host)
 		_ = ins.db.RecordInspectionRun(&store.InspectionRun{
 			HostID:     host.ID,
 			StartedAt:  startTime,
 			DurationMs: duration,
-			Status:     "down",
-			Summary:    "SSH connection failed",
+			Status:     host.Status,
+			Summary:    summary,
 			Details:    err.Error(),
 		})
-		logger.Error("inspect", host.Name, "SSH connection failed: "+err.Error(), "duration_ms", duration)
+		if networkDown {
+			logger.Warn("inspect", host.Name, summary, "duration_ms", duration, "details", err.Error())
+		} else {
+			logger.Error("inspect", host.Name, "SSH connection failed: "+err.Error(), "duration_ms", duration)
+		}
 		return err
 	}
 	defer runner.Close()

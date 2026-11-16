@@ -16,6 +16,8 @@ import (
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
+
+	"pantau/internal/vpnnet"
 )
 
 var (
@@ -108,7 +110,21 @@ func doParseAllPrivateKeys(pemBytes []byte) ([]ssh.Signer, error) {
 	return signers, nil
 }
 
-func Connect(host string, port int, user, privateKeyPEM string, timeout time.Duration) (*LiveSSHRunner, error) {
+// ErrNetworkUnavailable marks a failure that belongs to the Host's VPN path, not to the Host itself.
+var ErrNetworkUnavailable = errors.New("network unavailable")
+
+// Target is everything needed to reach one Host: its address and credentials, plus an optional VPN path.
+// A nil Net keeps the historical behaviour (dial through the OS routing table).
+type Target struct {
+	Host string
+	Port int
+	User string
+	Key  string
+	Net  *vpnnet.Path
+}
+
+func Connect(t Target, timeout time.Duration) (*LiveSSHRunner, error) {
+	host, port, user, privateKeyPEM := t.Host, t.Port, t.User, t.Key
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
@@ -130,7 +146,7 @@ func Connect(host string, port int, user, privateKeyPEM string, timeout time.Dur
 	configureLegacyCompatibleSSH(config)
 
 	addr := fmt.Sprintf("%s:%d", host, port)
-	client, err := dialSSH(addr, config, timeout)
+	client, err := dialSSH(addr, t.Net, config, timeout)
 	if err != nil {
 		return nil, fmt.Errorf("dial ssh %s: %w", addr, err)
 	}
@@ -139,8 +155,8 @@ func Connect(host string, port int, user, privateKeyPEM string, timeout time.Dur
 }
 
 // ponytail: ssh.Dial's Timeout only bounds the TCP dial, not the SSH handshake; bound both.
-func dialSSH(addr string, config *ssh.ClientConfig, timeout time.Duration) (*ssh.Client, error) {
-	conn, err := dialTCP(addr, timeout)
+func dialSSH(addr string, path *vpnnet.Path, config *ssh.ClientConfig, timeout time.Duration) (*ssh.Client, error) {
+	conn, err := dialTCP(addr, path, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -157,12 +173,32 @@ func dialSSH(addr string, config *ssh.ClientConfig, timeout time.Duration) (*ssh
 // dialTCP retries a timed-out connect on a fresh connection: some routes drop every SYN of one flow
 // while a new connection (new source port) succeeds at once, so a reachable host must not be marked down.
 // Refused/unreachable errors fail immediately; a dead host now costs 4 × min(timeout, 4s) instead of timeout.
-func dialTCP(addr string, timeout time.Duration) (net.Conn, error) {
+func dialTCP(addr string, path *vpnnet.Path, timeout time.Duration) (net.Conn, error) {
 	attempt := min(timeout, 4*time.Second) // 4s still covers the SYN retransmits at 1s and 3s
 	var err error
+	// A mesh VPN usually resolves peer names through its own DNS, which the OS resolver does not know about.
+	dialAddr := addr
+	if path != nil {
+		if host, port, splitErr := net.SplitHostPort(addr); splitErr == nil && net.ParseIP(host) == nil {
+			ctx, cancel := context.WithTimeout(context.Background(), attempt)
+			ips, resolveErr := path.Resolve(ctx, host)
+			cancel()
+			if resolveErr == nil && len(ips) > 0 {
+				dialAddr = net.JoinHostPort(ips[0], port)
+			}
+		}
+	}
+	dial := func(timeout time.Duration) (net.Conn, error) {
+		if path == nil {
+			return net.DialTimeout("tcp", dialAddr, timeout)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		return path.DialContext(ctx, "tcp", dialAddr)
+	}
 	for range 4 {
 		var conn net.Conn
-		if conn, err = net.DialTimeout("tcp", addr, attempt); err == nil {
+		if conn, err = dial(attempt); err == nil {
 			return conn, nil
 		}
 		var ne net.Error
@@ -216,9 +252,10 @@ func configureLegacyCompatibleSSH(config *ssh.ClientConfig) {
 	}
 }
 
-type KeyProvisioner func(host string, port int, user, password, pubKey string) error
+type KeyProvisioner func(t Target, password, pubKey string) error
 
-func DefaultKeyProvisioner(host string, port int, user, password, pubKey string) error {
+func DefaultKeyProvisioner(t Target, password, pubKey string) error {
+	host, port, user := t.Host, t.Port, t.User
 	config := &ssh.ClientConfig{
 		User: user,
 		Auth: []ssh.AuthMethod{
@@ -230,7 +267,7 @@ func DefaultKeyProvisioner(host string, port int, user, password, pubKey string)
 	configureLegacyCompatibleSSH(config)
 
 	addr := fmt.Sprintf("%s:%d", host, port)
-	client, err := dialSSH(addr, config, 8*time.Second)
+	client, err := dialSSH(addr, t.Net, config, 8*time.Second)
 	if err != nil {
 		return fmt.Errorf("ssh password authentication failed: %w", err)
 	}
@@ -608,10 +645,10 @@ func (m *MockRunner) Close() error {
 }
 
 // RunnerFactory lets components create real or mock runners.
-type RunnerFactory func(host string, port int, user, key string) (Runner, error)
+type RunnerFactory func(t Target) (Runner, error)
 
 func DefaultFactory() RunnerFactory {
-	return func(host string, port int, user, key string) (Runner, error) {
-		return Connect(host, port, user, key, 8*time.Second)
+	return func(t Target) (Runner, error) {
+		return Connect(t, 8*time.Second)
 	}
 }

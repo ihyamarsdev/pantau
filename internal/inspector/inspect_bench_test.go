@@ -60,7 +60,7 @@ func newBenchInspector(tb testing.TB, db *store.DB) (*Inspector, *sshrunner.Mock
 	tb.Helper()
 	mockRunner := sshrunner.NewMockRunner()
 	mockRunner.DefaultExec = benchMockExec
-	factory := func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	factory := func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return mockRunner, nil
 	}
 	return New(db, factory, nil), mockRunner

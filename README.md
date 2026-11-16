@@ -306,6 +306,16 @@ Pantau inspects remote hosts via non-interactive SSH commands, continuously vali
 - **File Integrity Monitoring**: Desired State rule `file_integrity` compares sha256 of chosen files, `preset:auth`, or all SUID/SGID binaries with a baseline you captured and confirmed; drift names the changed files, unreadable files are *not assessed*.
 - **Accounts & SSH Keys Audit**: read-only inventory of login accounts, `authorized_keys`, password state and sudo grants, matched to the SSH Key Library by fingerprint; flags weak and unknown keys, extra UID 0 accounts and empty passwords, plus a **Fleet keys** view of every key across hosts.
 
+### 34. 🌍 Per-Host VPN / Tunnel Networks (Overlapping Routes, One Host Each)
+
+Private hosts that only exist behind a VPN are managed like any other host: **Settings → Networks** defines one network per tunnel, and a host picks its network in **Add/Edit Host** or in the import dialog. Every SSH connection to that host is then dialed **bound to the tunnel's interface** (`SO_BINDTODEVICE` on Linux, `IP_UNICAST_IF` on Windows, `IP_BOUND_IF` on macOS), so two VPNs that push the same subnet — including two NetBird accounts handing out the same `100.100.x` addresses — never fight over the routing table.
+
+- **Drivers**: `netbird`, `netmaker`, `openvpn` (paste the `.ovpn`, optional user/password), `wireguard` (`wg-quick`), `tailscale`, and `custom` (your own up/down/status commands). Binaries are detected at **Settings → Networks**; nothing is installed by Pantau.
+- **Bring-up**: `auto_up` starts the tunnel when a host needs it (singleflight, 30 s backoff, three strikes then a 5-minute cooldown), **Up**/**Down** do it by hand, and the last 200 log lines are one click away. Process-owning drivers (OpenVPN, a NetBird instance) are Pantau's children and stop on shutdown.
+- **Two NetBird accounts at once**: one NetBird daemon holds one active profile, so the driver has `mode: instance` — Pantau runs `netbird service run --config … --daemon-addr …` per network with its own interface and WireGuard port (and `--disable-dns`, so two instances never fight over the resolver). Only one network may use `mode: shared`.
+- **Failures read correctly**: a dead tunnel marks the host **stale** with `network down: <network>` instead of `down`, and a bind that is not permitted fails closed (it never silently falls back to the default route).
+- **Opt-in**: `vpn_enabled` is off by default (like the Terraform Gate) because the vendor CLI runs with master privileges. Credentials are write-only in the API (`setup_key_set`, `token_set`, …), never logged, and restored through the encrypted System Snapshot (`hosts.network_id` + `vpn_networks`).
+
 ---
 
 ## 🤖 AI Agent (optional, built in)

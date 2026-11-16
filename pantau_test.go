@@ -55,7 +55,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 	}
 
 	mockRunner := sshrunner.NewMockRunner()
-	factory := func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	factory := func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return mockRunner, nil
 	}
 
@@ -845,8 +845,8 @@ func TestTicket10_KeyProvisioning(t *testing.T) {
 	var lastProvisionedPass string
 	var lastProvisionedKey string
 
-	env.server.SetKeyProvisioner(func(host string, port int, user, password, pubKey string) error {
-		lastProvisionedHost = host
+	env.server.SetKeyProvisioner(func(target sshrunner.Target, password, pubKey string) error {
+		lastProvisionedHost = target.Host
 		lastProvisionedPass = password
 		lastProvisionedKey = pubKey
 		return nil

@@ -381,7 +381,7 @@ func TestRepoFoldersGroupRepositoriesAndMoveThem(t *testing.T) {
 func TestRepoCopyToHost(t *testing.T) {
 	srv, call, _ := newReposServer(t)
 	mock := sshrunner.NewMockRunner()
-	srv.SetTransferManager(transfer.NewManager(srv.db, func(string, int, string, string) (sshrunner.Runner, error) { return mock, nil }))
+	srv.SetTransferManager(transfer.NewManager(srv.db, func(sshrunner.Target) (sshrunner.Runner, error) { return mock, nil }))
 	hostID, err := srv.db.CreateHost(&store.Host{Name: "web1", Host: "10.0.0.1", Port: 22, User: "deploy"})
 	if err != nil {
 		t.Fatal(err)

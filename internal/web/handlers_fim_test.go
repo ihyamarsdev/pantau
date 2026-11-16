@@ -27,7 +27,7 @@ func setupFIMServer(t *testing.T, manifest string) (*Server, *store.DB, func(*ht
 	runner.DefaultExec = func(cmd string) (string, string, int, error) {
 		return manifest, "", 0, nil
 	}
-	ins := inspector.New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	ins := inspector.New(db, func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return runner, nil
 	}, nil)
 	srv := NewServer(db, ins, nil)

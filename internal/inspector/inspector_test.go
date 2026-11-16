@@ -137,7 +137,7 @@ func TestInspectHost_TimeoutAbortsRunner(t *testing.T) {
 		return "", "", 0, nil
 	}
 
-	factory := func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	factory := func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return mockRunner, nil
 	}
 
@@ -229,7 +229,7 @@ func TestInspectHost_AutoResolveAlertsOnHealthy(t *testing.T) {
 		return "", "", 0, nil
 	}
 
-	factory := func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	factory := func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return mockRunner, nil
 	}
 
@@ -784,7 +784,7 @@ func TestScanPackagesIntegration(t *testing.T) {
 		return "", "", 0, nil
 	}
 
-	ins := New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	ins := New(db, func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return mockRunner, nil
 	}, nil)
 
@@ -896,7 +896,7 @@ func TestScanPackagesConcurrencyGuard(t *testing.T) {
 		return "TYPE:DPKG\n===PKGS===\ncurl\t7.68.0\t512\tinstalled\n===MANUAL===\ncurl\n", "", 0, nil
 	}
 
-	ins := New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	ins := New(db, func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return mockRunner, nil
 	}, nil)
 

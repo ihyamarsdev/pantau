@@ -98,7 +98,7 @@ func TestRunSecurityScanCycle_Disabled(t *testing.T) {
 	_ = db.SetSetting("security_scan_interval_hours", "0")
 
 	mockRunner := sshrunner.NewMockRunner()
-	factory := func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	factory := func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return mockRunner, nil
 	}
 	ins := inspector.New(db, factory, nil)
@@ -129,7 +129,7 @@ func TestRunSecurityScanCycle_Execution(t *testing.T) {
 		atomic.AddInt64(&scanExecCount, 1)
 		return "===OS_RELEASE===\nID=debian\nID_LIKE=debian\n===UPDATES===\nMGR:apt\n", "", 0, nil
 	}
-	factory := func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	factory := func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return mockRunner, nil
 	}
 	ins := inspector.New(db, factory, nil)

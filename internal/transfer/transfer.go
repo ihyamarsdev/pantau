@@ -14,6 +14,7 @@ import (
 	"pantau/internal/s3"
 	"pantau/internal/sshrunner"
 	"pantau/internal/store"
+	"pantau/internal/vpnnet"
 )
 
 func shellQuote(s string) string {
@@ -48,6 +49,7 @@ type TransferJob struct {
 type Manager struct {
 	db       *store.DB
 	factory  sshrunner.RunnerFactory
+	paths    PathResolver
 	mu       sync.RWMutex
 	jobs     map[int64]*TransferJob
 	jobOrder []int64
@@ -65,12 +67,26 @@ func NewManager(db *store.DB, factory sshrunner.RunnerFactory) *Manager {
 	}
 }
 
+// PathResolver turns a Host's VPN network into a dial path (nil keeps the OS routing table).
+type PathResolver interface {
+	Ensure(ctx context.Context, networkID int64) (*vpnnet.Path, error)
+}
+
+func (m *Manager) SetPathResolver(r PathResolver) { m.paths = r }
+
 func (m *Manager) getRunnerForHost(h *store.Host) (sshrunner.Runner, error) {
 	key, err := m.db.ResolveHostPrivateKey(h)
 	if err != nil {
 		return nil, err
 	}
-	return m.factory(h.Host, h.Port, h.User, key)
+	var path *vpnnet.Path
+	if h.NetworkID != 0 && m.paths != nil {
+		path, err = m.paths.Ensure(context.Background(), h.NetworkID)
+		if err != nil {
+			return nil, fmt.Errorf("%w: network down: %v", sshrunner.ErrNetworkUnavailable, err)
+		}
+	}
+	return m.factory(sshrunner.Target{Host: h.Host, Port: h.Port, User: h.User, Key: key, Net: path})
 }
 
 func (m *Manager) StartTransfer(srcHostID int64, srcPath string, dstHostID int64, dstPath string, mode string) (*TransferJob, error) {

@@ -51,7 +51,7 @@ func domainsServer(t *testing.T, output string) (*Server, *http.Cookie, int64) {
 		}
 		return "", "", 0, nil
 	}
-	ins := inspector.New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	ins := inspector.New(db, func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return runner, nil
 	}, nil)
 	srv := NewServer(db, ins, nil)

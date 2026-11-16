@@ -5220,6 +5220,11 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <datalist id="groupSuggestions"></datalist>
       </div>
       <div class="form-group">
+        <label class="form-label" data-i18n="host_network">Network (VPN / Tunnel)</label>
+        <select id="hostNetwork"><option value="0" data-i18n="host_network_direct">Direct (no VPN)</option></select>
+        <span class="form-hint" data-i18n="host_network_hint">Hosts behind a VPN are reached through that tunnel's interface instead of the default route.</span>
+      </div>
+      <div class="form-group">
         <label class="form-label" data-i18n="host_kube_mode">Kubernetes Mode</label>
         <select id="hostKubeMode" class="form-input">
           <option value="full" data-i18n="kube_mode_full">Full (Read, Write &amp; Exec)</option>
@@ -5307,6 +5312,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
                   <th data-i18n="import_col_addr">Address</th>
                   <th data-i18n="import_col_port">Port</th>
                   <th data-i18n="import_col_user">User</th>
+                  <th data-i18n="import_col_network">Network</th>
                   <th data-i18n="import_col_note">Note</th>
                 </tr>
               </thead>
@@ -5316,6 +5322,8 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
           <div class="form-group" style="margin: 0;">
             <label class="form-label" for="importKeyId" data-i18n="import_key_label">SSH key for the imported hosts</label>
             <select id="importKeyId"><option value="0" data-i18n="ssh_key_global">Global key (default)</option></select>
+            <label class="form-label" for="importNetworkId" data-i18n="import_network_label" style="margin-top:8px;">Network (VPN / Tunnel) for the imported hosts</label>
+            <select id="importNetworkId" onchange="importBulkNetworkChanged(this.value)"><option value="0" data-i18n="host_network_direct">Direct (no VPN)</option></select>
             <span class="form-hint" data-i18n="import_key_hint">Pantau does not read the IdentityFile lines of your ssh config. Pick the key these hosts accept (from the SSH Key Library); with the global key, a host that needs its own key is marked down at its first inspection. Change it later per host with Edit.</span>
           </div>
           <div style="display: flex; justify-content: flex-end; gap: 10px;">
@@ -5678,12 +5686,41 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
           <svg class="icon"><use href="#i-refresh-cw"/></svg>
           <span data-i18n="tab_settings_updates">Updates</span>
         </div>
+        <div class="tab" id="tabSettingsNetworks" onclick="switchSettingsTab('networks')">
+          <svg class="icon"><use href="#i-shield"/></svg>
+          <span data-i18n="tab_settings_networks">Networks</span>
+        </div>
         <div class="tab" id="tabSettingsAgent" onclick="switchSettingsTab('agent')">
           <svg class="icon"><use href="#i-bot"/></svg>
           <span>AI Agent</span>
         </div>
       </nav>
       <div class="modal-body settings-body">
+        <!-- VPN/Tunnel Networks Tab -->
+        <div id="settingsPanelNetworks" style="display: none; flex-direction: column; gap: 16px;">
+          <div class="set-card">
+            <div class="set-header">
+              <div>
+                <h4 class="set-title"><svg class="icon"><use href="#i-shield"/></svg> <span data-i18n="vpn_gate_title">VPN Gate</span></h4>
+                <p class="set-desc" data-i18n="vpn_gate_desc">Allows Pantau to run VPN/tunnel clients on this server to reach private hosts. Those binaries run with master process privileges; the custom driver runs an admin-written shell command.</p>
+              </div>
+            </div>
+            <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; font-size: var(--fs-sm);">
+              <input type="checkbox" id="vpnGateToggle" style="width: auto; margin-top: 3px;" onchange="saveVpnGate(this.checked)" />
+              <span id="vpnGateState" data-i18n="vpn_gate_off_hint">Disabled: hosts on a network cannot be reached.</span>
+            </label>
+          </div>
+          <div class="set-card">
+            <div class="set-header">
+              <div>
+                <h4 class="set-title"><svg class="icon"><use href="#i-shield"/></svg> <span data-i18n="vpn_networks_title">Networks</span></h4>
+                <p class="set-desc" data-i18n="vpn_networks_desc">Each network is one tunnel that hosts dial through. Different networks can carry the same subnet, because each host is pinned to its interface.</p>
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="openVpnNetworkModal(0)" data-i18n="vpn_btn_new">New Network</button>
+            </div>
+            <div id="vpnNetworkList" style="display: flex; flex-direction: column; gap: 10px;"></div>
+          </div>
+        </div>
         <!-- General Tab -->
         <div id="settingsPanelGeneral" style="display: flex; flex-direction: column; gap: 16px;">
           <div class="set-card">
@@ -6861,6 +6898,46 @@ const selectedHostIds = new Set();
 let hostBulkDeleting = null; // { done, total } while a bulk delete runs
 const I18N = {
   en: {
+    "tab_settings_networks": "Networks",
+    "vpn_gate_title": "VPN Gate",
+    "vpn_gate_desc": "Allows Pantau to run VPN/tunnel clients on this server to reach private hosts. Those binaries run with master process privileges; the custom driver runs an admin-written shell command.",
+    "vpn_gate_off_hint": "Disabled: hosts on a network cannot be reached.",
+    "vpn_gate_on_hint": "Enabled: vendors run with master privileges on this server.",
+    "vpn_networks_title": "Networks",
+    "vpn_networks_desc": "Each network is one tunnel that hosts dial through. Different networks can carry the same subnet, because every host is pinned to its interface.",
+    "vpn_btn_new": "New Network",
+    "vpn_no_networks": "No networks yet. Add one per VPN or tunnel your private hosts live in.",
+    "vpn_name": "Name",
+    "vpn_driver": "Driver",
+    "vpn_iface": "Interface (empty = driver default)",
+    "vpn_enabled": "Enabled",
+    "vpn_auto_up": "Bring up automatically when a host needs it",
+    "vpn_up": "Up",
+    "vpn_down": "Down",
+    "vpn_log": "Log",
+    "vpn_log_title": "Tunnel log",
+    "vpn_log_empty": "No output yet.",
+    "vpn_new_title": "New Network",
+    "vpn_edit_title": "Edit Network",
+    "vpn_name_required": "Name is required",
+    "vpn_saved": "Network saved",
+    "vpn_saved_value": "stored",
+    "vpn_keep_secret": "stored - leave blank to keep",
+    "vpn_delete_confirm": "Delete network",
+    "vpn_delete_used_title": "Network in use",
+    "vpn_delete_used": "{n} host(s) use this network and will fall back to direct SSH.",
+    "vpn_detach": "Detach and delete",
+    "vpn_delete_failed": "Delete failed: ",
+    "vpn_deleted": "Network deleted",
+    "vpn_up_ok": "Tunnel up",
+    "vpn_up_failed": "Bring-up failed: ",
+    "vpn_down_failed": "Stop failed: ",
+    "vpn_gate_failed": "Could not change the VPN gate",
+    "host_network": "Network (VPN / Tunnel)",
+    "host_network_direct": "Direct (no VPN)",
+    "host_network_hint": "Hosts behind a VPN are reached through that tunnel's interface instead of the default route.",
+    "import_network_label": "Network (VPN / Tunnel) for the imported hosts",
+    "import_col_network": "Network",
     "brand_subtitle": "Agentless Server Management",
     "admin_password": "Admin Password",
     "login": "Login",
@@ -8664,6 +8741,46 @@ const I18N = {
     "s3_starting_upload": "Starting upload…"
   },
   id: {
+    "tab_settings_networks": "Jaringan",
+    "vpn_gate_title": "Gerbang VPN",
+    "vpn_gate_desc": "Mengizinkan Pantau menjalankan klien VPN/tunnel di server ini untuk menjangkau host privat. Biner tersebut berjalan dengan privilese proses master; driver custom menjalankan perintah shell yang ditulis admin.",
+    "vpn_gate_off_hint": "Mati: host di sebuah jaringan tidak dapat dijangkau.",
+    "vpn_gate_on_hint": "Aktif: biner vendor berjalan dengan privilese master di server ini.",
+    "vpn_networks_title": "Jaringan",
+    "vpn_networks_desc": "Setiap jaringan adalah satu tunnel yang dipakai host untuk keluar. Beberapa jaringan boleh memakai subnet yang sama, karena tiap host diikat ke interface-nya sendiri.",
+    "vpn_btn_new": "Jaringan Baru",
+    "vpn_no_networks": "Belum ada jaringan. Tambahkan satu per VPN atau tunnel tempat host privat Anda berada.",
+    "vpn_name": "Nama",
+    "vpn_driver": "Driver",
+    "vpn_iface": "Interface (kosong = default driver)",
+    "vpn_enabled": "Aktif",
+    "vpn_auto_up": "Nyalakan otomatis saat host membutuhkannya",
+    "vpn_up": "Nyalakan",
+    "vpn_down": "Matikan",
+    "vpn_log": "Log",
+    "vpn_log_title": "Log tunnel",
+    "vpn_log_empty": "Belum ada output.",
+    "vpn_new_title": "Jaringan Baru",
+    "vpn_edit_title": "Ubah Jaringan",
+    "vpn_name_required": "Nama wajib diisi",
+    "vpn_saved": "Jaringan tersimpan",
+    "vpn_saved_value": "tersimpan",
+    "vpn_keep_secret": "tersimpan - kosongkan untuk mempertahankan",
+    "vpn_delete_confirm": "Hapus jaringan",
+    "vpn_delete_used_title": "Jaringan sedang dipakai",
+    "vpn_delete_used": "{n} host memakai jaringan ini dan akan kembali ke SSH langsung.",
+    "vpn_detach": "Lepas dan hapus",
+    "vpn_delete_failed": "Gagal menghapus: ",
+    "vpn_deleted": "Jaringan dihapus",
+    "vpn_up_ok": "Tunnel menyala",
+    "vpn_up_failed": "Gagal menyalakan: ",
+    "vpn_down_failed": "Gagal mematikan: ",
+    "vpn_gate_failed": "Gagal mengubah gerbang VPN",
+    "host_network": "Jaringan (VPN / Tunnel)",
+    "host_network_direct": "Langsung (tanpa VPN)",
+    "host_network_hint": "Host di balik VPN dijangkau lewat interface tunnel itu, bukan lewat rute default.",
+    "import_network_label": "Jaringan (VPN / Tunnel) untuk host yang diimpor",
+    "import_col_network": "Jaringan",
     "brand_subtitle": "Manajemen Server Agentless",
     "admin_password": "Password Admin",
     "login": "Masuk",
@@ -11511,6 +11628,7 @@ function renderGridView(grid, isManualSort) {
               <span class="status-dot ${h.status === 'healthy' ? 'online' : (h.status === 'down' ? 'offline' : 'warn')}"></span>
               <span class="host-card-name">${escapeHtml(h.name)}</span>
               ${h.group_name ? `<span class="badge" style="font-size: var(--fs-xs); background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--card-border);">${escapeHtml(h.group_name)}</span>` : ''}
+              ${(() => { const net = (vpnNetworks || []).find(n => Number(n.id) === Number(h.network_id)); if (!net) return ''; const bad = net.last_state && net.last_state !== 'up'; return `<span class="badge" style="font-size: var(--fs-xs);${bad ? 'background: var(--danger-soft); color: var(--danger);' : ''}" title="${escapeHtml(t('host_network', 'Network (VPN / Tunnel)'))}">${svgIcon('shield', 'icon-xs')} ${escapeHtml(net.name)}</span>`; })()}
             </div>
             <div class="host-card-sub">${hostIpCopyHtml(h.host)}:${h.port} <span style="opacity: 0.7;">(${escapeHtml(h.user)})</span></div>
           </div>
@@ -11904,6 +12022,25 @@ function updateFooterMetrics() {
   }
 }
 
+// Networks ride along with the host list so cards can show which tunnel a host uses (30s cache).
+let vpnIndexAt = 0;
+async function loadVpnNetworkIndex(force) {
+  if (!force && Date.now() - vpnIndexAt < 30000) return vpnNetworks;
+  try {
+    const res = await fetch('/api/vpn/networks');
+    if (res.ok) { vpnNetworks = await res.json() || []; vpnIndexAt = Date.now(); }
+  } catch (e) { /* cards just render without a network badge */ }
+  return vpnNetworks;
+}
+
+function populateHostNetworkSelect(selected) {
+  const sel = document.getElementById('hostNetwork');
+  if (!sel) return;
+  sel.innerHTML = `<option value="0">${escapeHtml(t('host_network_direct', 'Direct (no VPN)'))}</option>` +
+    (vpnNetworks || []).map(n => `<option value="${Number(n.id)}"${Number(n.id) === Number(selected) ? ' selected' : ''}>${escapeHtml(n.name)}${n.last_state && n.last_state !== 'up' ? ' (' + escapeHtml(n.last_state) + ')' : ''}</option>`).join('');
+  sel.value = String(selected || 0);
+}
+
 async function loadHosts() {
   try {
     const res = await fetch('/api/hosts');
@@ -11912,6 +12049,7 @@ async function loadHosts() {
       return;
     }
     allRawHosts = await res.json() || [];
+    if (allRawHosts.some(h => h.network_id)) await loadVpnNetworkIndex(false);
     allRawHosts.forEach(recordHostTrafficSample);
     updateGroupSuggestions();
     setEngineStatus(true);
@@ -12097,6 +12235,264 @@ async function populateHostKeySelect(selectedKeyId = 0, isCustom = false) {
   }
 }
 
+/* ---------- settings: VPN/tunnel networks ---------- */
+let vpnNetworks = [];
+let vpnGatewayEnabled = false;
+let vpnDriverFields = {};
+
+const VPN_DRIVER_META = {
+  netbird: {
+    hint: 'NetBird. Use mode "instance" to be on two NetBird accounts at the same time; the shared daemon holds one account.',
+    fields: [
+      { key: 'mode', label: 'Mode', select: [['shared', 'shared (installed daemon)'], ['instance', 'instance (Pantau runs its own daemon)']] },
+      { key: 'setup_key', label: 'Setup key', secret: true },
+      { key: 'management_url', label: 'Management URL' },
+      { key: 'hostname', label: 'Hostname' },
+      { key: 'interface_name', label: 'Interface name', placeholder: 'wt0' },
+      { key: 'wireguard_port', label: 'WireGuard port (instance)', placeholder: '51820' },
+    ],
+  },
+  netmaker: {
+    hint: 'Netmaker netclient. One daemon can join several networks; set the interface per network.',
+    fields: [
+      { key: 'token', label: 'Access token', secret: true },
+      { key: 'network', label: 'Network name (for disconnect)' },
+      { key: 'server', label: 'Server (optional)' },
+      { key: 'interface', label: 'Interface (optional)', placeholder: 'netmaker' },
+    ],
+  },
+  openvpn: {
+    hint: 'OpenVPN client. Paste the .ovpn file; the tun device is read from the process log.',
+    fields: [
+      { key: 'config', label: '.ovpn file content', secret: true, textarea: true },
+      { key: 'username', label: 'Username (optional)', secret: true },
+      { key: 'password', label: 'Password (optional)', secret: true, password: true },
+    ],
+  },
+  wireguard: {
+    hint: 'WireGuard via wg-quick. The interface name becomes the config file name and needs root.',
+    fields: [
+      { key: 'config', label: '.conf file content', secret: true, textarea: true },
+      { key: 'interface_name', label: 'Interface name', placeholder: 'wg0' },
+    ],
+  },
+  tailscale: {
+    hint: 'Tailscale. One tailnet per instance; give each network its own socket and interface.',
+    fields: [
+      { key: 'authkey', label: 'Auth key', secret: true },
+      { key: 'login_server', label: 'Login server (optional)' },
+      { key: 'hostname', label: 'Hostname' },
+      { key: 'socket', label: 'tailscaled socket (optional)' },
+      { key: 'interface_name', label: 'Interface name', placeholder: 'tailscale0' },
+    ],
+  },
+  custom: {
+    hint: 'Any tunnel: write the up, down and status commands yourself. An interface is required so hosts can be pinned to it.',
+    fields: [
+      { key: 'up', label: 'Up command', secret: true },
+      { key: 'down', label: 'Down command', secret: true },
+      { key: 'status', label: 'Status command (exit 0 = up)', secret: true },
+    ],
+  },
+};
+
+function vpnBadge(state) {
+  const cls = state === 'up' ? 'badge-healthy' : (state === 'error' ? 'badge-danger' : (state === 'starting' ? 'badge-warning' : 'badge-degraded'));
+  return `<span class="badge ${cls}">${escapeHtml(state || 'down')}</span>`;
+}
+
+async function loadVpnNetworks() {
+  const box = document.getElementById('vpnNetworkList');
+  if (!box) return;
+  const gate = await fetch('/api/vpn/status').then(r => r.ok ? r.json() : null).catch(() => null);
+  vpnGatewayEnabled = !!(gate && gate.enabled);
+  const toggle = document.getElementById('vpnGateToggle');
+  const state = document.getElementById('vpnGateState');
+  if (toggle) toggle.checked = vpnGatewayEnabled;
+  if (state) {
+    state.textContent = vpnGatewayEnabled
+      ? t('vpn_gate_on_hint', 'Enabled: vendors run with master privileges on this server.')
+      : t('vpn_gate_off_hint', 'Disabled: hosts on a network cannot be reached.');
+  }
+  const res = await fetch('/api/vpn/networks');
+  vpnNetworks = res.ok ? (await res.json() || []) : [];
+  vpnIndexAt = Date.now();
+  if (!vpnNetworks.length) {
+    box.innerHTML = `<div class="empty-state"><div class="empty-state-desc">${escapeHtml(t('vpn_no_networks', 'No networks yet. Add one per VPN or tunnel your private hosts live in.'))}</div></div>`;
+    return;
+  }
+  box.innerHTML = vpnNetworks.map(n => `
+    <div class="card" style="flex-direction:row;align-items:center;justify-content:space-between;gap:12px;${n.enabled ? '' : 'opacity:.6;'}">
+      <div style="min-width:0;">
+        <b>${escapeHtml(n.name)}</b>
+        <span class="badge mono">${escapeHtml(n.driver)}${n.driver === 'netbird' && n.config && n.config.mode === 'instance' ? ':instance' : ''}</span>
+        ${vpnBadge(n.last_state)}
+        <span class="badge">${n.hosts_count} host${n.hosts_count === 1 ? '' : 's'}</span>
+        ${n.iface ? `<span class="badge mono">${escapeHtml(n.iface)}</span>` : ''}
+        <div style="font-size:var(--fs-xs);color:var(--text-muted);">${escapeHtml(n.last_error || '')}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0;">
+        <button type="button" class="btn btn-sm" onclick="vpnNetworkUp(${n.id})">${escapeHtml(t('vpn_up', 'Up'))}</button>
+        <button type="button" class="btn btn-sm" onclick="vpnNetworkDown(${n.id})">${escapeHtml(t('vpn_down', 'Down'))}</button>
+        <button type="button" class="btn btn-sm" onclick="openVpnNetworkLog(${n.id})">${escapeHtml(t('vpn_log', 'Log'))}</button>
+        <button type="button" class="btn btn-sm" onclick="openVpnNetworkModal(${n.id})">${svgIcon('pencil', 'icon-xs')} ${escapeHtml(t('edit', 'Edit'))}</button>
+        <button type="button" class="btn btn-icon btn-sm" onclick="deleteVpnNetwork(${n.id})">${svgIcon('trash-2', 'icon-xs')}</button>
+      </div>
+    </div>`).join('');
+}
+
+async function saveVpnGate(on) {
+  const res = await fetch('/api/vpn/gate', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: on }) });
+  if (!res.ok) { showToast(t('vpn_gate_failed', 'Could not change the VPN gate'), 'error'); }
+  loadVpnNetworks();
+}
+
+function vpnDriverField(field, cfg) {
+  const val = cfg[field.key] || '';
+  const set = field.secret && cfg[field.key + '_set'];
+  const label = `<label class="form-label">${escapeHtml(field.label)}${set ? ' <span class="badge">' + escapeHtml(t('vpn_saved_value', 'stored')) + '</span>' : ''}</label>`;
+  if (field.select) {
+    return `<div class="form-group">${label}<select id="vpnCfg_${field.key}">${field.select.map(([v, l]) => `<option value="${escapeHtml(v)}"${val === v ? ' selected' : ''}>${escapeHtml(l)}</option>`).join('')}</select></div>`;
+  }
+  if (field.textarea) {
+    return `<div class="form-group">${label}<textarea id="vpnCfg_${field.key}" rows="6" spellcheck="false" style="font-family:var(--font-mono);font-size:var(--fs-xs);" placeholder="${set ? escapeHtml(t('vpn_keep_secret', 'stored - leave blank to keep')) : ''}">${escapeHtml(val)}</textarea></div>`;
+  }
+  const type = field.secret ? 'password' : 'text';
+  return `<div class="form-group">${label}<input type="${type}" id="vpnCfg_${field.key}" value="${escapeHtml(val)}" placeholder="${escapeHtml(field.placeholder || (set ? t('vpn_keep_secret', 'stored - leave blank to keep') : ''))}" /></div>`;
+}
+
+function openVpnNetworkModal(id) {
+  const n = id ? vpnNetworks.find(x => x.id === id) : null;
+  const drivers = Object.keys(VPN_DRIVER_META);
+  const opts = drivers.map(d => `<option value="${d}"${n && n.driver === d ? ' selected' : (!n && d === 'netbird' ? ' selected' : '')}>${d}</option>`).join('');
+  const body = `
+    <div class="form-group"><label class="form-label">${escapeHtml(t('vpn_name', 'Name'))} *</label><input type="text" id="vpnName" value="${escapeHtml(n ? n.name : '')}" /></div>
+    <div class="form-group"><label class="form-label">${escapeHtml(t('vpn_driver', 'Driver'))}</label><select id="vpnDriver" onchange="renderVpnDriverFields()">${opts}</select><span class="form-hint" id="vpnDriverHint"></span></div>
+    <div class="form-group"><label class="form-label">${escapeHtml(t('vpn_iface', 'Interface (empty = driver default)'))}</label><input type="text" id="vpnIface" value="${escapeHtml(n ? n.iface : '')}" list="vpnIfaceList" /><datalist id="vpnIfaceList"></datalist></div>
+    <div id="vpnDriverFields"></div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;">
+      <label style="display:flex;gap:6px;align-items:center;"><input type="checkbox" id="vpnEnabled" ${!n || n.enabled ? 'checked' : ''} /> ${escapeHtml(t('vpn_enabled', 'Enabled'))}</label>
+      <label style="display:flex;gap:6px;align-items:center;"><input type="checkbox" id="vpnAutoUp" ${!n || n.auto_up ? 'checked' : ''} /> ${escapeHtml(t('vpn_auto_up', 'Bring up automatically when a host needs it'))}</label>
+    </div>
+    <div id="vpnModalError" class="form-hint" style="color:var(--danger);"></div>`;
+  vpnDriverFields = n && n.config ? n.config : {};
+  tfDlg(2, id ? t('vpn_edit_title', 'Edit Network') : t('vpn_new_title', 'New Network'), body, tfFoot(2, tfPrimary(t('save', 'Save'), `saveVpnNetwork(${id || 0})`)), 620);
+  renderVpnDriverFields();
+  loadVpnInterfaces();
+}
+
+async function loadVpnInterfaces() {
+  const dl = document.getElementById('vpnIfaceList');
+  if (!dl) return;
+  try {
+    const res = await fetch('/api/vpn/interfaces');
+    if (!res.ok) return;
+    const list = await res.json();
+    dl.innerHTML = (list || []).map(i => `<option value="${escapeHtml(i.name)}">${escapeHtml((i.addrs || []).join(', '))}</option>`).join('');
+  } catch (e) { /* the dropdown stays empty; the field still accepts a name */ }
+}
+
+function renderVpnDriverFields() {
+  const driver = document.getElementById('vpnDriver')?.value || 'netbird';
+  const meta = VPN_DRIVER_META[driver] || { fields: [] };
+  const box = document.getElementById('vpnDriverFields');
+  const hint = document.getElementById('vpnDriverHint');
+  if (hint) hint.textContent = t('vpn_driver_hint_' + driver, meta.hint || '');
+  if (!box) return;
+  const values = {};
+  (meta.fields || []).forEach(f => {
+    const el = document.getElementById('vpnCfg_' + f.key);
+    if (el) values[f.key] = el.value;
+  });
+  box.innerHTML = (meta.fields || []).map(f => vpnDriverField(f, Object.assign({}, vpnDriverFields, values))).join('');
+}
+
+function collectVpnConfig() {
+  const driver = document.getElementById('vpnDriver')?.value || 'netbird';
+  const meta = VPN_DRIVER_META[driver] || { fields: [] };
+  const cfg = {};
+  (meta.fields || []).forEach(f => {
+    const el = document.getElementById('vpnCfg_' + f.key);
+    if (!el) return;
+    let v = el.value;
+    if (f.textarea) v = v; else v = v.trim();
+    if (f.secret && !v) return; // blank keeps the stored value
+    if (v !== '') cfg[f.key] = v;
+  });
+  return cfg;
+}
+
+async function saveVpnNetwork(id) {
+  const errEl = document.getElementById('vpnModalError');
+  const name = (document.getElementById('vpnName')?.value || '').trim();
+  if (!name) { if (errEl) errEl.textContent = t('vpn_name_required', 'Name is required'); return; }
+  const payload = {
+    name,
+    driver: document.getElementById('vpnDriver').value,
+    iface: (document.getElementById('vpnIface')?.value || '').trim(),
+    enabled: document.getElementById('vpnEnabled').checked,
+    auto_up: document.getElementById('vpnAutoUp').checked,
+    config: collectVpnConfig(),
+  };
+  const res = await fetch(id ? '/api/vpn/networks/' + id : '/api/vpn/networks', {
+    method: id ? 'PUT' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    if (errEl) errEl.textContent = data.error || ('HTTP ' + res.status);
+    return;
+  }
+  showToast(t('vpn_saved', 'Network saved'), 'success');
+  tfDlgClose(2);
+  loadVpnNetworks();
+  loadHosts();
+}
+
+async function deleteVpnNetwork(id) {
+  const n = vpnNetworks.find(x => x.id === id);
+  const ok = await showConfirm({ title: t('delete', 'Delete'), message: t('vpn_delete_confirm', 'Delete network') + ' ' + (n ? n.name : '#' + id) + '?', confirmText: t('delete', 'Delete'), danger: true });
+  if (!ok) return;
+  let res = await fetch('/api/vpn/networks/' + id, { method: 'DELETE' });
+  if (res.status === 409) {
+    const data = await res.json().catch(() => ({}));
+    const force = await showConfirm({ title: t('vpn_delete_used_title', 'Network in use'), message: importFill(t('vpn_delete_used', '{n} host(s) use this network and will fall back to direct SSH.'), { n: data.hosts || 0 }), confirmText: t('vpn_detach', 'Detach and delete'), danger: true });
+    if (!force) return;
+    res = await fetch('/api/vpn/networks/' + id + '?force=1', { method: 'DELETE' });
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    showToast(t('vpn_delete_failed', 'Delete failed: ') + (data.error || res.status), 'error');
+    return;
+  }
+  showToast(t('vpn_deleted', 'Network deleted'), 'success');
+  loadVpnNetworks();
+  loadHosts();
+}
+
+async function vpnNetworkUp(id) {
+  const res = await fetch('/api/vpn/networks/' + id + '/up', { method: 'POST' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { showToast(t('vpn_up_failed', 'Bring-up failed: ') + (data.error || res.status), 'error'); }
+  else { showToast(t('vpn_up_ok', 'Tunnel up'), 'success'); }
+  loadVpnNetworks();
+}
+
+async function vpnNetworkDown(id) {
+  const res = await fetch('/api/vpn/networks/' + id + '/down', { method: 'POST' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) showToast(t('vpn_down_failed', 'Stop failed: ') + (data.error || res.status), 'error');
+  loadVpnNetworks();
+}
+
+async function openVpnNetworkLog(id) {
+  const res = await fetch('/api/vpn/networks/' + id + '/log');
+  const data = res.ok ? await res.json() : { lines: [] };
+  const n = vpnNetworks.find(x => x.id === id) || {};
+  tfDlg(1, t('vpn_log_title', 'Tunnel log') + ': ' + (n.name || '#' + id), `<pre class="mono" style="font-size:var(--fs-xs);white-space:pre-wrap;max-height:60vh;overflow:auto;margin:0;">${escapeHtml((data.lines || []).join('\n') || t('vpn_log_empty', 'No output yet.'))}</pre>`, tfFoot(1), 720);
+}
+
 function onHostKeySelectChange() {
   const sel = document.getElementById('hostKeyId');
   const group = document.getElementById('hostCustomKeyGroup');
@@ -12119,6 +12515,7 @@ function openAddHostModal() {
   document.getElementById('hostGroup').value = '';
   const kmAdd = document.getElementById('hostKubeMode');
   if (kmAdd) kmAdd.value = 'full';
+  populateHostNetworkSelect(0);
   const testBtn = document.getElementById('btnTestHostInModal');
   if (testBtn) testBtn.style.display = 'none';
   updateGroupSuggestions();
@@ -12145,6 +12542,7 @@ function openEditHostModal(hostId) {
   document.getElementById('hostNote').value = h.notes || '';
   const kmEdit = document.getElementById('hostKubeMode');
   if (kmEdit) kmEdit.value = h.kube_mode || 'full';
+  populateHostNetworkSelect(h.network_id || 0);
   document.getElementById('passGroup').style.display = 'none';
   const testBtn = document.getElementById('btnTestHostInModal');
   if (testBtn) testBtn.style.display = 'inline-flex';
@@ -12202,6 +12600,7 @@ async function saveHost() {
     notes: document.getElementById('hostNote').value,
     group_name: (document.getElementById('hostGroup')?.value || '').trim(),
     kube_mode: document.getElementById('hostKubeMode')?.value || 'full',
+    network_id: parseInt(document.getElementById('hostNetwork')?.value, 10) || 0,
   };
   if (id && selectedKey === 'custom' && !customKey.trim()) {
     // the API never returns the stored key; blank + keep flag leaves it unchanged
@@ -12341,6 +12740,22 @@ async function populateImportKeySelect() {
   }
 }
 
+function importBulkNetworkChanged(value) {
+  const bulk = parseInt(value, 10) || 0;
+  document.querySelectorAll('#importPreviewBody .import-net').forEach(sel => { sel.value = String(bulk); });
+  importRowNetworks = {};
+}
+
+async function populateImportNetworkSelect() {
+  const sel = document.getElementById('importNetworkId');
+  if (!sel) return;
+  await loadVpnNetworkIndex(false);
+  const cur = sel.value || '0';
+  sel.innerHTML = `<option value="0">${escapeHtml(t('host_network_direct', 'Direct (no VPN)'))}</option>` +
+    (vpnNetworks || []).map(n => `<option value="${Number(n.id)}">${escapeHtml(n.name)}</option>`).join('');
+  sel.value = Array.from(sel.options).some(o => o.value === cur) ? cur : '0';
+}
+
 // A new host stays "unknown" until its first inspection; run it now (3 at a time, no toasts) so the import shows the real state.
 async function importInspectCreated(hosts) {
   const queue = hosts.map(h => h.id);
@@ -12355,7 +12770,9 @@ async function importInspectCreated(hosts) {
 }
 
 function renderImportPreview(data) {
+  importRowNetworks = {};
   populateImportKeySelect();
+  populateImportNetworkSelect();
   importEntries = data.entries || [];
   const warns = data.warnings || [];
   const warnEl = document.getElementById('importWarnings');
@@ -12370,6 +12787,8 @@ function renderImportPreview(data) {
     showToast(t('import_none_found', 'No importable hosts found'), 'warning');
     return;
   }
+  const netOptions = `<option value="0">${escapeHtml(t('host_network_direct', 'Direct (no VPN)'))}</option>` +
+    (vpnNetworks || []).map(n => `<option value="${Number(n.id)}">${escapeHtml(n.name)}</option>`).join('');
   document.getElementById('importPreviewBody').innerHTML = importEntries.map((e, i) => {
     let note = '';
     if (e.duplicate) {
@@ -12385,11 +12804,18 @@ function renderImportPreview(data) {
       <td><code class="mono" style="font-size: var(--fs-xs);">${escapeHtml(e.host)}</code></td>
       <td><span class="num">${escapeHtml(String(e.port))}</span></td>
       <td>${escapeHtml(e.user || 'root')}</td>
+      <td><select class="import-net" data-idx="${i}" onchange="importNetworkPicked(this)">${netOptions}</select></td>
       <td>${note}</td>
     </tr>`;
   }).join('');
   preview.style.display = 'flex';
   updateImportCount();
+}
+
+// A row's own pick wins over the import-wide network select.
+let importRowNetworks = {};
+function importNetworkPicked(sel) {
+  importRowNetworks[sel.dataset.idx] = parseInt(sel.value, 10) || 0;
 }
 
 function importableBoxes() {
@@ -12414,7 +12840,8 @@ function importToggleAll(cb) {
 async function importSubmit() {
   const hosts = importableBoxes().filter(b => b.checked).map(b => {
     const e = importEntries[parseInt(b.dataset.idx, 10)];
-    return { name: e.alias, host: e.host, port: e.port, user: e.user };
+    const row = document.querySelector(`#importPreviewBody .import-net[data-idx="${b.dataset.idx}"]`);
+    return { name: e.alias, host: e.host, port: e.port, user: e.user, network_id: row ? (parseInt(row.value, 10) || 0) : 0 };
   });
   if (!hosts.length) {
     showToast(t('import_nothing_selected', 'Select at least one host'), 'warning');
@@ -12426,7 +12853,11 @@ async function importSubmit() {
     const res = await fetch('/api/hosts/import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hosts, key_id: parseInt(document.getElementById('importKeyId').value, 10) || 0 })
+      body: JSON.stringify({
+        hosts,
+        key_id: parseInt(document.getElementById('importKeyId').value, 10) || 0,
+        network_id: parseInt(document.getElementById('importNetworkId')?.value, 10) || 0,
+      })
     });
     const data = await res.json().catch(() => ({}));
     importedHosts = data.created || [];
@@ -19067,6 +19498,7 @@ function switchSettingsTab(tab) {
   else if (tab === 'updates') document.getElementById('tabSettingsUpdates')?.classList.add('active');
   else if (tab === 's3') document.getElementById('tabSettingsS3')?.classList.add('active');
   else if (tab === 'agent') document.getElementById('tabSettingsAgent')?.classList.add('active');
+  else if (tab === 'networks') document.getElementById('tabSettingsNetworks')?.classList.add('active');
 
   const panelGeneral = document.getElementById('settingsPanelGeneral');
   const panelSecurity = document.getElementById('settingsPanelSecurity');
@@ -19077,6 +19509,7 @@ function switchSettingsTab(tab) {
   const panelUpdates = document.getElementById('settingsPanelUpdates');
   const panelS3 = document.getElementById('settingsPanelS3');
   const panelAgent = document.getElementById('settingsPanelAgent');
+  const panelNetworks = document.getElementById('settingsPanelNetworks');
 
   if (panelGeneral) panelGeneral.style.display = tab === 'general' ? 'flex' : 'none';
   if (panelSecurity) panelSecurity.style.display = tab === 'security' ? 'flex' : 'none';
@@ -19087,6 +19520,8 @@ function switchSettingsTab(tab) {
   if (panelUpdates) panelUpdates.style.display = tab === 'updates' ? 'flex' : 'none';
   if (panelS3) panelS3.style.display = tab === 's3' ? 'flex' : 'none';
   if (panelAgent) panelAgent.style.display = tab === 'agent' ? 'flex' : 'none';
+  if (panelNetworks) panelNetworks.style.display = tab === 'networks' ? 'flex' : 'none';
+  if (tab === 'networks') loadVpnNetworks();
   if (tab === 'agent' && window.AG) window.AG.loadSettings();
 
   if (tab === 'keys') {

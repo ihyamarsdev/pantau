@@ -650,7 +650,7 @@ Status: active
 		return mockOutput, "", 0, nil
 	}
 
-	ins := New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	ins := New(db, func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return mockRunner, nil
 	}, nil)
 
@@ -691,7 +691,7 @@ Status: active
 		return mockOutput, "", 0, nil
 	}
 
-	insBlock := New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	insBlock := New(db, func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return mockBlockRunner, nil
 	}, nil)
 
@@ -724,7 +724,7 @@ Status: active
 
 	// 4. Connection failure keeps prior scan
 	failRunner := sshrunner.NewMockRunner()
-	insFail := New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	insFail := New(db, func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return nil, errors.New("ssh connection refused")
 	}, nil)
 	_ = failRunner

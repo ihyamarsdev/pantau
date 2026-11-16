@@ -102,6 +102,7 @@ type Host struct {
 	TopSwapProcesses  string `json:"top_swap_processes"` // JSON serialized []ProcessInfo
 	KubeClusterID     string `json:"kube_cluster_id,omitempty"`
 	KubeMode          string `json:"kube_mode"`
+	NetworkID         int64  `json:"network_id"` // VPN Network (0 = direct)
 }
 
 type ProcessInfo struct {
@@ -273,6 +274,22 @@ func (d *DB) migrate() error {
 	CREATE TABLE IF NOT EXISTS settings (
 		key TEXT PRIMARY KEY,
 		value TEXT NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS vpn_networks (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL UNIQUE,
+		driver TEXT NOT NULL,
+		enabled INTEGER NOT NULL DEFAULT 0,
+		auto_up INTEGER NOT NULL DEFAULT 1,
+		iface TEXT NOT NULL DEFAULT '',
+		config TEXT NOT NULL DEFAULT '{}',
+		last_state TEXT NOT NULL DEFAULT 'down',
+		last_error TEXT NOT NULL DEFAULT '',
+		last_checked DATETIME,
+		last_up_at DATETIME,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
 	CREATE TABLE IF NOT EXISTS auth_sessions (
@@ -869,6 +886,8 @@ func (d *DB) migrate() error {
 	_ = d.alterAddColumn("hosts", "key_id", "INTEGER DEFAULT 0")
 	_ = d.alterAddColumn("hosts", "kube_cluster_id", "TEXT DEFAULT ''")
 	_ = d.alterAddColumn("hosts", "kube_mode", "TEXT NOT NULL DEFAULT 'full'")
+	_ = d.alterAddColumn("hosts", "network_id", "INTEGER NOT NULL DEFAULT 0")
+	_, _ = d.Exec(`CREATE INDEX IF NOT EXISTS idx_hosts_network ON hosts(network_id)`)
 	if err := d.migrateAgentSettings(); err != nil {
 		return fmt.Errorf("migrate agent settings: %w", err)
 	}
@@ -1049,7 +1068,7 @@ const hostSelectCols = `SELECT id, name, host, port, user, COALESCE(custom_key,'
 	COALESCE(cpu_cores, 1), COALESCE(hardware_model, ''), COALESCE(swap_used_bytes, 0), COALESCE(swap_total_bytes, 0),
 	COALESCE(last_duration_ms, 0), COALESCE(commission_date, ''), COALESCE(bios_date, ''), COALESCE(os_install_epoch, 0),
 	COALESCE(top_cpu_processes, ''), COALESCE(top_ram_processes, ''), COALESCE(top_swap_processes, ''),
-	COALESCE(kube_cluster_id, ''), COALESCE(kube_mode, 'full')
+	COALESCE(kube_cluster_id, ''), COALESCE(kube_mode, 'full'), COALESCE(network_id, 0)
 	FROM hosts `
 
 func scanHost(s rowScanner) (*Host, error) {
@@ -1065,7 +1084,7 @@ func scanHost(s rowScanner) (*Host, error) {
 		&h.CPUCores, &h.HardwareModel, &h.SwapUsedBytes, &h.SwapTotalBytes,
 		&h.LastDurationMs, &h.CommissionDate, &h.BIOSDate, &h.OSInstallEpoch,
 		&h.TopCPUProcesses, &h.TopRAMProcesses, &h.TopSwapProcesses,
-		&h.KubeClusterID, &h.KubeMode)
+		&h.KubeClusterID, &h.KubeMode, &h.NetworkID)
 	if err != nil {
 		return nil, err
 	}
@@ -1163,7 +1182,7 @@ func (d *DB) CreateHost(h *Host) (int64, error) {
 	}
 	var maxOrder int
 	_ = tx.QueryRow(`SELECT COALESCE(MAX(sort_order), 0) FROM hosts`).Scan(&maxOrder)
-	res, err := tx.Exec(`INSERT INTO hosts (name, host, port, user, custom_key, key_id, status, notes, sort_order, group_name, commission_date, bios_date, kube_cluster_id, kube_mode) VALUES (?, ?, ?, ?, ?, ?, 'unknown', ?, ?, ?, ?, ?, ?, ?)`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, maxOrder+1, h.GroupName, h.CommissionDate, h.BIOSDate, h.KubeClusterID, h.KubeMode)
+	res, err := tx.Exec(`INSERT INTO hosts (name, host, port, user, custom_key, key_id, status, notes, sort_order, group_name, commission_date, bios_date, kube_cluster_id, kube_mode, network_id) VALUES (?, ?, ?, ?, ?, ?, 'unknown', ?, ?, ?, ?, ?, ?, ?, ?)`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, maxOrder+1, h.GroupName, h.CommissionDate, h.BIOSDate, h.KubeClusterID, h.KubeMode, h.NetworkID)
 	if err != nil {
 		return 0, err
 	}
@@ -1192,7 +1211,7 @@ func (d *DB) UpdateHost(h *Host) error {
 	if h.GroupName, err = hostGroupSpelling(tx, h.GroupName, h.ID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`UPDATE hosts SET name=?, host=?, port=?, user=?, custom_key=?, key_id=?, notes=?, group_name=?, commission_date=?, kube_mode=? WHERE id=?`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, h.GroupName, h.CommissionDate, h.KubeMode, h.ID); err != nil {
+	if _, err := tx.Exec(`UPDATE hosts SET name=?, host=?, port=?, user=?, custom_key=?, key_id=?, notes=?, group_name=?, commission_date=?, kube_mode=?, network_id=? WHERE id=?`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, h.GroupName, h.CommissionDate, h.KubeMode, h.NetworkID, h.ID); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -1953,6 +1972,7 @@ type SnapshotPayload struct {
 	TerraformPolicies      []SnapshotTFPolicy          `json:"terraform_policies,omitempty"`
 	TerraformModules       []SnapshotTFModule          `json:"terraform_modules,omitempty"`
 	TerraformStates        []SnapshotTFState           `json:"terraform_states,omitempty"`
+	VPNNetworks            []VPNNetwork                `json:"vpn_networks,omitempty"`
 }
 
 func (d *DB) IsFresh() (bool, error) {
@@ -2217,6 +2237,11 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 		}
 	}
 
+	vpnNetworks, err := d.ListVPNNetworks()
+	if err != nil {
+		return nil, fmt.Errorf("list vpn networks: %w", err)
+	}
+
 	return &SnapshotPayload{
 		Version:                1,
 		CreatedAt:              time.Now().UTC(),
@@ -2240,6 +2265,7 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 		TerraformPolicies:      allTFPolicies,
 		TerraformModules:       allTFModules,
 		TerraformStates:        allTFStates,
+		VPNNetworks:            vpnNetworks,
 	}, nil
 }
 
@@ -2255,7 +2281,7 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 	defer tx.Rollback()
 
 	tables := []string{
-		"alerts", "incidents", "actual_items", "desired_rules", "hosts", "terminal_presets", "agent_memory",
+		"alerts", "incidents", "actual_items", "desired_rules", "hosts", "vpn_networks", "terminal_presets", "agent_memory",
 		"ssh_keys", "kube_clusters", "cloudflare_accounts", "s3_accounts",
 		"ansible_runs", "ansible_schedules", "ansible_playbooks", "ansible_assets",
 		"tf_output_links", "tf_runs", "tf_state_versions", "tf_variables", "tf_varset_workspaces", "tf_varsets", "tf_policies", "tf_module_versions", "tf_modules", "tf_workspaces", "tf_cloud_accounts",
@@ -2337,6 +2363,12 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 		}
 	}
 
+	for _, n := range payload.VPNNetworks {
+		if _, err := tx.Exec(`INSERT INTO vpn_networks (id, name, driver, enabled, auto_up, iface, config, last_state, last_error, last_checked, last_up_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			n.ID, n.Name, n.Driver, boolInt(n.Enabled), boolInt(n.AutoUp), n.Iface, n.Config, n.LastState, n.LastError, n.LastChecked, n.LastUpAt, n.CreatedAt, n.UpdatedAt); err != nil {
+			return fmt.Errorf("insert vpn network %d: %w", n.ID, err)
+		}
+	}
 	for _, h := range payload.Hosts {
 		onlineInt := 0
 		if h.InternetOnline {
@@ -2354,8 +2386,8 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 			internet_online, internet_latency_ms, public_ip, active_conn_count, failed_logins_count,
 			top_connections, listening_ports, notes, sort_order, group_name,
 			commission_date, bios_date, os_install_epoch,
-			kube_cluster_id, kube_mode
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			kube_cluster_id, kube_mode, network_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			h.ID, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Status, h.OSInfo, h.Kernel, h.Uptime, h.CPULoad,
 			h.RAMUsedBytes, h.RAMTotalBytes, h.DiskUsedBytes, h.DiskTotalBytes, h.LifecycleScore, h.LifecycleNotes, h.LifecycleBreakdown,
 			h.CreatedAt, h.NetRxBytes, h.NetTxBytes, h.NetRxSpeedBps, h.NetTxSpeedBps,
@@ -2363,7 +2395,7 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 			onlineInt, h.InternetLatencyMs, h.PublicIP, h.ActiveConnCount, h.FailedLoginsCount,
 			h.TopConnections, h.ListeningPorts, h.Notes, h.SortOrder, h.GroupName,
 			h.CommissionDate, h.BIOSDate, h.OSInstallEpoch,
-			h.KubeClusterID, kubeMode,
+			h.KubeClusterID, kubeMode, h.NetworkID,
 		)
 		if err != nil {
 			return fmt.Errorf("insert host %d: %w", h.ID, err)

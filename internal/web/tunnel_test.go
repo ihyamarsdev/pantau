@@ -50,7 +50,7 @@ func setupTunnelTestServer(t *testing.T, dialFunc func(ctx context.Context, netw
 		mockRunner.DialContextFunc = dialFunc
 	}
 
-	mockFactory := func(h string, p int, u, k string) (sshrunner.Runner, error) {
+	mockFactory := func(sshrunner.Target) (sshrunner.Runner, error) {
 		return mockRunner, nil
 	}
 

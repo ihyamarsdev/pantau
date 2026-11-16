@@ -45,7 +45,7 @@ func setupBulkTestServer(t *testing.T, runner *sshrunner.MockRunner) (*Server, *
 		t.Fatal(err)
 	}
 
-	ins := inspector.New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	ins := inspector.New(db, func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return runner, nil
 	}, nil)
 

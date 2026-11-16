@@ -34,10 +34,11 @@ type importPreviewEntry struct {
 }
 
 type importHostInput struct {
-	Name string `json:"name"`
-	Host string `json:"host"`
-	Port int    `json:"port"`
-	User string `json:"user"`
+	Name      string `json:"name"`
+	Host      string `json:"host"`
+	Port      int    `json:"port"`
+	User      string `json:"user"`
+	NetworkID int64  `json:"network_id"`
 }
 
 type importSkipped struct {
@@ -157,8 +158,9 @@ func (s *Server) handleHostImportPreview(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleHostImportCommit(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxImportBody)
 	var req struct {
-		Hosts []importHostInput `json:"hosts"`
-		KeyID int64             `json:"key_id"` // SSH Key Library key for every imported host; 0 = the global key
+		Hosts     []importHostInput `json:"hosts"`
+		KeyID     int64             `json:"key_id"`     // SSH Key Library key for every imported host; 0 = the global key
+		NetworkID int64             `json:"network_id"` // default VPN network for rows without their own
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
@@ -195,12 +197,21 @@ func (s *Server) handleHostImportCommit(w http.ResponseWriter, r *http.Request) 
 	created := []store.Host{}
 	skipped := []importSkipped{}
 	for _, in := range req.Hosts {
+		networkID := in.NetworkID
+		if networkID == 0 {
+			networkID = req.NetworkID
+		}
+		if err := s.validNetworkID(networkID); err != nil {
+			skipped = append(skipped, importSkipped{Name: in.Name, Reason: importReasonInvalid})
+			continue
+		}
 		h := store.Host{
-			Name:  strings.TrimSpace(in.Name),
-			Host:  strings.TrimSpace(in.Host),
-			Port:  in.Port,
-			User:  strings.TrimSpace(in.User),
-			KeyID: req.KeyID,
+			Name:      strings.TrimSpace(in.Name),
+			Host:      strings.TrimSpace(in.Host),
+			Port:      in.Port,
+			User:      strings.TrimSpace(in.User),
+			KeyID:     req.KeyID,
+			NetworkID: networkID,
 		}
 		if h.Port == 0 {
 			h.Port = 22

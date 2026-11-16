@@ -29,7 +29,7 @@ func setupAnsibleTestServer(t *testing.T) (*Server, func(*http.Request)) {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	ins := inspector.New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	ins := inspector.New(db, func(t sshrunner.Target) (sshrunner.Runner, error) {
 		mock := sshrunner.NewMockRunner()
 		mock.DefaultExec = func(cmd string) (string, string, int, error) {
 			return "ok", "", 0, nil

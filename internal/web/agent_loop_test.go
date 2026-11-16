@@ -818,7 +818,7 @@ func TestAgentLoopGate2WaitsForApproval(t *testing.T) {
 		srv, db := nativeAgent(t, f)
 		mock := sshrunner.NewMockRunner()
 		mock.DefaultExec = func(cmd string) (string, string, int, error) { return "ok\n", "", 0, nil }
-		ins := inspector.New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) { return mock, nil }, nil)
+		ins := inspector.New(db, func(t sshrunner.Target) (sshrunner.Runner, error) { return mock, nil }, nil)
 		srv.inspector = ins
 		id, err := db.CreateHost(&store.Host{Name: "h1", Host: "127.0.0.1", Port: 22, User: "root", Status: "healthy"})
 		if err != nil {

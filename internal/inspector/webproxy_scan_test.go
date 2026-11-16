@@ -30,7 +30,7 @@ func TestScanWebDomainsReturnsTheParsedScan(t *testing.T) {
 	runner.DefaultExec = func(cmd string) (string, string, int, error) {
 		return "__PANTAU_SECTION__ nginx host\nMETHOD nginx -T\nserver { listen 80; server_name a.example.com; }\n", "", 0, nil
 	}
-	ins := New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	ins := New(db, func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return runner, nil
 	}, nil)
 	scan, err := ins.ScanWebDomains(hostID)
@@ -47,7 +47,7 @@ func TestScanWebDomainsReturnsTheParsedScan(t *testing.T) {
 
 func TestScanWebDomainsSSHFailure(t *testing.T) {
 	db, hostID := webScanTestDB(t)
-	ins := New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	ins := New(db, func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return nil, errors.New("connection refused")
 	}, nil)
 	_, err := ins.ScanWebDomains(hostID)
@@ -67,7 +67,7 @@ func TestScanWebDomainsInProgress(t *testing.T) {
 		<-release
 		return "", "", 0, nil
 	}
-	ins := New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	ins := New(db, func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return runner, nil
 	}, nil)
 
@@ -89,7 +89,7 @@ func TestScanWebDomainsInProgress(t *testing.T) {
 
 func TestScanWebDomainsUnknownHost(t *testing.T) {
 	db, _ := webScanTestDB(t)
-	ins := New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	ins := New(db, func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return nil, errors.New("must not be called")
 	}, nil)
 	if _, err := ins.ScanWebDomains(9999); err == nil {
@@ -109,7 +109,7 @@ func TestRemoveNginxConfig(t *testing.T) {
 	var code int
 	runner := sshrunner.NewMockRunner()
 	runner.DefaultExec = func(cmd string) (string, string, int, error) { return "", "nginx: bad", code, nil }
-	ins := New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) { return runner, nil }, nil)
+	ins := New(db, func(t sshrunner.Target) (sshrunner.Runner, error) { return runner, nil }, nil)
 
 	for _, p := range []string{"/etc/nginx/nginx.conf", "/etc/passwd", "/etc/nginx/../shadow", "/etc/nginx/sites-enabled/other.conf"} {
 		if err := ins.RemoveNginxConfig(hostID, p); !errors.Is(err, ErrNginxRemoveRejected) {

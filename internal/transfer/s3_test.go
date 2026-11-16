@@ -30,7 +30,7 @@ func newS3TestManager(t *testing.T, endpoint string) (*Manager, int64, int64, *s
 		t.Fatal(err)
 	}
 	mock := sshrunner.NewMockRunner()
-	return NewManager(db, func(string, int, string, string) (sshrunner.Runner, error) { return mock, nil }), hostID, id, mock
+	return NewManager(db, func(sshrunner.Target) (sshrunner.Runner, error) { return mock, nil }), hostID, id, mock
 }
 
 func waitDone(t *testing.T, m *Manager, id int64) *TransferJob {

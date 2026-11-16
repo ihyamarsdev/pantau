@@ -919,7 +919,7 @@ func TestInspectHost_CooldownAndInFlight(t *testing.T) {
 	mockRunner.DefaultExec = func(cmd string) (string, string, int, error) {
 		return "", "", 0, nil
 	}
-	factory := func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	factory := func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return mockRunner, nil
 	}
 	ins := inspector.New(db, factory, nil)
@@ -1024,7 +1024,7 @@ func TestInspectAll_CooldownAndInFlight(t *testing.T) {
 		<-blockCh
 		return "", "", 0, nil
 	}
-	factory := func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	factory := func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return mockRunner, nil
 	}
 	ins := inspector.New(db, factory, nil)
@@ -2087,8 +2087,8 @@ func TestSSHKeyProvisioningWithLibraryKey(t *testing.T) {
 	mockRunner.DefaultExec = func(cmd string) (string, string, int, error) {
 		return "Linux 6.0 x86_64", "", 0, nil
 	}
-	factory := func(host string, port int, user, key string) (sshrunner.Runner, error) {
-		usedKey = key
+	factory := func(target sshrunner.Target) (sshrunner.Runner, error) {
+		usedKey = target.Key
 		return mockRunner, nil
 	}
 	srv := NewServer(db, inspector.New(db, factory, nil), nil)
@@ -2099,7 +2099,7 @@ func TestSSHKeyProvisioningWithLibraryKey(t *testing.T) {
 	}
 
 	var injectedPubKey string
-	srv.SetKeyProvisioner(func(host string, port int, user, password, pubKey string) error {
+	srv.SetKeyProvisioner(func(target sshrunner.Target, password, pubKey string) error {
 		injectedPubKey = pubKey
 		return nil
 	})

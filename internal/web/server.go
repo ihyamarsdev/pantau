@@ -44,6 +44,7 @@ import (
 	"pantau/internal/store"
 	"pantau/internal/transfer"
 	"pantau/internal/updater"
+	"pantau/internal/vpnnet"
 	"pantau/internal/vulnintel"
 )
 
@@ -118,6 +119,7 @@ type Server struct {
 	ansibleAdhocMgr   *AnsibleAdhocManager
 	adhocRunner       func(ctx context.Context, spec ansible.AdhocSpec, log io.Writer) (int, error)
 	factsGather       func(ctx context.Context, t ansible.Target, cfg, libDir string, log io.Writer) (map[string]any, error)
+	vpnMgr            *vpnnet.Manager
 	tfMgr             *TerraformRunManager
 	gitEditTree       func(ctx context.Context, g ansible.GitSource) (*ansible.RepoTree, error)
 	gitEditFile       func(ctx context.Context, g ansible.GitSource, path string) (string, string, error)
@@ -211,6 +213,31 @@ func (s *Server) SetTerraformRunManager(mgr *TerraformRunManager) {
 
 // SetReposDir sets the default folder new repository clones are created in.
 func (s *Server) SetReposDir(dir string) { s.reposDir = dir }
+
+// SetVPNManager wires the tunnel supervisor into every Host connection path.
+func (s *Server) SetVPNManager(m *vpnnet.Manager) {
+	s.vpnMgr = m
+	if s.inspector != nil {
+		s.inspector.SetPathResolver(m)
+	}
+	if s.transferMgr != nil {
+		s.transferMgr.SetPathResolver(m)
+	}
+}
+
+// hostTarget builds the dial target for a Host, resolving its VPN path (nil path means direct dialing).
+func (s *Server) hostTarget(h *store.Host) (sshrunner.Target, error) {
+	t := sshrunner.Target{Host: h.Host, Port: h.Port, User: h.User}
+	if s.vpnMgr == nil || h.NetworkID == 0 {
+		return t, nil
+	}
+	path, err := s.vpnMgr.Ensure(context.Background(), h.NetworkID)
+	if err != nil {
+		return t, fmt.Errorf("%w: network down: %v", sshrunner.ErrNetworkUnavailable, err)
+	}
+	t.Net = path
+	return t, nil
+}
 
 func (s *Server) SetTerraformDataDir(dataDir string) {
 	if s.db != nil {
@@ -330,6 +357,7 @@ func (s *Server) routes() {
 
 	// Hosts
 	s.mux.HandleFunc("/api/hosts", s.authMiddleware(s.handleHosts))
+	s.mux.HandleFunc("/api/vpn/", s.authMiddleware(s.handleVPN))
 	s.mux.HandleFunc("/api/hosts/", s.authMiddleware(s.handleHostDetailRoute))
 
 	// SSH Keys
@@ -1013,6 +1041,10 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "invalid key_id"})
 			return
 		}
+		if err := s.validNetworkID(h.NetworkID); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error()})
+			return
+		}
 		var libKey *store.SSHKey
 		if h.KeyID > 0 {
 			var err error
@@ -1041,7 +1073,12 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
-			if err := s.provisioner(h.Host, h.Port, h.User, req.Password, pubKey); err != nil {
+			target, terr := s.hostTarget(&h)
+			if terr != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": fmt.Sprintf("Injeksi SSH Key gagal: %v", terr)})
+				return
+			}
+			if err := s.provisioner(target, req.Password, pubKey); err != nil {
 				logger.Error("ssh", h.Name, fmt.Sprintf("SSH key provisioning failed: %v", err))
 				writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 					"error": fmt.Sprintf("Injeksi SSH Key gagal: %v", err),
@@ -1266,6 +1303,10 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 			}
 			if h.KeyID < 0 {
 				writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "invalid key_id"})
+				return
+			}
+			if err := s.validNetworkID(h.NetworkID); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error()})
 				return
 			}
 			if h.KeyID > 0 {
@@ -1495,7 +1536,12 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		if err := s.provisioner(host.Host, host.Port, host.User, req.Password, pubKey); err != nil {
+		target, terr := s.hostTarget(host)
+		if terr != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": fmt.Sprintf("injeksi gagal: %v", terr)})
+			return
+		}
+		if err := s.provisioner(target, req.Password, pubKey); err != nil {
 			logger.Error("ssh", host.Name, fmt.Sprintf("SSH key provisioning failed: %v", err))
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": fmt.Sprintf("injeksi gagal: %v", err)})
 			return

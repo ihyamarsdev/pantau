@@ -779,7 +779,7 @@ func setupKubeInspector(t *testing.T) (*Inspector, int64) {
 		t.Fatalf("failed to add test host: %v", err)
 	}
 
-	ins := New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	ins := New(db, func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return sshrunner.NewMockRunner(), nil
 	}, nil)
 	return ins, hostID
@@ -977,7 +977,7 @@ func TestKubeLogStreamCmds(t *testing.T) {
 
 func TestKubePodsOversizedPayload(t *testing.T) {
 	ins, hostID := setupKubeInspector(t)
-	ins.factory = func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	ins.factory = func(t sshrunner.Target) (sshrunner.Runner, error) {
 		m := sshrunner.NewMockRunner()
 		m.DefaultExec = func(cmd string) (string, string, int, error) {
 			return strings.Repeat("a", maxKubePodsPayload+1), "", 0, nil

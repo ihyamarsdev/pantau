@@ -51,7 +51,7 @@ func newRepoCopyManager(t *testing.T) (*Manager, int64, *captureRunner) {
 		t.Fatal(err)
 	}
 	cr := &captureRunner{MockRunner: sshrunner.NewMockRunner()}
-	return NewManager(db, func(string, int, string, string) (sshrunner.Runner, error) { return cr, nil }), hostID, cr
+	return NewManager(db, func(sshrunner.Target) (sshrunner.Runner, error) { return cr, nil }), hostID, cr
 }
 
 func TestStartRepoCopyStreamsTheArchiveIntoTar(t *testing.T) {

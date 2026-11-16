@@ -69,7 +69,7 @@ func TestInspectHost_ServiceRulesBatchSystemctl(t *testing.T) {
 
 	mockRunner := sshrunner.NewMockRunner()
 	mockRunner.DefaultExec = batchServiceMockExec(map[string]string{"nginx": "inactive"})
-	factory := func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	factory := func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return mockRunner, nil
 	}
 	ins := New(db, factory, nil)
@@ -154,7 +154,7 @@ func TestInspectHost_ServiceBatchFallsBackOnLineMismatch(t *testing.T) {
 		}
 		return benchMockExec(cmd)
 	}
-	factory := func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	factory := func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return mockRunner, nil
 	}
 	ins := New(db, factory, nil)

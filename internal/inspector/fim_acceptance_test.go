@@ -30,7 +30,7 @@ func TestFIMAcceptance(t *testing.T) {
 	runner.DefaultExec = func(cmd string) (string, string, int, error) {
 		return manifest, "", 0, nil
 	}
-	ins := New(db, func(host string, port int, user, key string) (sshrunner.Runner, error) {
+	ins := New(db, func(t sshrunner.Target) (sshrunner.Runner, error) {
 		return runner, nil
 	}, nil)
 	hostID, _ := db.CreateHost(&store.Host{Name: "Test", Host: "192.168.1.10", User: "root", Port: 22})
