@@ -39,6 +39,8 @@
 /* Roomier panels in the Terraform section; !important only where inline styles force the old layout. */
 #sectionTerraform .grid { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
 #tfVarsetsList, #tfPoliciesList { display: grid !important; grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); gap: 14px !important; }
+/* Empty states span every column and fill the drawer body, so they sit in the middle instead of the first 460px column. */
+#tfVarsetsList > .empty-state, #tfPoliciesList > .empty-state { grid-column: 1 / -1; min-height: 55vh; }
 #tfPanelWorkspaces > div:first-child > div:first-child { max-width: none !important; }
 
 @media (prefers-reduced-motion: reduce) { .tf-drawer, .tf-drawer-backdrop { transition: none !important; } }

@@ -29125,8 +29125,7 @@ async function loadTfVarsets() {
   const r = await tfApi('GET', '/api/terraform/varsets');
   tfVarsets = r.ok ? (r.data.varsets || []) : [];
   const box = tfEl('tfVarsetsList');
-  box.style.display = 'flex';
-  if (!tfVarsets.length) { box.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><div class="empty-state-icon">${svgIcon('sliders-horizontal', 'icon-xl')}</div><div class="empty-state-desc">${tfE(tx('tfx_no_varsets'))}</div></div>`; return; }
+  if (!tfVarsets.length) { box.innerHTML = `<div class="empty-state"><div class="empty-state-icon">${svgIcon('sliders-horizontal', 'icon-xl')}</div><div class="empty-state-desc">${tfE(tx('tfx_no_varsets'))}</div></div>`; return; }
   box.innerHTML = tfVarsets.map(s => `<div class="card" style="flex-direction:row;align-items:center;justify-content:space-between;gap:12px;">
     <div style="min-width:0;"><b>${tfE(s.name)}</b> ${s.global ? `<span class="badge badge-healthy">${tfE(tx('tfx_global'))}</span>` : ''}
       <div style="font-size:var(--fs-xs);color:var(--text-muted);">${tfE(s.description || '')}</div>
@@ -29186,8 +29185,10 @@ async function loadTfPolicies() {
   const r = await tfApi('GET', '/api/terraform/policies');
   tfPolicies = r.ok ? (r.data.policies || []) : [];
   const box = tfEl('tfPoliciesList');
-  box.style.display = 'flex';
-  if (!tfPolicies.length) { box.innerHTML = tfEmpty(tx('tfx_no_policies')); return; }
+  if (!tfPolicies.length) {
+    box.innerHTML = `<div class="empty-state"><div class="empty-state-icon">${svgIcon('shield', 'icon-xl')}</div><div class="empty-state-desc">${tfE(tx('tfx_no_policies'))}</div></div>`;
+    return;
+  }
   const enfCls = { advisory: 'badge-warning', soft: 'badge-degraded', hard: 'badge-danger' };
   box.innerHTML = tfPolicies.map(p => {
     const ws = p.workspace_id ? (tfWorkspaces.find(w => w.id === p.workspace_id) || {}).name || '#' + p.workspace_id : tx('tfx_policy_scope_all');
