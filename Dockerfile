@@ -28,8 +28,14 @@ FROM alpine:latest AS vpn
 ARG TARGETARCH
 ARG WITH_NETBIRD=0
 ARG NETBIRD_VERSION=0.83.1
+ARG WITH_NETCLIENT=0
+ARG NETCLIENT_VERSION=1.7.0
 RUN apk --no-cache add ca-certificates curl tar \
  && mkdir -p /vpn \
+ && if [ "$WITH_NETCLIENT" = "1" ]; then \
+      curl -fsSL -o /vpn/netclient "https://github.com/gravitl/netclient/releases/download/v${NETCLIENT_VERSION}/netclient-linux-${TARGETARCH}" \
+      && chmod 0755 /vpn/netclient; \
+    fi \
  && if [ "$WITH_NETBIRD" = "1" ]; then \
       cd /tmp \
       && curl -fsSLO "https://github.com/netbirdio/netbird/releases/download/v${NETBIRD_VERSION}/netbird_${NETBIRD_VERSION}_linux_${TARGETARCH}.tar.gz" \
@@ -39,7 +45,7 @@ RUN apk --no-cache add ca-certificates curl tar \
     fi
 
 FROM alpine:latest
-RUN apk --no-cache add ca-certificates tzdata kubectl ansible-core openssh-client git opentofu openvpn wireguard-tools
+RUN apk --no-cache add ca-certificates tzdata kubectl ansible-core openssh-client git opentofu openvpn wireguard-tools tailscale
 COPY --from=vpn /vpn/ /usr/local/bin/
 COPY --from=infracost /usr/local/bin/infracost /usr/local/bin/infracost
 COPY --from=terraform /usr/local/bin/terraform /usr/local/bin/terraform

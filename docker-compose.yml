@@ -7,6 +7,7 @@ services:
         # NetBird account (Settings -> Networks, driver netbird, mode "instance"). Set to "0" for a
         # leaner image; the openvpn and wireguard-tools clients are always included.
         WITH_NETBIRD: "1"
+        WITH_NETCLIENT: "1"
     container_name: pantau
     restart: unless-stopped
     ports:

@@ -4,40 +4,106 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"runtime"
+	"time"
 )
 
 // tailscaleStatusJSON is the subset of `tailscale status --json` Pantau reads.
 type tailscaleStatusJSON struct {
 	BackendState string   `json:"BackendState"`
+	AuthURL      string   `json:"AuthURL"`
 	TailscaleIPs []string `json:"TailscaleIPs"`
 	Peer         map[string]struct {
 		Online bool `json:"Online"`
 	} `json:"Peer"`
 }
 
-// tailscaleDriver drives one tailscaled. A tailnet per instance: two tailnets need two sockets (see socket config).
+// tailscaleDriver drives one tailscaled. One tailnet per instance: two tailnets need two daemons,
+// each with its own socket, and with daemon "auto" Pantau starts the second one itself.
 type tailscaleDriver struct{}
 
 func (tailscaleDriver) DefaultIface(n Network) string { return n.cfg("interface_name", "tailscale0") }
 
-func (tailscaleDriver) socketArgs(n Network) []string {
+// externalDaemon reports whether this network must use a daemon it does not own: an explicit socket
+// with daemon "external", or the host's default socket when daemon is unset and it already exists.
+func (d tailscaleDriver) socketPath(n Network) string {
 	if s := n.cfg("socket", ""); s != "" {
-		return []string{"--socket", s}
+		return s
 	}
-	return nil
+	return n.Root + "/tailscaled.sock"
 }
 
+func (d tailscaleDriver) useExternalDaemon(n Network) bool {
+	if n.cfg("daemon", "auto") == "external" {
+		return true
+	}
+	if s := n.cfg("socket", ""); s != "" {
+		// An explicit socket is either a shared daemon or ours; only spawn when nothing listens there.
+		return socketListening(s)
+	}
+	return socketListening("/var/run/tailscale/tailscaled.sock")
+}
+
+func (d tailscaleDriver) socketArgs(n Network) []string {
+	if d.useExternalDaemon(n) {
+		if s := n.cfg("socket", ""); s != "" {
+			return []string{"--socket", s}
+		}
+		return nil // the host's default socket
+	}
+	return []string{"--socket", d.socketPath(n)}
+}
+
+// Up starts tailscaled when nobody is serving the socket (a container has none), then joins the tailnet.
 func (d tailscaleDriver) Up(ctx context.Context, m *Manager, n Network) error {
+	bin, err := m.vendorBin(n)
+	if err != nil {
+		return err
+	}
+	if !d.useExternalDaemon(n) && !m.childRunning(n.ID) {
+		if err := os.MkdirAll(n.Root, 0o700); err != nil {
+			return err
+		}
+		sock := d.socketPath(n)
+		args := []string{
+			"--state=" + n.Root + "/tailscaled.state",
+			"--socket=" + sock,
+			"--tun=" + d.DefaultIface(n),
+		}
+		if runtime.GOOS == "windows" {
+			return fmt.Errorf("running a tailscaled instance is not supported on windows: start the service and set socket, or use daemon \"external\"")
+		}
+		daemon, err := m.daemonBin(n)
+		if err != nil {
+			return err
+		}
+		if err := m.spawn(n, daemon, args...); err != nil {
+			return err
+		}
+		if !waitSocket(ctx, sock, 15*time.Second) {
+			return fmt.Errorf("tailscaled did not start: no socket at %s", sock)
+		}
+	}
+	// Without any saved login, "tailscale up" blocks on the interactive login flow for a minute and
+	// prints a URL nobody sees: fail fast and hand that URL to the admin instead.
+	if n.cfg("authkey", "") == "" {
+		if out, err := m.runCmd(ctx, 5*time.Second, bin, append(d.socketArgs(n), "status", "--json")...); err == nil {
+			var probe tailscaleStatusJSON
+			if json.Unmarshal([]byte(jsonBody(out)), &probe) == nil && probe.BackendState == "NeedsLogin" {
+				if probe.AuthURL != "" {
+					return fmt.Errorf("tailscale needs a login: set the network's authkey, or open %s and approve this device", probe.AuthURL)
+				}
+				return fmt.Errorf("tailscale needs a login: set the network's authkey field")
+			}
+		}
+	}
 	args := append(d.socketArgs(n), "up", "--authkey", n.cfg("authkey", ""))
 	if v := n.cfg("login_server", ""); v != "" {
 		args = append(args, "--login-server", v)
 	}
 	if v := n.cfg("hostname", ""); v != "" {
 		args = append(args, "--hostname", v)
-	}
-	bin, err := m.vendorBin(n)
-	if err != nil {
-		return err
 	}
 	_, err = m.runCmd(ctx, upTimeout, bin, args...)
 	return err
@@ -46,9 +112,11 @@ func (d tailscaleDriver) Up(ctx context.Context, m *Manager, n Network) error {
 func (d tailscaleDriver) Down(ctx context.Context, m *Manager, n Network) error {
 	bin, err := m.vendorBin(n)
 	if err != nil {
+		m.stopChild(n.ID)
 		return err
 	}
 	_, err = m.runCmd(ctx, downTimeout, bin, append(d.socketArgs(n), "down")...)
+	m.stopChild(n.ID)
 	return err
 }
 
@@ -56,6 +124,9 @@ func (d tailscaleDriver) Status(ctx context.Context, m *Manager, n Network) (Sta
 	bin, err := m.vendorBin(n)
 	if err != nil {
 		return Status{State: StateDown, Iface: d.DefaultIface(n), Detail: err.Error()}, nil
+	}
+	if !d.useExternalDaemon(n) && !m.childRunning(n.ID) {
+		return Status{State: StateDown, Iface: d.DefaultIface(n), Detail: "tailscaled not running"}, nil
 	}
 	out, err := m.runCmd(ctx, statusTimeout, bin, append(d.socketArgs(n), "status", "--json")...)
 	if err != nil {

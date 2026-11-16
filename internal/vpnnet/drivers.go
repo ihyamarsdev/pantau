@@ -242,6 +242,12 @@ func firstArgLine(out, prefix string) string {
 }
 
 // vendorBins maps a driver to the binary it runs (the custom driver runs commands, not a binary).
+// daemonBins are the processes Pantau may run for a driver (tailscaled is separate from the tailscale CLI).
+var daemonBins = map[string]string{
+	DriverTailscale: "tailscaled",
+	DriverNetMaker:  "netclient",
+}
+
 var vendorBins = map[string]string{
 	DriverNetBird:   "netbird",
 	DriverNetMaker:  "netclient",
@@ -315,6 +321,51 @@ func resolveVendorBin(driverName, override string) (string, error) {
 	return "", fmt.Errorf("%s is not installed on the Pantau server: install it on this machine, or set the network's \"bin\" field to its full path (PATH=%s)", name, os.Getenv("PATH"))
 }
 
+// daemonBin resolves the daemon binary for a driver that can own one (tailscaled, netclient).
+func (m *Manager) daemonBin(n Network) (string, error) {
+	name := daemonBins[n.Driver]
+	if name == "" {
+		return "", fmt.Errorf("%s has no daemon", n.Driver)
+	}
+	if override := strings.TrimSpace(n.Config["bin"]); override != "" {
+		// "bin" names the CLI; its daemon sits next to it unless daemon_bin says otherwise.
+		if db := strings.TrimSpace(n.Config["daemon_bin"]); db != "" {
+			return resolveVendorBin(n.Driver, db)
+		}
+		dir := filepath.Dir(override)
+		candidate := filepath.Join(dir, name)
+		if st, err := os.Stat(candidate); err == nil && !st.IsDir() {
+			return candidate, nil
+		}
+	}
+	if db := strings.TrimSpace(n.Config["daemon_bin"]); db != "" {
+		if st, err := os.Stat(db); err == nil && !st.IsDir() {
+			return db, nil
+		}
+		return "", fmt.Errorf("%q does not exist on the Pantau server", db)
+	}
+	return resolveVendorBinByName(name, n.Driver)
+}
+
+// resolveVendorBinByName is resolveVendorBin without the driver-to-binary mapping.
+func resolveVendorBinByName(name, driverName string) (string, error) {
+	if p, err := exec.LookPath(name); err == nil {
+		return p, nil
+	}
+	for _, dir := range commonBinDirs {
+		candidate := filepath.Join(dir, name)
+		if st, err := os.Stat(candidate); err == nil && !st.IsDir() {
+			return candidate, nil
+		}
+		if runtime.GOOS == "windows" {
+			if st, err := os.Stat(candidate + ".exe"); err == nil && !st.IsDir() {
+				return candidate + ".exe", nil
+			}
+		}
+	}
+	return "", fmt.Errorf("%s is not installed on the Pantau server (needed by the %s driver): install it on this machine, or set the network's \"daemon_bin\" field to its full path", name, driverName)
+}
+
 // vendorBin resolves this network's binary, honouring the per-network "bin" override.
 func (m *Manager) vendorBin(n Network) (string, error) {
 	if n.Driver == DriverCustom {
@@ -349,6 +400,16 @@ func DetectBinary(driverName string) (path, version, errText string) {
 	cmd.Env = append(os.Environ(), "PATH="+vendorPATH())
 	out, err := cmd.CombinedOutput()
 	line := strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0])
+	if driverName == DriverNetMaker {
+		// netclient logs on every command; take a version-looking token instead of a log line.
+		line = ""
+		for _, candidate := range strings.Fields(string(out)) {
+			if v := strings.Trim(candidate, "v,;[]()"); len(v) > 3 && strings.Count(v, ".") == 2 && v[0] >= '0' && v[0] <= '9' {
+				line = v
+				break
+			}
+		}
+	}
 	if err != nil {
 		// netclient refuses to even print its version without root; report that instead of a fake version.
 		if line == "" {

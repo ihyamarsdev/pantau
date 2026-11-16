@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -467,6 +469,41 @@ func (m *Manager) stopChild(id int64) {
 	case <-time.After(10 * time.Second):
 		_ = proc.cmd.Process.Kill()
 		<-proc.done
+	}
+}
+
+// socketListening reports whether something serves a daemon socket (unix socket on Linux/macOS, npipe path on Windows).
+func socketListening(path string) bool {
+	if path == "" {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		_, err := os.Stat(path)
+		return err == nil
+	}
+	conn, err := net.DialTimeout("unix", path, 500*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
+}
+
+// waitSocket polls until a daemon starts serving its socket.
+func waitSocket(ctx context.Context, path string, limit time.Duration) bool {
+	deadline := time.Now().Add(limit)
+	for {
+		if socketListening(path) {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(200 * time.Millisecond):
+		}
 	}
 }
 
