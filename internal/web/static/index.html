@@ -27907,11 +27907,13 @@ function tfCopy(text) {
 function tfCopyData(btn) { tfCopy(btn.dataset.copy || ''); }
 
 /* ---------- dialogs ---------- */
-function tfDlg(n, title, body, footer, width) {
+function tfDlg(n, title, body, footer, width, cls) {
   tfEl('tfDlg' + n + 'Title').textContent = title;
   tfEl('tfDlg' + n + 'Body').innerHTML = body;
   tfEl('tfDlg' + n + 'Footer').innerHTML = footer;
-  tfEl('tfDlg' + n + 'Content').style.maxWidth = 'min(' + (width || 560) + 'px, 96vw)';
+  const content = tfEl('tfDlg' + n + 'Content');
+  content.className = 'modal-content modal-dialog' + (cls ? ' ' + cls : '');
+  content.style.maxWidth = 'min(' + (width || 560) + 'px, 96vw)';
   tfDlgErr(n, '');
   openModal('tfDlg' + n);
 }
@@ -28295,26 +28297,33 @@ async function openTfWorkspaceModal(id) {
   const bins = (tfStatus && tfStatus.binaries) || [{ name: 'terraform' }, { name: 'tofu' }];
   const defMain = 'resource "terraform_data" "example" {\n  input = "hello"\n}\n\noutput "example" {\n  value = terraform_data.example.output\n}\n';
   const src = ws ? ws.source : 'inline';
-  const body = `<div class="dk-form-grid">
+  const srcSeg = (v, icon, label) => `<button type="button" data-src="${v}" aria-pressed="${src === v ? 'true' : 'false'}" onclick="tfWfSetSource('${v}')">${svgIcon(icon, 'icon-xs')} <span>${tfE(label)}</span></button>`;
+  const body = `<div class="tf-ws">
+    <div class="dk-form-grid tf-ws-grid">
     ${tfField(tx('tfx_name') + ' *', tfInput('tfWfName', ws && ws.name, 'maxlength="100"'))}
     ${tfField(tx('tfx_group'), tfInput('tfWfGroup', ws && ws.group_name, 'list="tfGroupList" placeholder="' + tfE(tx('tfx_group_ph')) + '"') + '<datalist id="tfGroupList">' + Array.from(new Set(tfWorkspaces.map(w => (w.group_name || '').trim()).filter(Boolean))).sort().map(g => `<option value="${tfE(g)}">`).join('') + '</datalist>')}
     ${tfField(tx('tfx_environment'), tfInput('tfWfEnv', ws && ws.environment, 'list="tfEnvList" placeholder="production"') + '<datalist id="tfEnvList"><option value="production"><option value="staging"><option value="development"></datalist>')}
     ${tfField(tx('tfx_description'), tfInput('tfWfDesc', ws && ws.description), '', true)}
     ${tfField(tx('tfx_tags'), tfInput('tfWfTags', ws ? (ws.tags || []).join(', ') : ''))}
     ${tfField(tx('tfx_binary'), tfSelect('tfWfBinary', bins.map(b => [b.name, b.name + (b.err ? ' (' + tx('tfx_not_installed') + ')' : '')]), ws ? ws.binary : (bins.find(b => !b.err) || bins[0]).name))}
-    ${tfField(tx('tfx_source'), tfSelect('tfWfSource', [['inline', tx('tfx_source_inline')], ['git', tx('tfx_source_git')]], src, 'tfWfSourceChanged()'))}
     ${tfField(tx('tfx_drift_interval'), tfInput('tfWfDrift', ws ? ws.drift_interval_minutes : 0, 'type="number" min="0"'), tx('tfx_drift_off') + ': 0')}
-    <div id="tfWfInline" class="dk-full" style="grid-column:1/-1;">${tfFilesEditorHTML()}</div>
-    <div id="tfWfGit" class="dk-form-grid dk-full" style="grid-column:1/-1;display:none;">
+    <div class="dk-field tf-ws-source"><label>${tfE(tx('tfx_source'))}</label>
+      <select id="tfWfSource" hidden onchange="tfWfSourceChanged()">${[['inline', tx('tfx_source_inline')], ['git', tx('tfx_source_git')]].map(([v, l]) => `<option value="${v}" ${src === v ? 'selected' : ''}>${tfE(l)}</option>`).join('')}</select>
+      <div class="tf-ws-seg" role="group" aria-label="${tfE(tx('tfx_source'))}">${srcSeg('inline', 'file-code', tx('tfx_source_inline'))}${srcSeg('git', 'git-branch', tx('tfx_source_git'))}</div>
+    </div>
+    </div>
+    <div id="tfWfInline" class="tf-ws-editor">${tfFilesEditorHTML()}</div>
+    <div id="tfWfGit" class="dk-form-grid tf-ws-grid" style="display:none;">
       ${tfField(tx('tfx_git_url'), tfInput('tfWfGitUrl', ws && ws.git_url, 'placeholder="https://github.com/org/infra.git"'), '', true)}
       ${tfField(tx('tfx_git_branch'), tfInput('tfWfGitBranch', ws && ws.git_branch, 'placeholder="main"'))}
       ${tfField(tx('tfx_git_path'), tfInput('tfWfGitPath', ws && ws.git_path, 'placeholder="envs/prod"'))}
       ${tfField(tx('tfx_git_auth'), tfSelect('tfWfGitAuth', [['none', tx('tfx_git_auth_none')], ['token', tx('tfx_git_auth_token')], ['ssh', tx('tfx_git_auth_ssh')]], ws ? ws.git_auth || 'none' : 'none', 'tfWfAuthChanged()'))}
       <div id="tfWfTokenWrap">${tfField(tx('tfx_git_token'), `<input type="password" id="tfWfGitToken" class="form-input" autocomplete="new-password" style="width:100%;box-sizing:border-box;" placeholder="${ws && ws.git_token_set ? tfE(tx('tfx_git_token_keep')) : ''}" />`)}</div>
       <div id="tfWfKeyWrap">${tfField('SSH Key', '<select id="tfWfGitKey" class="form-input" style="width:100%;box-sizing:border-box;"></select>')}</div>
-    </div></div>`;
+    </div>
+  </div>`;
   tfDlg(1, ws ? t('tf_ws_modal_edit', 'Edit Workspace') : t('tf_ws_modal_new', 'New Workspace'), body,
-    tfFoot(1, tfPrimary(t('save', 'Save'), `saveTfWorkspace(${id || 0})`)), 780);
+    tfFoot(1, tfPrimary(t('save', 'Save'), `saveTfWorkspace(${id || 0})`)), 1180, 'tf-ws-dlg');
   tfFeInit(ws && ws.files && Object.keys(ws.files).length ? ws.files : { 'main.tf': defMain });
   tfWfSourceChanged();
   tfWfAuthChanged();
@@ -28324,10 +28333,18 @@ async function openTfWorkspaceModal(id) {
   keySel.innerHTML = keys.map(k => `<option value="${Number(k.id)}" ${ws && Number(k.id) === Number(ws.git_key_id) ? 'selected' : ''}>${tfE(k.name)}</option>`).join('');
   if (!ws && typeof tfTplInject === 'function') tfTplInject();
 }
+function tfWfSetSource(v) {
+  const sel = tfEl('tfWfSource');
+  if (!sel) return;
+  sel.value = v;
+  tfWfSourceChanged();
+}
 function tfWfSourceChanged() {
-  const git = tfV('tfWfSource') === 'git';
-  tfEl('tfWfInline').style.display = git ? 'none' : 'block';
+  const src = tfV('tfWfSource');
+  const git = src === 'git';
+  tfEl('tfWfInline').style.display = git ? 'none' : 'flex';
   tfEl('tfWfGit').style.display = git ? 'grid' : 'none';
+  document.querySelectorAll('#tfDlg1 .tf-ws-seg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.src === src)));
 }
 function tfWfAuthChanged() {
   const a = tfV('tfWfGitAuth');
