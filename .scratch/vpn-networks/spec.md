@@ -120,14 +120,31 @@ Bind per OS (satu file per platform, `//go:build`):
 
 | Driver | Bidang `config` (rahasia ✱) | Up / Down / Status | Interface |
 | --- | --- | --- | --- |
-| `netbird` | `setup_key`✱, `management_url`, `hostname`, `interface_name` (default `wt0`) | `netbird up --setup-key … [--management-url …] [--hostname …] [--interface-name …]` / `netbird down` / `netbird status --json`: `management.connected && signal.connected` → `up`; `peers.connected`/`peers.total` → `Peers`; `fqdn`, `netbirdIp` → `Detail`; `dnsServers` → `Path.DNS` | `interface_name` (= `wt0`) |
+| `netbird` | `mode` (`shared` default \| `instance`), `setup_key`✱, `management_url`, `hostname`, `interface_name` (default `wt0`), `wireguard_port` (default `51820`), `daemon_socket` (default `/var/run/netbird.sock`, hanya `shared`) | **shared**: `netbird up --setup-key … [--management-url …] [--hostname …] [--interface-name …]` / `netbird down` — **hanya satu Network `netbird/shared` yang boleh ada** (daemon tunggal, `up` dengan akun lain memindahkan akun). **instance**: Pantau menjalankan daemon sendiri per Network, `netbird service run --config <root>/config.json --daemon-addr unix://<root>/nb.sock --log-file <root>/netbird.log`, lalu `netbird up --daemon-addr unix://<root>/nb.sock --setup-key … --management-url … --interface-name <iface> --wireguard-port <port> --disable-dns`; `down` = `netbird down --daemon-addr …` lalu hentikan proses. Status keduanya: `netbird status --json [--daemon-addr …]`: `management.connected && signal.connected` → `up`; `peers.connected`/`peers.total` → `Peers`; `fqdn`, `netbirdIp` → `Detail`; `dnsServers` → `Path.DNS` | `interface_name` (`wt0`, wajib unik antar Network) |
 | `netmaker` | `token`✱, `network`, `server`, `interface` | `netclient join -t <token> [-n net] [-s server] [-I iface]` / `netclient disconnect <net>` (delete → `netclient leave <net>`) / `netclient list` (root) **dan** verifikasi interface punya alamat → `up`; `peers` tidak dilaporkan (`-1`) | `interface` atau nama jaringan (`nm-…`) |
 | `openvpn` | `config`✱ (isi `.ovpn`), `username`✱, `password`✱ | proses anak: `openvpn --config <root>/client.ovpn --auth-nocache [--auth-user-pass <root>/auth.txt] --writepid <root>/openvpn.pid` / kirim `SIGTERM` + tunggu 10 detik / interface ada + punya alamat; device dibaca dari baris log `TUN/TAP device (tun\d+) opened` | dari log, atau bidang `iface` bila diisi |
 | `wireguard` | `config`✱ (isi `.conf`) | `wg-quick up <root>/<iface>.conf` / `wg-quick down <root>/<iface>.conf` / interface ada + punya alamat | nama `[Interface]` di berkas |
-| `tailscale` | `authkey`✱, `login_server`, `hostname` | `tailscale up --authkey … [--login-server …] [--hostname …]` / `tailscale down` / `tailscale status --json`: `BackendState == "Running"` → `up`; `Peer` → `Peers`; `TailscaleIPs` → `Detail` | `tailscale0` |
+| `tailscale` | `authkey`✱, `login_server`, `hostname`, `socket` (default `/var/run/tailscale/tailscaled.sock`) | `tailscale --socket <s> up --authkey … [--login-server …] [--hostname …]` / `tailscale --socket <s> down` / `tailscale --socket <s> status --json`: `BackendState == "Running"` → `up`; `Peer` → `Peers`; `TailscaleIPs` → `Detail`. Satu tailnet per instance: dua tailnet = dua `tailscaled` (state+socket sendiri, sama pola `instance` NetBird) | `tailscale0` (unik per instance) |
 | `custom` | `up`✱, `down`✱, `status`✱ (string perintah) | `sh -c <cmd>` (Windows: `cmd /c`) dengan `PATH`+`HOME`+`LANG` saja / status = exit 0 / — | `iface` **wajib** |
 
 Berkas `config`/`auth.txt`/`.conf` ditulis 0600 dalam direktori 0700, dihapus saat Network dihapus. Keluaran perintah dipotong 4 KiB, disaring nilai rahasia → `(redacted)`, dan hanya baris terakhir disimpan di `last_error`/`Detail`.
+
+### Multi-akun paralel (dua server NetBird, dua tailnet)
+
+Fakta yang diukur di mesin ini (`netbird` 0.64.1) dan di tracker resmi:
+
+- Satu daemon NetBird = **satu profil aktif**. `netbird profile` hanya menukar akun (`select`), bukan menjalankan dua akun bersamaan (`docs.netbird.io/client/profiles`: "Only one profile is active at a time"). Permintaan multi-akun paralel masih terbuka sejak 2022 (`netbirdio/netbird#446`).
+- Karena itu dua server NetBird **tidak** dilayani oleh dua Network `mode: shared`; `up` kedua akan memindahkan akun dan memutus yang pertama.
+- Jalur yang didukung (dan disarankan tim NetBird di issue tersebut): satu daemon **per** akun — config/state, socket `--daemon-addr`, `--interface-name`, dan `--wireguard-port` sendiri. Itulah `mode: instance`: Pantau menjalankan/mengawasi daemon itu sebagai proses anak, bukan memakai service sistem.
+- **Netmaker tidak butuh ini**: satu `netclient` boleh join banyak network (`join -n <net>`, `list`, `disconnect <network>`, `leave <network>`) dan tiap network dapat interface sendiri. Jadi dua server Netmaker cukup dua Network `netmaker` di daemon yang sama.
+- **Tailscale**: satu tailnet per instance; dua tailnet = dua `tailscaled` dengan state dir + `--socket` sendiri (pola sama dengan `instance`).
+
+Aturan yang ditegakkan API (400 dengan pesan jelas):
+
+1. Paling banyak **satu** Network `netbird` `mode: shared`; Network `netbird` `mode: instance` tanpa batas selain limit proses anak.
+2. `interface_name` dan `wireguard_port` unik di antara semua Network (bind ke iface yang sama = dua jalur bertabrakan).
+3. `mode: instance` selalu menambahkan `--disable-dns` (dua instance tidak boleh sama-sama menulis resolver master); `--disable-firewall` disediakan sebagai opsi bila admin mengelola aturan sendiri.
+4. Jumlah proses anak total (`openvpn`, `netbird service run` mode `instance`, `tailscaled` instance, `custom`) maksimal 5.
 
 ## Safety dan batas
 
