@@ -179,6 +179,30 @@ _Avoid_: Blocked folder, blacklisted path, system lock
 Reverse proxy HTTP dan WebSocket on-demand yang memanfaatkan channel OpenSSH RFC 4254 `direct-tcpip` untuk menjembatani akses browser klien ke service web internal pada Host target (`127.0.0.1:<port>`) secara *agentless*.
 _Avoid_: Port forwarding, ssh tunnel proxy, local forwarder
 
+**VPN Network**:
+Satu definisi jalur jaringan (driver, kredensial, interface, kebijakan auto-up) yang dipakai sekumpulan Host privat untuk keluar dari mesin master Pantau; dirujuk Host lewat `network_id` (`0` = langsung).
+_Avoid_: Gateway Host, tunnel entry, connection profile
+
+**Network Driver**:
+Jenis implementasi sebuah VPN Network: `netbird`, `netmaker`, `openvpn`, `wireguard`, `tailscale`, atau `custom`.
+_Avoid_: Connector, plugin, provider
+
+**Network Path**:
+Hasil resolusi sebuah VPN Network saat koneksi dibuat: nama interface untuk bind dan fungsi dial.
+_Avoid_: Route, gateway, hop
+
+**Bound Dial**:
+Dial TCP yang diikat ke satu interface (`SO_BINDTODEVICE` di Linux, `IP_UNICAST_IF` di Windows, `IP_BOUND_IF` di macOS) sehingga paket keluar lewat tunnel itu tanpa mengubah tabel rute master.
+_Avoid_: Route override, forced route
+
+**Tunnel State**:
+Status satu VPN Network: `down`, `starting`, `up`, atau `error`.
+_Avoid_: Health, status link
+
+**Network Down**:
+Kegagalan yang berasal dari jalur VPN (tunnel mati atau interface tidak dapat di-bind), bukan dari Host; Host ditandai `stale` beserta alasannya, bukan `down`.
+_Avoid_: Offline, unreachable
+
 **Terminal Link Provider**:
 Komponen pendeteksi URL interaktif pada xterm Pantau yang memvalidasi link URL (`Ctrl+Click` / `Cmd+Click`) dan membedakan rute URL publik ke tab browser baru atau URL loopback remote ke Remote Web Port Tunnel.
 _Avoid_: URL detector, link clicker, terminal hyperlinker
