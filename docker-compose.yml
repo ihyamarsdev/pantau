@@ -1,15 +1,30 @@
 services:
   pantau:
-    build: .
+    build:
+      context: .
+      args:
+        # Bakes the checksum-verified NetBird CLI into the image so the container can run its own
+        # NetBird account (Settings -> Networks, driver netbird, mode "instance"). Set to "0" for a
+        # leaner image; the openvpn and wireguard-tools clients are always included.
+        WITH_NETBIRD: "1"
     container_name: pantau
     restart: unless-stopped
     ports:
       - "${PANTAU_BIND:-0.0.0.0}:8080:8080"
       - "127.0.0.1:8081:8081"
       - "127.0.0.1:15000-15019:15000-15019"
+    cap_add:
+      - NET_ADMIN # create the tunnel interface (netbird instance, wg-quick, openvpn)
+      - NET_RAW   # bind an SSH socket to that interface (SO_BINDTODEVICE)
+    devices:
+      - /dev/net/tun:/dev/net/tun
     volumes:
       - ./data:/app/data
       - ${HOME}/.ssh/config:/root/.ssh/config:ro
+      - netbird-state:/var/lib/netbird # keeps the peer identity across "docker compose up --build"
     environment:
       - PANTAU_PORT=8080
       - PANTAU_DB=/app/data/pantau.db
+
+volumes:
+  netbird-state:
