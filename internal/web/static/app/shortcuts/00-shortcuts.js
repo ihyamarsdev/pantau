@@ -15,6 +15,11 @@
   const icon = (n, cls) => svgIcon(n, cls || 'icon-sm');
   const fill = (s, vars) => Object.keys(vars).reduce((a, k) => a.split('{' + k + '}').join(vars[k]), s);
   const val = (id) => document.getElementById(id).value.trim();
+  // A password may start or end with a space: it is sent exactly as typed.
+  const rawVal = (id) => {
+    const el = document.getElementById(id);
+    return el ? el.value : '';
+  };
 
   const I = {
     en: {
@@ -30,7 +35,18 @@
       sc_empty_desc: 'Add the web addresses you open often: dashboards, admin panels, documentation.',
       sc_delete_confirm: 'Delete the shortcut "{name}"?',
       sc_load_failed: 'Could not load shortcuts: {why}',
-      sc_save_failed: 'Could not save: {why}'
+      sc_save_failed: 'Could not save: {why}',
+      sc_login: 'Sign in automatically',
+      sc_login_badge: 'Opens the site already signed in',
+      sc_login_hint: 'Stored on the Pantau server. A click posts these fields to the site\'s own login form, so the site must accept a plain form login (no JavaScript or 2FA step).',
+      sc_login_user: 'User name (optional)',
+      sc_login_pass: 'Password',
+      sc_login_pass_keep: 'Saved — leave empty to keep it',
+      sc_login_action: 'Login address (default: the address above)',
+      sc_login_user_field: 'User field name (default: username)',
+      sc_login_pass_field: 'Password field name (default: password)',
+      sc_login_extra: 'Extra fields (optional, e.g. remember=1)',
+      sc_login_clear: 'Forget the saved password'
     },
     id: {
       sc_title: 'Pintasan',
@@ -45,7 +61,18 @@
       sc_empty_desc: 'Tambahkan alamat web yang sering Anda buka: dashboard, panel admin, dokumentasi.',
       sc_delete_confirm: 'Hapus pintasan "{name}"?',
       sc_load_failed: 'Pintasan tidak dapat dimuat: {why}',
-      sc_save_failed: 'Gagal menyimpan: {why}'
+      sc_save_failed: 'Gagal menyimpan: {why}',
+      sc_login: 'Masuk otomatis',
+      sc_login_badge: 'Membuka situs dalam keadaan sudah masuk',
+      sc_login_hint: 'Disimpan di server Pantau. Satu klik mengirim kolom ini ke formulir login situs itu, jadi situsnya harus menerima login formulir biasa (tanpa JavaScript atau langkah 2FA).',
+      sc_login_user: 'Nama pengguna (opsional)',
+      sc_login_pass: 'Kata sandi',
+      sc_login_pass_keep: 'Tersimpan — biarkan kosong untuk mempertahankannya',
+      sc_login_action: 'Alamat login (bawaan: alamat di atas)',
+      sc_login_user_field: 'Nama kolom pengguna (bawaan: username)',
+      sc_login_pass_field: 'Nama kolom sandi (bawaan: password)',
+      sc_login_extra: 'Kolom tambahan (opsional, mis. remember=1)',
+      sc_login_clear: 'Lupakan kata sandi tersimpan'
     }
   };
   ['en', 'id'].forEach((l) => { I18N[l] = Object.assign(I18N[l] || {}, I[l]); });
@@ -59,10 +86,16 @@
   function tile(x, i) {
     let host = x.url;
     try { host = new URL(x.url).host; } catch (e) { /* keep the raw address */ }
+    // A shortcut with a saved password opens Pantau's auto login page, which posts the
+    // credentials to the site's own login form; the target site still sees a plain login.
+    const href = x.login_pass_set && x.id ? '/shortcut-login/' + encodeURIComponent(x.id) : x.url;
+    const key = x.login_pass_set
+      ? `<span style="display:inline-flex;vertical-align:-3px;margin-left:4px;color:var(--text-muted);" title="${esc(t('sc_login_badge'))}">${icon('lock', 'icon-xs')}</span>`
+      : '';
     return `<div class="dm-tile">
-      <a class="dm-tile-link" href="${esc(x.url)}" target="_blank" rel="noopener noreferrer" title="${esc(x.url)}">
+      <a class="dm-tile-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer" title="${esc(x.url)}">
         ${Domains.tileIcon(x.url, x.name)}
-        <span class="dm-tile-text"><span class="dm-tile-name">${esc(x.name)}</span><span class="dm-tile-host">${esc(host)}</span></span>
+        <span class="dm-tile-text"><span class="dm-tile-name">${esc(x.name)}${key}</span><span class="dm-tile-host">${esc(host)}</span></span>
       </a>
       <button class="btn btn-sm btn-icon btn-ghost" data-sc-edit="${i}" title="${esc(t('sc_edit'))}" aria-label="${esc(t('sc_edit') + ': ' + x.name)}">${icon('pencil')}</button>
       <button class="btn btn-sm btn-icon btn-ghost" data-sc-del="${i}" title="${esc(t('sc_delete'))}" aria-label="${esc(t('sc_delete') + ': ' + x.name)}">${icon('trash-2')}</button>
@@ -148,6 +181,17 @@
           <div class="form-group"><label for="scName">${esc(t('sc_name'))}</label><input type="text" id="scName" maxlength="64" required value="${esc(x.name)}" placeholder="Grafana" autocomplete="off" /></div>
           <div class="form-group"><label for="scUrl">${esc(t('sc_url'))}</label><input type="text" id="scUrl" maxlength="2048" required value="${esc(x.url)}" placeholder="https://grafana.example.com" autocomplete="off" spellcheck="false" /></div>
           <div class="form-group"><label for="scGroup">${esc(t('sc_group'))}</label><input type="text" id="scGroup" maxlength="64" value="${esc(x.group)}" list="scGroups" autocomplete="off" /><datalist id="scGroups">${groups.map((g) => `<option value="${esc(g)}"></option>`).join('')}</datalist></div>
+          <details id="scLoginBox"${x.login_pass_set ? ' open' : ''} style="margin-top:4px;">
+            <summary style="cursor:pointer;font-size:var(--fs-sm);color:var(--text-muted);display:flex;align-items:center;gap:6px;">${icon('lock', 'icon-xs')}<span>${esc(t('sc_login'))}</span></summary>
+            <p style="margin:8px 0 10px;color:var(--text-muted);font-size:var(--fs-xs);">${esc(t('sc_login_hint'))}</p>
+            <div class="form-group"><label for="scLoginUser">${esc(t('sc_login_user'))}</label><input type="text" id="scLoginUser" maxlength="256" value="${esc(x.login_user || '')}" autocomplete="off" spellcheck="false" /></div>
+            <div class="form-group"><label for="scLoginPass">${esc(t('sc_login_pass'))}</label><input type="password" id="scLoginPass" maxlength="1024" value="" placeholder="${x.login_pass_set ? esc(t('sc_login_pass_keep')) : ''}" autocomplete="new-password" /></div>
+            ${x.login_pass_set ? `<div class="form-group"><label style="display:flex;align-items:center;gap:8px;font-weight:400;"><input type="checkbox" id="scLoginClear" style="width:auto;margin:0;" /><span>${esc(t('sc_login_clear'))}</span></label></div>` : ''}
+            <div class="form-group"><label for="scLoginAction">${esc(t('sc_login_action'))}</label><input type="text" id="scLoginAction" maxlength="2048" value="${esc(x.login_action || '')}" placeholder="${esc(x.url)}" autocomplete="off" spellcheck="false" /></div>
+            <div class="form-group"><label for="scLoginUserField">${esc(t('sc_login_user_field'))}</label><input type="text" id="scLoginUserField" maxlength="64" value="${esc(x.login_user_field || '')}" placeholder="username" autocomplete="off" spellcheck="false" /></div>
+            <div class="form-group"><label for="scLoginPassField">${esc(t('sc_login_pass_field'))}</label><input type="text" id="scLoginPassField" maxlength="64" value="${esc(x.login_pass_field || '')}" placeholder="password" autocomplete="off" spellcheck="false" /></div>
+            <div class="form-group"><label for="scLoginExtra">${esc(t('sc_login_extra'))}</label><input type="text" id="scLoginExtra" maxlength="1024" value="${esc(x.login_extra || '')}" placeholder="remember=1" autocomplete="off" spellcheck="false" /></div>
+          </details>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-sm" onclick="closeModal('scModal')">${esc(t('cancel', 'Cancel'))}</button>
@@ -165,7 +209,23 @@
     let url = val('scUrl');
     if (url.indexOf('://') === -1) url = 'https://' + url; // a bare domain means https
     const list = S.list.slice();
+    const before = S.list[S.editing] || {};
     const item = { name: val('scName'), url, group: val('scGroup') };
+    if (before.id) item.id = before.id; // keeps the id a tile links to, and the saved password with it
+    // The password field is sent only when it was typed: an empty one keeps the stored
+    // password (the browser never receives it), and the checkbox forgets it.
+    const pass = rawVal('scLoginPass');
+    const clear = document.getElementById('scLoginClear');
+    if (clear && clear.checked) {
+      item.login_clear = true;
+    } else if (pass || before.login_pass_set) {
+      item.login_user = val('scLoginUser');
+      item.login_action = val('scLoginAction');
+      item.login_user_field = val('scLoginUserField');
+      item.login_pass_field = val('scLoginPassField');
+      item.login_extra = val('scLoginExtra');
+      if (pass) item.login_pass = pass;
+    }
     if (S.editing >= 0) list[S.editing] = item; else list.push(item);
     if (await save(list)) closeModal('scModal');
   });

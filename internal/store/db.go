@@ -275,6 +275,12 @@ func (d *DB) migrate() error {
 		value TEXT NOT NULL
 	);
 
+	CREATE TABLE IF NOT EXISTS auth_sessions (
+		token TEXT PRIMARY KEY,
+		expires_at INTEGER NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires ON auth_sessions(expires_at);
+
 	CREATE TABLE IF NOT EXISTS hosts (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL,

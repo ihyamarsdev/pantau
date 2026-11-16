@@ -168,6 +168,7 @@ func NewServer(db *store.DB, ins *inspector.Inspector, disp *notify.Dispatcher) 
 		s.ansibleMgr = NewAnsibleRunManager(db, s.ansibleRun)
 		_, _ = db.MarkAnsibleAdhocRunsInterrupted()
 		s.ansibleAdhocMgr = NewAnsibleAdhocManager(db, s.adhocRunner)
+		s.loadSessions()
 	}
 	s.prepareHTML(embeddedHTML)
 	s.routes()
@@ -464,7 +465,7 @@ func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 		exp, ok := s.sessions.Load(cookie.Value)
 		if !ok || time.Now().After(exp.(time.Time)) {
-			s.sessions.Delete(cookie.Value)
+			s.dropSession(cookie.Value)
 			http.Error(w, `{"error":"session_expired"}`, http.StatusUnauthorized)
 			return
 		}
@@ -472,25 +473,67 @@ func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// sessionTTL is how long a browser stays signed in: the cookie is a year out and
+// the row in SQLite lives as long, so a restart of Pantau (or of the machine)
+// does not ask for the password again. Logout, or a clear of the browser's
+// cookies, ends it earlier.
+const sessionTTL = 365 * 24 * time.Hour
+
 func (s *Server) issueSession(w http.ResponseWriter) string {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		b = []byte(fmt.Sprintf("%d_%d", time.Now().UnixNano(), time.Now().Unix()))
 	}
 	token := hex.EncodeToString(b)
-	expiry := time.Now().Add(24 * 7 * time.Hour)
+	expiry := time.Now().Add(sessionTTL)
 	s.sessions.Store(token, expiry)
+	// Persisted so that the cookie the browser already holds stays valid after a restart.
+	if s.db != nil {
+		if err := s.db.SaveSession(token, expiry); err != nil {
+			logger.Warn("auth", "", fmt.Sprintf("persist admin session: %v", err))
+		}
+	}
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "pantau_session",
 		Value:    token,
 		Path:     "/",
 		Expires:  expiry,
+		MaxAge:   int(sessionTTL / time.Second),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
 	go s.scanFleetOnLogin()
 	return token
+}
+
+// dropSession forgets a token in memory and in SQLite (logout, or expiry seen on a request).
+func (s *Server) dropSession(token string) {
+	if token == "" {
+		return
+	}
+	s.sessions.Delete(token)
+	if s.db != nil {
+		if err := s.db.DeleteSession(token); err != nil {
+			logger.Warn("auth", "", fmt.Sprintf("delete admin session: %v", err))
+		}
+	}
+}
+
+// loadSessions restores the sessions a previous run of this Pantau stored, so a
+// browser that is already signed in does not have to log in again.
+func (s *Server) loadSessions() {
+	if s.db == nil {
+		return
+	}
+	saved, err := s.db.LoadSessions(time.Now())
+	if err != nil {
+		logger.Warn("auth", "", fmt.Sprintf("load admin sessions: %v", err))
+		return
+	}
+	for token, expiry := range saved {
+		s.sessions.Store(token, expiry)
+	}
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -790,7 +833,7 @@ func (s *Server) handle2FADisable(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("pantau_session")
 	if err == nil {
-		s.sessions.Delete(cookie.Value)
+		s.dropSession(cookie.Value)
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     "pantau_session",

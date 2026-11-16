@@ -86,8 +86,8 @@ var fleetTools = []agentTool{
 	// ---- terminal presets and shortcuts
 	{Name: "fleet_presets", Description: "Terminal presets (name, command, host scope): list them (host_id, or all for every host), create, update or delete one. Every change always waits for operator approval.",
 		InputSchema: schema(nil, map[string]interface{}{"action": map[string]interface{}{"type": "string", "enum": []string{"list", "create", "update", "delete"}, "description": "list is the default"}, "host_id": pHost, "all": map[string]interface{}{"type": "boolean"}, "preset_id": pFwdPreset, "name": str, "command": str, "use_tmux": map[string]interface{}{"type": "boolean"}}), gate: gateInfra, run: toolFleetPresets},
-	{Name: "fleet_shortcuts", Description: "The operator's shortcut links (name, url, group): read the list, or replace it whole. Replacing always waits for operator approval.",
-		InputSchema: schema(nil, map[string]interface{}{"shortcuts": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "object"}, "description": "the whole new list: name, url, group; omit to read"}}), gate: gateInfra, run: toolFleetShortcuts},
+	{Name: "fleet_shortcuts", Description: "The operator's shortcut links (name, url, group): read the list, or replace it whole. A shortcut's auto login credentials are the operator's: they are never shown to you and never changed by you, but echo each shortcut's id to keep its stored password. Replacing always waits for operator approval.",
+		InputSchema: schema(nil, map[string]interface{}{"shortcuts": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "object"}, "description": "the whole new list: id (to keep a shortcut and its saved password), name, url, group; omit to read"}}), gate: gateInfra, run: toolFleetShortcuts},
 
 	// ---- port forwards
 	{Name: "fleet_forwards", Description: "Live port forwards (local port, remote address, host, bytes): list them, start one (host_id, remote_host, remote_port, optional local_port) or stop one (forward_id). Always waits for operator approval.",
@@ -612,6 +612,17 @@ func toolFleetShortcuts(s *Server, r *http.Request, args map[string]interface{})
 		return jsonText(m)
 	}
 	list, _ := args["shortcuts"].([]interface{})
+	// Auto login credentials belong to the operator: the agent may neither set nor read them.
+	// A shortcut it echoes back with its id keeps the stored password; one without an id is new.
+	for _, item := range list {
+		if m, ok := item.(map[string]interface{}); ok {
+			for k := range m {
+				if strings.HasPrefix(k, "login_") {
+					delete(m, k)
+				}
+			}
+		}
+	}
 	if err := s.agentGateAs(r, 0, "Shortcuts", "fleet_shortcuts", "replace the shortcut list with:\n"+fleetJSON(list), gateInfra); err != nil {
 		return "", err
 	}

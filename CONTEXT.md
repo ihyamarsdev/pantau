@@ -823,3 +823,7 @@ _Avoid_: Bookmark, favorite domain, pinned site, service tile
 **Custom Shortcut**:
 Tautan buatan administrator ke alamat web eksternal (nama, alamat `http(s)`, dan grup opsional) yang ditampilkan sebagai tile per grup pada bagian Shortcuts di Side Panel dan dibuka di tab browser baru; disimpan di basis data Pantau sehingga berlaku untuk semua browser dan ikut System Snapshot. Berbeda dari Domain Shortcut, yang berasal dari Domain Inventory dan disimpan per browser.
 _Avoid_: Bookmark, external link, service tile, homepage entry
+
+**Shortcut Auto Login**:
+Kredensial opsional pada sebuah Custom Shortcut (nama pengguna, kata sandi, alamat formulir login, nama kolom pengguna dan sandi, serta kolom tambahan) yang membuat tile-nya menaut ke halaman Pantau `/shortcut-login/<id>`; halaman itu mem-POST kredensial ke formulir login situs tujuan sebagai navigasi biasa, sehingga satu klik berakhir di situs dalam keadaan sudah masuk. Kata sandi hanya bisa ditulis (API mengembalikan `login_pass_set`, bukan nilainya) dan halaman itu tidak di-cache serta tidak mengirim referrer.
+_Avoid_: Saved password, credential store, password manager, SSO
