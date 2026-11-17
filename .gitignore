@@ -16,3 +16,6 @@ internal/store/tmpdiag/
 
 # graphify knowledge graph (rebuild: graphify extract . --code-only)
 graphify-out/
+
+# Per-machine MCP config (absolute paths, local servers)
+.omp/mcp.json
