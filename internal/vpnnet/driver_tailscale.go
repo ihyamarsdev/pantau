@@ -105,6 +105,13 @@ func (d tailscaleDriver) Up(ctx context.Context, m *Manager, n Network) error {
 	if v := n.cfg("hostname", ""); v != "" {
 		args = append(args, "--hostname", v)
 	}
+	if !d.useExternalDaemon(n) {
+		// Pantau's own tailscaled lives beside other VPNs (NetBird 100.x on the same box): its default firewall
+		// rule drops every 100.64.0.0/10 packet that did not arrive on its interface, which kills them all.
+		// Interface-bound dials need no netfilter rules. --reset makes the flags above the whole truth, so settings
+		// saved in the state file never make a repeated "up" fail. Not applied to an external daemon: it is the admin's.
+		args = append(args, "--netfilter-mode=off", "--reset")
+	}
 	_, err = m.runCmd(ctx, upTimeout, bin, args...)
 	return err
 }

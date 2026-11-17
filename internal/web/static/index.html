@@ -101,11 +101,9 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; height: 36px; z-index: 4
 .footer-pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 9999px; background: color-mix(in srgb, var(--text) 5%, transparent); border: 1px solid var(--card-border); color: var(--text); text-decoration: none; font-size: 0.72rem; transition: all 0.15s ease; }
 .footer-pill:hover { background: color-mix(in srgb, var(--primary) 12%, transparent); border-color: color-mix(in srgb, var(--primary) 40%, transparent); color: var(--accent-text); text-decoration: none; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; background: var(--text-muted); flex: none; }
-/* One look per Host state: healthy = green calm, degraded/drift = amber urgent, stale = blue slow
-   (path dead, host unverified), down = red fast, unknown = grey still. */
+/* One look per Host state: healthy = green calm, degraded/drift = amber urgent, down = red fast, unknown = grey still. */
 .status-dot.online, .status-dot.healthy { background: var(--success); box-shadow: 0 0 6px color-mix(in srgb, var(--success) 60%, transparent); animation: pulseDot 2.4s infinite ease-in-out; }
 .status-dot.degraded, .status-dot.drift, .status-dot.warn { background: var(--warning); box-shadow: 0 0 6px color-mix(in srgb, var(--warning) 60%, transparent); animation: pulseDot 1.6s infinite ease-in-out; }
-.status-dot.stale { background: var(--info); box-shadow: 0 0 6px color-mix(in srgb, var(--info) 60%, transparent); animation: pulseDot 3.6s infinite ease-in-out; }
 .status-dot.offline, .status-dot.down { background: var(--danger); box-shadow: 0 0 6px color-mix(in srgb, var(--danger) 60%, transparent); animation: pulseDot 1s infinite ease-in-out; }
 .status-dot.unknown { background: var(--text-muted); animation: none; }
 @media (prefers-reduced-motion: reduce) { .status-dot { animation: none !important; } }
@@ -7263,6 +7261,7 @@ const I18N = {
     "inspect_all_banner": "Inspecting all hosts…",
     "no_internet": "No Internet Access",
     "public_ip": "Public IP:",
+    "private_ip": "Private IP:",
     "live_bandwidth": "Live Bandwidth Speed",
     "total": "Total:",
     "in": "In",
@@ -7658,6 +7657,8 @@ const I18N = {
     "netdiag_target_inter_host": "Inter-Host",
     "netdiag_target_custom": "Internet / Custom Target",
     "netdiag_target_host_select": "Select Target Host",
+    "netdiag_via_private": "Use private IP",
+    "netdiag_no_private_ip": "No private IP recorded",
     "netdiag_target_ph": "e.g. 1.1.1.1 or google.com",
     "netdiag_tool": "Diagnostic Tool",
     "netdiag_tool_ping": "Ping (ICMP)",
@@ -9108,6 +9109,7 @@ const I18N = {
     "inspect_all_banner": "Memeriksa semua host…",
     "no_internet": "Tidak Ada Akses Internet",
     "public_ip": "IP Publik:",
+    "private_ip": "IP Private:",
     "live_bandwidth": "Kecepatan Bandwidth Live",
     "total": "Total:",
     "in": "Masuk",
@@ -9502,6 +9504,8 @@ const I18N = {
     "netdiag_target_inter_host": "Antar-Host",
     "netdiag_target_custom": "Internet / Target Kustom",
     "netdiag_target_host_select": "Pilih Host Tujuan",
+    "netdiag_via_private": "Gunakan IP private",
+    "netdiag_no_private_ip": "IP private belum tercatat",
     "netdiag_target_ph": "contoh: 1.1.1.1 atau google.com",
     "netdiag_tool": "Perkakas Diagnostik",
     "netdiag_tool_ping": "Ping (ICMP)",
@@ -11038,7 +11042,6 @@ function hostStateClass(status) {
   const s = (status || 'unknown').toLowerCase();
   if (s === 'healthy') return 'healthy';
   if (s === 'down') return 'down';
-  if (s === 'stale') return 'stale';
   if (s === 'degraded' || s === 'drift') return 'degraded';
   return 'unknown';
 }
@@ -13746,6 +13749,9 @@ function switchTab(tab, presetID) {
 
                 <span class="b-kv-label">${t('public_ip', 'Public IP')}:</span>
                 <span class="b-kv-val">${escapeHtml(h.public_ip || 'NAT / Private')}</span>
+
+                <span class="b-kv-label">${t('private_ip', 'Private IP')}:</span>
+                <span class="b-kv-val" style="font-family: var(--font-mono);">${escapeHtml(netDiagPrivateIPs(h).join(', ') || '-')}</span>
               </div>
             </div>
 
@@ -13941,6 +13947,7 @@ function switchTab(tab, presetID) {
               ${h.internet_online ? `${t('connected')} (${h.internet_latency_ms || 0} ms)` : t('no_internet')}
             </div>
             <div class="b-stat-tile-sub" style="font-family: var(--font-mono);">${t('public_ip')} <b>${escapeHtml(h.public_ip || 'NAT / Private')}</b></div>
+            <div class="b-stat-tile-sub" style="font-family: var(--font-mono);">${t('private_ip')} <b>${escapeHtml(netDiagPrivateIPs(h).join(', ') || '-')}</b></div>
           </div>
 
           <div class="b-stat-tile">
@@ -14270,7 +14277,7 @@ async function loadAndDisplayInspectionRuns(hostID, filter = 'all') {
       badgeClass = 'badge-down';
       badgeText = run.status.toUpperCase();
       borderColor = 'var(--danger)';
-    } else if (run.status === 'degraded' || run.status === 'stale') {
+    } else if (run.status === 'degraded') {
       badgeClass = 'badge-warning';
       badgeText = run.status.toUpperCase();
       borderColor = 'var(--warning)';
@@ -21714,6 +21721,7 @@ let currentNetDiagHops = [];
 let currentNetDiagRawLines = [];
 let currentNetDiagTool = 'ping';
 let currentNetDiagTargetMode = 'inter_host';
+let currentNetDiagViaPrivate = false;
 
 function openNetDiagModal(initialSourceHostId) {
   openModal('netDiagModal');
@@ -21794,9 +21802,14 @@ function renderNetDiagUI(container, contextPrefix, defaultSourceId, isSourceLock
 
             <!-- Inter-Host Target Dropdown -->
             <div id="${cid}_interHostContainer" style="${currentNetDiagTargetMode === 'inter_host' ? 'display: block;' : 'display: none;'}">
-              <select id="${cid}_targetHost" class="input" style="height: 38px; box-sizing: border-box; width: 100%;">
+              <select id="${cid}_targetHost" class="input" style="height: 38px; box-sizing: border-box; width: 100%;" onchange="updateNetDiagPrivateNote('${cid}')">
                 <!-- Populated by populateNetDiagTargetHosts -->
               </select>
+              <label style="display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: var(--fs-xs); color: var(--text-muted); cursor: pointer;">
+                <input type="checkbox" id="${cid}_viaPrivate" ${currentNetDiagViaPrivate ? 'checked' : ''} />
+                <span>${t('netdiag_via_private')}</span>
+                <span id="${cid}_viaPrivateNote" style="font-family: var(--font-mono);"></span>
+              </label>
             </div>
 
             <!-- Custom / Internet Target Input & Presets -->
@@ -21941,13 +21954,32 @@ function populateNetDiagTargetHosts(cid) {
     return;
   }
 
+  const label = h => {
+    const priv = netDiagPrivateIPs(h);
+    return priv.length ? `${escapeHtml(h.host)} / ${escapeHtml(priv[0])}` : escapeHtml(h.host);
+  };
   targetSelect.innerHTML = otherHosts.map(h => {
     const isOffline = h.status === 'down';
     if (isOffline) {
-      return `<option value="${h.id}" disabled>${escapeHtml(h.name)} [${t('netdiag_status_offline')}] (${escapeHtml(h.host)})</option>`;
+      return `<option value="${h.id}" disabled>${escapeHtml(h.name)} [${t('netdiag_status_offline')}] (${label(h)})</option>`;
     }
-    return `<option value="${h.id}">${escapeHtml(h.name)} (${escapeHtml(h.host)})</option>`;
+    return `<option value="${h.id}">${escapeHtml(h.name)} (${label(h)})</option>`;
   }).join('');
+  updateNetDiagPrivateNote(cid);
+}
+
+function netDiagPrivateIPs(h) {
+  try { return JSON.parse(h.private_ips || '[]') || []; } catch (e) { return []; }
+}
+
+function updateNetDiagPrivateNote(cid) {
+  const note = document.getElementById(`${cid}_viaPrivateNote`);
+  const box = document.getElementById(`${cid}_viaPrivate`);
+  const select = document.getElementById(`${cid}_targetHost`);
+  if (!note) return;
+  const host = (allRawHosts || []).find(x => x.id === parseInt(select ? select.value : '0', 10));
+  const priv = host ? netDiagPrivateIPs(host) : [];
+  note.innerText = priv.length ? `→ ${priv[0]}` : (box && box.checked ? t('netdiag_no_private_ip') : '');
 }
 
 function setNetDiagTargetMode(cid, mode) {
@@ -22099,6 +22131,11 @@ function runNetDiag(cid) {
     target: targetAddress,
     port: port
   });
+  if (currentNetDiagTargetMode === 'inter_host') {
+    const viaEl = document.getElementById(`${cid}_viaPrivate`);
+    currentNetDiagViaPrivate = !!(viaEl && viaEl.checked);
+    if (currentNetDiagViaPrivate) queryParams.set('via', 'private');
+  }
   if (currentNetDiagTool === 'dig') {
     queryParams.set('record_type', document.getElementById(`${cid}_digRecordType`)?.value || 'A');
     queryParams.set('dns_server', (document.getElementById(`${cid}_digServer`)?.value || '').trim());
@@ -23034,9 +23071,6 @@ checkAuth();
 // ===== SLICE-A:BEGIN js helpers =====
 // Stale Inspection: same definition as formatRelativeTime (suppressed when Background Inspection is disabled).
 function isHostStale(h) {
-  // A host whose last inspection could not reach it (dead VPN path) is stale whether or not that
-  // inspection is recent: the data on the card is old, and the KPI/filter must agree with the dot.
-  if (h && (h.status || '').toLowerCase() === 'stale') return true;
   if (currentPollInterval === 0) return false;
   if (!h || !h.last_inspected) return true;
   const d = new Date(h.last_inspected);

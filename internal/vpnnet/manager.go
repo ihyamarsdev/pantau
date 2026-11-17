@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -14,6 +15,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"pantau/internal/store"
@@ -39,6 +41,13 @@ const (
 	statusLoopTick = 30 * time.Second
 )
 
+// stopGrace is how long a tunnel process gets to exit after SIGINT before it is killed (a var so tests can shorten it).
+var stopGrace = 10 * time.Second
+
+// fastPathTTL bounds how long a dial may trust the cached "up" verdict without re-reading the network row
+// (enabled flag, config). The status loop re-stamps it every tick, so a live tunnel never leaves the hot path.
+const fastPathTTL = 2 * statusLoopTick
+
 // Status is the supervisor's verdict for one network.
 type Status struct {
 	State     string    `json:"state"`
@@ -51,8 +60,9 @@ type Status struct {
 }
 
 type childProc struct {
-	cmd  *exec.Cmd
-	done chan struct{}
+	cmd      *exec.Cmd
+	done     chan struct{}
+	stopping atomic.Bool // set when Pantau asked the process to stop: its exit is not a failure
 }
 
 // Options wires the manager to the app: where tunnel state/config live and whether the gate is open.
@@ -74,9 +84,12 @@ type Manager struct {
 	procs   map[int64]*childProc
 	status  map[int64]Status
 	logs    map[int64][]string
-	locks   map[int64]*sync.Mutex
+	locks   map[int64]chan struct{}
 	attempt map[int64]time.Time
 	fails   map[int64]int
+	paths   map[int64]*Path // dial paths of networks last seen "up": the hot path of Ensure
+	flights map[int64]*flight
+	stopped map[int64]bool // stopped by hand: the status loop leaves them down
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -99,9 +112,12 @@ func NewManager(opts Options) *Manager {
 		procs:   map[int64]*childProc{},
 		status:  map[int64]Status{},
 		logs:    map[int64][]string{},
-		locks:   map[int64]*sync.Mutex{},
+		locks:   map[int64]chan struct{}{},
 		attempt: map[int64]time.Time{},
 		fails:   map[int64]int{},
+		paths:   map[int64]*Path{},
+		flights: map[int64]*flight{},
+		stopped: map[int64]bool{},
 		ctx:     ctx,
 		cancel:  cancel,
 	}
@@ -123,16 +139,29 @@ func (m *Manager) Shutdown() {
 	}
 }
 
-func (m *Manager) lockFor(id int64) *sync.Mutex {
+// lockFor returns the network's lifecycle gate: a one-slot channel, so a waiter can give up with its context
+// instead of queueing behind a bring-up for as long as it takes.
+func (m *Manager) lockFor(id int64) chan struct{} {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	l, ok := m.locks[id]
 	if !ok {
-		l = &sync.Mutex{}
+		l = make(chan struct{}, 1)
 		m.locks[id] = l
 	}
 	return l
 }
+
+func acquire(ctx context.Context, l chan struct{}) error {
+	select {
+	case l <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func release(l chan struct{}) { <-l }
 
 func parseConfig(raw string) map[string]string {
 	cfg := map[string]string{}
@@ -173,7 +202,7 @@ func (m *Manager) pathFor(n Network, iface string, dns []string) *Path {
 	return &Path{NetworkID: n.ID, Name: n.Name, Iface: iface, DNS: dns}
 }
 
-// Ensure brings the network up when needed and returns the path a Host dials through.
+// Ensure returns the path a Host dials through, bringing the network up when needed.
 // A nil path means "direct": the Host has no network or has network 0.
 func (m *Manager) Ensure(ctx context.Context, networkID int64) (*Path, error) {
 	if networkID == 0 {
@@ -182,6 +211,10 @@ func (m *Manager) Ensure(ctx context.Context, networkID int64) (*Path, error) {
 	if !m.gate() {
 		return nil, ErrGateDisabled
 	}
+	// Hot path, taken by every SSH dial: a fresh "up" verdict and a live interface need no DB read and no lock.
+	if p := m.livePath(networkID); p != nil {
+		return p, nil
+	}
 	n, err := m.network(networkID)
 	if err != nil {
 		return nil, err
@@ -189,31 +222,130 @@ func (m *Manager) Ensure(ctx context.Context, networkID int64) (*Path, error) {
 	if !n.Enabled {
 		return nil, fmt.Errorf("%w: %s", ErrNetworkDisabled, n.Name)
 	}
-	l := m.lockFor(n.ID)
-	l.Lock()
-	defer l.Unlock()
-
-	m.mu.Lock()
-	st, has := m.status[n.ID]
-	m.mu.Unlock()
-	if has && st.State == StateUp && ifaceReady(st.Iface) {
-		return m.pathFor(n, st.Iface, st.DNS), nil
+	if p := m.restamp(n); p != nil {
+		return p, nil
 	}
 	if !n.AutoUp {
-		if !has || st.State != StateUp {
-			m.record(n, Status{State: StateDown, Detail: "auto-up disabled, start it from Networks"})
-			return nil, fmt.Errorf("%w: %s", ErrNetworkDown, n.Name)
-		}
-		return m.pathFor(n, st.Iface, st.DNS), nil
+		m.record(n, Status{State: StateDown, Detail: "auto-up disabled, start it from Networks"})
+		return nil, fmt.Errorf("%w: %s", ErrNetworkDown, n.Name)
 	}
-	st, err = m.bringUp(ctx, n)
+	st, err := m.waitUp(ctx, n, m.startUp(n))
 	if err != nil {
 		return nil, err
 	}
 	return m.pathFor(n, st.Iface, st.DNS), nil
 }
 
-// Up is the manual/ensure bring-up with backoff and the three-strike error cooldown.
+// livePath returns the cached path of a network whose "up" verdict is fresh and whose interface still exists.
+func (m *Manager) livePath(id int64) *Path {
+	m.mu.Lock()
+	st, p := m.status[id], m.paths[id]
+	m.mu.Unlock()
+	if p == nil || st.State != StateUp || time.Since(st.CheckedAt) > fastPathTTL || !ifaceReady(p.Iface) {
+		return nil
+	}
+	return p
+}
+
+// restamp re-validates a cached "up" once the row was re-read, so the next dials are served by the hot path again.
+func (m *Manager) restamp(n Network) *Path {
+	m.mu.Lock()
+	st, ok := m.status[n.ID]
+	m.mu.Unlock()
+	if !ok || st.State != StateUp || !ifaceReady(st.Iface) {
+		return nil
+	}
+	p := m.pathFor(n, st.Iface, st.DNS)
+	m.mu.Lock()
+	st.CheckedAt = time.Now()
+	m.status[n.ID] = st
+	m.paths[n.ID] = p
+	m.mu.Unlock()
+	return p
+}
+
+// flight is one bring-up in progress; every caller for the same network joins it.
+type flight struct {
+	done chan struct{}
+	st   Status
+	err  error
+}
+
+// startUp begins the bring-up of a network, or joins the one already running. It runs on the manager's own
+// context, so a caller that gives up (dial budget spent, browser tab closed) never aborts a tunnel half way up.
+func (m *Manager) startUp(n Network) *flight {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if f, ok := m.flights[n.ID]; ok {
+		return f
+	}
+	f := &flight{done: make(chan struct{})}
+	m.flights[n.ID] = f
+	go func() {
+		l := m.lockFor(n.ID)
+		if f.err = acquire(m.ctx, l); f.err == nil {
+			f.st, f.err = m.bringUp(m.ctx, n)
+			release(l)
+		}
+		m.mu.Lock()
+		delete(m.flights, n.ID)
+		m.mu.Unlock()
+		close(f.done)
+	}()
+	return f
+}
+
+// waitUp waits for a bring-up for as long as the caller can afford to.
+func (m *Manager) waitUp(ctx context.Context, n Network, f *flight) (Status, error) {
+	select {
+	case <-f.done:
+		return f.st, f.err
+	case <-ctx.Done():
+		return Status{State: StateStarting, Detail: "still starting"}, fmt.Errorf("%w: %s (still starting)", ErrNetworkDown, n.Name)
+	}
+}
+
+func (m *Manager) inFlight(id int64) bool {
+	m.mu.Lock()
+	_, ok := m.flights[id]
+	m.mu.Unlock()
+	return ok
+}
+
+func (m *Manager) isStopped(id int64) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.stopped[id]
+}
+
+// Invalidate drops what the manager remembers about a network whose row changed, so the next dial re-reads it.
+func (m *Manager) Invalidate(id int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.paths, id)
+	m.fails[id] = 0
+	if st, ok := m.status[id]; ok {
+		st.CheckedAt = time.Time{}
+		m.status[id] = st
+	}
+}
+
+// Forget drops everything held for a deleted network, and stops the process it may still own.
+func (m *Manager) Forget(id int64) {
+	m.stopChild(id)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.paths, id)
+	delete(m.status, id)
+	delete(m.logs, id)
+	delete(m.attempt, id)
+	delete(m.fails, id)
+	delete(m.stopped, id)
+	delete(m.locks, id)
+}
+
+// Up is the manual bring-up. It overrides the retry backoff and the three-strike cooldown (that is what
+// "retry manually" means) and joins a bring-up already running instead of starting a second one.
 func (m *Manager) Up(ctx context.Context, networkID int64) (Status, error) {
 	if !m.gate() {
 		return Status{State: StateDown, Err: ErrGateDisabled.Error()}, ErrGateDisabled
@@ -222,10 +354,10 @@ func (m *Manager) Up(ctx context.Context, networkID int64) (Status, error) {
 	if err != nil {
 		return Status{State: StateDown, Err: err.Error()}, err
 	}
-	l := m.lockFor(n.ID)
-	l.Lock()
-	defer l.Unlock()
-	return m.bringUp(ctx, n)
+	m.mu.Lock()
+	m.fails[n.ID] = 0
+	m.mu.Unlock()
+	return m.waitUp(ctx, n, m.startUp(n))
 }
 
 func (m *Manager) bringUp(ctx context.Context, n Network) (Status, error) {
@@ -271,12 +403,14 @@ func (m *Manager) bringUp(ctx context.Context, n Network) (Status, error) {
 	m.mu.Lock()
 	m.fails[n.ID] = 0
 	m.attempt[n.ID] = time.Now()
+	delete(m.stopped, n.ID)
 	m.mu.Unlock()
 	m.record(n, st)
 	return st, nil
 }
 
-// Down stops the tunnel (and the process Pantau started for it).
+// Down stops the tunnel (and the process Pantau started for it) and keeps it down: the status loop does not
+// bring a stopped network back; only a dial that needs it (auto-up) or Up does.
 func (m *Manager) Down(ctx context.Context, networkID int64) error {
 	if !m.gate() {
 		return ErrGateDisabled
@@ -286,17 +420,25 @@ func (m *Manager) Down(ctx context.Context, networkID int64) error {
 		return err
 	}
 	l := m.lockFor(n.ID)
-	l.Lock()
-	defer l.Unlock()
+	if err := acquire(ctx, l); err != nil {
+		return fmt.Errorf("%w: %s is busy (%v)", ErrNetworkDown, n.Name, err)
+	}
+	defer release(l)
 	if d := driverFor(n.Driver); d != nil {
 		if err := d.Down(ctx, m, n); err != nil {
-			m.setError(n, err)
-			return err
+			if ifaceReady(m.ifaceFor(n)) {
+				m.setError(n, err)
+				return err
+			}
+			// The tunnel is gone already (daemon dead): the stop the admin asked for is done.
+			m.log("vpn: network %s: down: %v (interface already gone)", n.Name, err)
 		}
 	}
 	m.stopChild(n.ID)
 	m.mu.Lock()
 	m.fails[n.ID] = 0
+	m.stopped[n.ID] = true
+	delete(m.paths, n.ID)
 	m.status[n.ID] = Status{State: StateDown, Detail: "stopped", CheckedAt: time.Now()}
 	m.mu.Unlock()
 	_ = m.db.SetVPNNetworkState(n.ID, StateDown, "stopped")
@@ -305,6 +447,9 @@ func (m *Manager) Down(ctx context.Context, networkID int64) error {
 
 // Refresh asks the driver for the current state without bringing anything up.
 func (m *Manager) Refresh(ctx context.Context, networkID int64) (Status, error) {
+	if m.inFlight(networkID) {
+		return m.Status(networkID), nil // a bring-up is mid-way: its verdict is the one that counts
+	}
 	n, err := m.network(networkID)
 	if err != nil {
 		return Status{State: StateDown, Err: err.Error()}, err
@@ -385,6 +530,9 @@ func (m *Manager) record(n Network, st Status) {
 	m.status[n.ID] = st
 	if st.State == StateUp {
 		m.attempt[n.ID] = time.Now()
+		m.paths[n.ID] = m.pathFor(n, st.Iface, st.DNS)
+	} else {
+		delete(m.paths, n.ID)
 	}
 	m.mu.Unlock()
 	_ = m.db.SetVPNNetworkState(n.ID, st.State, strings.TrimSpace(st.Err+" "+st.Detail))
@@ -401,6 +549,7 @@ func (m *Manager) setError(n Network, err error) {
 	st.Err = msg
 	st.CheckedAt = time.Now()
 	m.status[n.ID] = st
+	delete(m.paths, n.ID)
 	m.mu.Unlock()
 	m.log("vpn: network %s: %s", n.Name, msg)
 	_ = m.db.SetVPNNetworkState(n.ID, StateError, msg)
@@ -420,6 +569,8 @@ func (m *Manager) spawn(n Network, name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Env = m.childEnv()
 	cmd.Dir = n.Root
+	// A daemon's helpers may keep the output pipe open after it exits; Wait must not wait for them forever.
+	cmd.WaitDelay = 3 * time.Second
 	// One pipe for stdout+stderr: openvpn prints "TUN/TAP device tun0 opened" on stdout, warnings on stderr.
 	pr, pw := io.Pipe()
 	cmd.Stdout = pw
@@ -433,19 +584,47 @@ func (m *Manager) spawn(n Network, name string, args ...string) error {
 	m.procs[n.ID] = proc
 	m.mu.Unlock()
 
+	go m.logLines(n, pr)
 	go func() {
-		sc := bufio.NewScanner(pr)
-		for sc.Scan() {
-			m.logf(n, "%s", sc.Text())
-		}
-		_ = cmd.Wait()
+		// Wait reaps the child. It must not sit behind the log reader: that reader only ends once the pipe is
+		// closed, which happens here, so a daemon that died would stay "running" (and a zombie) forever.
+		err := cmd.Wait()
 		_ = pw.Close()
 		close(proc.done)
 		m.mu.Lock()
-		delete(m.procs, n.ID)
+		if m.procs[n.ID] == proc {
+			delete(m.procs, n.ID)
+		}
 		m.mu.Unlock()
+		m.childExited(n, proc, err)
 	}()
 	return nil
+}
+
+// logLines copies a tunnel process's output into the network's log ring until the pipe closes.
+func (m *Manager) logLines(n Network, pr *io.PipeReader) {
+	sc := bufio.NewScanner(pr)
+	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
+	for sc.Scan() {
+		m.logf(n, "%s", sc.Text())
+	}
+	_, _ = io.Copy(io.Discard, pr) // an over-long line stops the scanner; keep draining or the child blocks on a full pipe
+}
+
+// childExited reports a tunnel process that died on its own, so the badge turns red at once and the status
+// loop can bring the network back, instead of waiting for a CLI call against a dead socket to time out.
+func (m *Manager) childExited(n Network, proc *childProc, err error) {
+	if proc.stopping.Load() || m.ctx.Err() != nil {
+		return
+	}
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil
+	}
+	if err != nil {
+		m.setError(n, fmt.Errorf("tunnel process exited unexpectedly: %w", err))
+		return
+	}
+	m.setError(n, errors.New("tunnel process exited unexpectedly"))
 }
 
 func (m *Manager) childRunning(id int64) bool {
@@ -455,7 +634,8 @@ func (m *Manager) childRunning(id int64) bool {
 	return ok
 }
 
-// stopChild terminates a process Pantau started: SIGTERM, then a hard kill after 10s.
+// stopChild terminates a process Pantau started: SIGINT, then a hard kill after stopGrace. It never waits
+// without a bound: the caller usually holds the network's lifecycle gate.
 func (m *Manager) stopChild(id int64) {
 	m.mu.Lock()
 	proc := m.procs[id]
@@ -463,12 +643,16 @@ func (m *Manager) stopChild(id int64) {
 	if proc == nil || proc.cmd.Process == nil {
 		return
 	}
+	proc.stopping.Store(true)
 	_ = proc.cmd.Process.Signal(os.Interrupt)
 	select {
 	case <-proc.done:
-	case <-time.After(10 * time.Second):
+	case <-time.After(stopGrace):
 		_ = proc.cmd.Process.Kill()
-		<-proc.done
+		select {
+		case <-proc.done:
+		case <-time.After(3 * time.Second):
+		}
 	}
 }
 
@@ -533,18 +717,31 @@ func (m *Manager) statusLoop() {
 		case <-m.ctx.Done():
 			return
 		case <-t.C:
-			rows, err := m.db.ListVPNNetworks()
-			if err != nil {
-				continue
-			}
-			for _, row := range rows {
-				if !row.Enabled || !m.gate() {
-					continue
-				}
-				ctx, cancel := context.WithTimeout(m.ctx, statusTimeout)
-				_, _ = m.Refresh(ctx, row.ID)
-				cancel()
-			}
+			m.tick()
+		}
+	}
+}
+
+// tick refreshes every enabled network's badge and restarts the ones a Host needs that fell over, so a tunnel
+// that died (daemon crash, `netbird down`) is back before the next inspection instead of turning its Hosts stale.
+func (m *Manager) tick() {
+	rows, err := m.db.ListVPNNetworks()
+	if err != nil || !m.gate() {
+		return
+	}
+	used, _ := m.db.CountHostsByNetwork()
+	for _, row := range rows {
+		if !row.Enabled {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(m.ctx, statusTimeout)
+		st, _ := m.Refresh(ctx, row.ID)
+		cancel()
+		if !row.AutoUp || used[row.ID] == 0 || st.State == StateUp || st.State == StateStarting || m.isStopped(row.ID) {
+			continue
+		}
+		if n, err := m.network(row.ID); err == nil {
+			m.startUp(n) // asynchronous; bringUp applies the retry backoff and the error cooldown
 		}
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -374,8 +375,38 @@ func (m *Manager) vendorBin(n Network) (string, error) {
 	return resolveVendorBin(n.Driver, n.Config["bin"])
 }
 
+type detected struct {
+	path, version string
+	at            time.Time
+}
+
+var (
+	detectMu    sync.Mutex
+	detectCache = map[string]detected{}
+)
+
+// detectTTL keeps GET /api/vpn/status from spawning every vendor CLI (up to 5s each) on each poll of the Networks tab.
+// Only a working binary is cached: a failure is re-checked at once, so installing the binary shows up on the next look.
+const detectTTL = time.Minute
+
 // DetectBinary returns the resolved path and version of a vendor binary, for GET /api/vpn/status.
 func DetectBinary(driverName string) (path, version, errText string) {
+	detectMu.Lock()
+	hit, ok := detectCache[driverName]
+	detectMu.Unlock()
+	if ok && time.Since(hit.at) < detectTTL {
+		return hit.path, hit.version, ""
+	}
+	path, version, errText = detectBinary(driverName)
+	if errText == "" && path != "" {
+		detectMu.Lock()
+		detectCache[driverName] = detected{path: path, version: version, at: time.Now()}
+		detectMu.Unlock()
+	}
+	return path, version, errText
+}
+
+func detectBinary(driverName string) (path, version, errText string) {
 	if vendorBins[driverName] == "" {
 		return "", "", ""
 	}

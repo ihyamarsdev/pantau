@@ -69,3 +69,17 @@ func TestNilPathDialsDirectly(t *testing.T) {
 	}
 	_ = conn.Close()
 }
+
+// A tunnel that went down leaves no interface: the dial must say so as a path failure (ErrInterfaceNotExists)
+// instead of surfacing a bare ENODEV from the bind, which reached the UI as the Host being down.
+func TestPathDialMissingInterface(t *testing.T) {
+	p := &Path{Name: "gone", Iface: "pantau-no-such-iface0"}
+	conn, err := p.DialContext(context.Background(), "tcp", "10.0.0.1:22")
+	if conn != nil {
+		conn.Close()
+		t.Fatal("expected no connection over a missing interface")
+	}
+	if !errors.Is(err, ErrInterfaceNotExists) {
+		t.Fatalf("expected ErrInterfaceNotExists, got %v", err)
+	}
+}

@@ -2143,3 +2143,85 @@ func TestResolveForwardPorts(t *testing.T) {
 		}
 	}
 }
+
+// Private IPs collected during inspection are the target of an inter-host probe when via=private.
+func TestPrivateIPCollectionAndPrivateInterHostProbe(t *testing.T) {
+	env := setupTestEnv(t)
+	client := loginClient(t, env)
+
+	srcID, _ := env.db.CreateHost(&store.Host{Name: "src", Host: "198.51.100.10", Port: 22, User: "root"})
+	dstID, _ := env.db.CreateHost(&store.Host{Name: "dst", Host: "203.0.113.9", Port: 22, User: "root"})
+
+	sections := []string{
+		"6.8.0-45-generic", "PRETTY_NAME=\"Ubuntu 24.04 LTS\"", "12:00 up 1 day, load average: 0.10, 0.05, 0.01",
+		"Mem: 8589934592 1073741824 0", "/dev/sda1 104857600 41943040 62914560 40% /", "0",
+		"100 200", "2.5", "198.51.100.10", "", "tcp 0.0.0.0:22 users:((\"sshd\"))", "0", "4",
+		"01/01/2024", "QEMU", "1700000000", "1000 2000", "", "", "",
+		"127.0.0.1\n8.8.8.8\n10.20.0.7\n172.17.0.1\n10.20.0.7",
+	}
+	env.mockRunner.Handlers[inspector.SystemMetricsBatchCmd] = func() (string, string, int, error) {
+		return strings.Join(sections, "\n---\n"), "", 0, nil
+	}
+	if err := env.inspector.InspectHost(dstID); err != nil {
+		t.Fatalf("inspect target host: %v", err)
+	}
+
+	dst, _ := env.db.GetHost(dstID)
+	if got := dst.PrivateIPList(); len(got) != 2 || got[0] != "10.20.0.7" || got[1] != "172.17.0.1" {
+		t.Fatalf("expected stored private IPs [10.20.0.7 172.17.0.1], got %v (raw %q)", got, dst.PrivateIPs)
+	}
+
+	runProbe := func(via string) {
+		env.mockRunner.ExecHistory = nil
+		q := url.Values{"source_host_id": {fmt.Sprint(srcID)}, "type": {"ping"}, "target_type": {"host"}, "target_host_id": {fmt.Sprint(dstID)}}
+		if via != "" {
+			q.Set("via", via)
+		}
+		resp, err := client.Get(env.httpServer.URL + "/api/netdiag/stream?" + q.Encode())
+		if err != nil {
+			t.Fatalf("probe request: %v", err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}
+
+	runProbe("private")
+	if !strings.Contains(strings.Join(env.mockRunner.ExecHistory, "\n"), "'10.20.0.7'") {
+		t.Fatalf("expected probe to target the private IP, history: %v", env.mockRunner.ExecHistory)
+	}
+
+	runProbe("")
+	if !strings.Contains(strings.Join(env.mockRunner.ExecHistory, "\n"), "'203.0.113.9'") {
+		t.Fatalf("expected probe to target the SSH address without via=private, history: %v", env.mockRunner.ExecHistory)
+	}
+}
+
+// A hung background inspection must free its slot and its queue entry, or one stuck host wedges monitoring for all.
+func TestDispatchInspectionReleasesHungSlots(t *testing.T) {
+	oldHold, oldWait := inspectHoldMax, inspectSlotWait
+	inspectHoldMax, inspectSlotWait = 100*time.Millisecond, 100*time.Millisecond
+	t.Cleanup(func() { inspectHoldMax, inspectSlotWait = oldHold, oldWait })
+
+	block := make(chan struct{})
+	t.Cleanup(func() { close(block) })
+	for id := int64(9001); id <= 9006; id++ { // one more than the five slots
+		inspectQueued.Store(id, struct{}{})
+		go dispatchInspection(id, func(int64) { <-block })
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		pending := 0
+		for id := int64(9001); id <= 9006; id++ {
+			if _, ok := inspectQueued.Load(id); ok {
+				pending++
+			}
+		}
+		if pending == 0 && len(inspectSem) == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("hung inspections still hold %d queue entries and %d slots", pending, len(inspectSem))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}

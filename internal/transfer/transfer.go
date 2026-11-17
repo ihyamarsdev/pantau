@@ -81,7 +81,9 @@ func (m *Manager) getRunnerForHost(h *store.Host) (sshrunner.Runner, error) {
 	}
 	var path *vpnnet.Path
 	if h.NetworkID != 0 && m.paths != nil {
-		path, err = m.paths.Ensure(context.Background(), h.NetworkID)
+		ctx, cancel := context.WithTimeout(context.Background(), vpnnet.DialBudget)
+		defer cancel()
+		path, err = m.paths.Ensure(ctx, h.NetworkID)
 		if err != nil {
 			return nil, fmt.Errorf("%w: network down: %v", sshrunner.ErrNetworkUnavailable, err)
 		}

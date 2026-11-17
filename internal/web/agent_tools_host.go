@@ -27,7 +27,7 @@ var hostTools = []agentTool{
 	{Name: "disk_usage", Description: "Sizes of the direct children of a directory, largest first (du, one level, up to 55 s). Use it to find what fills a disk; drill down by calling it again on a child.",
 		InputSchema: schema([]string{"host_id", "path"}, map[string]interface{}{"host_id": pHost, "path": pAbsPath}), run: toolDiskUsage},
 	{Name: "net_diag", Description: "Network probe run FROM a host: ping, port_probe (TCP connect, needs port), dns_resolve, or dig (record_type A, AAAA, CNAME, MX, NS, TXT, SOA or PTR; optional dns_server). The target is target (hostname or IP) or target_host_id (another managed host).",
-		InputSchema: schema([]string{"host_id", "type"}, map[string]interface{}{"host_id": pHost, "type": map[string]interface{}{"type": "string", "enum": []string{"ping", "port_probe", "dns_resolve", "dig"}}, "target": str, "target_host_id": map[string]interface{}{"type": "integer", "description": "host id from list_hosts"}, "port": map[string]interface{}{"type": "integer"}, "record_type": str, "dns_server": str}), run: toolNetDiag},
+		InputSchema: schema([]string{"host_id", "type"}, map[string]interface{}{"host_id": pHost, "type": map[string]interface{}{"type": "string", "enum": []string{"ping", "port_probe", "dns_resolve", "dig"}}, "target": str, "target_host_id": map[string]interface{}{"type": "integer", "description": "host id from list_hosts"}, "port": map[string]interface{}{"type": "integer"}, "record_type": str, "dns_server": str, "via": map[string]interface{}{"type": "string", "enum": []string{"private"}, "description": "with target_host_id: reach the target over its private IP instead of its SSH address"}}), run: toolNetDiag},
 	{Name: "alert_ack", Description: "Acknowledge one active alert (id from list_alerts) once its cause is fixed and verified. May wait for operator approval.", gate: gateRoutine,
 		InputSchema: schema([]string{"alert_id"}, map[string]interface{}{"alert_id": map[string]interface{}{"type": "integer"}}), run: toolAlertAck},
 	{Name: "inventory_scan", Description: "Rescan a host's package inventory (what = packages) or reverse-proxy domains (what = domains) so fleet_search and host_info domains are fresh. One scan per minute per host. May wait for operator approval.", gate: gateRoutine,
@@ -59,7 +59,7 @@ func toolHostInfo(s *Server, r *http.Request, args map[string]interface{}) (stri
 			"ram_used_bytes": h.RAMUsedBytes, "ram_total_bytes": h.RAMTotalBytes, "swap_used_bytes": h.SwapUsedBytes, "swap_total_bytes": h.SwapTotalBytes,
 			"disk_used_bytes": h.DiskUsedBytes, "disk_total_bytes": h.DiskTotalBytes, "disk_read_bps": h.DiskReadSpeedBps, "disk_write_bps": h.DiskWriteSpeedBps,
 			"net_rx_bps": h.NetRxSpeedBps, "net_tx_bps": h.NetTxSpeedBps, "internet_online": h.InternetOnline, "internet_latency_ms": h.InternetLatencyMs,
-			"public_ip": h.PublicIP, "active_connections": h.ActiveConnCount, "top_connections": list(h.TopConnections), "listening_ports": list(h.ListeningPorts),
+			"public_ip": h.PublicIP, "private_ips": h.PrivateIPList(), "active_connections": h.ActiveConnCount, "top_connections": list(h.TopConnections), "listening_ports": list(h.ListeningPorts),
 			"top_cpu_processes": list(h.TopCPUProcesses), "top_ram_processes": list(h.TopRAMProcesses), "top_swap_processes": list(h.TopSwapProcesses),
 		}
 	case "updates":
@@ -129,7 +129,7 @@ func toolNetDiag(s *Server, r *http.Request, args map[string]interface{}) (strin
 		return "", err
 	}
 	req := netdiag.ProbeRequest{SourceHostID: id, Type: netdiag.ProbeType(argStr(args, "type")), TargetType: "custom", TargetAddress: argStr(args, "target"),
-		TargetHostID: argInt(args, "target_host_id"), Port: int(argInt(args, "port")), RecordType: argStr(args, "record_type"), DNSServer: argStr(args, "dns_server")}
+		TargetHostID: argInt(args, "target_host_id"), Port: int(argInt(args, "port")), RecordType: argStr(args, "record_type"), DNSServer: argStr(args, "dns_server"), Via: argStr(args, "via")}
 	switch req.Type {
 	case netdiag.ProbeTypePing, netdiag.ProbeTypePort, netdiag.ProbeTypeDNS, netdiag.ProbeTypeDig:
 	default: // traceroute is left out: Pantau installs the tool when it is missing, which is a change

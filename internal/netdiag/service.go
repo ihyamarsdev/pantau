@@ -165,6 +165,13 @@ func (s *Service) ExecuteProbe(ctx context.Context, req ProbeRequest, eventSink 
 			return fmt.Errorf("target host '%s' is offline and cannot be probed", targetHost.Name)
 		}
 		req.TargetAddress = targetHost.Host
+		if req.Via == "private" {
+			ips := targetHost.PrivateIPList()
+			if len(ips) == 0 {
+				return fmt.Errorf("target host '%s' has no private IP recorded yet; run an inspection on it first", targetHost.Name)
+			}
+			req.TargetAddress = ips[0]
+		}
 	}
 
 	if err := ValidateTarget(req.TargetAddress); err != nil {

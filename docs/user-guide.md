@@ -431,6 +431,7 @@ When troubleshooting server connectivity issues, firewall blocking, or cross-dat
 - **Dual Launch Points**:
   - Open from the **Network Diagnostics** tab in any Host Workspace Modal (with source host locked).
   - Open globally via the **`⚡ NetDiag`** button in the top navigation header cluster (with host picker).
+- **Private IP targets**: every inspection records the host's private IPv4 addresses (RFC 1918 and CGNAT `100.64.0.0/10`, loopback excluded; `ip -o addr` on Linux, `ifconfig` on macOS), shown as **Private IP** in the host's Overview and Network cards and next to the SSH address in the inter-host target list. Tick **Use private IP** on an inter-host probe to reach the target on that address instead of its SSH address — the way to test the private network between two hosts (VPC, LAN, Tailscale/NetBird). A target with no address recorded says so; inspect it once first. The primary address is the first one the host reports.
 - **Concurrency & Safety Guards**: Employs an in-memory singleflight lock per host to prevent SSH session saturation. Offline hosts are automatically disabled in inter-host target dropdowns.
 
 ### Databases Tab: Database Backup

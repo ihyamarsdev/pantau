@@ -551,6 +551,60 @@ func TestDarwin_LifecycleScore_MacMini_SwapPressure(t *testing.T) {
 	}
 }
 
+// darwinPrivateIPTail is the last section of DarwinSystemMetricsBatchCmd: the non-loopback IPv4
+// addresses of a Mac, bridge interfaces (Internet Sharing, VM NAT) left out.
+const darwinPrivateIPTail = `ifconfig 2>/dev/null | awk '/^[a-z0-9]+:/{ifn=$1} /inet /{if (ifn !~ /^bridge/) print $2}' | sed 's/addr://'`
+
+func TestDarwin_PrivateIPsFromIfconfig(t *testing.T) {
+	if !strings.Contains(DarwinSystemMetricsBatchCmd, darwinPrivateIPTail) {
+		t.Fatalf("darwin batch command does not end with the private IP section")
+	}
+	// The signature order of `ifconfig`: bridge0 duplicates the LAN address, lo0 and utun3 follow en0.
+	ifconfig := `awdl0: flags=8943<UP,BROADCAST,RUNNING,PROMISC,SIMPLEX,MULTICAST> mtu 1500
+	inet6 fe80::4c1:2fff:fe1a:9d3c%awdl0 prefixlen 64 scopeid 0x11
+bridge0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
+	inet 192.168.88.6 netmask 0xffffff00 broadcast 192.168.88.255
+en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
+	inet 192.168.88.6 netmask 0xffffff00 broadcast 192.168.88.255
+	inet6 fe80::1c2b:5fff:fe3d:aa11%en0 prefixlen 64 secured scopeid 0x6
+lo0: flags=8049<UP,LOOPBACK,RUNNING,MULTICAST> mtu 16384
+	inet 127.0.0.1 netmask 0xff000000
+utun3: flags=8051<UP,POINTOPOINT,RUNNING,MULTICAST> mtu 1420
+	inet 100.100.102.237 --> 100.100.102.237 netmask 0xffffffff
+`
+	cmd := exec.Command("sh", "-c", strings.Replace(darwinPrivateIPTail, "ifconfig 2>/dev/null", "cat", 1))
+	cmd.Stdin = strings.NewReader(ifconfig)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("run private IP section: %v", err)
+	}
+	h := &store.Host{PrivateIPs: parsePrivateIPs(string(out))}
+	got := h.PrivateIPList()
+	if len(got) != 2 || got[0] != "192.168.88.6" || got[1] != "100.100.102.237" {
+		t.Fatalf("expected [192.168.88.6 100.100.102.237], got %v (raw %q)", got, out)
+	}
+}
+
+func TestBatchCommandsKeepPrivateIPSectionLast(t *testing.T) {
+	// scrapeSystemMetrics reads the private IPv4 list from section 20; a missing trailing separator
+	// would silently drop it (and put ifconfig output in the top-swap slot instead).
+	for name, cmd := range map[string]string{"linux": LinuxSystemMetricsBatchCmd, "darwin": DarwinSystemMetricsBatchCmd} {
+		if got := strings.Count(cmd, `echo "---"`); got != 20 {
+			t.Errorf("%s batch command has %d separators, want 20 (21 sections)", name, got)
+		}
+		// Parse only: the macOS branch cannot run here, but a quoting mistake still fails here.
+		if err := exec.Command("sh", "-n", "-c", cmd).Run(); err != nil {
+			t.Errorf("%s batch command is not valid sh: %v", name, err)
+		}
+	}
+	if !strings.Contains(DarwinSystemMetricsBatchCmd, darwinPrivateIPTail) {
+		t.Error("darwin batch command does not collect private IPv4 addresses")
+	}
+	if !strings.Contains(LinuxSystemMetricsBatchCmd, "ip -4 -o addr show scope global") {
+		t.Error("linux batch command does not collect private IPv4 addresses")
+	}
+}
+
 func TestDarwin_LinuxBatchCommandUntouched(t *testing.T) {
 	// 1. Must start with the Darwin guard prefix
 	if !strings.HasPrefix(SystemMetricsBatchCmd, "if [ \"$(uname -s)\" = \"Darwin\" ]; then ") {
@@ -660,11 +714,12 @@ func TestDarwin_FullMetricsScrapeSimulation(t *testing.T) {
 		"157 _windowserver 12.5 0.0 67344 WindowServer\n90358 root 12.2 0.0 20688 sshd-session", // 17: top CPU
 		"21875 macuser 3.1 0.2 422928 Python\n73969 macuser 0.0 0.1 389088 Python",              // 18: top RAM
 		"", // 19: top swap
+		"127.0.0.1\n192.168.88.6\n100.64.12.3\n8.8.8.8\n192.168.88.6", // 20: private IPs
 	}, "\n---\n")
 
 	sections := splitMetricsSections(batchStdout)
-	if len(sections) != 20 {
-		t.Fatalf("expected 20 sections, got %d", len(sections))
+	if len(sections) != 21 {
+		t.Fatalf("expected 21 sections, got %d", len(sections))
 	}
 
 	h := &store.Host{}
@@ -681,6 +736,7 @@ func TestDarwin_FullMetricsScrapeSimulation(t *testing.T) {
 
 	parseNetworkMetrics(h, sections[6], sections[7], sections[8], sections[9], sections[10], sections[11])
 	parseDiskIOMetrics(h, sections[16])
+	h.PrivateIPs = parsePrivateIPs(sections[20])
 
 	score, notes, _ := calculateLifecycleScore(h.OSInfo, h.CPULoad, h.CPUCores, h.RAMUsedBytes, h.RAMTotalBytes, h.DiskUsedBytes, h.DiskTotalBytes, 0, h.BIOSDate, h.HardwareModel, h.OSInstallEpoch, "")
 	h.LifecycleScore = score
@@ -688,6 +744,9 @@ func TestDarwin_FullMetricsScrapeSimulation(t *testing.T) {
 
 	if h.Kernel != "25.2.0" {
 		t.Errorf("Kernel: expected 25.2.0, got %q", h.Kernel)
+	}
+	if len(h.PrivateIPList()) != 2 || h.PrivateIPList()[0] != "192.168.88.6" || h.PrivateIPList()[1] != "100.64.12.3" {
+		t.Errorf("PrivateIPs: expected [192.168.88.6 100.64.12.3], got %v", h.PrivateIPList())
 	}
 	if h.OSInfo != "macOS 26.2 (Tahoe)" {
 		t.Errorf("OSInfo: expected 'macOS 26.2 (Tahoe)', got %q", h.OSInfo)

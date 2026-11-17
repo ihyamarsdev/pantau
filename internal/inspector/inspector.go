@@ -84,7 +84,9 @@ func (ins *Inspector) netPath(h *store.Host) (*vpnnet.Path, error) {
 	if h.NetworkID == 0 || ins.paths == nil {
 		return nil, nil
 	}
-	path, err := ins.paths.Ensure(context.Background(), h.NetworkID)
+	ctx, cancel := context.WithTimeout(context.Background(), vpnnet.DialBudget)
+	defer cancel()
+	path, err := ins.paths.Ensure(ctx, h.NetworkID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: network down: %v", sshrunner.ErrNetworkUnavailable, err)
 	}
@@ -151,12 +153,11 @@ func (ins *Inspector) InspectHostWithTimeout(hostID int64, timeout time.Duration
 	runner, err := ins.GetRunnerForHost(host)
 	if err != nil {
 		duration := time.Since(startTime).Milliseconds()
-		// A dead VPN path is not a dead Host: keep the last known state and say so.
+		// An unreachable Host is down whether the SSH dial or the VPN path failed; the notes name which.
 		networkDown := errors.Is(err, sshrunner.ErrNetworkUnavailable)
 		host.Status = "down"
 		summary := "SSH connection failed"
 		if networkDown {
-			host.Status = "stale"
 			summary = "Network path unavailable"
 		}
 		host.LastDurationMs = duration
@@ -391,6 +392,11 @@ func (ins *Inspector) scrapeSystemMetrics(h *store.Host, runner sshrunner.Runner
 	}
 	parseNetworkMetrics(h, netDevSec, pingSec, pubIPSec, estSec, listenSec, failedSec)
 	ins.enrichListeningProcesses(h, runner)
+
+	// Private IPv4 addresses (RFC 1918 + CGNAT), used as inter-host probe targets over a private network.
+	if len(sections) >= 21 {
+		h.PrivateIPs = parsePrivateIPs(sections[20])
+	}
 
 	var diskStatsSec string
 	if len(sections) >= 17 {
@@ -684,6 +690,43 @@ func parseNetworkMetrics(h *store.Host, netDevSec, pingSec, pubIPSec, estSec, li
 	} else {
 		h.FailedLoginsCount, _ = strconv.Atoi(v)
 	}
+}
+
+// cgnatBlock is RFC 6598 (100.64.0.0/10): Tailscale, NetBird and carrier NAT addresses
+// that net.IP.IsPrivate does not cover but that are private enough to probe over.
+var cgnatBlock = func() *net.IPNet {
+	_, b, _ := net.ParseCIDR("100.64.0.0/10")
+	return b
+}()
+
+// parsePrivateIPs keeps the private IPv4 addresses of a host as a JSON array, in interface
+// order: the first entry is the primary address a peer should reach the host on.
+func parsePrivateIPs(out string) string {
+	ips := []string{}
+	seen := make(map[string]bool)
+	for _, line := range strings.Split(out, "\n") {
+		ip := net.ParseIP(strings.TrimSpace(line))
+		if ip == nil || ip.To4() == nil {
+			continue
+		}
+		if !ip.IsPrivate() && !cgnatBlock.Contains(ip) {
+			continue
+		}
+		s := ip.To4().String()
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		ips = append(ips, s)
+		if len(ips) == 8 {
+			break
+		}
+	}
+	b, err := json.Marshal(ips)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 func parseDiskIOMetrics(h *store.Host, diskStatsSec string) {

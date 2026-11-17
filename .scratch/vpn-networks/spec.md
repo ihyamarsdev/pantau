@@ -17,7 +17,7 @@ Host privat yang hanya terjangkau lewat VPN tertentu harus bisa dikelola Pantau 
 - **Network Path**: hasil resolusi sebuah VPN Network saat koneksi dibuat: nama interface untuk bind + fungsi dial. _Avoid_: Route, gateway, hop
 - **Bound Dial**: dial TCP yang diikat ke interface tertentu (`SO_BINDTODEVICE`/`IP_UNICAST_IF`/`IP_BOUND_IF`) sehingga paket keluar lewat tunnel itu tanpa mengubah tabel rute. _Avoid_: Route override, forced route
 - **Tunnel State**: status satu VPN Network: `down`, `starting`, `up`, `error`. _Avoid_: Health, status link
-- **Network Down**: kegagalan yang berasal dari jalur (tunnel mati/tidak bisa di-bind), bukan dari Host; Host ditandai `stale`, bukan `down`. _Avoid_: Offline, unreachable
+- **Network Down**: kegagalan yang berasal dari jalur (tunnel mati/tidak bisa di-bind), bukan dari Host; Host tetap `down` (SSH tidak bisa dibuka), alasan jalur ada di catatan. _Avoid_: Offline, unreachable
 
 ## Non-goals (v1)
 
@@ -183,7 +183,7 @@ Perubahan pemanggil (semua, tidak ada yang boleh dilewatkan):
 4. `POST /api/hosts/{id}/test` (`server.go:1438`) tidak berubah karena memakai `inspector.GetRunnerForHost`; galatnya harus tampil apa adanya (`network down: netbird-prod`).
 5. Enam factory di tes (`internal/inspector/*_test.go`) diperbarui ke `func(t sshrunner.Target)`.
 
-Inspeksi: saat `Ensure` gagal, `InspectHostWithTimeout` mencatat Host `status="stale"` + pesan `network down: <name>` (bukan `down`) dan melewati sisa pemeriksaan; metrik lama dipertahankan.
+Inspeksi: saat `Ensure` gagal, `InspectHostWithTimeout` mencatat Host `status="down"` + pesan `network down: <name>` dan melewati sisa pemeriksaan; metrik lama dipertahankan.
 
 ## API
 
@@ -211,7 +211,7 @@ Semua di balik `authMiddleware`; `up`/`down` menolak (`409`) bila gate mati. `ho
 
 ## Status implementasi
 
-Sudah diimplementasikan: skema + store, dial per OS, keenam driver (termasuk `mode: instance`), manager + gate, choke point `sshrunner.Target`, API `/api/vpn/*`, UI Settings → Networks + select Network di form host & import, badge di kartu host, `stale` saat `network down`, tes unit (`vpnnet/path_test.go`, `store/vpn_test.go`) dan e2e (`e2e/tests/vpn-networks.e2e.ts`).
+Sudah diimplementasikan: skema + store, dial per OS, keenam driver (termasuk `mode: instance`), manager + gate, choke point `sshrunner.Target`, API `/api/vpn/*`, UI Settings → Networks + select Network di form host & import, badge di kartu host, `down` saat `network down`, tes unit (`vpnnet/path_test.go`, `store/vpn_test.go`) dan e2e (`e2e/tests/vpn-networks.e2e.ts`).
 
 ## Tiket
 

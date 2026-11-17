@@ -431,6 +431,7 @@ Saat menangani kendala konektivitas antar-server, pemblokiran firewall, atau ano
 - **Dua Titik Akses UI**:
   - Buka melalui tab **Network Diagnostics** di Workspace Modal (dengan host sumber terkunci).
   - Buka secara global via tombol **`⚡ NetDiag`** di header navbar atas (dengan pemilih host sumber aktif).
+- **Target IP private**: setiap inspeksi mencatat alamat IPv4 privat host (RFC 1918 dan CGNAT `100.64.0.0/10`, loopback dikecualikan; `ip -o addr` di Linux, `ifconfig` di macOS), yang tampil sebagai **IP Private** di kartu Overview dan Network host serta di samping alamat SSH pada daftar target antar-host. Centang **Gunakan IP private** pada probe antar-host untuk mencapai target lewat alamat itu alih-alih alamat SSH-nya — cara menguji jaringan privat antara dua host (VPC, LAN, Tailscale/NetBird). Target yang alamatnya belum tercatat akan menyebutkannya; inspeksi dulu sekali. Alamat utama adalah alamat pertama yang dilaporkan host.
 - **Proteksi Konkurensi & Keamanan**: Menggunakan kunci singleflight in-memory per host untuk mencegah kehabisan sesi SSH. Host yang sedang offline secara otomatis dinonaktifkan dari daftar target antar-host.
 
 ### Tab Database: Backup Database

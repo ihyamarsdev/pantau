@@ -51,6 +51,7 @@ func (s *Server) handleNetDiagStream(w http.ResponseWriter, r *http.Request) {
 		Port:          port,
 		RecordType:    q.Get("record_type"),
 		DNSServer:     q.Get("dns_server"),
+		Via:           strings.TrimSpace(q.Get("via")),
 	}
 
 	err = s.netdiagService.ExecuteProbe(r.Context(), req, func(evt netdiag.ProbeEvent) {

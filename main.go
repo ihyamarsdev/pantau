@@ -579,6 +579,34 @@ var (
 	inspectQueued sync.Map
 )
 
+// A hung inspection must cost one slot for minutes, never the whole worker for good: a host waits at most
+// inspectSlotWait for a slot (the next tick queues it again) and one inspection holds a slot at most inspectHoldMax.
+var (
+	inspectSlotWait = 2 * time.Minute
+	inspectHoldMax  = 3 * time.Minute
+)
+
+// dispatchInspection runs one background inspection under the slot limits above.
+func dispatchInspection(hostID int64, run func(int64)) {
+	defer inspectQueued.Delete(hostID)
+	select {
+	case inspectSem <- struct{}{}:
+	case <-time.After(inspectSlotWait):
+		return
+	}
+	defer func() { <-inspectSem }()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		run(hostID)
+	}()
+	select {
+	case <-done:
+	case <-time.After(inspectHoldMax):
+		logger.Warn("inspect", strconv.FormatInt(hostID, 10), "inspection still running past the slot limit; slot released", "limit", inspectHoldMax.String())
+	}
+}
+
 // runInspectionCycle executes a single inspection sweep across hosts that are due.
 // Returns false if background inspection is disabled (poll_interval_sec = 0) or on error.
 func runInspectionCycle(db *store.DB, ins *inspector.Inspector) bool {
@@ -606,12 +634,7 @@ func runInspectionCycle(db *store.DB, ins *inspector.Inspector) bool {
 			if _, queued := inspectQueued.LoadOrStore(h.ID, struct{}{}); queued {
 				continue
 			}
-			go func(hostID int64) {
-				defer inspectQueued.Delete(hostID)
-				inspectSem <- struct{}{}
-				defer func() { <-inspectSem }()
-				_ = ins.InspectHost(hostID)
-			}(h.ID)
+			go dispatchInspection(h.ID, func(id int64) { _ = ins.InspectHost(id) })
 		}
 	}
 	return true

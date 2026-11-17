@@ -32,7 +32,7 @@ Ketidaksesuaian atau deviasi antara Actual State dan Desired State pada Host.
 _Avoid_: Mismatch, divergence, error state
 
 **Host Status**:
-Vonis satu kata atas hasil Inspection terakhir sebuah Host — `healthy` (semua Desired Rule sesuai), `degraded` (SSH terjangkau tetapi ada Drift, kegagalan aturan, atau budget inspeksi habis), `stale` (jalur jaringan/VPN tidak sampai ke Host sehingga Actual State tidak terverifikasi dan status terakhir dipertahankan), `down` (koneksi SSH gagal pada level Host: port menolak, autentikasi gagal, host tak menjawab), `unknown` (belum pernah diinspeksi). Hanya `down` yang berarti "server mati"; `stale` berarti "jalurnya yang mati", sesuai [ADR-0077](docs/adr/0077-jalur-jaringan-per-host-driver-vpn-dan-dial-terikat-interface.md). Warna dan animasi indikator mengikuti status ini: hijau tenang, kuning berdenyut, biru lambat, merah cepat, abu-abu diam.
+Vonis satu kata atas hasil Inspection terakhir sebuah Host — `healthy` (semua Desired Rule sesuai), `degraded` (SSH terjangkau tetapi ada Drift, kegagalan aturan, atau budget inspeksi habis), `down` (Inspection tidak bisa membuka SSH ke Host, apa pun sebabnya: port menolak, autentikasi gagal, host tak menjawab, atau jalur VPN-nya mati; alasannya tertulis di catatan inspeksi, lihat [ADR-0077](docs/adr/0077-jalur-jaringan-per-host-driver-vpn-dan-dial-terikat-interface.md)), `unknown` (belum pernah diinspeksi). Warna dan animasi indikator mengikuti status ini: hijau tenang, kuning berdenyut, merah cepat, abu-abu diam.
 _Avoid_: Online/offline, health badge, connectivity state
 
 **Root Cause Excerpt**:
@@ -122,6 +122,10 @@ _Avoid_: Folder export, zip dump
 Status keterhubungan keluar Host ke internet publik dan pengukuran latensi roundtrip (ms) ke resolver global.
 _Avoid_: Internet status, ping check
 
+**Private IP**:
+Kumpulan alamat IPv4 privat Host (RFC 1918 dan CGNAT `100.64.0.0/10`, tanpa loopback) yang dikumpulkan setiap Inspeksi dari interface aktif, dengan entri pertama sebagai alamat utama; dipakai sebagai tujuan Probe Target *Inter-Host* saat jalur privat dipilih alih-alih alamat SSH Host.
+_Avoid_: LAN IP, internal address, local IP
+
 **Port Exposure**:
 Klasifikasi tingkat keterbukaan listening port pada Host (apakah terikat pada interface publik `0.0.0.0`/`*` atau terisolasi lokal `127.0.0.1`) beserta penilaian risiko keamanan service sensitif.
 _Avoid_: Open port list, firewall rule
@@ -204,7 +208,7 @@ Status satu VPN Network: `down`, `starting`, `up`, atau `error`.
 _Avoid_: Health, status link
 
 **Network Down**:
-Kegagalan yang berasal dari jalur VPN (tunnel mati atau interface tidak dapat di-bind), bukan dari Host; Host ditandai `stale` beserta alasannya, bukan `down`.
+Kegagalan yang berasal dari jalur VPN (tunnel mati atau interface tidak dapat di-bind), bukan dari Host; Host tetap ditandai `down` karena SSH-nya tidak bisa dibuka; catatan inspeksi menyebut jalurnya sebagai penyebab.
 _Avoid_: Offline, unreachable
 
 **Terminal Link Provider**:

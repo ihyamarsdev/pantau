@@ -7,6 +7,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"pantau/internal/vpnnet"
 )
 
 type fakeConn struct{ net.Conn }
@@ -16,7 +18,9 @@ func (fakeConn) Close() error { return nil }
 // A mesh VPN answers "no route to host" at once while a peer connection is still forming, so over a
 // tunnel that error must earn another attempt; outside a tunnel it means the Host really is unreachable.
 func TestDialRetry_RouteError(t *testing.T) {
-	noRoute := func() error { return &net.OpError{Op: "dial", Net: "tcp", Err: os.NewSyscallError("connect", syscall.EHOSTUNREACH)} }
+	noRoute := func() error {
+		return &net.OpError{Op: "dial", Net: "tcp", Err: os.NewSyscallError("connect", syscall.EHOSTUNREACH)}
+	}
 
 	t.Run("tunnel retries then succeeds", func(t *testing.T) {
 		calls := 0
@@ -69,4 +73,13 @@ func TestDialRetry_RouteError(t *testing.T) {
 			t.Fatalf("expected one immediate refusal, got calls=%d err=%v", calls, err)
 		}
 	})
+}
+
+// A missing tunnel interface (the VPN went down mid-plan) is a path failure: the Host keeps its last
+// state and is reported stale, not down.
+func TestDialTCPMissingTunnelInterfaceIsNetworkUnavailable(t *testing.T) {
+	_, err := dialTCP("10.0.0.1:22", &vpnnet.Path{Name: "gone", Iface: "pantau-no-such-iface0"}, 200*time.Millisecond)
+	if !errors.Is(err, ErrNetworkUnavailable) {
+		t.Fatalf("expected ErrNetworkUnavailable, got %v", err)
+	}
 }

@@ -195,8 +195,8 @@ func TestInspectHost_NetworkPathFailureKeepsLastState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if h.Status != "stale" {
-		t.Fatalf("expected status 'stale' for a path failure, got %q", h.Status)
+	if h.Status != "down" {
+		t.Fatalf("expected status 'down' for a path failure, got %q", h.Status)
 	}
 	if !strings.Contains(h.LifecycleNotes, "Network path unavailable") {
 		t.Fatalf("expected the notes to name the path, got %q", h.LifecycleNotes)

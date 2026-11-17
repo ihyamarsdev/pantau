@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"database/sql"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -86,6 +87,7 @@ type Host struct {
 	InternetOnline    bool   `json:"internet_online"`
 	InternetLatencyMs int64  `json:"internet_latency_ms"`
 	PublicIP          string `json:"public_ip"`
+	PrivateIPs        string `json:"private_ips"` // JSON serialized array of private IPv4 addresses, primary first
 	ActiveConnCount   int    `json:"active_conn_count"`
 	FailedLoginsCount int    `json:"failed_logins_count"`
 	TopConnections    string `json:"top_connections"` // JSON serialized array of TopConn
@@ -103,6 +105,13 @@ type Host struct {
 	KubeClusterID     string `json:"kube_cluster_id,omitempty"`
 	KubeMode          string `json:"kube_mode"`
 	NetworkID         int64  `json:"network_id"` // VPN Network (0 = direct)
+}
+
+// PrivateIPList returns the host's stored private IPv4 addresses, primary first.
+func (h *Host) PrivateIPList() []string {
+	var ips []string
+	_ = json.Unmarshal([]byte(h.PrivateIPs), &ips)
+	return ips
 }
 
 type ProcessInfo struct {
@@ -335,6 +344,7 @@ func (d *DB) migrate() error {
 		internet_online INTEGER DEFAULT 0,
 		internet_latency_ms INTEGER DEFAULT 0,
 		public_ip TEXT DEFAULT '',
+		private_ips TEXT DEFAULT '',
 		active_conn_count INTEGER DEFAULT 0,
 		failed_logins_count INTEGER DEFAULT 0,
 		top_connections TEXT DEFAULT '',
@@ -862,6 +872,7 @@ func (d *DB) migrate() error {
 	_ = d.alterAddColumn("hosts", "internet_online", "INTEGER DEFAULT 0")
 	_ = d.alterAddColumn("hosts", "internet_latency_ms", "INTEGER DEFAULT 0")
 	_ = d.alterAddColumn("hosts", "public_ip", "TEXT DEFAULT ''")
+	_ = d.alterAddColumn("hosts", "private_ips", "TEXT DEFAULT ''")
 	_ = d.alterAddColumn("hosts", "active_conn_count", "INTEGER DEFAULT 0")
 	_ = d.alterAddColumn("hosts", "failed_logins_count", "INTEGER DEFAULT 0")
 	_ = d.alterAddColumn("hosts", "top_connections", "TEXT DEFAULT ''")
@@ -1062,7 +1073,7 @@ type rowScanner interface {
 const hostSelectCols = `SELECT id, name, host, port, user, COALESCE(custom_key,''), COALESCE(key_id, 0), status, os_info, kernel, uptime, cpu_load, ram_used_bytes, ram_total_bytes, disk_used_bytes, disk_total_bytes, lifecycle_score, lifecycle_notes, COALESCE(lifecycle_breakdown, '[]'), last_inspected, created_at,
 	COALESCE(net_rx_bytes, 0), COALESCE(net_tx_bytes, 0), COALESCE(net_rx_speed_bps, 0), COALESCE(net_tx_speed_bps, 0),
 	COALESCE(disk_read_bytes, 0), COALESCE(disk_write_bytes, 0), COALESCE(disk_read_speed_bps, 0), COALESCE(disk_write_speed_bps, 0),
-	COALESCE(internet_online, 0), COALESCE(internet_latency_ms, 0), COALESCE(public_ip, ''), COALESCE(active_conn_count, 0),
+	COALESCE(internet_online, 0), COALESCE(internet_latency_ms, 0), COALESCE(public_ip, ''), COALESCE(private_ips, ''), COALESCE(active_conn_count, 0),
 	COALESCE(failed_logins_count, 0), COALESCE(top_connections, ''), COALESCE(listening_ports, ''),
 	COALESCE(notes, ''), COALESCE(sort_order, 0), COALESCE(group_name, ''),
 	COALESCE(cpu_cores, 1), COALESCE(hardware_model, ''), COALESCE(swap_used_bytes, 0), COALESCE(swap_total_bytes, 0),
@@ -1078,7 +1089,7 @@ func scanHost(s rowScanner) (*Host, error) {
 	err := s.Scan(&h.ID, &h.Name, &h.Host, &h.Port, &h.User, &h.CustomKey, &h.KeyID, &h.Status, &h.OSInfo, &h.Kernel, &h.Uptime, &h.CPULoad, &h.RAMUsedBytes, &h.RAMTotalBytes, &h.DiskUsedBytes, &h.DiskTotalBytes, &h.LifecycleScore, &h.LifecycleNotes, &h.LifecycleBreakdown, &inspected, &h.CreatedAt,
 		&h.NetRxBytes, &h.NetTxBytes, &h.NetRxSpeedBps, &h.NetTxSpeedBps,
 		&h.DiskReadBytes, &h.DiskWriteBytes, &h.DiskReadSpeedBps, &h.DiskWriteSpeedBps,
-		&online, &h.InternetLatencyMs, &h.PublicIP, &h.ActiveConnCount,
+		&online, &h.InternetLatencyMs, &h.PublicIP, &h.PrivateIPs, &h.ActiveConnCount,
 		&h.FailedLoginsCount, &h.TopConnections, &h.ListeningPorts,
 		&h.Notes, &h.SortOrder, &h.GroupName,
 		&h.CPUCores, &h.HardwareModel, &h.SwapUsedBytes, &h.SwapTotalBytes,
@@ -1350,11 +1361,11 @@ func (d *DB) UpdateHostInspection(h *Host) error {
 	if h.InternetOnline {
 		onlineInt = 1
 	}
-	_, err := d.Exec(`UPDATE hosts SET status=?, os_info=?, kernel=?, uptime=?, cpu_load=?, ram_used_bytes=?, ram_total_bytes=?, disk_used_bytes=?, disk_total_bytes=?, lifecycle_score=?, lifecycle_notes=?, lifecycle_breakdown=?, last_inspected=?, net_rx_bytes=?, net_tx_bytes=?, net_rx_speed_bps=?, net_tx_speed_bps=?, disk_read_bytes=?, disk_write_bytes=?, disk_read_speed_bps=?, disk_write_speed_bps=?, internet_online=?, internet_latency_ms=?, public_ip=?, active_conn_count=?, failed_logins_count=?, top_connections=?, listening_ports=?, cpu_cores=?, hardware_model=?, swap_used_bytes=?, swap_total_bytes=?, last_duration_ms=?, bios_date=?, os_install_epoch=?, top_cpu_processes=?, top_ram_processes=?, top_swap_processes=? WHERE id=?`,
+	_, err := d.Exec(`UPDATE hosts SET status=?, os_info=?, kernel=?, uptime=?, cpu_load=?, ram_used_bytes=?, ram_total_bytes=?, disk_used_bytes=?, disk_total_bytes=?, lifecycle_score=?, lifecycle_notes=?, lifecycle_breakdown=?, last_inspected=?, net_rx_bytes=?, net_tx_bytes=?, net_rx_speed_bps=?, net_tx_speed_bps=?, disk_read_bytes=?, disk_write_bytes=?, disk_read_speed_bps=?, disk_write_speed_bps=?, internet_online=?, internet_latency_ms=?, public_ip=?, private_ips=?, active_conn_count=?, failed_logins_count=?, top_connections=?, listening_ports=?, cpu_cores=?, hardware_model=?, swap_used_bytes=?, swap_total_bytes=?, last_duration_ms=?, bios_date=?, os_install_epoch=?, top_cpu_processes=?, top_ram_processes=?, top_swap_processes=? WHERE id=?`,
 		h.Status, h.OSInfo, h.Kernel, h.Uptime, h.CPULoad, h.RAMUsedBytes, h.RAMTotalBytes, h.DiskUsedBytes, h.DiskTotalBytes, h.LifecycleScore, h.LifecycleNotes, h.LifecycleBreakdown, now,
 		h.NetRxBytes, h.NetTxBytes, h.NetRxSpeedBps, h.NetTxSpeedBps,
 		h.DiskReadBytes, h.DiskWriteBytes, h.DiskReadSpeedBps, h.DiskWriteSpeedBps,
-		onlineInt, h.InternetLatencyMs, h.PublicIP, h.ActiveConnCount, h.FailedLoginsCount, h.TopConnections, h.ListeningPorts,
+		onlineInt, h.InternetLatencyMs, h.PublicIP, h.PrivateIPs, h.ActiveConnCount, h.FailedLoginsCount, h.TopConnections, h.ListeningPorts,
 		h.CPUCores, h.HardwareModel, h.SwapUsedBytes, h.SwapTotalBytes, h.LastDurationMs, h.BIOSDate, h.OSInstallEpoch,
 		h.TopCPUProcesses, h.TopRAMProcesses, h.TopSwapProcesses,
 		h.ID)
@@ -2383,16 +2394,16 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 			ram_used_bytes, ram_total_bytes, disk_used_bytes, disk_total_bytes, lifecycle_score, lifecycle_notes, lifecycle_breakdown,
 			created_at, net_rx_bytes, net_tx_bytes, net_rx_speed_bps, net_tx_speed_bps,
 			disk_read_bytes, disk_write_bytes, disk_read_speed_bps, disk_write_speed_bps,
-			internet_online, internet_latency_ms, public_ip, active_conn_count, failed_logins_count,
+			internet_online, internet_latency_ms, public_ip, private_ips, active_conn_count, failed_logins_count,
 			top_connections, listening_ports, notes, sort_order, group_name,
 			commission_date, bios_date, os_install_epoch,
 			kube_cluster_id, kube_mode, network_id
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			h.ID, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Status, h.OSInfo, h.Kernel, h.Uptime, h.CPULoad,
 			h.RAMUsedBytes, h.RAMTotalBytes, h.DiskUsedBytes, h.DiskTotalBytes, h.LifecycleScore, h.LifecycleNotes, h.LifecycleBreakdown,
 			h.CreatedAt, h.NetRxBytes, h.NetTxBytes, h.NetRxSpeedBps, h.NetTxSpeedBps,
 			h.DiskReadBytes, h.DiskWriteBytes, h.DiskReadSpeedBps, h.DiskWriteSpeedBps,
-			onlineInt, h.InternetLatencyMs, h.PublicIP, h.ActiveConnCount, h.FailedLoginsCount,
+			onlineInt, h.InternetLatencyMs, h.PublicIP, h.PrivateIPs, h.ActiveConnCount, h.FailedLoginsCount,
 			h.TopConnections, h.ListeningPorts, h.Notes, h.SortOrder, h.GroupName,
 			h.CommissionDate, h.BIOSDate, h.OSInstallEpoch,
 			h.KubeClusterID, kubeMode, h.NetworkID,

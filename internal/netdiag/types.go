@@ -25,6 +25,7 @@ type ProbeRequest struct {
 	Port          int       `json:"port,omitempty"`        // For port_probe
 	RecordType    string    `json:"record_type,omitempty"` // For dig: A, AAAA, CNAME, MX, NS, TXT, SOA, PTR
 	DNSServer     string    `json:"dns_server,omitempty"`  // For dig: optional resolver, empty = host's system resolver
+	Via           string    `json:"via,omitempty"`         // Inter-host only: "private" probes the target's private IP, empty = its SSH address
 }
 
 // HopInfo represents an individual hop in a traceroute path.

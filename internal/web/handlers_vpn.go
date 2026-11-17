@@ -457,6 +457,9 @@ func (s *Server) handleVPNNetworkUpdate(w http.ResponseWriter, r *http.Request, 
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error()})
 		return
 	}
+	if s.vpnMgr != nil {
+		s.vpnMgr.Invalidate(id)
+	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -487,6 +490,9 @@ func (s *Server) handleVPNNetworkDelete(w http.ResponseWriter, r *http.Request, 
 	if err := s.db.DeleteVPNNetwork(id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if s.vpnMgr != nil {
+		s.vpnMgr.Forget(id)
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

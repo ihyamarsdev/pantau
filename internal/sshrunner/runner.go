@@ -198,8 +198,9 @@ func dialTCP(addr string, path *vpnnet.Path, timeout time.Duration) (net.Conn, e
 		return path.DialContext(ctx, "tcp", dialAddr)
 	}
 	conn, err := dialRetry(dial, attempt, path != nil)
-	if err != nil && path != nil && (isTimeoutErr(err) || isRouteErr(err)) {
-		// Reaching the peer is the tunnel's job: an unreachable or silent peer is a dead path, not a dead Host.
+	if err != nil && path != nil && (isTimeoutErr(err) || isRouteErr(err) || errors.Is(err, vpnnet.ErrInterfaceNotExists)) {
+		// Reaching the peer is the tunnel's job: an unreachable peer or a missing tunnel interface is a
+		// dead path, not a dead Host, so the Host keeps its last known state instead of going "down".
 		return nil, fmt.Errorf("%w: %v", ErrNetworkUnavailable, err)
 	}
 	return conn, err
