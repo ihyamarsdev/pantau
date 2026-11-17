@@ -13,3 +13,6 @@ e2e/.tmp/
 
 # Scratch package for throwaway diagnostics against a copied database.
 internal/store/tmpdiag/
+
+# graphify knowledge graph (rebuild: graphify extract . --code-only)
+graphify-out/
