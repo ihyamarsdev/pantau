@@ -31,6 +31,10 @@ _Avoid_: Polling, health check run, telemetry scrape
 Ketidaksesuaian atau deviasi antara Actual State dan Desired State pada Host.
 _Avoid_: Mismatch, divergence, error state
 
+**Host Status**:
+Vonis satu kata atas hasil Inspection terakhir sebuah Host — `healthy` (semua Desired Rule sesuai), `degraded` (SSH terjangkau tetapi ada Drift, kegagalan aturan, atau budget inspeksi habis), `stale` (jalur jaringan/VPN tidak sampai ke Host sehingga Actual State tidak terverifikasi dan status terakhir dipertahankan), `down` (koneksi SSH gagal pada level Host: port menolak, autentikasi gagal, host tak menjawab), `unknown` (belum pernah diinspeksi). Hanya `down` yang berarti "server mati"; `stale` berarti "jalurnya yang mati", sesuai [ADR-0077](docs/adr/0077-jalur-jaringan-per-host-driver-vpn-dan-dial-terikat-interface.md). Warna dan animasi indikator mengikuti status ini: hijau tenang, kuning berdenyut, biru lambat, merah cepat, abu-abu diam.
+_Avoid_: Online/offline, health badge, connectivity state
+
 **Root Cause Excerpt**:
 Potongan log diagnostik terakhir (misal: exit code, potongan pesan journalctl atau file log sistem `/var/log/*`) yang diambil otomatis saat Drift terdeteksi.
 _Avoid_: Crash dump, debug output
