@@ -220,4 +220,3 @@ func TestFileManagerPinsAndGlobalBookmarksUI(t *testing.T) {
 		}
 	}
 }
-

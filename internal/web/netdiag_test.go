@@ -284,11 +284,11 @@ Resume: pmtu 1500 hops 3 back 3`, "", 0, nil
 	// 3. Test Port Probe
 	var portEvts []netdiag.ProbeEvent
 	err = srv.netdiagService.ExecuteProbe(ctx, netdiag.ProbeRequest{
-		SourceHostID:  h1.ID,
-		Type:          netdiag.ProbeTypePort,
-		TargetType:    "host",
-		TargetHostID:  h2.ID,
-		Port:          443,
+		SourceHostID: h1.ID,
+		Type:         netdiag.ProbeTypePort,
+		TargetType:   "host",
+		TargetHostID: h2.ID,
+		Port:         443,
 	}, func(evt netdiag.ProbeEvent) {
 		portEvts = append(portEvts, evt)
 	})

@@ -141,4 +141,3 @@ func TestCopyComparisonMarkdownClipboardInsecureContextFallback(t *testing.T) {
 		t.Errorf("copyComparisonMarkdown must not directly call navigator.clipboard.writeText without checking navigator.clipboard (causes TypeError in insecure contexts)")
 	}
 }
-

@@ -12,8 +12,8 @@ type KubeCluster struct {
 	Name          string    `json:"name"`
 	Context       string    `json:"context"`
 	Server        string    `json:"server"`
-	Provider      string    `json:"provider"` // "eks" | "gke" | "aks" | "generic"
-	KubeMode      string    `json:"kube_mode"` // full | no-exec | read-only
+	Provider      string    `json:"provider"`                  // "eks" | "gke" | "aks" | "generic"
+	KubeMode      string    `json:"kube_mode"`                 // full | no-exec | read-only
 	KubeClusterID string    `json:"kube_cluster_id,omitempty"` // kube-system namespace UID, filled by detect
 	Kubeconfig    string    `json:"-"`
 	CreatedAt     time.Time `json:"created_at"`

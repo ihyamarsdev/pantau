@@ -140,7 +140,6 @@ func Test2FAFullLifecycle(t *testing.T) {
 		t.Fatalf("expected require_2fa, got %+v, body: %s", challengeResp, w2.Body.String())
 	}
 
-
 	// 7. Verify 2FA login with wrong code
 	wrongBody, _ := json.Marshal(map[string]string{
 		"temp_token": challengeResp.TempToken,
@@ -233,4 +232,3 @@ func Test2FAFullLifecycle(t *testing.T) {
 		t.Fatalf("expected direct login after 2FA disabled, got %+v", finalResp)
 	}
 }
-
