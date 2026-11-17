@@ -435,6 +435,10 @@ _Avoid_: User app, custom package, non-system package
 Klasifikasi paket perangkat lunak pada Package Inventory yang merupakan bagian dari instalasi awal sistem operasi (distro bootstrap) atau pustaka/dependensi inti yang dibutuhkan sistem.
 _Avoid_: Default app, system bundle, OS packages
 
+**Package Update Check**:
+Pemeriksaan read-only on-demand atas versi paket terpasang pada sebuah Host yang menghasilkan daftar paket yang punya versi lebih baru beserta versi terpasang dan versi yang tersedia; tidak memasang, tidak mengubah, dan tidak me-restart apa pun.
+_Avoid_: Image Update Check, Update Checker, Package Upgrade
+
 **Process Telemetry**:
 Rangkuman data proses-proses aktif pemakan kapasitas komputasi teratas (Top CPU, Top RAM/RSS, dan Top Swap) yang diekstrak secara berkala pada setiap siklus inspeksi untuk mendeteksi lonjakan beban atau kebocoran memori secara instan.
 _Avoid_: Process list, ps dump, task manager, top monitor

@@ -1393,6 +1393,16 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if len(parts) >= 4 && parts[2] == "updates" && parts[3] == "check" {
+			s.handlePackageUpdates(w, r, hostID, true)
+			return
+		}
+
+		if len(parts) >= 3 && parts[2] == "updates" {
+			s.handlePackageUpdates(w, r, hostID, false)
+			return
+		}
+
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return

@@ -8424,6 +8424,23 @@ const I18N = {
     "pkg_mode_sec": "Security updates only (--security)",
     "pkg_confirm_upgrade_btn": "Start Upgrade",
     "pkg_upgrade_confirm_msg": "Apply package upgrades to this host? Remote services may restart automatically. There is NO automatic rollback mechanism. Consider taking a System Snapshot or disk snapshot beforehand.",
+    "pkg_check_updates_btn": "Check for updates",
+    "pkg_checking_updates": "Checking...",
+    "pkg_check_failed": "Update check failed",
+    "pkg_check_readonly_note": "This check only reads; it never installs anything. Use Upgrade packages to apply them.",
+    "pkg_update_check_failed": "Update check failed",
+    "pkg_update_unsupported": "The package manager of this host cannot report pending updates",
+    "pkg_updates_title": "Pending package updates",
+    "pkg_updates_found": "{n} update(s) available",
+    "pkg_all_current": "Everything is up to date",
+    "pkg_update_cooldown": "Please wait a moment before checking again",
+    "pkg_checked_at": "Checked:",
+    "pkg_available_version": "Available",
+    "pkg_type_security": "Security",
+    "pkg_type_standard": "Standard",
+    "pkg_security_badge": "security",
+    "pkg_reboot_badge": "reboot required",
+    "pkg_stale_cache": "The package metadata on the host is older than 7 days, so newer releases may be missing.",
     "alert_debounce_label": "Alert Debounce Runs (1..10)",
     "alert_debounce_desc": "Require N consecutive drift inspections before triggering an Incident, Alert, or notifications.",
     "secret_saved": "Saved",
@@ -10272,6 +10289,23 @@ const I18N = {
     "pkg_mode_sec": "Hanya pembaruan keamanan (--security)",
     "pkg_confirm_upgrade_btn": "Mulai Pembaruan",
     "pkg_upgrade_confirm_msg": "Terapkan pembaruan paket pada host ini? Layanan remote dapat restart secara otomatis. TIDAK ADA mekanisme rollback otomatis. Pertimbangkan untuk mengambil System Snapshot terlebih dahulu.",
+    "pkg_check_updates_btn": "Cek pembaruan",
+    "pkg_checking_updates": "Memeriksa...",
+    "pkg_check_failed": "Pemeriksaan pembaruan gagal",
+    "pkg_check_readonly_note": "Pemeriksaan ini hanya membaca; tidak pernah memasang apa pun. Gunakan Perbarui paket untuk menerapkannya.",
+    "pkg_update_check_failed": "Pemeriksaan pembaruan gagal",
+    "pkg_update_unsupported": "Manajer paket host ini tidak dapat melaporkan pembaruan tertunda",
+    "pkg_updates_title": "Pembaruan paket tertunda",
+    "pkg_updates_found": "{n} pembaruan tersedia",
+    "pkg_all_current": "Semuanya sudah terbaru",
+    "pkg_update_cooldown": "Mohon tunggu sejenak sebelum memeriksa lagi",
+    "pkg_checked_at": "Diperiksa:",
+    "pkg_available_version": "Tersedia",
+    "pkg_type_security": "Keamanan",
+    "pkg_type_standard": "Standar",
+    "pkg_security_badge": "keamanan",
+    "pkg_reboot_badge": "perlu restart",
+    "pkg_stale_cache": "Metadata paket di host berumur lebih dari 7 hari, jadi rilis yang lebih baru mungkin belum terlihat.",
     "alert_debounce_label": "Debounce Alert (1..10 Siklus)",
     "alert_debounce_desc": "Drift baru memicu Insiden, Alert, dan notifikasi hanya setelah terlihat pada N inspeksi berturut-turut.",
     "secret_saved": "Tersimpan",
@@ -14409,13 +14443,18 @@ async function renderPackagesTab() {
         <button id="btnRescanPkgs" class="btn btn-sm" onclick="rescanHostPackages(${d.host.id})" style="display: inline-flex; align-items: center; gap: 4px;">
           ${svgIcon('refresh-cw', 'icon-sm')} <span>${t('rescan_packages', 'Rescan Packages')}</span>
         </button>
+        <button id="btnCheckPkgUpdates" class="btn btn-sm" onclick="checkHostPackageUpdates(${d.host.id})" style="display: inline-flex; align-items: center; gap: 4px;" ${d.host.os_info && d.host.os_info.toLowerCase().includes('darwin') ? 'disabled title="Package update check unsupported on macOS"' : ''}>
+          ${svgIcon('download', 'icon-sm')} <span>${t('pkg_check_updates_btn', 'Check for updates')}</span>
+        </button>
       </div>
     </div>
-    <div id="packagesContainer" style="overflow-y: auto; flex: 1;">
+    <div id="pkgUpdatesPanel" style="flex: 0 1 auto; max-height: 45%; overflow-y: auto; margin-bottom: 12px;"></div>
+    <div id="packagesContainer" style="overflow-y: auto; flex: 1; min-height: 120px;">
       <div style="text-align: center; padding: 24px; color: var(--text-muted); font-size: var(--fs-xs);">${SP.html(t('loading', 'Loading...'))}</div>
     </div>
   `;
   await loadHostPackages(d.host.id);
+  await loadHostPackageUpdates(d.host.id);
 }
 
 async function loadHostPackages(hostID) {
@@ -14482,6 +14521,159 @@ async function rescanHostPackages(hostID) {
   }
 }
 
+// ============================================================================
+// Package Update Check (read-only: which packages have a newer version)
+// ============================================================================
+let pkgUpdateCheckData = null;   // the last check result for the open host
+let pkgUpdateCooldownTimer = null;
+let pkgUpdateCooldownRem = 0;
+
+async function loadHostPackageUpdates(hostID) {
+  try {
+    const res = await fetch('/api/hosts/' + hostID + '/packages/updates');
+    if (!res.ok) return;
+    const data = await res.json().catch(() => ({}));
+    pkgUpdateCheckData = data.checked ? data.check : null;
+    const rem = parseInt(res.headers.get('X-Cooldown-Remaining') || '0', 10);
+    pkgUpdateCooldownRem = rem > 0 ? rem : 0;
+    renderPkgUpdatesPanel(hostID);
+  } catch(e) {
+    // A failed read leaves the panel empty; the operator can still run a check.
+  }
+}
+
+function pkgUpdateCooldownPaint(rem) {
+  const btn = document.getElementById('btnCheckPkgUpdates');
+  if (!btn) return;
+  if (rem > 0) {
+    btn.disabled = true;
+    btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('loader-circle', 'icon-sm')} <span>${t('cooldown_wait', 'Wait')} (${rem}s)</span></span>`;
+  } else {
+    btn.disabled = false;
+    btn.innerHTML = `${svgIcon('download', 'icon-sm')} <span>${t('pkg_check_updates_btn', 'Check for updates')}</span>`;
+  }
+}
+
+async function checkHostPackageUpdates(hostID) {
+  const restore = SP.busy(document.getElementById('btnCheckPkgUpdates'), t('pkg_checking_updates', 'Checking...'));
+  try {
+    const res = await fetch('/api/hosts/' + hostID + '/packages/updates/check', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.ok) {
+      pkgUpdateCheckData = data.check;
+      pkgUpdateCooldownRem = 60;
+      startPkgUpdateCooldown();
+      renderPkgUpdatesPanel(hostID);
+      const n = (data.check && data.check.pending_total) || 0;
+      showToast(n ? t('pkg_updates_found', 'Update available').replace('{n}', n) : t('pkg_all_current', 'Everything is up to date'), n ? 'warning' : 'success');
+      // The table shows the available version per package, so it needs the fresh check.
+      displayPackagesTable(hostID);
+    } else if (res.status === 429) {
+      pkgUpdateCooldownRem = data.cooldown_remaining || 60;
+      startPkgUpdateCooldown();
+      showToast(data.error || t('pkg_update_cooldown', 'Please wait a moment before checking again'), 'warning');
+    } else {
+      showToast(t('pkg_check_failed', 'Update check failed') + ': ' + (data.error || res.statusText), 'error');
+    }
+  } catch(e) {
+    showToast(t('pkg_check_failed', 'Update check failed') + ': ' + e.message, 'error');
+  } finally {
+    if (pkgUpdateCooldownRem <= 0) restore();
+  }
+}
+
+function startPkgUpdateCooldown() {
+  if (pkgUpdateCooldownTimer) {
+    clearInterval(pkgUpdateCooldownTimer);
+    pkgUpdateCooldownTimer = null;
+  }
+  pkgUpdateCooldownPaint(pkgUpdateCooldownRem);
+  pkgUpdateCooldownTimer = setInterval(() => {
+    pkgUpdateCooldownRem--;
+    if (pkgUpdateCooldownRem <= 0) {
+      pkgUpdateCooldownRem = 0;
+      clearInterval(pkgUpdateCooldownTimer);
+      pkgUpdateCooldownTimer = null;
+    }
+    pkgUpdateCooldownPaint(pkgUpdateCooldownRem);
+  }, 1000);
+}
+
+function renderPkgUpdatesPanel(hostID) {
+  const panel = document.getElementById('pkgUpdatesPanel');
+  if (!panel) return;
+  const c = pkgUpdateCheckData;
+  if (!c) {
+    panel.innerHTML = '';
+    return;
+  }
+
+  const rel = c.checked_at ? formatRelativeTime(c.checked_at) : null;
+  const when = rel ? `<b>${escapeHtml(rel.title)}</b> (${escapeHtml(rel.relative)})` : t('unknown', 'Unknown');
+
+  // A failed check is never "up to date": the operator sees why it could not be read.
+  if (c.error) {
+    panel.innerHTML = `
+      <div class="card" style="padding: 12px 14px; border-color: var(--danger);">
+        <div style="display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); font-weight: 600; color: var(--danger);">
+          ${svgIcon('circle-alert', 'icon-sm')} <span>${t('pkg_update_check_failed', 'Update check failed')}</span>
+        </div>
+        <div style="font-size: var(--fs-xs); color: var(--text-muted); margin-top: 6px;">${escapeHtml(c.error)}</div>
+      </div>`;
+    return;
+  }
+
+  if (!c.supported) {
+    panel.innerHTML = `
+      <div class="card" style="padding: 12px 14px;">
+        <div style="display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-muted);">
+          ${svgIcon('info', 'icon-sm')} <span>${t('pkg_update_unsupported', 'The package manager of this host cannot report pending updates')}</span>
+        </div>
+        ${c.note ? `<div style="font-size: var(--fs-xs); color: var(--text-muted); margin-top: 6px;">${escapeHtml(c.note)}</div>` : ''}
+      </div>`;
+    return;
+  }
+
+  const stale = c.repo_cache_age_hours > 168;
+  const noUpdates = (c.pending_total || 0) === 0;
+  const head = `
+    <div class="card" style="padding: 12px 14px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
+        <div style="display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); font-weight: 600;">
+          ${svgIcon('package', 'icon-sm')}
+          <span title="${escapeHtml(t('pkg_check_readonly_note', 'This check only reads; it never installs anything. Use Upgrade packages to apply them.'))}">${t('pkg_updates_title', 'Pending package updates')}</span>
+          <span class="badge ${noUpdates ? 'badge-healthy' : 'badge-warning'}">${noUpdates ? t('pkg_all_current', 'Everything is up to date') : (c.pending_total || 0)}</span>
+          ${c.pending_security > 0 ? `<span class="badge badge-danger">${c.pending_security} ${t('pkg_security_badge', 'security')}</span>` : ''}
+          ${c.reboot_required ? `<span class="badge badge-warning">${t('pkg_reboot_badge', 'reboot required')}</span>` : ''}
+        </div>
+        <div style="font-size: var(--fs-xs); color: var(--text-muted); display: inline-flex; align-items: center; gap: 4px;">
+          ${svgIcon('clock', 'icon-sm')} <span>${t('pkg_checked_at', 'Checked:')}</span> <span>${when}</span>
+        </div>
+      </div>`;
+
+  const notes = [];
+  if (c.note) notes.push(c.note);
+  if (stale) {
+    notes.push(t('pkg_stale_cache', 'The package metadata on the host is older than 7 days, so newer releases may be missing.'));
+  }
+  const notesHtml = notes.length ? `
+    <div style="font-size: var(--fs-xs); color: var(--text-muted); margin-top: 8px;">${notes.map(n => escapeHtml(n)).join(' ')}</div>` : '';
+
+  // A chip list, not a nested table: the package inventory below is the main surface of this tab, and a
+  // second table here would squeeze it down to a couple of visible rows.
+  const listHtml = noUpdates ? '' : `
+    <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; max-height: 120px; overflow-y: auto;">
+      ${(c.packages || []).map(p => `
+        <span title="${escapeHtml(p.name)}: ${escapeHtml(p.from || '')} → ${escapeHtml(p.to || '')}" style="display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); padding: 1px 6px; border: 1px solid var(--card-border); border-radius: var(--radius-sm); background: var(--surface-2);">
+          <span style="font-weight: 600;">${escapeHtml(p.name)}</span>
+          <span style="font-family: var(--font-mono); color: var(--primary);">${escapeHtml(p.to || '-')}</span>
+          ${p.security ? `<span class="badge badge-danger" style="font-size: 0.62rem;">${t('pkg_type_security', 'Security')}</span>` : ''}
+        </span>`).join('')}
+    </div>`;
+
+  panel.innerHTML = head + notesHtml + listHtml;
+}
+
 function filterPackages(type) {
   activePackagesFilter = type;
   const btnManual = document.getElementById('btnPkgFilterManual');
@@ -14545,6 +14737,7 @@ function displayPackagesTable(hostID) {
             <tr>
               <th>${t('pkg_name', 'Package Name')}</th>
               <th>${t('version', 'Version')}</th>
+              <th>${t('pkg_available_version', 'Available')}</th>
               <th>${t('size', 'Disk Size')}</th>
               <th>${t('install_type', 'Type')}</th>
               <th>${t('service_status', 'Service Status')}</th>
@@ -14568,6 +14761,12 @@ function displayPackagesTable(hostID) {
               // Security update highlight
               const isSecUpdate = p.security_update || (window.currentSecurityScan && window.currentSecurityScan.findings && window.currentSecurityScan.findings.some(f => f.package === p.name));
 
+              // The update check knows which installed package has a newer version available.
+              const avail = pkgUpdateCheckData && (pkgUpdateCheckData.packages || []).find(u => u.name === p.name);
+              const availCell = avail
+                ? `<span style="font-family: var(--font-mono); color: var(--primary);">${escapeHtml(avail.to || '-')}</span>${avail.security ? `<span class="badge badge-danger" style="margin-left: 4px; font-size: 0.68rem;">${t('pkg_type_security', 'Security')}</span>` : ''}`
+                : '<span style="color: var(--text-muted);">-</span>';
+
               return `
                 <tr>
                   <td>
@@ -14575,6 +14774,7 @@ function displayPackagesTable(hostID) {
                     ${isSecUpdate ? `<span class="badge badge-danger" style="margin-left: 6px; font-size: 0.68rem;">Security Update</span>` : ''}
                   </td>
                   <td style="font-family: var(--font-mono); color: var(--text-muted);">${escapeHtml(p.version)}</td>
+                  <td>${availCell}</td>
                   <td style="font-family: var(--font-mono); font-weight: 500;">${p.size_bytes > 0 ? formatBytes(p.size_bytes) : '-'}</td>
                   <td>${typeBadge}</td>
                   <td>${svcBadge}</td>

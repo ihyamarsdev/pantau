@@ -46,7 +46,10 @@ type UpgradePreview struct {
 	PendingSecurity int                     `json:"pending_security"`
 	Packages        []UpgradePreviewPackage `json:"packages"`
 	RebootRequired  bool                    `json:"reboot_required"`
-	Note            string                  `json:"note,omitempty"`
+	// RepoCacheAgeHours is the age of the local package metadata in hours; -1 when unknown. A stale
+	// cache can hide a newer release, so the caller says so instead of claiming "up to date".
+	RepoCacheAgeHours int    `json:"repo_cache_age_hours"`
+	Note              string `json:"note,omitempty"`
 }
 
 // UpgradePreviewDetectionScript returns the batch discovery shell script for package upgrade preview.
@@ -60,6 +63,16 @@ if command -v needs-restarting >/dev/null 2>&1; then
     needs-restarting -r >/dev/null 2>&1
     echo "NEEDS_RESTARTING:$?"
 fi
+echo "===CACHE_AGE==="
+date +%s 2>/dev/null
+echo "---APT---"
+stat -c %Y /var/lib/apt/periodic/update-success-stamp 2>/dev/null || stat -c %Y /var/lib/apt/lists 2>/dev/null
+echo "---DNF---"
+stat -c %Y /var/cache/dnf 2>/dev/null || stat -c %Y /var/cache/yum 2>/dev/null
+echo "---APK---"
+stat -c %Y /var/cache/apk 2>/dev/null || stat -c %Y /etc/apk/repositories 2>/dev/null
+echo "---PACMAN---"
+stat -c %Y /var/cache/pacman/pkg 2>/dev/null || stat -c %Y /var/lib/pacman/sync 2>/dev/null
 echo "===UPDATES==="
 D=""
 if [ "$(id -u)" != "0" ] && sudo -n true 2>/dev/null; then D="sudo -n"; fi
@@ -84,8 +97,12 @@ elif command -v yum >/dev/null 2>&1; then
     rpm -qa --qf '%{NAME}\t%{VERSION}-%{RELEASE}\n' 2>/dev/null
 elif [ -f /lib/apk/db/installed ] || command -v apk >/dev/null 2>&1; then
     echo "MGR:apk"
+    echo "---TOTAL---"
+    apk version -l "<" 2>&1
 elif command -v pacman >/dev/null 2>&1; then
     echo "MGR:pacman"
+    echo "---TOTAL---"
+    pacman -Qu 2>&1
 else
     echo "MGR:unknown"
 fi
@@ -104,7 +121,8 @@ func ParseUpgradePreview(stdout string) *UpgradePreview {
 	}
 
 	osSec := extractSection(stdout, "===OS_RELEASE===", "===REBOOT===")
-	rebootSec := extractSection(stdout, "===REBOOT===", "===UPDATES===")
+	rebootSec := extractSection(stdout, "===REBOOT===", "===CACHE_AGE===")
+	cacheSec := extractSection(stdout, "===CACHE_AGE===", "===UPDATES===")
 	updatesSec := extractSection(stdout, "===UPDATES===", "")
 
 	osFamily, detectedMgr := parseOSFamily(osSec)
@@ -133,14 +151,19 @@ func ParseUpgradePreview(stdout string) *UpgradePreview {
 
 	reboot := parseRebootRequired(rebootSec)
 
+	preview := &UpgradePreview{}
 	switch mgr {
 	case "apt":
-		return parseAptUpgradePreview(updatesSec, reboot)
+		preview = parseAptUpgradePreview(updatesSec, reboot)
 	case "dnf", "yum":
 		secSub := extractSection(updatesSec, "---SEC---", "---TOTAL---")
 		totSub := extractSection(updatesSec, "---TOTAL---", "---RPM_QA---")
 		rpmQaSub := extractSection(updatesSec, "---RPM_QA---", "")
-		return parseRpmUpgradePreview(mgr, secSub, totSub, rpmQaSub, reboot)
+		preview = parseRpmUpgradePreview(mgr, secSub, totSub, rpmQaSub, reboot)
+	case "apk":
+		preview = parseApkUpgradePreview(extractSection(updatesSec, "---TOTAL---", ""), reboot)
+	case "pacman":
+		preview = parsePacmanUpgradePreview(extractSection(updatesSec, "---TOTAL---", ""), reboot)
 	default:
 		return &UpgradePreview{
 			OK:        true,
@@ -150,6 +173,17 @@ func ParseUpgradePreview(stdout string) *UpgradePreview {
 			Note:      fmt.Sprintf("package manager %q is not supported for upgrade", mgr),
 		}
 	}
+
+	// A stale local metadata cache can hide a newer release, so "0 pending" must not read as "up to date".
+	ageHours, cacheNotes := parseRepoCacheAge(cacheSec, mgr)
+	preview.RepoCacheAgeHours = ageHours
+	if len(cacheNotes) > 0 {
+		if preview.Note != "" {
+			preview.Note += "; "
+		}
+		preview.Note += strings.Join(cacheNotes, "; ")
+	}
+	return preview
 }
 
 func parseAptUpgradePreview(updatesSec string, reboot bool) *UpgradePreview {
@@ -202,6 +236,22 @@ func parseAptUpgradePreview(updatesSec string, reboot bool) *UpgradePreview {
 
 	if pkgs == nil {
 		pkgs = []UpgradePreviewPackage{}
+	}
+
+	// apt prints "E: ..." when it could not read the package lists. Reporting that as "0 pending" would
+	// tell the operator the host is up to date, so it must be a failed check, not a clean one.
+	if len(notes) > 0 {
+		for _, n := range notes {
+			if strings.HasPrefix(n, "apt: E:") || strings.Contains(n, "Permission denied") {
+				return &UpgradePreview{
+					OK:        false,
+					Supported: true,
+					Manager:   "apt",
+					Packages:  []UpgradePreviewPackage{},
+					Note:      strings.Join(notes, "; "),
+				}
+			}
+		}
 	}
 
 	var note string
@@ -335,6 +385,105 @@ func parseRpmUpgradePreview(mgr, secSub, totSub, rpmQaSub string, reboot bool) *
 	}
 }
 
+// parseApkUpgradePreview parses `apk version -l "<"`, whose rows are
+// "<installed-version> < <available-version>" after the "Installed: Available:" header.
+// Alpine does not separate security from ordinary updates, so every pending package is
+// reported without a security flag.
+func parseApkUpgradePreview(totSub string, reboot bool) *UpgradePreview {
+	var pkgs []UpgradePreviewPackage
+	for _, line := range strings.Split(totSub, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "Installed:") {
+			continue
+		}
+		fields := strings.Fields(trimmed)
+		if len(fields) < 3 || fields[1] != "<" {
+			continue
+		}
+		// "pkg-1.2.3-r0 < 1.2.4-r0": the name is the package name without its version suffix.
+		name := apkPackageName(fields[0])
+		if name == "" {
+			continue
+		}
+		// The version columns hold versions only ("1.2.3-r0"), like apt and rpm do; the package name
+		// belongs in the name column, not repeated inside the version.
+		installedVer := strings.TrimPrefix(fields[0], name)
+		installedVer = strings.TrimPrefix(installedVer, "-")
+		pkgs = append(pkgs, UpgradePreviewPackage{
+			Name: name,
+			From: installedVer,
+			To:   fields[2],
+		})
+		if len(pkgs) >= 200 {
+			break
+		}
+	}
+	if pkgs == nil {
+		pkgs = []UpgradePreviewPackage{}
+	}
+	return &UpgradePreview{
+		OK:             true,
+		Supported:      true,
+		Manager:        "apk",
+		PendingTotal:   len(pkgs),
+		Packages:       pkgs,
+		RebootRequired: reboot,
+		Note:           "alpine (apk) does not separate security updates from ordinary ones",
+	}
+}
+
+// apkPackageName strips the version suffix from an Alpine package spec ("musl-1.2.5-r4" -> "musl").
+func apkPackageName(spec string) string {
+	s := strings.TrimSpace(spec)
+	if i := strings.LastIndex(s, "-"); i > 0 {
+		if j := strings.LastIndex(s[:i], "-"); j > 0 {
+			return s[:j]
+		}
+		return s[:i]
+	}
+	return s
+}
+
+// parsePacmanUpgradePreview parses `pacman -Qu`, whose rows are
+// "<name> <installed> -> <available>", optionally followed by "[ignored]".
+// An ignored package is a hold the administrator set, so it is not a pending update.
+func parsePacmanUpgradePreview(totSub string, reboot bool) *UpgradePreview {
+	var pkgs []UpgradePreviewPackage
+	for _, line := range strings.Split(totSub, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.Contains(trimmed, "[ignored]") {
+			continue
+		}
+		fields := strings.Fields(trimmed)
+		if len(fields) < 4 || fields[2] != "->" {
+			continue
+		}
+		pkgs = append(pkgs, UpgradePreviewPackage{
+			Name: fields[0],
+			From: fields[1],
+			To:   fields[3],
+		})
+		if len(pkgs) >= 200 {
+			break
+		}
+	}
+	if pkgs == nil {
+		pkgs = []UpgradePreviewPackage{}
+	}
+	return &UpgradePreview{
+		OK:             true,
+		Supported:      true,
+		Manager:        "pacman",
+		PendingTotal:   len(pkgs),
+		Packages:       pkgs,
+		RebootRequired: reboot,
+		Note:           "arch (pacman) does not separate security updates from ordinary ones",
+	}
+}
+
 // BuildUpgradeCommand validates mode and builds the wrapped upgrade command string.
 // Privilege fallback: runs as SSH user; if not root, uses sudo -n (never password).
 // If sudo is required but not available (passwordless), the command fails with a clear error.
@@ -364,6 +513,16 @@ func BuildUpgradeCommand(manager, mode string) (string, error) {
 		default:
 			return "", fmt.Errorf("invalid mode %q for yum (must be 'all' or 'security')", mode)
 		}
+	case "apk":
+		if mode != "all" {
+			return "", fmt.Errorf("apk does not have a reliable security-only upgrade mode (only 'all' is supported)")
+		}
+		innerCmd = "apk update && apk upgrade --no-interactive"
+	case "pacman":
+		if mode != "all" {
+			return "", fmt.Errorf("pacman does not have a reliable security-only upgrade mode (only 'all' is supported)")
+		}
+		innerCmd = "pacman -Syu --noconfirm"
 	default:
 		return "", fmt.Errorf("unsupported package manager: %s", manager)
 	}
@@ -425,6 +584,22 @@ func BuildPackageCommand(manager, action string, pkgs []string) (string, error) 
 			innerCmd = manager + " -y " + action + " " + list
 		case "remove":
 			innerCmd = manager + " -y remove " + list
+		}
+	case "apk":
+		switch action {
+		case "upgrade":
+			innerCmd = "apk add --upgrade --no-interactive " + list
+		case "install":
+			innerCmd = "apk add --no-interactive " + list
+		case "remove":
+			innerCmd = "apk del --no-interactive " + list
+		}
+	case "pacman":
+		switch action {
+		case "upgrade", "install":
+			innerCmd = "pacman -S --noconfirm " + list
+		case "remove":
+			innerCmd = "pacman -R --noconfirm " + list
 		}
 	default:
 		return "", fmt.Errorf("unsupported package manager: %s", manager)
@@ -500,4 +675,50 @@ func (ins *Inspector) GetUpgradePreview(ctx context.Context, hostID int64) (*Upg
 		_ = runner.Close()
 		return nil, ctx.Err()
 	}
+}
+
+// ErrPackageUpdateCheckInProgress indicates another update check is already running on the host.
+var ErrPackageUpdateCheckInProgress = fmt.Errorf("package update check already in progress for this host")
+
+// CheckPackageUpdates runs the read-only package update detection on a host and stores the result.
+// It is the Package Update Check: it never installs anything.
+func (ins *Inspector) CheckPackageUpdates(ctx context.Context, hostID int64) (*store.PackageUpdateCheck, error) {
+	if _, loaded := ins.packageUpdateInFlight.LoadOrStore(hostID, struct{}{}); loaded {
+		return nil, ErrPackageUpdateCheckInProgress
+	}
+	defer ins.packageUpdateInFlight.Delete(hostID)
+
+	preview, err := ins.GetUpgradePreview(ctx, hostID)
+	if err != nil {
+		return nil, err
+	}
+
+	check := &store.PackageUpdateCheck{
+		HostID:            hostID,
+		CheckedAt:         time.Now().UTC(),
+		Supported:         preview.Supported,
+		Manager:           preview.Manager,
+		PendingTotal:      preview.PendingTotal,
+		PendingSecurity:   preview.PendingSecurity,
+		RebootRequired:    preview.RebootRequired,
+		RepoCacheAgeHours: preview.RepoCacheAgeHours,
+		Packages:          []store.PackageUpdate{},
+		Note:              preview.Note,
+	}
+	for _, p := range preview.Packages {
+		check.Packages = append(check.Packages, store.PackageUpdate{
+			Name: p.Name, From: p.From, To: p.To, Security: p.Security,
+		})
+	}
+	if !preview.OK {
+		check.Error = preview.Note
+		if check.Error == "" {
+			check.Error = "the package manager did not report its pending updates"
+		}
+	}
+
+	if err := ins.db.SavePackageUpdateCheck(check); err != nil {
+		return nil, err
+	}
+	return check, nil
 }

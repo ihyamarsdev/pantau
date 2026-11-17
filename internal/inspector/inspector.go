@@ -43,16 +43,18 @@ var sensitivePorts = map[string]bool{
 }
 
 type Inspector struct {
-	db                *store.DB
-	factory           sshrunner.RunnerFactory
-	paths             PathResolver
-	notifier          *notify.Dispatcher
-	inFlight          sync.Map
-	packageInFlight   sync.Map
-	securityInFlight  sync.Map
-	drainInFlight     sync.Map
-	dockerSecInFlight sync.Map
-	debouncer         *AlertDebouncer
+	db               *store.DB
+	factory          sshrunner.RunnerFactory
+	paths            PathResolver
+	notifier         *notify.Dispatcher
+	inFlight         sync.Map
+	packageInFlight  sync.Map
+	securityInFlight sync.Map
+	// packageUpdateInFlight guards the Package Update Check against overlapping runs on one host.
+	packageUpdateInFlight sync.Map
+	drainInFlight         sync.Map
+	dockerSecInFlight     sync.Map
+	debouncer             *AlertDebouncer
 
 	// sudoRetryAt remembers, per host, when passwordless sudo may be probed again after it failed, so a
 	// host that requires a sudo password logs at most one failed attempt per sudoRetryAfter.

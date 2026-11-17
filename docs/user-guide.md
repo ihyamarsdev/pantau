@@ -269,6 +269,9 @@ Pantau provides agentless software inventory visibility across multiple Linux di
   - Category filters for **Manual Install**, **Dormant Packages**, and **All Packages**.
   - **Rescan Packages**: On-demand manual package re-inspection with confirmation dialog, protected by a 30-second anti-flood cooldown timer (`HTTP 429 Too Many Requests`) and background concurrency lock (`HTTP 409 Conflict`).
   - **Non-Destructive Philosophy**: Pantau avoids destructive web-based package uninstalls that could trigger cascading dependency failures. Operators are encouraged to use the built-in Terminal Dock or establish Desired State rules for compliance.
+  - **Check for updates**: asks the host's package manager read-only which installed packages have a newer version, and shows them in a card below the inventory (pending count, security count, **reboot required**, when it was checked) and in a new **Available** column per package. The result is stored per host, so opening the tab does not open an SSH connection; the button runs it on demand, with a 60-second cooldown (`HTTP 429 Too Many Requests`) and a concurrency lock (`HTTP 409 Conflict`). API: `GET /api/hosts/{id}/packages/updates`, `POST /api/hosts/{id}/packages/updates/check`.
+  - **Read-only by design**: the check never installs, never restarts and never upgrades anything; applying the updates is still the **Upgrade packages** flow, with its confirmation and streaming log.
+  - **Honest results**: a check that failed (for example `apt-get` could not read the package lists) is shown as **Update check failed** with the package manager's own message, never as "up to date". Package metadata older than 7 days is called out, because a stale cache can hide a newer release. Alpine (`apk`) and Arch (`pacman`) do not separate security updates from ordinary ones, so their security count stays 0 and the note says so.
 
 
 ### Fleet Search (Packages & Containers Across Hosts)

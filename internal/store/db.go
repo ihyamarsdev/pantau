@@ -378,6 +378,20 @@ func (d *DB) migrate() error {
 	);
 	CREATE INDEX IF NOT EXISTS idx_host_packages_host_manual ON host_packages(host_id, is_manual);
 
+	CREATE TABLE IF NOT EXISTS package_update_checks (
+		host_id INTEGER PRIMARY KEY REFERENCES hosts(id) ON DELETE CASCADE,
+		checked_at DATETIME NOT NULL,
+		supported INTEGER NOT NULL DEFAULT 0,
+		manager TEXT NOT NULL DEFAULT '',
+		pending_total INTEGER NOT NULL DEFAULT 0,
+		pending_security INTEGER NOT NULL DEFAULT 0,
+		reboot_required INTEGER NOT NULL DEFAULT 0,
+		repo_cache_age_hours INTEGER NOT NULL DEFAULT -1,
+		packages_json TEXT NOT NULL DEFAULT '[]',
+		note TEXT NOT NULL DEFAULT '',
+		error TEXT NOT NULL DEFAULT ''
+	);
+
 	CREATE TABLE IF NOT EXISTS desired_rules (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,

@@ -757,42 +757,34 @@ func parseRebootRequired(content string) bool {
 	return false
 }
 
+// firstEpoch returns the first positive epoch in a section of the cache-age probe, or 0.
+func firstEpoch(content, start, end string) int64 {
+	for _, l := range strings.Split(extractSection(content, start, end), "\n") {
+		if n, err := strconv.ParseInt(strings.TrimSpace(l), 10, 64); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 0
+}
+
 // parseRepoCacheAge computes cache age in hours and issues notes if stale (>168h).
 func parseRepoCacheAge(content, mgr string) (ageHours int, notes []string) {
 	if mgr == "softwareupdate" {
 		return -1, nil
 	}
-	var nowEpoch, cacheEpoch int64
-	lines := strings.Split(content, "\n")
-	for _, line := range lines {
-		l := strings.TrimSpace(line)
-		if strings.HasPrefix(l, "---") {
-			continue
-		}
-		if nowEpoch == 0 {
-			if n, err := strconv.ParseInt(l, 10, 64); err == nil && n > 0 {
-				nowEpoch = n
-				continue
-			}
-		}
-	}
+	// The first bare number of the section is `date +%s`; the section then carries the cache stamp.
+	nowEpoch := firstEpoch(content, "", "---APT---")
 
-	if mgr == "apt" {
-		aptSub := extractSection(content, "---APT---", "---DNF---")
-		for _, l := range strings.Split(aptSub, "\n") {
-			if n, err := strconv.ParseInt(strings.TrimSpace(l), 10, 64); err == nil && n > 0 {
-				cacheEpoch = n
-				break
-			}
-		}
-	} else if mgr == "dnf" || mgr == "yum" {
-		dnfSub := extractSection(content, "---DNF---", "")
-		for _, l := range strings.Split(dnfSub, "\n") {
-			if n, err := strconv.ParseInt(strings.TrimSpace(l), 10, 64); err == nil && n > 0 {
-				cacheEpoch = n
-				break
-			}
-		}
+	var cacheEpoch int64
+	switch mgr {
+	case "apt":
+		cacheEpoch = firstEpoch(content, "---APT---", "---DNF---")
+	case "dnf", "yum":
+		cacheEpoch = firstEpoch(content, "---DNF---", "---APK---")
+	case "apk":
+		cacheEpoch = firstEpoch(content, "---APK---", "---PACMAN---")
+	case "pacman":
+		cacheEpoch = firstEpoch(content, "---PACMAN---", "")
 	}
 
 	if nowEpoch <= 0 || cacheEpoch <= 0 {

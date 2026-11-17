@@ -3,6 +3,7 @@ package inspector
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -88,10 +89,36 @@ func TestBuildUpgradeCommand(t *testing.T) {
 		},
 		{
 			name:        "unsupported manager",
-			manager:     "pacman",
+			manager:     "nosuchmgr",
 			mode:        "all",
 			wantErr:     true,
 			errContains: "unsupported package manager",
+		},
+		{
+			name:    "apk all",
+			manager: "apk",
+			mode:    "all",
+			wantCmd: "apk update && apk upgrade --no-interactive",
+		},
+		{
+			name:        "apk security mode is rejected",
+			manager:     "apk",
+			mode:        "security",
+			wantErr:     true,
+			errContains: "security-only upgrade mode",
+		},
+		{
+			name:    "pacman all",
+			manager: "pacman",
+			mode:    "all",
+			wantCmd: "pacman -Syu --noconfirm",
+		},
+		{
+			name:        "pacman security mode is rejected",
+			manager:     "pacman",
+			mode:        "security",
+			wantErr:     true,
+			errContains: "security-only upgrade mode",
 		},
 	}
 
@@ -231,18 +258,19 @@ curl	7.76.1-20.fc38
 
 	t.Run("unknown package manager", func(t *testing.T) {
 		out := `===OS_RELEASE===
-NAME="Arch Linux"
-ID=arch
+NAME="Some Linux"
+ID=nosuchdistro
 ===REBOOT===
+===CACHE_AGE===
 ===UPDATES===
-MGR:pacman
+MGR:unknown
 `
 		res := ParseUpgradePreview(out)
 		if !res.OK || res.Supported {
-			t.Errorf("expected OK=true, Supported=false for pacman, got %+v", res)
+			t.Errorf("expected OK=true, Supported=false for an unknown manager, got %+v", res)
 		}
-		if res.Manager != "pacman" {
-			t.Errorf("expected manager pacman, got %s", res.Manager)
+		if res.Manager != "unknown" {
+			t.Errorf("expected manager unknown, got %s", res.Manager)
 		}
 	})
 }
@@ -278,6 +306,16 @@ func TestParseUpgradePreview_DnfErrorIsNotZeroPending(t *testing.T) {
 	}
 }
 
+// apt prints "E: ..." when it cannot read the package lists. Same rule as dnf: a failed check must not
+// read as "0 pending, host is up to date".
+func TestParseUpgradePreview_AptErrorIsNotZeroPending(t *testing.T) {
+	out := "===OS_RELEASE===\nID=\"ubuntu\"\n===REBOOT===\n===CACHE_AGE===\n===UPDATES===\nMGR:apt\nE: Unable to locate package foo\n"
+	p := ParseUpgradePreview(out)
+	if p.OK || !strings.Contains(p.Note, "Unable to locate package") {
+		t.Fatalf("apt error must surface as ok=false with the message, got ok=%v note=%q pending=%d", p.OK, p.Note, p.PendingTotal)
+	}
+}
+
 // One package listed under several advisories must count once; the old advisory-line count told the operator
 // "545 security / 545 total" for a host with 148 security packages out of 283 pending.
 func TestParseUpgradePreview_DnfCountsDistinctPackages(t *testing.T) {
@@ -297,6 +335,100 @@ func TestParseUpgradePreview_DnfCountsDistinctPackages(t *testing.T) {
 	}
 	if !names["python3.12"] || names["bash"] {
 		t.Errorf("dotted name must survive and bash must be non-security: %v", names)
+	}
+}
+
+// Alpine and Arch were reported as "unsupported" before: the operator got no pending update list at all
+// even though both package managers can report one read-only.
+func TestParseUpgradePreview_ApkAndPacman(t *testing.T) {
+	t.Run("apk", func(t *testing.T) {
+		out := `===OS_RELEASE===
+NAME="Alpine Linux"
+ID=alpine
+===REBOOT===
+===CACHE_AGE===
+1700000000
+---APT---
+---DNF---
+---APK---
+1700000000
+---PACMAN---
+===UPDATES===
+MGR:apk
+---TOTAL---
+Installed:                                Available:
+musl-1.2.5-r3                     < 1.2.5-r4
+ca-certificates-bundle-20260413-r0      < 20261020-r0
+`
+		p := ParseUpgradePreview(out)
+		if !p.OK || !p.Supported {
+			t.Fatalf("want ok+supported, got %+v", p)
+		}
+		if p.Manager != "apk" {
+			t.Errorf("want manager apk, got %s", p.Manager)
+		}
+		if p.PendingTotal != 2 {
+			t.Errorf("want 2 pending, got %d", p.PendingTotal)
+		}
+		if len(p.Packages) != 2 {
+			t.Fatalf("want 2 packages, got %d", len(p.Packages))
+		}
+		// The version columns carry versions only; the name is in the name column.
+		if p.Packages[0].Name != "musl" || p.Packages[0].From != "1.2.5-r3" || p.Packages[0].To != "1.2.5-r4" {
+			t.Errorf("unexpected package 0: %+v", p.Packages[0])
+		}
+		if p.Packages[1].Name != "ca-certificates-bundle" || p.Packages[1].From != "20260413-r0" {
+			t.Errorf("unexpected package 1: %+v", p.Packages[1])
+		}
+	})
+
+	t.Run("pacman ignores held packages", func(t *testing.T) {
+		out := `===OS_RELEASE===
+NAME="Arch Linux"
+ID=arch
+===REBOOT===
+===CACHE_AGE===
+1700000000
+---APT---
+---DNF---
+---APK---
+---PACMAN---
+1700000000
+===UPDATES===
+MGR:pacman
+---TOTAL---
+aquamarine 0.15.1-1.1 -> 0.16.0-1.1 [ignored]
+hyprland 0.56.2-2.1 -> 0.57.2-2.1
+`
+		p := ParseUpgradePreview(out)
+		if !p.OK || !p.Supported {
+			t.Fatalf("want ok+supported, got %+v", p)
+		}
+		if p.Manager != "pacman" {
+			t.Errorf("want manager pacman, got %s", p.Manager)
+		}
+		if p.PendingTotal != 1 {
+			t.Errorf("want 1 pending (the held package is not a pending update), got %d", p.PendingTotal)
+		}
+		if len(p.Packages) != 1 || p.Packages[0].Name != "hyprland" ||
+			p.Packages[0].From != "0.56.2-2.1" || p.Packages[0].To != "0.57.2-2.1" {
+			t.Errorf("unexpected packages: %+v", p.Packages)
+		}
+	})
+}
+
+// A stale metadata cache can hide a newer release, so the preview must say how old the cache is.
+func TestParseUpgradePreview_ReportsRepoCacheAge(t *testing.T) {
+	now := time.Now().Unix()
+	stale := now - 200*3600
+	out := fmt.Sprintf("===OS_RELEASE===\nID=ubuntu\n===REBOOT===\n===CACHE_AGE===\n%d\n---APT---\n%d\n---DNF---\n---APK---\n---PACMAN---\n===UPDATES===\nMGR:apt\n",
+		now, stale)
+	p := ParseUpgradePreview(out)
+	if p.RepoCacheAgeHours != 200 {
+		t.Errorf("want repo_cache_age_hours=200, got %d", p.RepoCacheAgeHours)
+	}
+	if !strings.Contains(p.Note, "metadata is") {
+		t.Errorf("a stale cache must be noted, got note %q", p.Note)
 	}
 }
 
@@ -372,7 +504,7 @@ func runPackageCommand(t *testing.T, mgr, action string, pkgs []string) (argv, o
 	bin := t.TempDir()
 	rec := filepath.Join(bin, "argv")
 	fake := "#!/bin/sh\nfor a in \"$@\"; do echo \"$a\" >> " + rec + "; done\n"
-	for _, n := range []string{"apt-get", "dnf", "yum"} {
+	for _, n := range []string{"apt-get", "dnf", "yum", "apk", "pacman"} {
 		os.WriteFile(filepath.Join(bin, n), []byte(fake), 0o755)
 	}
 	os.WriteFile(filepath.Join(bin, "id"), []byte("#!/bin/sh\necho 0\n"), 0o755) // root: no sudo needed
@@ -394,6 +526,11 @@ func TestBuildPackageCommand(t *testing.T) {
 		{"dnf", "upgrade", "-y\nupgrade\nnginx\nhtop\n"},
 		{"dnf", "install", "-y\ninstall\nnginx\nhtop\n"},
 		{"yum", "remove", "-y\nremove\nnginx\nhtop\n"},
+		{"apk", "upgrade", "--upgrade\n--no-interactive\nnginx\nhtop\n"},
+		{"apk", "install", "--no-interactive\nnginx\nhtop\n"},
+		{"apk", "remove", "del\n--no-interactive\nnginx\nhtop\n"},
+		{"pacman", "upgrade", "-S\n--noconfirm\nnginx\nhtop\n"},
+		{"pacman", "remove", "-R\n--noconfirm\nnginx\nhtop\n"},
 	}
 	for _, c := range cases {
 		argv, out := runPackageCommand(t, c.mgr, c.action, []string{"nginx", "htop"})
@@ -408,7 +545,7 @@ func TestBuildPackageCommand(t *testing.T) {
 		mgr, action string
 		pkgs        []string
 	}{
-		{"apt", "purge", []string{"a"}}, {"pacman", "install", []string{"a"}}, {"apt", "install", nil}, {"apt", "install", []string{"a;b"}}, {"dnf", "remove", []string{"-y"}},
+		{"apt", "purge", []string{"a"}}, {"nosuchmgr", "install", []string{"a"}}, {"apt", "install", nil}, {"apt", "install", []string{"a;b"}}, {"dnf", "remove", []string{"-y"}}, {"pacman", "purge", []string{"a"}}, {"apk", "purge", []string{"a"}},
 	} {
 		if _, err := BuildPackageCommand(bad.mgr, bad.action, bad.pkgs); err == nil {
 			t.Errorf("%+v must be rejected", bad)
