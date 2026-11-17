@@ -10,3 +10,6 @@ e2e/node_modules/
 e2e/.e2e/
 e2e/.tmp/
 .env
+
+# Scratch package for throwaway diagnostics against a copied database.
+internal/store/tmpdiag/
