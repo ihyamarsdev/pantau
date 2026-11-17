@@ -46,6 +46,10 @@ var repoTools = []agentTool{
 		InputSchema: schema([]string{"repo_id", "message"}, map[string]interface{}{"repo_id": pRepo, "message": str, "paths": map[string]interface{}{"type": "array", "items": str, "description": "files to commit, default all changes"}, "new_branch": str}), run: toolRepoCommit},
 	{Name: "repo_push", Description: "Push the current branch (no force), to retry after a failed push. Always waits for operator approval.", gate: gateHigh,
 		InputSchema: schema([]string{"repo_id"}, map[string]interface{}{"repo_id": pRepo}), run: toolRepoPush},
+	{Name: "repo_branch", Description: "Branches of a cloned repository: list, switch to one (a branch only origin has is created from it), create a new branch at HEAD, or delete a local branch (never the current one, never the remote). switch, create and delete may wait for operator approval.", gate: gateHigh,
+		InputSchema: schema([]string{"repo_id", "action"}, map[string]interface{}{"repo_id": pRepo,
+			"action": map[string]interface{}{"type": "string", "enum": []string{"list", "switch", "create", "delete"}},
+			"name":   map[string]interface{}{"type": "string", "description": "branch to switch to, create or delete"}}), run: toolRepoBranch},
 	{Name: "repo_copy_to_host", Description: "Copy the repository files (tracked and untracked, not ignored; .git only with include_git) to an absolute folder on a managed host as a Transfer Queue job; symlinks and submodules are skipped, protected system paths refused. Always waits for operator approval.", gate: gateHigh,
 		InputSchema: schema([]string{"repo_id", "host_id", "path"}, map[string]interface{}{"repo_id": pRepo, "host_id": pHost, "path": pAbsPath, "include_git": map[string]interface{}{"type": "boolean"}}), run: toolRepoCopy},
 }
@@ -247,6 +251,48 @@ func toolRepoPush(s *Server, r *http.Request, args map[string]interface{}) (stri
 		return "", err
 	}
 	return jsonText(pick(m, "commit", "branch", "pushed"))
+}
+
+func toolRepoBranch(s *Server, r *http.Request, args map[string]interface{}) (string, error) {
+	repo, base, err := s.agentRepo(args)
+	if err != nil {
+		return "", err
+	}
+	action, name := argStr(args, "action"), argStr(args, "name")
+	label := repoLabel(repo)
+	switch action {
+	case "list":
+		m, err := s.loopJSON(r.Context(), http.MethodGet, base+"/branches", nil)
+		if err != nil {
+			return "", err
+		}
+		return jsonText(pick(m, "branches", "remote"))
+	case "switch", "create", "delete":
+		if name == "" {
+			return "", fmt.Errorf("name is required for %s", action)
+		}
+		what := map[string]string{"switch": "switch repository %s to branch " + name, "create": "create and check out branch " + name + " at HEAD in repository %s", "delete": "delete local branch " + name + " of repository %s"}[action]
+		gate := gateRoutine // switch and create lose nothing; delete drops a branch, so it always asks
+		if action == "delete" {
+			gate = gateHigh
+		}
+		if err := s.agentGateAs(r, 0, label, "repo_branch", fmt.Sprintf(what, label), gate); err != nil {
+			return "", err
+		}
+		if action == "delete" {
+			if _, err := s.loopJSON(r.Context(), http.MethodDelete, base+"/branches?name="+url.QueryEscape(name), nil); err != nil {
+				return "", err
+			}
+			return "deleted local branch " + name, nil
+		}
+		m, err := s.loopJSON(r.Context(), http.MethodPost, base+"/branches", map[string]interface{}{"name": name, "create": action == "create"})
+		if err != nil {
+			return "", err
+		}
+		return jsonText(pick(m, "branch", "commit", "ahead", "behind"))
+	default:
+		return "", fmt.Errorf("action must be list, switch, create or delete")
+	}
 }
 
 func toolRepoCopy(s *Server, r *http.Request, args map[string]interface{}) (string, error) {

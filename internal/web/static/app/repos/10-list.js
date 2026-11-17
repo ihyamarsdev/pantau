@@ -32,6 +32,7 @@ function rpCardHTML(r) {
     <div class="rp-meta" title="${R.esc(r.dir)}">${R.esc(r.auth)}${when ? ' · ' + R.esc(when) : ''}</div>
     <div class="rp-actions">
       <button type="button" class="btn btn-sm btn-primary" data-rp-open="${id}"${r.error ? ' disabled' : ''}>${svgIcon('folder-open', 'icon-xs')} ${R.esc(R.tx('rp_open'))}</button>
+      <button type="button" class="btn btn-sm" data-rp-branches="${id}"${r.error ? ' disabled' : ''} title="${R.esc(R.tx('rp_br_title'))}">${svgIcon('git-branch', 'icon-xs')} ${R.esc(R.tx('rp_br_title'))}</button>
       <button type="button" class="btn btn-sm" data-rp-sync="${id}"${r.error ? ' disabled' : ''}>${svgIcon('refresh-cw', 'icon-xs')} ${R.esc(R.tx('rp_sync'))}</button>
       <button type="button" class="btn btn-sm" data-rp-copy="${id}"${r.error ? ' disabled' : ''} title="${R.esc(R.tx('rp_copy_title'))}">${svgIcon('upload', 'icon-xs')} ${R.esc(R.tx('rp_copy'))}</button>
       <button type="button" class="btn btn-sm" data-rp-move="${id}" title="${R.esc(R.tx('rp_move_title'))}">${svgIcon('folder', 'icon-xs')} ${R.esc(R.tx('rp_f_folder'))}</button>
@@ -374,6 +375,75 @@ async function rpRemove(id) {
   await rpRefresh();
 }
 
+/* ---- branches: list, switch, create at HEAD, delete a local branch ---- */
+let rpBranch = null; // { id, name, data, dirty } of the repository whose branch dialog is open
+
+function rpBranchRow(b, i) {
+  return `<div class="rp-br-row" data-br="${R.esc(b.name)}"><span class="mono rp-br-name">${R.esc(b.name)}</span>
+    ${b.current ? `<span class="badge badge-info">${R.esc(R.tx('rp_br_current'))}</span>` : `<span class="mono rp-meta">${R.esc(b.commit)}</span>`}
+    <span class="rp-gap"></span>${b.current ? '' : `<button type="button" class="btn btn-sm" onclick="Repos.brSwitch(${i}, this)">${R.esc(R.tx('rp_br_switch'))}</button>
+    <button type="button" class="btn btn-icon btn-sm" onclick="Repos.brDelete(${i})" aria-label="${R.esc(R.tx('rp_br_delete'))}">${svgIcon('trash-2', 'icon-xs')}</button>`}</div>`;
+}
+
+function rpBranchHTML() {
+  const d = rpBranch.data;
+  const remote = d.remote.length
+    ? `<div class="rp-br-head">${R.esc(R.tx('rp_br_remote'))}</div>` + d.remote.map((name, i) =>
+      `<div class="rp-br-row" data-br-remote="${R.esc(name)}"><span class="mono rp-br-name">${R.esc(name)}</span><span class="rp-gap"></span>
+        <button type="button" class="btn btn-sm" onclick="Repos.brSwitchRemote(${i}, this)">${R.esc(R.tx('rp_br_switch'))}</button></div>`).join('')
+    : '';
+  return `<div class="rp-br-list">${d.branches.map(rpBranchRow).join('')}${remote}</div>
+    <div class="dk-hint">${R.esc(R.tx('rp_br_hint'))}${rpBranch.dirty ? ' <b>' + R.esc(R.tx('rp_br_dirty', { n: rpBranch.dirty })) + '</b>' : ''}</div>
+    <div class="rp-add"><input type="text" id="rpBrNew" class="form-input" placeholder="${R.esc(R.tx('rp_br_new_ph'))}" autocomplete="off" spellcheck="false" />
+      <button type="button" id="rpBrNewGo" class="btn btn-sm" onclick="Repos.brCreate()">${svgIcon('plus', 'icon-xs')} ${R.esc(R.tx('rp_br_create'))}</button></div>`;
+}
+
+// renderBranchBody paints the dialog and wires the Enter key of the new-branch field (the body is repainted after a
+// delete, which drops listeners).
+function renderBranchBody() {
+  R.el('repoDlgBody').innerHTML = rpBranchHTML();
+  R.el('rpBrNew').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); rpCreateBranch(); } });
+}
+async function rpOpenBranches(id) {
+  const repo = R.state.list.find(x => x.id === id);
+  if (!repo) return;
+  const r = await R.api('GET', `/api/repos/${id}/branches`);
+  if (!r.ok) { R.err(r); return; }
+  rpBranch = { id, name: repo.name, data: r.data, dirty: (repo.status && repo.status.dirty) || 0 };
+  R.dlg(R.tx('rp_br_title') + ' — ' + repo.name, '', R.foot(''), 560);
+  renderBranchBody();
+}
+
+async function rpSwitchBranch(name, btn, create) {
+  const restore = SP.busy(btn, R.tx(create ? 'rp_br_creating' : 'rp_br_switching'));
+  let r;
+  try {
+    r = await R.api('POST', `/api/repos/${rpBranch.id}/branches`, { name, create });
+  } finally {
+    restore();
+  }
+  if (!r.ok) { R.dlgErr(r.data.error || 'Error'); return; }
+  R.dlgClose();
+  showToast(R.tx('rp_br_switched', { branch: r.data.branch }), 'success');
+  await rpRefresh();
+}
+async function rpCreateBranch() {
+  const name = R.val('rpBrNew').trim();
+  if (!name) { R.dlgErr(R.tx('rp_br_new_ph')); return; }
+  await rpSwitchBranch(name, R.el('rpBrNewGo'), true);
+}
+async function rpDeleteBranch(i) {
+  const b = rpBranch && rpBranch.data.branches[i];
+  if (!b || b.current) return;
+  if (!(await showConfirm({ title: R.tx('rp_br_delete'), message: R.tx('rp_br_delete_msg', { name: b.name }), confirmText: R.tx('rp_br_delete'), danger: true }))) return;
+  const r = await R.api('DELETE', `/api/repos/${rpBranch.id}/branches?name=` + encodeURIComponent(b.name));
+  if (!r.ok) { R.dlgErr(r.data.error || 'Error'); return; }
+  showToast(R.tx('rp_br_deleted', { name: b.name }), 'success');
+  const list = await R.api('GET', `/api/repos/${rpBranch.id}/branches`);
+  if (list.ok) { rpBranch.data = list.data; renderBranchBody(); }
+  await rpRefresh();
+}
+
 function rpClick(ev) {
   const el = ev.target.closest('button');
   if (!el) return;
@@ -384,6 +454,7 @@ function rpClick(ev) {
   if (d.rpOpen) return R.openEditor(Number(d.rpOpen));
   if (d.rpMove) return rpOpenMove(Number(d.rpMove));
   if (d.rpCopy) return rpOpenCopy(Number(d.rpCopy));
+  if (d.rpBranches) return rpOpenBranches(Number(d.rpBranches));
   if (d.rpSync) return rpSync(el, Number(d.rpSync));
   if (d.rpCreds) return rpOpenCreds(Number(d.rpCreds));
   if (d.rpDel) return rpRemove(Number(d.rpDel));
@@ -394,5 +465,8 @@ langRerenderHooks.push(() => {
   if (R.state.loaded && R.el('reposRoot') && !(dlg && dlg.classList.contains('open'))) rpRender();
 });
 
-  Object.assign(R, { refresh: rpRefresh, doClone: rpDoClone, cancelClone: rpCancelClone, doCopy: rpDoCopy, saveMove: rpSaveMove, setFolderFilter: (v) => { rpFolderFilter = v; rpRender(); }, retryClone: rpRetryClone, authChange: rpAuthChange, saveCreds: rpSaveCreds, saveFolder: rpSaveFolder });
+  Object.assign(R, { refresh: rpRefresh, doClone: rpDoClone, cancelClone: rpCancelClone, doCopy: rpDoCopy, saveMove: rpSaveMove, setFolderFilter: (v) => { rpFolderFilter = v; rpRender(); }, retryClone: rpRetryClone, authChange: rpAuthChange, saveCreds: rpSaveCreds, saveFolder: rpSaveFolder,
+    brSwitch: (i, btn) => rpSwitchBranch(rpBranch.data.branches[i].name, btn, false),
+    brSwitchRemote: (i, btn) => rpSwitchBranch(rpBranch.data.remote[i], btn, false),
+    brCreate: rpCreateBranch, brDelete: rpDeleteBranch });
 })();

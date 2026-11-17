@@ -472,6 +472,96 @@ func (l *localGit) currentBranch(ctx context.Context) (string, error) {
 	return b, nil
 }
 
+// LocalBranch is one local branch of the clone; Current marks the checked-out one.
+type LocalBranch struct {
+	Name    string `json:"name"`
+	Commit  string `json:"commit"`
+	Current bool   `json:"current"`
+}
+
+// ListLocalRepoBranches lists the local branches and the branches only origin has, so the UI can switch to a branch
+// that was never checked out here (git then creates it from origin/<name>).
+func ListLocalRepoBranches(ctx context.Context, dir string) (local []LocalBranch, remote []string, err error) {
+	l, err := openLocalGit(dir, nil, "https:ssh")
+	if err != nil {
+		return nil, nil, err
+	}
+	defer l.close()
+	out, err := l.run(ctx, nil, "for-each-ref", "--format=%(refname:short)\t%(objectname:short)\t%(HEAD)", "refs/heads")
+	if err != nil {
+		return nil, nil, err
+	}
+	local = []LocalBranch{}
+	have := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		f := strings.Split(line, "\t")
+		if len(f) != 3 {
+			continue
+		}
+		local = append(local, LocalBranch{Name: f[0], Commit: f[1], Current: f[2] == "*"})
+		have[f[0]] = true
+	}
+	remote = []string{}
+	out, err = l.run(ctx, nil, "for-each-ref", "--format=%(refname:lstrip=3)", "refs/remotes/origin")
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, n := range strings.Split(strings.TrimSpace(out), "\n") {
+		if n == "" || n == "HEAD" || have[n] {
+			continue
+		}
+		remote = append(remote, n)
+	}
+	sort.Strings(remote)
+	return local, remote, nil
+}
+
+// SwitchLocalRepoBranch checks out an existing branch, a branch only origin has (created tracking origin/<name>), or a
+// new branch at HEAD when create is set. git refuses a checkout that would overwrite uncommitted changes; that error is
+// returned as is, and the working tree stays where it was.
+func SwitchLocalRepoBranch(ctx context.Context, dir, name string, create bool) (*LocalStatus, error) {
+	if err := ValidateGitBranch(name); err != nil || name == "" {
+		return nil, invalidf("branch must be a valid git branch name")
+	}
+	lock := getBranchLock(dir, "")
+	lock.Lock()
+	defer lock.Unlock()
+	l, err := openLocalGit(dir, nil, "https:ssh")
+	if err != nil {
+		return nil, err
+	}
+	defer l.close()
+	args := []string{"checkout", name}
+	if create {
+		args = []string{"checkout", "-b", name}
+	}
+	if _, err := l.run(ctx, nil, args...); err != nil {
+		return nil, err
+	}
+	return LocalRepoStatus(ctx, dir)
+}
+
+// DeleteLocalRepoBranch deletes a local branch with `git branch -d`: git refuses the checked-out branch and a branch
+// whose commits are not merged anywhere. The remote branch is never touched.
+func DeleteLocalRepoBranch(ctx context.Context, dir, name string) error {
+	if err := ValidateGitBranch(name); err != nil || name == "" {
+		return invalidf("branch must be a valid git branch name")
+	}
+	lock := getBranchLock(dir, "")
+	lock.Lock()
+	defer lock.Unlock()
+	l, err := openLocalGit(dir, nil, "https:ssh")
+	if err != nil {
+		return err
+	}
+	defer l.close()
+	if cur, err := l.currentBranch(ctx); err == nil && cur == name {
+		return invalidf("cannot delete the checked-out branch %q; switch to another branch first", name)
+	}
+	_, err = l.run(ctx, nil, "branch", "-d", "--", name)
+	return err
+}
+
 // PullLocalRepo fetches the current branch and fast-forwards to it; it never merges or rebases.
 func PullLocalRepo(ctx context.Context, dir string, g GitSource, protocols string) (*LocalStatus, error) {
 	lock := getBranchLock(dir, "")

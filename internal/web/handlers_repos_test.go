@@ -378,6 +378,92 @@ func TestRepoFoldersGroupRepositoriesAndMoveThem(t *testing.T) {
 	}
 }
 
+func TestRepoBranchesListSwitchCreateAndDelete(t *testing.T) {
+	_, call, bare := newReposServer(t)
+	code, repo := cloneRepo(t, call, map[string]interface{}{"url": "https://h.example/o/branches.git"})
+	if code != http.StatusCreated {
+		t.Fatalf("create: %d %v", code, repo)
+	}
+	repoBase := fmt.Sprintf("/api/repos/%d", int64(repo["id"].(float64)))
+	base := repoBase + "/branches"
+	names := func() string {
+		t.Helper()
+		code, r := call(http.MethodGet, base, nil)
+		if code != http.StatusOK {
+			t.Fatalf("list: %d %v", code, r)
+		}
+		out := []string{}
+		for _, b := range r["branches"].([]interface{}) {
+			m := b.(map[string]interface{})
+			if m["current"] == true {
+				out = append(out, "*"+m["name"].(string))
+			} else {
+				out = append(out, m["name"].(string))
+			}
+		}
+		return strings.Join(out, ",")
+	}
+	if got := names(); got != "*main" {
+		t.Fatalf("branches = %q, want *main", got)
+	}
+	if code, r := call(http.MethodPost, base, map[string]interface{}{"name": "../x"}); code != http.StatusBadRequest {
+		t.Errorf("invalid branch name: %d %v", code, r)
+	}
+
+	// A new branch at HEAD, then a commit on it: the push creates the branch on the remote too.
+	if code, r := call(http.MethodPost, base, map[string]interface{}{"name": "feature", "create": true}); code != http.StatusOK || r["branch"] != "feature" {
+		t.Fatalf("create branch: %d %v", code, r)
+	}
+	call(http.MethodPut, repoBase+"/file", map[string]string{"path": "f.txt", "content": "x\n"})
+	if code, r := call(http.MethodPost, repoBase+"/commit", map[string]interface{}{"message": "feat", "author_name": "A", "author_email": "a@x.io"}); code != http.StatusOK || r["branch"] != "feature" {
+		t.Fatalf("commit on feature: %d %v", code, r)
+	}
+	if out, err := exec.Command("git", "--git-dir", bare, "rev-parse", "feature").Output(); err != nil || strings.TrimSpace(string(out)) == "" {
+		t.Errorf("remote feature branch missing: %q %v", out, err)
+	}
+
+	// Switching back is refused while an uncommitted edit would be overwritten; after Discard it works.
+	call(http.MethodPut, repoBase+"/file", map[string]string{"path": "f.txt", "content": "dirty\n"})
+	if code, r := call(http.MethodPost, base, map[string]interface{}{"name": "main"}); code == http.StatusOK {
+		t.Errorf("switch over an uncommitted edit must fail: %d %v", code, r)
+	}
+	if code, r := call(http.MethodPost, repoBase+"/discard", map[string]string{"path": "f.txt"}); code != http.StatusOK {
+		t.Fatalf("discard: %d %v", code, r)
+	}
+	if code, r := call(http.MethodPost, base, map[string]interface{}{"name": "main"}); code != http.StatusOK || r["branch"] != "main" {
+		t.Fatalf("switch to main: %d %v", code, r)
+	}
+
+	// Delete: refused without a name, for an option-looking name and for the checked-out branch.
+	for _, n := range []string{"", "--force", "main"} {
+		if code, r := call(http.MethodDelete, base+"?name="+n, nil); code != http.StatusBadRequest {
+			t.Errorf("delete %q must be refused with 400: %d %v", n, code, r)
+		}
+	}
+	if got := names(); got != "feature,*main" {
+		t.Errorf("branches after refused deletes = %q", got)
+	}
+	// A branch without a marking commit deletes; feature's commit is on its upstream, so git allows it too.
+	if code, r := call(http.MethodPost, base, map[string]interface{}{"name": "tmp", "create": true}); code != http.StatusOK {
+		t.Fatalf("create tmp: %d %v", code, r)
+	}
+	if code, r := call(http.MethodPost, base, map[string]interface{}{"name": "main"}); code != http.StatusOK {
+		t.Fatalf("switch back to main: %d %v", code, r)
+	}
+	for _, n := range []string{"tmp", "feature"} {
+		if code, r := call(http.MethodDelete, base+"?name="+n, nil); code != http.StatusOK {
+			t.Fatalf("delete %s: %d %v", n, code, r)
+		}
+	}
+	if got := names(); got != "*main" {
+		t.Errorf("branches after delete = %q, want *main", got)
+	}
+	// The remote keeps its branch: deleting is local only.
+	if out, err := exec.Command("git", "--git-dir", bare, "rev-parse", "feature").Output(); err != nil || strings.TrimSpace(string(out)) == "" {
+		t.Errorf("remote feature branch was touched: %q %v", out, err)
+	}
+}
+
 func TestRepoCopyToHost(t *testing.T) {
 	srv, call, _ := newReposServer(t)
 	mock := sshrunner.NewMockRunner()

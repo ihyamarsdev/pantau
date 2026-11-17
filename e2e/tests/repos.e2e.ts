@@ -247,3 +247,71 @@ test('repositories: copy a repository to a host from its card', async (fx) => {
   await expect(browser.locator('#transfersListModal')).toBeVisible();
   if (JSON.stringify(sent) !== JSON.stringify({ host_id: hostId, path: '/srv/infra', include_git: true })) throw new Error('unexpected copy request: ' + JSON.stringify(sent));
 });
+
+// Branches: the dialog lists local and remote branches, switches, creates at HEAD and deletes a local branch.
+test('repositories: the branch dialog switches, creates and deletes branches', async (fx) => {
+  const { browser } = fx;
+  const card = (branch: string, dirty = 0) => ({ id: 7, name: 'infra', group: '', url: 'https://h.example/o/infra.git', branch, dir: '/x/infra', auth: 'none', key_id: 0, token_set: false, synced_at: null, status: { branch, commit: 'a'.repeat(40), ahead: 0, behind: 0, dirty } });
+  let branches = [{ name: 'main', commit: 'aaaaaaa', current: true }, { name: 'release', commit: 'bbbbbbb', current: false }];
+  let remote: string[] = ['hotfix'];
+  let current = 'main';
+  const calls: { method: string; body?: Record<string, unknown>; query?: string }[] = [];
+  await browser.route('**/api/repos**', async (route) => {
+    const req = route.request;
+    const url = new URL(req.url);
+    const sub = url.pathname.replace('/api/repos', '');
+    if (sub === '' && req.method === 'GET') {
+      await route.fulfill({ json: { folder: '/x', repos: [card(current)] } });
+    } else if (sub === '/7/branches' && req.method === 'GET') {
+      await route.fulfill({ json: { branches, remote } });
+    } else if (sub === '/7/branches' && req.method === 'POST') {
+      const body = JSON.parse(req.postData ?? '{}') as { name: string; create: boolean };
+      calls.push({ method: 'POST', body });
+      const name = body.create ? 'feature' : body.name;
+      branches = branches.map(b => ({ ...b, current: b.name === name }));
+      if (!branches.some(b => b.name === name)) branches.push({ name, commit: 'ccccccc', current: true });
+      remote = remote.filter(n => n !== name);
+      current = name;
+      await route.fulfill({ json: { ok: true, branch: name, commit: 'c'.repeat(40), ahead: 0, behind: 0 } });
+    } else if (sub === '/7/branches' && req.method === 'DELETE') {
+      const name = url.searchParams.get('name') ?? '';
+      calls.push({ method: 'DELETE', query: name });
+      branches = branches.filter(b => b.name !== name);
+      await route.fulfill({ json: { ok: true } });
+    } else {
+      await route.fulfill({ status: 404, body: 'not found' });
+    }
+  });
+  await openRepos(fx);
+
+  await browser.locator('[data-rp-branches="7"]').click();
+  await expect(browser.locator('#repoDlgBody')).toContainText('release');
+  await expect(browser.locator('#repoDlgBody')).toContainText('on remote');
+  await expect(browser.locator('#repoDlgBody')).toContainText('hotfix');
+  // The checked-out branch has no switch or delete button.
+  await expect(browser.locator('#repoDlgBody [data-br="main"] button')).toHaveCount(0);
+
+  await browser.locator('#repoDlgBody [data-br="release"] button').first().click();
+  await expect(browser.locator('[data-rp-branches="7"]')).toBeVisible();
+  await expect(browser.locator('#reposRoot .rp-card')).toContainText('release');
+
+  // A branch that only the remote has is created from it by the same switch call.
+  await browser.locator('[data-rp-branches="7"]').click();
+  await browser.locator('#repoDlgBody [data-br-remote="hotfix"] button').click();
+  await expect(browser.locator('#reposRoot .rp-card')).toContainText('hotfix');
+
+  // Create a new branch at HEAD, then delete a local one (confirm dialog).
+  await browser.locator('[data-rp-branches="7"]').click();
+  await browser.locator('#rpBrNew').fill('feature');
+  await browser.locator('#rpBrNewGo').click();
+  await expect(browser.locator('#reposRoot .rp-card')).toContainText('feature');
+  const created = calls.find(c => c.method === 'POST' && c.body?.create === true);
+  if (created?.body?.name !== 'feature') throw new Error('unexpected create request: ' + JSON.stringify(created));
+
+  await browser.locator('[data-rp-branches="7"]').click();
+  await browser.locator('#repoDlgBody [data-br="release"] button[aria-label="Delete branch"]').click();
+  await browser.locator('#confirmModalBtn').click();
+  await expect(browser.locator('#repoDlgBody')).not.toContainText('release');
+  const del = calls.find(c => c.method === 'DELETE');
+  if (del?.query !== 'release') throw new Error('unexpected delete request: ' + JSON.stringify(del));
+});

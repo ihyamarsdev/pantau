@@ -375,6 +375,8 @@ func (s *Server) handleRepoRoute(w http.ResponseWriter, r *http.Request) {
 		s.handleRepoCommit(w, r, repo)
 	case "push":
 		s.handleRepoPush(w, r, repo)
+	case "branches":
+		s.handleRepoBranches(w, r, repo)
 	default:
 		http.NotFound(w, r)
 	}
@@ -735,4 +737,45 @@ func (s *Server) handleRepoPush(w http.ResponseWriter, r *http.Request, repo *st
 	}
 	logger.Info("repos", repo.Name, fmt.Sprintf("Pushed %s on branch %s", res.Commit, res.Branch))
 	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "commit": res.Commit, "branch": res.Branch, "pushed": true})
+}
+
+// handleRepoBranches: GET lists the branches (local + only origin), POST {name, create} switches to one (create makes a
+// new branch at HEAD), DELETE ?name= deletes a local branch (git refuses the current one and unmerged work).
+func (s *Server) handleRepoBranches(w http.ResponseWriter, r *http.Request, repo *store.GitRepo) {
+	ctx, cancel := context.WithTimeout(r.Context(), repoLocalTimeout)
+	defer cancel()
+	switch r.Method {
+	case http.MethodGet:
+		local, remote, err := ansible.ListLocalRepoBranches(ctx, repo.Dir)
+		if err != nil {
+			writeGitError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{"branches": local, "remote": remote})
+	case http.MethodPost:
+		var req struct {
+			Name   string `json:"name"`
+			Create bool   `json:"create"`
+		}
+		if !decodeRepoBody(w, r, &req) {
+			return
+		}
+		st, err := ansible.SwitchLocalRepoBranch(ctx, repo.Dir, strings.TrimSpace(req.Name), req.Create)
+		if err != nil {
+			writeGitError(w, err)
+			return
+		}
+		logger.Info("repos", repo.Name, "Switched repository "+repo.Name+" to branch "+st.Branch)
+		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "branch": st.Branch, "commit": st.Commit, "ahead": st.Ahead, "behind": st.Behind})
+	case http.MethodDelete:
+		name := strings.TrimSpace(r.URL.Query().Get("name"))
+		if err := ansible.DeleteLocalRepoBranch(ctx, repo.Dir, name); err != nil {
+			writeGitError(w, err)
+			return
+		}
+		logger.Info("repos", repo.Name, "Deleted local branch "+name+" of "+repo.Name)
+		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true})
+	default:
+		methodNotAllowed(w)
+	}
 }

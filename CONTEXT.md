@@ -832,6 +832,10 @@ _Avoid_: Workspace folder, repo root, data dir
 Aksi **Sync** pada Cloned Repository: `fetch` branch aktif lalu `merge --ff-only`; tidak pernah merge atau rebase, dan gagal bila riwayat lokal dan remote bercabang.
 _Avoid_: Git Sync (verifikasi playbook Ansible), pull
 
+**Repository Branch**:
+Branch lokal sebuah Cloned Repository yang dapat dipilih: perpindahan (*switch*) melakukan checkout branch di clone (branch yang hanya ada di `origin` dibuat darinya), pembuatan membuat branch baru di HEAD, dan penghapusan hanya menghapus branch lokal (bukan branch aktif, bukan branch di remote) setelah git mengizinkannya. Perpindahan yang akan menimpa perubahan belum di-commit ditolak.
+_Avoid_: Checkout branch (sebagai istilah UI), remote branch deletion
+
 **Local Port Forward**:
 Penerusan port TCP dari Host ke komputer operator (setara `ssh -L`): Pantau mendengarkan di port lokal dari rentang `-forward-ports` dan meneruskan setiap koneksi lewat channel SSH `direct-tcpip` ke `remote_host:remote_port` dilihat dari Host. Untuk klien non-browser (DBeaver, `psql`, `redis-cli`); hanya di memori, hilang saat Pantau restart.
 _Avoid_: Tunnel, Remote Web Port Tunnel, SSH proxy

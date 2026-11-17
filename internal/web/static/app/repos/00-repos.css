@@ -65,6 +65,13 @@
 .rp-dir { color: var(--text-muted); font-weight: 400; }
 .rp-row { min-width: 0; }
 
+/* Branch dialog */
+.rp-br-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; max-height: 300px; overflow: auto; }
+.rp-br-head { font-size: var(--fs-xs); color: var(--text-muted); margin: 8px 0 2px; }
+.rp-br-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: var(--radius-sm); font-size: var(--fs-xs); }
+.rp-br-row:hover { background: var(--surface-2); }
+.rp-br-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* Token colors the shared vscode-dark theme leaves out (markdown, diff, toml/ini, dockerfile, sql, go, python). */
 #repoModal .cm-s-vscode-dark span.cm-builtin { color: #f0abfc !important; }
 #repoModal .cm-s-vscode-dark span.cm-meta { color: #94a3b8 !important; }
