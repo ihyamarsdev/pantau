@@ -8,8 +8,6 @@ import (
 	"io"
 	"strings"
 	"time"
-
-	"pantau/internal/sshrunner"
 )
 
 const (
@@ -114,7 +112,7 @@ func TraceProbeCommand(quotedTarget string) string {
 
 // ensureTraceTool makes sure a traceroute-capable tool exists on the remote host, installing traceroute first when
 // it is missing. Installer output is streamed to eventSink as raw lines; markers are not forwarded.
-func ensureTraceTool(ctx context.Context, runner sshrunner.Runner, hostName string, eventSink func(ProbeEvent)) error {
+func ensureTraceTool(ctx context.Context, runner streamer, hostName string, eventSink func(ProbeEvent)) error {
 	ctx, cancel := context.WithTimeout(ctx, traceInstallTimeout)
 	defer cancel()
 

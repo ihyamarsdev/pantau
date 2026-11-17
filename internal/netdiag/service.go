@@ -25,7 +25,7 @@ var (
 type Service struct {
 	db        *store.DB
 	inspector *inspector.Inspector
-	inFlight  sync.Map // sourceHostID -> struct{}{}
+	inFlight  sync.Map // sourceKey -> struct{}{}
 }
 
 func NewService(db *store.DB, ins *inspector.Inspector) *Service {
@@ -33,6 +33,53 @@ func NewService(db *store.DB, ins *inspector.Inspector) *Service {
 		db:        db,
 		inspector: ins,
 	}
+}
+
+// localSourceKey is the singleflight key of the "Pantau itself" source; Host IDs are always positive.
+const localSourceKey int64 = -1
+
+func sourceKey(req ProbeRequest) int64 {
+	if req.SourceLocal {
+		return localSourceKey
+	}
+	return req.SourceHostID
+}
+
+// openSource claims the source's singleflight slot and opens its runner. On success the caller owns both
+// (Close the runner, Delete the slot); on error nothing is left claimed.
+func (s *Service) openSource(req ProbeRequest) (string, streamer, error) {
+	if _, loaded := s.inFlight.LoadOrStore(sourceKey(req), struct{}{}); loaded {
+		return "", nil, ErrBusy
+	}
+	name, r, err := s.connectSource(req)
+	if err != nil {
+		s.inFlight.Delete(sourceKey(req))
+		return "", nil, err
+	}
+	return name, r, nil
+}
+
+func (s *Service) connectSource(req ProbeRequest) (string, streamer, error) {
+	if req.SourceLocal {
+		r, err := newLocalRunner()
+		return "Pantau", r, err
+	}
+	host, err := s.db.GetHost(req.SourceHostID)
+	if err != nil {
+		return "", nil, fmt.Errorf("get source host: %w", err)
+	}
+	if host == nil {
+		return "", nil, errors.New("source host not found")
+	}
+	if strings.EqualFold(host.Status, "down") {
+		return "", nil, fmt.Errorf("source host '%s' is offline", host.Name)
+	}
+	r, err := s.inspector.GetRunnerForHost(host)
+	if err != nil {
+		logger.Error("netdiag", host.Name, "SSH connection failed: "+err.Error())
+		return "", nil, fmt.Errorf("ssh connection failed: %w", err)
+	}
+	return host.Name, r, nil
 }
 
 func shellQuote(s string) string {
@@ -178,36 +225,18 @@ func (s *Service) ExecuteProbe(ctx context.Context, req ProbeRequest, eventSink 
 		return err
 	}
 
-	// 3. Resolve source host
-	sourceHost, err := s.db.GetHost(req.SourceHostID)
+	// 3-5. Open the source: a Host over SSH, or the machine Pantau itself runs on. One probe per source at a time.
+	sourceName, runner, err := s.openSource(req)
 	if err != nil {
-		return fmt.Errorf("get source host: %w", err)
-	}
-	if sourceHost == nil {
-		return errors.New("source host not found")
-	}
-	if strings.EqualFold(sourceHost.Status, "down") {
-		return fmt.Errorf("source host '%s' is offline", sourceHost.Name)
-	}
-
-	// 4. Singleflight guard per source host
-	if _, loaded := s.inFlight.LoadOrStore(req.SourceHostID, struct{}{}); loaded {
-		return ErrBusy
-	}
-	defer s.inFlight.Delete(req.SourceHostID)
-
-	// 5. Connect SSH runner
-	runner, err := s.inspector.GetRunnerForHost(sourceHost)
-	if err != nil {
-		logger.Error("netdiag", sourceHost.Name, "SSH connection failed: "+err.Error())
-		return fmt.Errorf("ssh connection failed: %w", err)
+		return err
 	}
 	defer runner.Close()
+	defer s.inFlight.Delete(sourceKey(req))
 
 	// 6a. Traceroute needs tracepath or traceroute on the remote host: install it first when missing.
 	if req.Type == ProbeTypeTraceroute {
-		if err := ensureTraceTool(ctx, runner, sourceHost.Name, eventSink); err != nil {
-			logger.Error("netdiag", sourceHost.Name, "Traceroute tool unavailable: "+err.Error())
+		if err := ensureTraceTool(ctx, runner, sourceName, eventSink); err != nil {
+			logger.Error("netdiag", sourceName, "Traceroute tool unavailable: "+err.Error())
 			return err
 		}
 	}
@@ -262,7 +291,7 @@ func (s *Service) ExecuteProbe(ctx context.Context, req ProbeRequest, eventSink 
 		}
 	}()
 
-	logger.Info("netdiag", sourceHost.Name, fmt.Sprintf("Starting %s probe to %s", req.Type, req.TargetAddress))
+	logger.Info("netdiag", sourceName, fmt.Sprintf("Starting %s probe to %s", req.Type, req.TargetAddress))
 
 	// 7. Execute with streaming pipe
 	pr, pw := io.Pipe()

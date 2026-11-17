@@ -30,10 +30,15 @@ func (s *Server) handleNetDiagStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 
 	q := r.URL.Query()
-	sourceHostID, err := strconv.ParseInt(q.Get("source_host_id"), 10, 64)
-	if err != nil || sourceHostID <= 0 {
-		sendNetDiagSSE(w, flusher, netdiag.ProbeEvent{Type: "error", Message: "Invalid source host ID"})
-		return
+	sourceLocal := q.Get("source") == "local"
+	var sourceHostID int64
+	if !sourceLocal {
+		var err error
+		sourceHostID, err = strconv.ParseInt(q.Get("source_host_id"), 10, 64)
+		if err != nil || sourceHostID <= 0 {
+			sendNetDiagSSE(w, flusher, netdiag.ProbeEvent{Type: "error", Message: "Invalid source host ID"})
+			return
+		}
 	}
 
 	probeType := netdiag.ProbeType(strings.TrimSpace(q.Get("type")))
@@ -44,6 +49,7 @@ func (s *Server) handleNetDiagStream(w http.ResponseWriter, r *http.Request) {
 
 	req := netdiag.ProbeRequest{
 		SourceHostID:  sourceHostID,
+		SourceLocal:   sourceLocal,
 		Type:          probeType,
 		TargetType:    targetType,
 		TargetHostID:  targetHostID,
@@ -54,7 +60,7 @@ func (s *Server) handleNetDiagStream(w http.ResponseWriter, r *http.Request) {
 		Via:           strings.TrimSpace(q.Get("via")),
 	}
 
-	err = s.netdiagService.ExecuteProbe(r.Context(), req, func(evt netdiag.ProbeEvent) {
+	err := s.netdiagService.ExecuteProbe(r.Context(), req, func(evt netdiag.ProbeEvent) {
 		sendNetDiagSSE(w, flusher, evt)
 	})
 

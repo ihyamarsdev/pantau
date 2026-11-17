@@ -18,6 +18,7 @@ const (
 // ProbeRequest specifies parameters for a network diagnostic run.
 type ProbeRequest struct {
 	SourceHostID  int64     `json:"source_host_id"`
+	SourceLocal   bool      `json:"source_local,omitempty"` // Probe from the machine Pantau runs on instead of a Host (SourceHostID is ignored)
 	Type          ProbeType `json:"type"`
 	TargetType    string    `json:"target_type"` // "host" or "custom"
 	TargetHostID  int64     `json:"target_host_id,omitempty"`

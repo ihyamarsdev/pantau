@@ -1,6 +1,8 @@
 package netdiag
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -356,5 +358,37 @@ func TestValidateTarget(t *testing.T) {
 	}
 	if err := ValidateTarget("`touch evil`"); err == nil {
 		t.Errorf("expected backtick injection to fail")
+	}
+}
+
+func TestExecuteProbe_LocalSource(t *testing.T) {
+	var raw []string
+	var done bool
+	err := (&Service{}).ExecuteProbe(context.Background(),
+		ProbeRequest{SourceLocal: true, Type: ProbeTypePort, TargetType: "custom", TargetAddress: "127.0.0.1", Port: 1},
+		func(e ProbeEvent) {
+			if e.Type == "raw" {
+				raw = append(raw, e.RawLine)
+			}
+			done = done || e.Type == "done"
+		})
+	if err != nil {
+		t.Fatalf("local probe: %v", err)
+	}
+	if !done || len(raw) == 0 || raw[0] != "PORT_CLOSED" {
+		t.Fatalf("expected PORT_CLOSED from the local shell, got done=%v raw=%v", done, raw)
+	}
+}
+
+func TestExecuteProbe_LocalSourceIsSingleflight(t *testing.T) {
+	s := &Service{}
+	s.inFlight.Store(localSourceKey, struct{}{})
+	err := s.ExecuteProbe(context.Background(),
+		ProbeRequest{SourceLocal: true, Type: ProbeTypePing, TargetType: "custom", TargetAddress: "127.0.0.1"}, nil)
+	if !errors.Is(err, ErrBusy) {
+		t.Fatalf("expected ErrBusy while a local probe runs, got %v", err)
+	}
+	if _, still := s.inFlight.Load(localSourceKey); !still {
+		t.Fatal("a rejected probe must not release another probe's slot")
 	}
 }

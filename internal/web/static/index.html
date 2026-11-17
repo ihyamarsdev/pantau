@@ -7653,6 +7653,7 @@ const I18N = {
     "netdiag_title": "Network Diagnostics",
     "tab_netdiag": "Network Diagnostics",
     "netdiag_source_host": "Source Host",
+    "netdiag_source_pantau": "Pantau (this server)",
     "netdiag_target_mode": "Probe Target",
     "netdiag_target_inter_host": "Inter-Host",
     "netdiag_target_custom": "Internet / Custom Target",
@@ -9500,6 +9501,7 @@ const I18N = {
     "netdiag_title": "Diagnostik Jaringan",
     "tab_netdiag": "Diagnostik Jaringan",
     "netdiag_source_host": "Host Sumber",
+    "netdiag_source_pantau": "Pantau (server ini)",
     "netdiag_target_mode": "Target Probe",
     "netdiag_target_inter_host": "Antar-Host",
     "netdiag_target_custom": "Internet / Target Kustom",
@@ -21774,7 +21776,7 @@ function renderNetDiagUI(container, contextPrefix, defaultSourceId, isSourceLock
               <input type="hidden" id="${cid}_sourceHost" value="${activeSourceId || ''}" />
             ` : `
               <select id="${cid}_sourceHost" class="input" style="height: 38px; box-sizing: border-box; width: 100%;" onchange="onNetDiagSourceChange('${cid}')">
-                ${availableSourceHosts.length === 0 ? `<option value="">-- No Online Hosts --</option>` : ''}
+                <option value="local" ${activeSourceId === 'local' ? 'selected' : ''}>${t('netdiag_source_pantau')}</option>
                 ${availableSourceHosts.map(h => `
                   <option value="${h.id}" ${h.id === activeSourceId ? 'selected' : ''}>
                     ${escapeHtml(h.name)} (${escapeHtml(h.host)})
@@ -22026,8 +22028,10 @@ function setNetDiagTool(cid, tool) {
 
 function runNetDiag(cid) {
   const sourceEl = document.getElementById(`${cid}_sourceHost`);
-  const sourceId = sourceEl ? parseInt(sourceEl.value, 10) : 0;
-  if (!sourceId) {
+  const sourceVal = sourceEl ? sourceEl.value : '';
+  const sourceLocal = sourceVal === 'local';
+  const sourceId = sourceLocal ? 0 : parseInt(sourceVal, 10);
+  if (!sourceLocal && !sourceId) {
     showToast('Please select a valid source host', 'error');
     return;
   }
@@ -22124,7 +22128,7 @@ function runNetDiag(cid) {
   }
 
   const queryParams = new URLSearchParams({
-    source_host_id: sourceId,
+    ...(sourceLocal ? { source: 'local' } : { source_host_id: sourceId }),
     type: currentNetDiagTool,
     target_type: currentNetDiagTargetMode === 'inter_host' ? 'host' : 'custom',
     target_host_id: targetHostId,
