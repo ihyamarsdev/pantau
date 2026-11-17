@@ -200,7 +200,7 @@ func (ins *Inspector) InspectHostWithTimeout(hostID int64, timeout time.Duration
 		summary := "Failed to scrape system metrics"
 		details := err.Error()
 		if ctx.Err() == context.DeadlineExceeded {
-			status = "down"
+			// The SSH connection was established, so the Host is up; the inspection budget ran out.
 			summary = fmt.Sprintf("Inspection timed out after %v", timeout)
 			details = "Inspection cancelled: context deadline exceeded"
 		}
@@ -230,14 +230,11 @@ func (ins *Inspector) InspectHostWithTimeout(hostID int64, timeout time.Duration
 		summary := "Error evaluating desired state rules"
 		details := err.Error()
 		if ctx.Err() == context.DeadlineExceeded {
-			status = "down"
+			// Connected already: a blown inspection budget is a degraded run, not a dead Host.
 			summary = fmt.Sprintf("Inspection timed out after %v", timeout)
 			details = "Inspection cancelled: context deadline exceeded"
 		}
 		host.Status = "degraded"
-		if status == "down" {
-			host.Status = "down"
-		}
 		host.LastDurationMs = duration
 		_ = ins.db.UpdateHostInspection(host)
 		_ = ins.db.RecordInspectionRun(&store.InspectionRun{

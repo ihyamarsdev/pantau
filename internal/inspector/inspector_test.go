@@ -159,8 +159,47 @@ func TestInspectHost_TimeoutAbortsRunner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if h.Status != "down" && h.Status != "degraded" {
-		t.Fatalf("expected host status 'down' or 'degraded', got %q", h.Status)
+	if h.Status != "degraded" {
+		t.Fatalf("a host that answered SSH must stay reachable on a blown budget, got status %q", h.Status)
+	}
+}
+
+func TestInspectHost_NetworkPathFailureKeepsLastState(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "pantau-ins-path-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	hostID, err := db.CreateHost(&store.Host{Name: "Tunnel Host", Host: "100.100.20.7", Port: 22, User: "root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A tunnel that cannot reach the peer is a dead path, not a dead Host.
+	factory := func(sshrunner.Target) (sshrunner.Runner, error) {
+		return nil, fmt.Errorf("%w: no route to host", sshrunner.ErrNetworkUnavailable)
+	}
+
+	if err := New(db, factory, nil).InspectHost(hostID); err == nil {
+		t.Fatal("expected the inspection to fail")
+	}
+
+	h, err := db.GetHost(hostID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.Status != "stale" {
+		t.Fatalf("expected status 'stale' for a path failure, got %q", h.Status)
+	}
+	if !strings.Contains(h.LifecycleNotes, "Network path unavailable") {
+		t.Fatalf("expected the notes to name the path, got %q", h.LifecycleNotes)
 	}
 }
 

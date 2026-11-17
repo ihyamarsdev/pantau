@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/pkg/sftp"
@@ -196,17 +197,41 @@ func dialTCP(addr string, path *vpnnet.Path, timeout time.Duration) (net.Conn, e
 		defer cancel()
 		return path.DialContext(ctx, "tcp", dialAddr)
 	}
-	for range 4 {
+	conn, err := dialRetry(dial, attempt, path != nil)
+	if err != nil && path != nil && (isTimeoutErr(err) || isRouteErr(err)) {
+		// Reaching the peer is the tunnel's job: an unreachable or silent peer is a dead path, not a dead Host.
+		return nil, fmt.Errorf("%w: %v", ErrNetworkUnavailable, err)
+	}
+	return conn, err
+}
+
+// dialRetry tries a dial up to 4 times. Timeouts are retried on a fresh connection; over a tunnel a
+// route-level error is too, because a mesh VPN answers "no route to host" while a peer is still forming.
+func dialRetry(dial func(time.Duration) (net.Conn, error), attempt time.Duration, tunnel bool) (net.Conn, error) {
+	var err error
+	for i := range 4 {
 		var conn net.Conn
 		if conn, err = dial(attempt); err == nil {
 			return conn, nil
 		}
-		var ne net.Error
-		if !errors.As(err, &ne) || !ne.Timeout() {
+		if !isTimeoutErr(err) && !(tunnel && isRouteErr(err)) {
 			return nil, err
+		}
+		if i < 3 && tunnel && isRouteErr(err) {
+			time.Sleep(750 * time.Millisecond) // the attempt returned instantly; let the peer finish connecting
 		}
 	}
 	return nil, err
+}
+
+func isTimeoutErr(err error) bool {
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
+}
+
+// isRouteErr matches the route-level errors a tunnel returns when it cannot deliver packets to the peer.
+func isRouteErr(err error) bool {
+	return errors.Is(err, syscall.EHOSTUNREACH) || errors.Is(err, syscall.ENETUNREACH)
 }
 
 // configureLegacyCompatibleSSH applies a comprehensive set of key exchanges, ciphers, and host key algorithms

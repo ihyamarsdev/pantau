@@ -14253,9 +14253,9 @@ async function loadAndDisplayInspectionRuns(hostID, filter = 'all') {
       badgeClass = 'badge-down';
       badgeText = run.status.toUpperCase();
       borderColor = 'var(--danger)';
-    } else if (run.status === 'degraded') {
+    } else if (run.status === 'degraded' || run.status === 'stale') {
       badgeClass = 'badge-warning';
-      badgeText = 'DEGRADED';
+      badgeText = run.status.toUpperCase();
       borderColor = 'var(--warning)';
     }
 
