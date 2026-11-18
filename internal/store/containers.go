@@ -42,3 +42,22 @@ func (d *DB) ReplaceHostContainers(hostID int64, cs []HostContainer) error {
 	}
 	return tx.Commit()
 }
+
+// ListHostContainers returns the containers last seen on one host, ordered by name.
+// Used by the lazy topology host-detail endpoint, never by the global graph.
+func (d *DB) ListHostContainers(hostID int64) ([]HostContainer, error) {
+	rows, err := d.Query(`SELECT host_id, name, image, state, seen_at FROM host_containers WHERE host_id = ? ORDER BY name`, hostID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []HostContainer
+	for rows.Next() {
+		var c HostContainer
+		if err := rows.Scan(&c.HostID, &c.Name, &c.Image, &c.State, &c.SeenAt); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}

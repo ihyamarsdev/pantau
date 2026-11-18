@@ -1,0 +1,97 @@
+/* Live Fleet Topology Map — hybrid CSS-grid cards + one SVG line overlay.
+ * Uses ADR-0039 tokens only; all selectors tp- prefixed, no external assets. */
+#topologyModal .tp-modal-content { display: flex; flex-direction: column; overflow: hidden; }
+
+.tp-header { gap: 12px; }
+.tp-title-group { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tp-title { margin: 0; font-size: var(--fs-md); font-weight: 600; }
+.tp-subtitle { font-size: var(--fs-xs); color: var(--text-muted); white-space: nowrap; }
+.tp-header-actions { display: flex; align-items: center; gap: 6px; }
+.tp-count { font-size: var(--fs-xs); color: var(--text-faint); margin-left: 4px; white-space: nowrap; }
+
+.tp-live-pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: var(--radius-full); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; }
+.tp-live-pill .tp-live-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.tp-live-pill.tp-live { color: var(--success); background: var(--success-soft); }
+.tp-live-pill.tp-live .tp-live-dot { animation: tpPulse 2s infinite ease-in-out; }
+.tp-live-pill.tp-reconnecting { color: var(--warning); background: var(--warning-soft); }
+.tp-live-pill.tp-offline { color: var(--text-muted); background: var(--hover); }
+
+.tp-toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--card-border); flex-shrink: 0; flex-wrap: wrap; }
+.tp-search { flex: 1; min-width: 160px; max-width: 300px; }
+.tp-select { max-width: 170px; }
+
+.tp-body { display: flex; flex: 1; min-height: 0; position: relative; }
+.tp-map { position: relative; flex: 1; min-width: 0; overflow: auto; background: var(--bg); }
+
+/* Single SVG overlay: never intercepts pointer events, recalculated on resize/scroll/filter only. */
+.tp-lines { position: absolute; inset: 0; pointer-events: none; z-index: 1; overflow: visible; }
+.tp-line { fill: none; stroke: var(--border-strong); stroke-width: 1.5; }
+.tp-line-vpn { stroke: var(--info); }
+.tp-line-tunnel { stroke: var(--accent-text); }
+.tp-line-cluster { stroke: var(--warning); }
+.tp-line-inactive { stroke: var(--danger); opacity: 0.4; stroke-dasharray: 4 6; }
+/* Flow animation ONLY on paths connected to an alerting node. */
+.tp-line-alert { stroke: var(--warning); stroke-width: 2; stroke-dasharray: 6 8; animation: tpFlow 1.1s linear infinite; }
+
+.tp-columns { position: relative; z-index: 2; display: grid; grid-template-columns: repeat(3, minmax(220px, 1fr)); gap: 24px; align-items: start; padding: 20px; min-height: 100%; }
+.tp-column { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.tp-column-title { font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); padding: 0 2px 6px; border-bottom: 1px solid var(--card-border); }
+.tp-column-nodes { display: flex; flex-direction: column; gap: 10px; }
+
+.tp-card { --tp-status: var(--text-muted); position: relative; background: var(--surface-2); border: 1px solid var(--card-border); border-radius: var(--radius); padding: 10px 12px; cursor: pointer; transition: border-color 0.15s var(--ease), background 0.15s var(--ease); }
+.tp-card:hover, .tp-card:focus-visible { border-color: var(--border-strong); background: var(--surface-3); outline: none; }
+.tp-card.tp-selected { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.tp-status-healthy { --tp-status: var(--success); }
+.tp-status-degraded { --tp-status: var(--warning); }
+.tp-status-down { --tp-status: var(--danger); }
+.tp-status-unknown { --tp-status: var(--text-muted); }
+
+.tp-card-top { display: flex; align-items: center; gap: 7px; }
+.tp-card-icon { color: var(--tp-status); display: inline-flex; }
+.tp-card-name { font-size: var(--fs-sm); font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-alert-badge { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--radius-full); background: var(--danger-soft); color: var(--danger); font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.tp-card-meta { font-size: var(--fs-xs); color: var(--text-muted); font-family: var(--font-mono); margin: 5px 0 0 23px; min-height: 12px; }
+.tp-card-foot { display: flex; align-items: center; gap: 6px; margin: 8px 0 0 23px; font-size: var(--fs-xs); color: var(--text-muted); }
+.tp-status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--tp-status); flex: none; }
+.tp-card-group { margin-left: auto; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Pulse/flow only for alerting nodes and on hover focus — never a global loop. */
+.tp-card:has(.tp-alert-badge) .tp-status-dot { animation: tpPulse 1.4s infinite ease-in-out; }
+.tp-card:hover .tp-status-dot, .tp-card:focus-visible .tp-status-dot { animation: tpPulse 1.6s infinite ease-in-out; }
+.tp-card.tp-flash { border-color: var(--accent-text); background: var(--accent-soft); }
+@keyframes tpPulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.8); } }
+@keyframes tpFlow { to { stroke-dashoffset: -28; } }
+
+.tp-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 32px; text-align: center; color: var(--text-muted); font-size: var(--fs-sm); z-index: 3; }
+.tp-empty[hidden] { display: none; }
+
+/* Inspection side drawer */
+.tp-drawer { width: 280px; flex-shrink: 0; border-left: 1px solid var(--card-border); background: var(--card-bg); overflow-y: auto; display: flex; flex-direction: column; }
+.tp-drawer[hidden] { display: none; }
+.tp-drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 14px 10px; border-bottom: 1px solid var(--card-border); }
+.tp-drawer-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tp-drawer-title strong { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; background: var(--tp-status, var(--text-muted)); }
+.tp-drawer-body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.tp-drawer-kind { align-self: flex-start; text-transform: capitalize; }
+.tp-drawer-summary { margin: 0; font-size: var(--fs-xs); color: var(--text-muted); }
+.tp-drawer-actions { display: flex; flex-direction: column; gap: 6px; }
+.tp-drawer-actions .btn { justify-content: flex-start; }
+.tp-drawer-note { margin: 0; font-size: var(--fs-xs); color: var(--text-faint); }
+.tp-detail { border-top: 1px solid var(--card-border); padding-top: 10px; font-size: var(--fs-xs); color: var(--text-muted); }
+.tp-detail-section + .tp-detail-section { margin-top: 12px; }
+.tp-detail-title { font-weight: 600; color: var(--text); margin-bottom: 6px; }
+.tp-detail-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.tp-detail-name { color: var(--text); font-family: var(--font-mono); }
+.tp-detail-sub { color: var(--text-faint); margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 900px) {
+  .tp-columns { grid-template-columns: 1fr; }
+  .tp-drawer { position: absolute; inset: auto 0 0 0; width: 100%; max-height: 50%; border-left: none; border-top: 1px solid var(--card-border); z-index: 4; }
+  .tp-subtitle { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tp-line-alert, .tp-card:has(.tp-alert-badge) .tp-status-dot,
+  .tp-card:hover .tp-status-dot, .tp-live-pill.tp-live .tp-live-dot { animation: none !important; }
+}

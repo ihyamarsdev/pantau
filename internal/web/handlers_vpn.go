@@ -421,6 +421,7 @@ func (s *Server) handleVPNNetworkCreate(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error()})
 		return
 	}
+	s.invalidateTopology()
 	writeJSON(w, http.StatusCreated, map[string]int64{"id": id})
 }
 
@@ -460,6 +461,7 @@ func (s *Server) handleVPNNetworkUpdate(w http.ResponseWriter, r *http.Request, 
 	if s.vpnMgr != nil {
 		s.vpnMgr.Invalidate(id)
 	}
+	s.invalidateTopology()
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -494,6 +496,7 @@ func (s *Server) handleVPNNetworkDelete(w http.ResponseWriter, r *http.Request, 
 	if s.vpnMgr != nil {
 		s.vpnMgr.Forget(id)
 	}
+	s.invalidateTopology()
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -517,6 +520,7 @@ func (s *Server) handleVPNNetworkAction(w http.ResponseWriter, r *http.Request, 
 			writeJSON(w, http.StatusBadGateway, map[string]interface{}{"error": err.Error(), "status": st})
 			return
 		}
+		s.invalidateTopology()
 		writeJSON(w, http.StatusOK, st)
 		return
 	}
@@ -524,6 +528,7 @@ func (s *Server) handleVPNNetworkAction(w http.ResponseWriter, r *http.Request, 
 		writeJSON(w, http.StatusBadGateway, map[string]interface{}{"error": err.Error()})
 		return
 	}
+	s.invalidateTopology()
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

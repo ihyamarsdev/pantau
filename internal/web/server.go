@@ -42,6 +42,7 @@ import (
 	"pantau/internal/snapshot"
 	"pantau/internal/sshrunner"
 	"pantau/internal/store"
+	"pantau/internal/topology"
 	"pantau/internal/transfer"
 	"pantau/internal/updater"
 	"pantau/internal/vpnnet"
@@ -128,6 +129,7 @@ type Server struct {
 	gitProtocols      string // GIT_ALLOW_PROTOCOL for repository fetch/push; "" = https:ssh (tests: file)
 	repoClone         func(ctx context.Context, g ansible.GitSource, dir string, log io.Writer) (branch, sha string, err error)
 	repoJobs          repoJobSet
+	topologyCache     *topology.Cache
 }
 
 func (s *Server) prepareHTML(raw []byte) {
@@ -166,6 +168,7 @@ func NewServer(db *store.DB, ins *inspector.Inspector, disp *notify.Dispatcher) 
 		gitEditCommit:  ansible.CommitAndPush,
 	}
 	if db != nil {
+		s.topologyCache = topology.NewCache(db, topologyCacheTTL)
 		_, _ = db.MarkAnsibleRunsInterrupted()
 		s.ansibleMgr = NewAnsibleRunManager(db, s.ansibleRun)
 		_, _ = db.MarkAnsibleAdhocRunsInterrupted()
@@ -313,6 +316,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/app/scanprogress.css", serveAppBundle("scanprogress", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/dockerprogress.js", serveAppBundle("dockerprogress", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/dockerprogress.css", serveAppBundle("dockerprogress", ".css", "text/css; charset=utf-8"))
+	s.mux.HandleFunc("/app/topology.js", serveAppBundle("topology", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/topology.css", serveAppBundle("topology", ".css", "text/css; charset=utf-8"))
 
 	// Vendor static assets (airgapped / local cache)
 	vendorHandler := http.StripPrefix("/vendor/", http.FileServer(http.FS(vendorFS())))
@@ -477,6 +482,9 @@ func (s *Server) routes() {
 
 	// Live Event Stream (Activity Console)
 	s.mux.HandleFunc("/api/logs/stream", s.authMiddleware(s.handleLogsStream))
+	// Live Fleet Topology graph (read-only projection of stored inventory)
+	s.mux.HandleFunc("/api/topology", s.authMiddleware(s.handleTopology))
+	s.mux.HandleFunc("/api/topology/host", s.authMiddleware(s.handleTopologyHost))
 
 	// Network Diagnostics (ADR Network Diagnostic)
 	s.mux.HandleFunc("/api/netdiag/stream", s.authMiddleware(s.handleNetDiagStream))
@@ -1100,6 +1108,7 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.ID = id
+		s.invalidateTopology()
 		redactHost(&h)
 		writeJSON(w, http.StatusCreated, h)
 	default:
@@ -1332,6 +1341,7 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+			s.invalidateTopology()
 			if s.inspector != nil {
 				_ = s.inspector.RecalculateHostLifecycle(hostID)
 			}
@@ -1343,6 +1353,7 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+			s.invalidateTopology()
 			writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

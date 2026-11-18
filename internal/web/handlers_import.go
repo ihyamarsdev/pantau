@@ -243,6 +243,7 @@ func (s *Server) handleHostImportCommit(w http.ResponseWriter, r *http.Request) 
 		endpoints[key] = h.Name
 		created = append(created, h)
 	}
+	s.invalidateTopology()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"created": created, "skipped": skipped})
 }
