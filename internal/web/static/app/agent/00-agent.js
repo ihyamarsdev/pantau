@@ -500,6 +500,17 @@
         <div class="form-group"><label class="form-label" for="agModel">${esc(t('ag_s_model'))}</label>
           <input type="text" id="agModel" value="${esc(cfg.model || '')}" placeholder="gpt-4o">
           <span class="form-hint">${esc(t('ag_s_model_hint'))}</span></div>
+        <div class="form-group"><label class="form-label">${esc(t('ag_s_triage_enable', 'Proactive AI Auto-Triage'))}</label>
+          <label style="display:flex;gap:8px;cursor:pointer;font-size:var(--fs-sm);"><input type="checkbox" id="agTriageEnabled" style="width:auto" ${cfg.triage_enabled ? 'checked' : ''}> ${esc(t('ag_s_triage_hint', 'Diagnose obvious failures locally (0 tokens) and use one short LLM call for the rest'))}</label></div>
+        <div class="form-group"><label class="form-label" for="agTriageModel">${esc(t('ag_s_triage_model', 'Lightweight triage model (optional)'))}</label>
+          <input type="text" id="agTriageModel" value="${esc(cfg.triage_model || '')}" placeholder="${esc(cfg.model || 'uses primary model')}">
+          <span class="form-hint">${esc(t('ag_s_triage_model_hint', 'Empty uses the primary agent model'))}</span></div>
+        <div class="form-group"><label class="form-label" for="agTriageBudget">${esc(t('ag_s_triage_budget', 'Daily triage token budget'))}</label>
+          <input type="number" id="agTriageBudget" min="0" value="${Number(cfg.triage_daily_budget) || 0}">
+          <span class="form-hint">${esc(t('ag_s_triage_budget_hint', 'Global cap across all auto-triage calls per day'))}</span></div>
+        <div class="form-group"><label class="form-label" for="agBriefingTime">${esc(t('ag_s_briefing_time', 'Daily briefing time (HH:MM, optional)'))}</label>
+          <input type="text" id="agBriefingTime" value="${esc(cfg.briefing_time || '')}" placeholder="08:00">
+          <span class="form-hint">${esc(t('ag_s_briefing_hint', 'Delta-only briefing of the last 24 hours; empty disables the schedule'))}</span></div>
         <div class="form-group"><label class="form-label">${esc(t('ag_s_approval'))}</label>
           <label style="display:flex;gap:8px;cursor:pointer;font-size:var(--fs-sm);"><input type="radio" name="agAppr" value="ask" style="width:auto" ${cfg.approval !== 'auto' ? 'checked' : ''}> ${esc(t('ag_s_ask'))}</label>
           <label style="display:flex;gap:8px;cursor:pointer;font-size:var(--fs-sm);margin-top:4px;"><input type="radio" name="agAppr" value="auto" style="width:auto" ${cfg.approval === 'auto' ? 'checked' : ''}> ${esc(t('ag_s_auto'))}</label></div>
@@ -537,7 +548,11 @@
       base_url: $('agBaseUrl').value.trim(),
       model: $('agModel').value.trim(),
       approval: (document.querySelector('input[name="agAppr"]:checked') || {}).value || 'ask',
-      soul: $('agSoul').value
+      soul: $('agSoul').value,
+      triage_enabled: $('agTriageEnabled').checked,
+      triage_model: $('agTriageModel').value.trim(),
+      triage_daily_budget: Number($('agTriageBudget').value) || 0,
+      briefing_time: $('agBriefingTime').value.trim()
     };
     const key = $('agKey').value;
     if (key !== '') payload.api_key = key; // empty keeps the stored key

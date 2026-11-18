@@ -192,11 +192,24 @@ func (ins *Inspector) evaluateDesiredRules(h *store.Host, runner sshrunner.Runne
 				Message:   inc.Summary,
 				RootCause: rootCause,
 			}
-			_, _ = ins.db.CreateAlert(alt)
+			alertID, _ := ins.db.CreateAlert(alt)
 
 			if ins.notifier != nil {
 				ins.notifier.SendAlert(h, &rule, inc.Summary, rootCause)
 			}
+			// ponytail: non-blocking auto-triage; the inspection never waits for the LLM.
+			if ins.triage != nil && alertID > 0 {
+				ins.triage.Submit(TriageJob{
+					AlertID:   alertID,
+					HostID:    h.ID,
+					HostName:  h.Name,
+					AlertType: rule.Kind,
+					Target:    rule.Target,
+					RootCause: rootCause,
+					Logs:      details,
+				})
+			}
+
 		} else if status == "ok" && prevStatus == "drift" {
 			// Drift resolved
 			inc := &store.Incident{

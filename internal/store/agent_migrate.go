@@ -32,3 +32,48 @@ func (d *DB) migrateAgentSettings() error {
 	}
 	return nil
 }
+
+// migrateAgentTriage creates the tables for the token-efficient proactive triage
+// worker and the delta-only daily briefing. Idempotent: CREATE TABLE IF NOT EXISTS
+// and a unique signature/day key make a second run a no-op.
+func (d *DB) migrateAgentTriage() error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS agent_triage (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		signature TEXT NOT NULL,
+		alert_id INTEGER NOT NULL DEFAULT 0,
+		host_id INTEGER NOT NULL DEFAULT 0,
+		alert_type TEXT NOT NULL DEFAULT '',
+		unit TEXT NOT NULL DEFAULT '',
+		source TEXT NOT NULL DEFAULT 'llm',
+		root_cause TEXT NOT NULL DEFAULT '',
+		impact TEXT NOT NULL DEFAULT '',
+		remediation TEXT NOT NULL DEFAULT '',
+		remediation_action TEXT NOT NULL DEFAULT '',
+		tokens_used INTEGER NOT NULL DEFAULT 0,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_agent_triage_signature ON agent_triage(signature, created_at);
+	CREATE INDEX IF NOT EXISTS idx_agent_triage_alert ON agent_triage(alert_id, id DESC);
+
+	CREATE TABLE IF NOT EXISTS agent_briefing (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		day TEXT NOT NULL UNIQUE,
+		summary TEXT NOT NULL,
+		anomaly_count INTEGER NOT NULL DEFAULT 0,
+		items_json TEXT NOT NULL DEFAULT '[]',
+		tokens_used INTEGER NOT NULL DEFAULT 0,
+		generated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS agent_triage_budget (
+		day TEXT NOT NULL PRIMARY KEY,
+		tokens_used INTEGER NOT NULL DEFAULT 0
+	);
+	`
+	if _, err := d.Exec(schema); err != nil {
+		return err
+	}
+	_ = d.alterAddColumn("agent_triage", "unit", "TEXT NOT NULL DEFAULT ''")
+	return nil
+}

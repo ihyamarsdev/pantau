@@ -460,3 +460,69 @@ test('agent: multi-step troubleshooting narrows tools by page, streams telemetry
     await deleteHosts(browser, ['e2e-troubleshoot']);
   }
 });
+
+// --- Proactive AI Auto-Triage & Daily Briefing (ADR 0082) -------------------
+
+test('agent: auto-triage settings persist and the daily briefing card shows an all-nominal summary', async ({ app, screen, browser }) => {
+  await app.open('/');
+  await initApp(screen, browser);
+
+  // Settings -> AI Agent exposes the token controls.
+  await browser.evaluate(() => { (window as unknown as PageGlobals).openSettingsModal('agent'); return null; });
+  await expect(browser.locator('#agTriageEnabled')).toBeVisible();
+  await browser.locator('#agTriageEnabled').check();
+  await browser.locator('#agTriageModel').fill('gpt-4o-mini');
+  await browser.locator('#agTriageBudget').fill('2500');
+  await browser.locator('#agBriefingTime').fill('08:30');
+  await browser.locator('#agSave').click();
+
+  // The settings round-trip keeps the lightweight model, budget and schedule.
+  const cfg = await browser.evaluate(async () => (await (await fetch('/api/agent/settings')).json()) as Record<string, unknown>);
+  expect(cfg.triage_enabled).toBe(true);
+  expect(cfg.triage_model).toBe('gpt-4o-mini');
+  expect(cfg.triage_daily_budget).toBe(2500);
+  expect(cfg.briefing_time).toBe('08:30');
+  await browser.evaluate(() => { (window as unknown as PageGlobals).closeModal('settingsModal'); return null; });
+
+  // A fresh fleet has no anomalies: the briefing is generated locally (0 tokens).
+  await browser.evaluate(async () => { await fetch('/api/agent/briefing/generate', { method: 'POST' }); return null; });
+  await browser.evaluate(async () => { await (window as unknown as { loadDailyBriefing(): Promise<void> }).loadDailyBriefing(); return null; });
+  await expect(browser.locator('#dailyBriefingCard')).toContainText('All systems nominal');
+  await expect(browser.locator('#dailyBriefingCard')).toContainText('Daily Briefing');
+});
+
+test('agent: an OOM alert shows a zero-token fast-path diagnosis with a gated remediation button', async ({ app, screen, browser }) => {
+  await app.open('/');
+  await initApp(screen, browser);
+
+  // The alert and its diagnosis are served in the browser: no host, SSH or LLM is needed.
+  await browser.route('**/api/alerts', async (route) => {
+    await route.fulfill({ json: [{
+      id: 991, host_id: 1, host_name: 'redis-host', level: 'critical',
+      message: "container 'redis' is not running (exit 137)", root_cause: 'container was OOMKilled (exit 137)',
+      acknowledged: false, created_at: new Date().toISOString()
+    }] });
+  });
+  await browser.route('**/api/agent/triage*', async (route) => {
+    await route.fulfill({ json: {
+      id: 1, alert_id: 991, host_id: 1, alert_type: 'container', unit: 'redis',
+      source: 'fast_path', root_cause: 'Process was OOM-killed (exit 137).',
+      impact: 'The affected container stopped.', remediation: 'Restart the container and inspect its memory limit.',
+      remediation_action: 'docker_restart', tokens_used: 0
+    } });
+  });
+
+  await browser.evaluate(async () => { await (window as unknown as { loadAlerts(): Promise<void> }).loadAlerts(); return null; });
+  await browser.locator('#btnToggleAlertPanel').click();
+  await expect(browser.locator('.alert-ai-diag')).toContainText('AI Auto-Diagnosis');
+  await expect(browser.locator('.alert-ai-source')).toContainText('FAST_PATH');
+  // The diagnosis body lives in a collapsed <details>; open it to reveal the text.
+  await browser.locator('.alert-ai-diag summary').click();
+  await expect(browser.locator('.alert-ai-body')).toContainText('OOM-killed');
+
+  // Clicking remediation opens the human-in-the-loop confirmation; cancelling runs nothing.
+  await browser.locator('.alert-ai-diag button').click();
+  await expect(browser.locator('#confirmModal')).toBeVisible();
+  await browser.locator('#confirmModal').getByRole('button', 'Cancel').click();
+  await expect(browser.locator('#confirmModal')).toBeHidden();
+});

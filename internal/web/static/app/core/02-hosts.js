@@ -709,6 +709,9 @@ function toggleAlertOverlay(e) {
   if (e) e.stopPropagation();
   S.alertOverlayOpen = !S.alertOverlayOpen;
   renderAlertOverlayState();
+  if (S.alertOverlayOpen) {
+    (S.latestAlerts || []).forEach(a => { loadAlertTriage(a.id).then(changed => { if (changed) loadAlerts(); }); });
+  }
 }
 
 function closeAlertOverlay() {
@@ -728,6 +731,82 @@ function renderAlertOverlayState() {
   }
 }
 
+
+// Delta-only Daily Briefing card. Rendered from the persisted briefing; zero external libraries.
+async function loadDailyBriefing() {
+  const card = document.getElementById('dailyBriefingCard');
+  if (!card) return;
+  try {
+    const res = await fetch('/api/agent/briefing');
+    if (!res.ok) return;
+    const b = await res.json();
+    if (!b || !b.summary) return;
+    const anomalies = Number(b.anomaly_count) || 0;
+    card.style.display = 'flex';
+    card.innerHTML = `
+      <span class="briefing-icon">${svgIcon(anomalies ? 'triangle-alert' : 'circle-check', 'icon-md')}</span>
+      <div class="briefing-body">
+        <div class="briefing-title">${t('briefing_title', 'Daily Briefing')} <span class="briefing-count">${anomalies} ${t('briefing_anomalies', 'anomalies')}</span></div>
+        <div class="briefing-summary">${escapeHtml(b.summary)}</div>
+      </div>
+      <div class="briefing-actions">
+        <button class="btn btn-sm btn-ghost" onclick="generateDailyBriefing()" title="${t('briefing_refresh', 'Regenerate')}">${svgIcon('refresh-cw', 'icon-sm')}</button>
+      </div>`;
+  } catch (_) { /* briefing is optional */ }
+}
+
+async function generateDailyBriefing() {
+  const btn = document.querySelector('#dailyBriefingCard .briefing-actions button');
+  if (btn) btn.disabled = true;
+  try {
+    await fetch('/api/agent/briefing/generate', { method: 'POST' });
+    await loadDailyBriefing();
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+// AI auto-diagnosis results, keyed by alert id. Fetched lazily when the alert panel opens.
+S.alertTriage = S.alertTriage || {};
+
+async function loadAlertTriage(alertId) {
+  if (S.alertTriage[alertId]) return false;
+  try {
+    const res = await fetch('/api/agent/triage?alert_id=' + encodeURIComponent(alertId));
+    if (!res.ok) return false;
+    const d = await res.json();
+    if (d && d.root_cause) { S.alertTriage[alertId] = d; return true; }
+  } catch (_) { /* triage is best-effort */ }
+  return false;
+}
+
+// Human-in-the-loop remediation: mutating actions always ask for confirmation.
+async function applyTriageRemediation(alertId) {
+  const d = S.alertTriage[alertId];
+  if (!d || !d.remediation_action) return;
+  const isDocker = d.remediation_action === 'docker_restart';
+  const ok = await showConfirm({
+    title: t('triage_remediate_title', 'Apply AI remediation?'),
+    message: (isDocker ? t('triage_remediate_docker', 'Restart this container') : t('triage_remediate_service', 'Restart this service')) + ' — ' + (d.remediation || ''),
+    confirmText: t('triage_remediate_btn', 'Restart'),
+    danger: true
+  });
+  if (!ok) return;
+  const alert = (S.latestAlerts || []).find(a => a.id === alertId);
+  if (!alert || !alert.host_id) return;
+  const url = isDocker
+    ? '/api/hosts/' + alert.host_id + '/docker/action'
+    : '/api/hosts/' + alert.host_id + '/systemd/action';
+  const body = isDocker
+    ? JSON.stringify({ container: alert.target || '', action: 'restart' })
+    : JSON.stringify({ unit: d.unit || alert.target || '', action: 'restart' });
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+  if (res.ok) {
+    showToast(t('triage_remediate_done', 'Remediation applied'), 'success');
+    ackAlert(alertId);
+  } else {
+    showToast(t('triage_remediate_failed', 'Remediation failed'), 'error');
+  }
+}
 async function loadAlerts() {
   const res = await fetch('/api/alerts');
   if (!res.ok) return;
@@ -784,6 +863,19 @@ async function loadAlerts() {
                       <pre>${escapeHtml(a.root_cause)}</pre>
                     </details>
                   ` : ''}
+                  ${(() => {
+                    const d = S.alertTriage[a.id];
+                    if (!d) return `<details class="alert-ai-diag"><summary>${svgIcon('bot', 'icon-sm')} ${t('alert_ai_diag', 'AI Auto-Diagnosis')}</summary><div class="alert-ai-pending">${t('alert_ai_pending', 'Diagnosis pending…')}</div></details>`;
+                    return `<details class="alert-ai-diag">
+                      <summary>${svgIcon('bot', 'icon-sm')} ${t('alert_ai_diag', 'AI Auto-Diagnosis')} <span class="alert-ai-source">${escapeHtml(d.source || '')}</span></summary>
+                      <div class="alert-ai-body">
+                        <div><b>${t('alert_ai_root', 'Root cause')}:</b> ${escapeHtml(d.root_cause || '')}</div>
+                        <div><b>${t('alert_ai_impact', 'Impact')}:</b> ${escapeHtml(d.impact || '')}</div>
+                        <div><b>${t('alert_ai_fix', 'Remediation')}:</b> ${escapeHtml(d.remediation || '')}</div>
+                        ${d.remediation_action ? `<button class="btn btn-sm btn-warning" style="margin-top:6px;" onclick="applyTriageRemediation(${a.id})">${svgIcon('wrench', 'icon-sm')} ${t('alert_ai_apply', 'Apply remediation')}</button>` : ''}
+                      </div>
+                    </details>`;
+                  })()}
                 </div>
                 <div class="alert-overlay-item-actions">
                   ${a.host_id ? `<button class="btn btn-sm btn-ghost" style="font-size: var(--fs-xs); padding: 3px 8px; color: var(--accent-text);" onclick="openHostDetailFromAlert(${a.host_id})">${t('open_host', 'Open Host')}</button>` : ''}
@@ -1937,4 +2029,4 @@ function openTerminalForPath(targetPath) {
   openTerminalForHost(S.currentHost.id, null, true, customTitle, targetPath);
 }
 
-export { renderHosts, openHostGroupRename, saveHostGroupRename, groupHosts, getHostGroupsCollapsed, toggleHostGroupCollapsed, renderGridView, renderListView, fitHostList, setEngineStatus, updateFooterMetrics, loadVpnNetworkIndex, populateHostNetworkSelect, loadHosts, toggleAlertOverlay, closeAlertOverlay, renderAlertOverlayState, loadAlerts, ackAlert, ackAllAlerts, openHostDetailFromAlert, populateHostKeySelect, vpnBadge, loadVpnNetworks, saveVpnGate, vpnDriverField, openVpnNetworkModal, loadVpnInterfaces, renderVpnDriverFields, collectVpnConfig, saveVpnNetwork, deleteVpnNetwork, vpnNetworkUp, vpnNetworkDown, openVpnNetworkLog, onHostKeySelectChange, openAddHostModal, openEditHostModal, updateGroupSuggestions, saveHost, openCommissionDateModal, importFill, importReasonText, openImportHostsModal, importLoadFile, importRequestPreview, importParse, importReadServer, populateImportKeySelect, importBulkNetworkChanged, populateImportNetworkSelect, importInspectCreated, renderImportPreview, importNetworkPicked, importableBoxes, updateImportCount, importToggleAll, importSubmit, showImportGroupsStep, refreshImportGroupSuggestions, importSaveGroups, submitQuickCommissionDate, clearCommissionDate, showToast, showBusyToast, toggleDropdown, closeAllDropdowns, openInjectKeyModal, submitInjectKey, deleteHost, toggleHostSelectMode, toggleHostSelected, selectAllShownHosts, renderHostSelectBar, openBulkGroupModal, submitBulkGroup, deleteSelectedHosts, testHostSSH, inspectHost, applyHostDetailMaximizeState, toggleHostDetailMaximize, getHostActiveTab, setHostActiveTab, getHostFilesPath, setHostFilesPath, openTerminalForPath };
+export { renderHosts, openHostGroupRename, saveHostGroupRename, groupHosts, getHostGroupsCollapsed, toggleHostGroupCollapsed, renderGridView, renderListView, fitHostList, setEngineStatus, updateFooterMetrics, loadVpnNetworkIndex, populateHostNetworkSelect, loadHosts, toggleAlertOverlay, closeAlertOverlay, renderAlertOverlayState, loadAlerts, loadAlertTriage, applyTriageRemediation, loadDailyBriefing, generateDailyBriefing, ackAlert, ackAllAlerts, openHostDetailFromAlert, populateHostKeySelect, vpnBadge, loadVpnNetworks, saveVpnGate, vpnDriverField, openVpnNetworkModal, loadVpnInterfaces, renderVpnDriverFields, collectVpnConfig, saveVpnNetwork, deleteVpnNetwork, vpnNetworkUp, vpnNetworkDown, openVpnNetworkLog, onHostKeySelectChange, openAddHostModal, openEditHostModal, updateGroupSuggestions, saveHost, openCommissionDateModal, importFill, importReasonText, openImportHostsModal, importLoadFile, importRequestPreview, importParse, importReadServer, populateImportKeySelect, importBulkNetworkChanged, populateImportNetworkSelect, importInspectCreated, renderImportPreview, importNetworkPicked, importableBoxes, updateImportCount, importToggleAll, importSubmit, showImportGroupsStep, refreshImportGroupSuggestions, importSaveGroups, submitQuickCommissionDate, clearCommissionDate, showToast, showBusyToast, toggleDropdown, closeAllDropdowns, openInjectKeyModal, submitInjectKey, deleteHost, toggleHostSelectMode, toggleHostSelected, selectAllShownHosts, renderHostSelectBar, openBulkGroupModal, submitBulkGroup, deleteSelectedHosts, testHostSSH, inspectHost, applyHostDetailMaximizeState, toggleHostDetailMaximize, getHostActiveTab, setHostActiveTab, getHostFilesPath, setHostFilesPath, openTerminalForPath };

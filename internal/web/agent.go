@@ -78,13 +78,17 @@ type agentGrant struct {
 }
 
 type agentCfg struct {
-	Enabled  bool
-	Provider string // "", "anthropic" or "openai" (any OpenAI-compatible endpoint)
-	BaseURL  string // empty: the provider default
-	Key      string
-	Model    string
-	Approval string // ask | auto
-	Soul     string
+	Enabled       bool
+	Provider      string // "", "anthropic" or "openai" (any OpenAI-compatible endpoint)
+	BaseURL       string // empty: the provider default
+	Key           string
+	Model         string
+	Approval      string // ask | auto
+	Soul          string
+	TriageEnabled bool
+	TriageModel   string
+	TriageBudget  int
+	BriefingTime  string
 }
 
 func (s *Server) agentConfig() agentCfg {
@@ -105,6 +109,13 @@ func (s *Server) agentConfig() agentCfg {
 	} else {
 		c.Soul = defaultAgentSoul
 	}
+	c.TriageEnabled = get("agent_triage_enabled") != "0"
+	c.TriageModel = get("agent_triage_model")
+	c.TriageBudget = 10000
+	if v, err := strconv.Atoi(get("agent_triage_daily_budget")); err == nil && v >= 0 {
+		c.TriageBudget = v
+	}
+	c.BriefingTime = get("agent_briefing_time")
 	return c
 }
 
@@ -144,16 +155,22 @@ func (s *Server) handleAgentSettings(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"enabled": c.Enabled, "provider": c.Provider, "base_url": c.BaseURL, "api_key_set": c.Key != "",
 			"model": c.Model, "approval": c.Approval, "soul": c.Soul, "soul_is_default": c.Soul == defaultAgentSoul,
+			"triage_enabled": c.TriageEnabled, "triage_model": c.TriageModel,
+			"triage_daily_budget": c.TriageBudget, "briefing_time": c.BriefingTime,
 		})
 	case http.MethodPost:
 		var req struct {
-			Enabled  *bool   `json:"enabled"`
-			Provider *string `json:"provider"`
-			BaseURL  *string `json:"base_url"`
-			APIKey   *string `json:"api_key"` // nil or "" keeps the stored key
-			Model    *string `json:"model"`
-			Approval *string `json:"approval"`
-			Soul     *string `json:"soul"`
+			Enabled           *bool   `json:"enabled"`
+			Provider          *string `json:"provider"`
+			BaseURL           *string `json:"base_url"`
+			APIKey            *string `json:"api_key"` // nil or "" keeps the stored key
+			Model             *string `json:"model"`
+			Approval          *string `json:"approval"`
+			Soul              *string `json:"soul"`
+			TriageEnabled     *bool   `json:"triage_enabled"`
+			TriageModel       *string `json:"triage_model"`
+			TriageDailyBudget *int    `json:"triage_daily_budget"`
+			BriefingTime      *string `json:"briefing_time"`
 		}
 		if err := json.NewDecoder(io.LimitReader(r.Body, 256<<10)).Decode(&req); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
@@ -196,6 +213,29 @@ func (s *Server) handleAgentSettings(w http.ResponseWriter, r *http.Request) {
 				soul = ""
 			}
 			set["agent_soul"] = soul
+		}
+		if req.TriageEnabled != nil {
+			set["agent_triage_enabled"] = map[bool]string{true: "1", false: "0"}[*req.TriageEnabled]
+		}
+		if req.TriageModel != nil {
+			set["agent_triage_model"] = strings.TrimSpace(*req.TriageModel)
+		}
+		if req.TriageDailyBudget != nil {
+			b := *req.TriageDailyBudget
+			if b < 0 {
+				b = 0
+			}
+			set["agent_triage_daily_budget"] = strconv.Itoa(b)
+		}
+		if req.BriefingTime != nil {
+			tm := strings.TrimSpace(*req.BriefingTime)
+			if tm != "" {
+				if _, err := time.Parse("15:04", tm); err != nil {
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": "briefing time must be HH:MM"})
+					return
+				}
+			}
+			set["agent_briefing_time"] = tm
 		}
 		for k, v := range set {
 			_ = s.db.SetSetting(k, v)

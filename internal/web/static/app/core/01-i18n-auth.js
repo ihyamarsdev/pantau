@@ -65,6 +65,7 @@ function setLanguage(lang) {
   }
   loadHosts();
   if (typeof loadAlerts === 'function') loadAlerts();
+  if (typeof loadDailyBriefing === 'function') loadDailyBriefing();
   if (document.getElementById('transfersListModal') && document.getElementById('transfersListModal').classList.contains('open')) {
     loadTransfers();
   }
@@ -97,6 +98,7 @@ async function checkAuth() {
     loadInspectionSettings();
     loadHosts();
     loadAlerts();
+    if (typeof loadDailyBriefing === 'function') loadDailyBriefing();
     loadTransfers();
     setInterval(loadAlerts, 15000);
     setInterval(loadTransfers, 15000);

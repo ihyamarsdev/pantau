@@ -52,7 +52,7 @@ type Inspector struct {
 	drainInFlight         sync.Map
 	dockerSecInFlight     sync.Map
 	debouncer             *AlertDebouncer
-
+	triage                *TriageWorker
 	// sudoRetryAt remembers, per host, when passwordless sudo may be probed again after it failed, so a
 	// host that requires a sudo password logs at most one failed attempt per sudoRetryAfter.
 	sudoMu      sync.Mutex
@@ -68,8 +68,21 @@ func New(db *store.DB, factory sshrunner.RunnerFactory, notifier *notify.Dispatc
 		factory:   factory,
 		notifier:  notifier,
 		debouncer: NewAlertDebouncer(),
+		triage:    NewTriageWorker(db, nil),
 	}
 }
+
+// SetTriageWorker installs the proactive auto-triage worker and starts it.
+func (ins *Inspector) SetTriageWorker(ctx context.Context, w *TriageWorker) {
+	ins.triage = w
+	if w != nil {
+		go w.Start(ctx)
+	}
+}
+
+// TriageWorker returns the inspector's triage worker, for the web layer to
+// install its LLM client and settings reader.
+func (ins *Inspector) TriageWorker() *TriageWorker { return ins.triage }
 
 // PathResolver turns a Host's VPN network into a dial path; nil keeps every Host on the OS routing table.
 type PathResolver interface {

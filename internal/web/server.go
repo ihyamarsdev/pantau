@@ -112,6 +112,7 @@ type Server struct {
 	osv               *osv.Client
 	galaxy            *ansible.GalaxyClient
 	agent             agentState
+	briefing          *inspector.BriefingService
 	ansibleRun        func(ctx context.Context, spec ansible.RunSpec, log io.Writer) (int, error)
 	ansibleAvail      func() (string, string, error)
 	ansibleSync       func(ctx context.Context, g ansible.GitSource) (*ansible.GitSyncResult, error)
@@ -496,6 +497,7 @@ func (s *Server) routes() {
 	s.registerShortcutRoutes()
 	s.registerDatabaseRoutes()
 	s.registerAgentRoutes()
+	s.registerTriageRoutes()
 }
 
 func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {

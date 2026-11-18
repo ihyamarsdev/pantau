@@ -1670,6 +1670,32 @@ header {
   align-items: flex-start;
   gap: 12px;
 }
+
+/* AI Auto-Diagnosis accordion inside the floating alert overlay */
+.alert-ai-diag { margin-top: 6px; border-top: 1px dashed var(--card-border); padding-top: 6px; }
+.alert-ai-diag > summary { cursor: pointer; font-size: var(--fs-xs); color: var(--accent-text); display: inline-flex; align-items: center; gap: 5px; }
+.alert-ai-source { color: var(--text-muted); font-size: var(--fs-xs); text-transform: uppercase; }
+.alert-ai-body { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-xs); color: var(--text); line-height: 1.5; }
+.alert-ai-pending { color: var(--text-muted); font-size: var(--fs-xs); margin-top: 4px; }
+
+/* Daily Briefing card (delta-only, zero external libraries) */
+.briefing-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.briefing-card .briefing-icon { color: var(--accent); flex: 0 0 auto; }
+.briefing-card .briefing-body { flex: 1 1 auto; min-width: 0; }
+.briefing-card .briefing-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 6px; }
+.briefing-card .briefing-summary { font-size: var(--fs-xs); color: var(--text-muted); margin-top: 4px; line-height: 1.5; }
+.briefing-card .briefing-count { font-size: var(--fs-xs); color: var(--warning); }
+.briefing-card .briefing-actions { flex: 0 0 auto; display: flex; gap: 6px; align-items: center; }
 .alert-overlay-main {
   flex: 1;
   min-width: 0;
@@ -3879,6 +3905,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
   <div class="container">
     <div id="sectionHosts" class="app-section">
     <div id="alertBannerArea"></div>
+    <div id="dailyBriefingCard" class="briefing-card" style="display:none;"></div>
     <!-- New KPI Strip -->
     <div id="kpiStrip" class="kpi-strip"></div>
     <div id="domainShortcuts" class="dm-tiles"></div>
