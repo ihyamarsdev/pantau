@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -191,6 +192,7 @@ func TestTerminalPresetsAPI(t *testing.T) {
 
 func TestShellStaticHTML(t *testing.T) {
 	html := string(embeddedHTML)
+	ui := html + "\n" + coreJSSource(t)
 	requiredStrings := []string{
 		"btn-icon",
 		`data-i18n-title="transfers_title"`,
@@ -227,7 +229,7 @@ func TestShellStaticHTML(t *testing.T) {
 		".badge-warning",
 	}
 	for _, s := range requiredStrings {
-		if !strings.Contains(html, s) {
+		if !strings.Contains(ui, s) {
 			t.Errorf("expected embedded index.html to contain %q", s)
 		}
 	}
@@ -243,16 +245,24 @@ func TestShellStaticHTML(t *testing.T) {
 		}
 	}
 
-	// Validate JS syntax using node if available in PATH
+	// Validate every native ES module's syntax using node if available in PATH.
 	if nodePath, err := exec.LookPath("node"); err == nil && nodePath != "" {
-		start := strings.Index(html, "<script>")
-		end := strings.Index(html[start+1:], "</script>") + start + 1
-		if start != -1 && end > start {
-			jsCode := html[start+len("<script>") : end]
-			cmd := exec.Command(nodePath, "--check")
-			cmd.Stdin = strings.NewReader(jsCode)
+		entries, rerr := fs.ReadDir(embeddedFS, "static/app/core")
+		if rerr != nil {
+			t.Fatalf("read core modules: %v", rerr)
+		}
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".js") {
+				continue
+			}
+			raw, rerr := fs.ReadFile(embeddedFS, "static/app/core/"+e.Name())
+			if rerr != nil {
+				t.Fatalf("read core module %s: %v", e.Name(), rerr)
+			}
+			cmd := exec.Command(nodePath, "--input-type=module", "--check")
+			cmd.Stdin = strings.NewReader(string(raw))
 			if out, err := cmd.CombinedOutput(); err != nil {
-				t.Errorf("JavaScript syntax check failed: %v\nOutput: %s", err, string(out))
+				t.Errorf("module %s syntax check failed: %v\nOutput: %s", e.Name(), err, string(out))
 			}
 		}
 	}
@@ -390,6 +400,7 @@ func TestGlobalTerminalDockWebAssets(t *testing.T) {
 	}
 
 	body := w.Body.String()
+	ui := body + "\n" + coreJSSource(t)
 	requiredSnippets := []string{
 		"id=\"terminalDockModal\"",
 		"id=\"btnHeaderTerminal\"",
@@ -410,8 +421,8 @@ func TestGlobalTerminalDockWebAssets(t *testing.T) {
 	}
 
 	for _, s := range requiredSnippets {
-		if !strings.Contains(body, s) {
-			t.Errorf("expected index.html to contain %q", s)
+		if !strings.Contains(ui, s) {
+			t.Errorf("expected index.html or core modules to contain %q", s)
 		}
 	}
 
@@ -427,12 +438,12 @@ func TestGlobalTerminalDockWebAssets(t *testing.T) {
 	}
 
 	// 3. openTerminalForHost must auto-reconnect if inactive/disconnected
-	if !strings.Contains(body, "reconnectTabTerminal(existing.id)") {
+	if !strings.Contains(ui, "reconnectTabTerminal(existing.id)") {
 		t.Errorf("expected openTerminalForHost to reconnect existing disconnected tab")
 	}
 
 	// 4. renderTerminalTabsList must not shadow t() translation function with arrow parameter
-	if strings.Contains(body, "terminalTabs.map(t =>") {
+	if strings.Contains(ui, "terminalTabs.map(t =>") {
 		t.Errorf("terminalTabs.map parameter must not be 't' to avoid shadowing global t() translation function")
 	}
 
@@ -464,7 +475,7 @@ func TestGlobalTerminalDockWebAssets(t *testing.T) {
 	if !strings.Contains(body, "id=\"inspectBtnModal\"") {
 		t.Errorf("expected inspectBtnModal to be present in modal header")
 	}
-	if !strings.Contains(body, "btn-host-terminal") || !strings.Contains(body, "host-terminal-badge") {
+	if !strings.Contains(ui, "btn-host-terminal") || !strings.Contains(ui, "host-terminal-badge") {
 		t.Errorf("expected host cards to contain btn-host-terminal and host-terminal-badge")
 	}
 
@@ -478,16 +489,16 @@ func TestGlobalTerminalDockWebAssets(t *testing.T) {
 	if !strings.Contains(body, "data-i18n-placeholder=\"search_terminal_host_ph\"") {
 		t.Errorf("expected search_terminal_host_ph placeholder attribute on search input")
 	}
-	if !strings.Contains(body, `"search_terminal_host_ph": "Search host or IP..."`) {
+	if !strings.Contains(ui, `"search_terminal_host_ph": "Search host or IP..."`) {
 		t.Errorf("expected search_terminal_host_ph in English dictionary")
 	}
-	if !strings.Contains(body, `"search_terminal_host_ph": "Cari host atau IP..."`) {
+	if !strings.Contains(ui, `"search_terminal_host_ph": "Cari host atau IP..."`) {
 		t.Errorf("expected search_terminal_host_ph in Indonesian dictionary")
 	}
-	if !strings.Contains(body, "filterTerminalDropdownHosts") || !strings.Contains(body, "onTerminalHostSearchKeyDown") {
+	if !strings.Contains(ui, "filterTerminalDropdownHosts") || !strings.Contains(ui, "onTerminalHostSearchKeyDown") {
 		t.Errorf("expected filterTerminalDropdownHosts and onTerminalHostSearchKeyDown functions to be defined")
 	}
-	if !strings.Contains(body, "name.includes(q) || host.includes(q)") {
+	if !strings.Contains(ui, "name.includes(q) || host.includes(q)") {
 		t.Errorf("expected filter to match both host name and host IP/address")
 	}
 }

@@ -1,14 +1,14 @@
 package web
 
 import (
+	"io/fs"
 	"os/exec"
-	"regexp"
 	"strings"
 	"testing"
 )
 
 func TestCloudflareUIInIndexHTML(t *testing.T) {
-	html := string(embeddedHTML)
+	ui := uiSourceForTest(t)
 
 	// 1. Verify navigation entry in side panel
 	navHooks := []string{
@@ -18,7 +18,7 @@ func TestCloudflareUIInIndexHTML(t *testing.T) {
 		`data-i18n-title="nav_cloudflare"`,
 	}
 	for _, hook := range navHooks {
-		if !strings.Contains(html, hook) {
+		if !strings.Contains(ui, hook) {
 			t.Errorf("expected side panel nav hook %q in index.html", hook)
 		}
 	}
@@ -37,7 +37,7 @@ func TestCloudflareUIInIndexHTML(t *testing.T) {
 		`id="cfZonesEmpty"`,
 	}
 	for _, hook := range sectionHooks {
-		if !strings.Contains(html, hook) {
+		if !strings.Contains(ui, hook) {
 			t.Errorf("expected section element %q in index.html", hook)
 		}
 	}
@@ -79,7 +79,7 @@ func TestCloudflareUIInIndexHTML(t *testing.T) {
 		`id="cfAccountPermsGuide"`,
 	}
 	for _, hook := range modalHooks {
-		if !strings.Contains(html, hook) {
+		if !strings.Contains(ui, hook) {
 			t.Errorf("expected modal hook %q in index.html", hook)
 		}
 	}
@@ -93,7 +93,7 @@ func TestCloudflareUIInIndexHTML(t *testing.T) {
 		"/settings",
 	}
 	for _, p := range apiPaths {
-		if !strings.Contains(html, p) {
+		if !strings.Contains(ui, p) {
 			t.Errorf("expected API path %q in index.html", p)
 		}
 	}
@@ -144,13 +144,13 @@ func TestCloudflareUIInIndexHTML(t *testing.T) {
 	}
 
 	// Locate I18N dictionary sections
-	enIdx := strings.Index(html, "en: {")
-	idIdx := strings.Index(html, "id: {")
+	enIdx := strings.Index(ui, "en: {")
+	idIdx := strings.Index(ui, "id: {")
 	if enIdx == -1 || idIdx == -1 || idIdx <= enIdx {
 		t.Fatalf("could not locate both 'en: {' and 'id: {' in index.html")
 	}
-	enSection := html[enIdx:idIdx]
-	idSection := html[idIdx:]
+	enSection := ui[enIdx:idIdx]
+	idSection := ui[idIdx:]
 
 	for _, k := range requiredI18nKeys {
 		needle := `"` + k + `":`
@@ -192,24 +192,32 @@ func TestCloudflareUIInIndexHTML(t *testing.T) {
 		"async function updateCfZoneSetting",
 	}
 	for _, fn := range jsFunctions {
-		if !strings.Contains(html, fn) {
-			t.Errorf("expected JS function %q in index.html", fn)
+		if !strings.Contains(ui, fn) && !strings.Contains(coreJSSource(t), fn) {
+			t.Errorf("expected JS function %q in index.html or core modules", fn)
 		}
 	}
 
-	// 7. Extract inline JS and run node --check syntax verification if node is available
+	// 7. Syntax verification of every native ES module if node is available.
 	nodePath, err := exec.LookPath("node")
 	if err == nil && nodePath != "" {
-		re := regexp.MustCompile(`(?s)<script>(.*?)</script>`)
-		match := re.FindStringSubmatch(html)
-		if len(match) < 2 {
-			t.Fatalf("could not extract inline <script> from index.html")
+		entries, rerr := fs.ReadDir(embeddedFS, "static/app/core")
+		if rerr != nil {
+			t.Fatalf("read core modules: %v", rerr)
 		}
-		cmd := exec.Command(nodePath, "--check")
-		cmd.Stdin = strings.NewReader(match[1])
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("inline script syntax check failed (node --check): %v\nOutput:\n%s", err, string(out))
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".js") {
+				continue
+			}
+			raw, rerr := fs.ReadFile(embeddedFS, "static/app/core/"+e.Name())
+			if rerr != nil {
+				t.Fatalf("read core module %s: %v", e.Name(), rerr)
+			}
+			cmd := exec.Command(nodePath, "--input-type=module", "--check")
+			cmd.Stdin = strings.NewReader(string(raw))
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("module %s syntax check failed (node --check): %v\nOutput:\n%s", e.Name(), err, string(out))
+			}
 		}
 	}
 }

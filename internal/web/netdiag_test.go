@@ -87,6 +87,7 @@ func TestNetDiagUIInIndexHTML(t *testing.T) {
 	srv.ServeHTTP(w, req)
 
 	body := w.Body.String()
+	ui := body + "\n" + coreJSSource(t)
 
 	// 1. Check header button
 	if !strings.Contains(body, `id="btnHeaderNetDiag"`) {
@@ -104,14 +105,15 @@ func TestNetDiagUIInIndexHTML(t *testing.T) {
 	}
 
 	// 4. Check translations
-	if !strings.Contains(body, `"netdiag_title": "Network Diagnostics"`) {
+	if !strings.Contains(ui, `"netdiag_title": "Network Diagnostics"`) {
 		t.Errorf("expected EN netdiag_title translation")
 	}
-	if !strings.Contains(body, `"netdiag_title": "Diagnostik Jaringan"`) {
+	if !strings.Contains(ui, `"netdiag_title": "Diagnostik Jaringan"`) {
 		t.Errorf("expected ID netdiag_title translation")
 	}
 
-	// 5. Check JS functions
+	// 5. Check JS functions (now in native ES modules)
+	jsSrc := coreJSSource(t)
 	for _, fn := range []string{
 		"function openNetDiagModal",
 		"function renderNetDiagTab",
@@ -122,8 +124,8 @@ func TestNetDiagUIInIndexHTML(t *testing.T) {
 		"function renderPortResults",
 		"function renderDNSResults",
 	} {
-		if !strings.Contains(body, fn) {
-			t.Errorf("expected %s in index.html JavaScript", fn)
+		if !strings.Contains(jsSrc, fn) {
+			t.Errorf("expected %s in core modules", fn)
 		}
 	}
 
@@ -140,10 +142,10 @@ func TestNetDiagUIInIndexHTML(t *testing.T) {
 	}
 
 	// 7. Verify symmetrical layout alignment in renderNetDiagUI
-	if !strings.Contains(body, `height: 28px; display: flex; align-items: center; margin-bottom: 8px;`) {
+	if !strings.Contains(ui, `height: 28px; display: flex; align-items: center; margin-bottom: 8px;`) {
 		t.Errorf("expected aligned 28px header row for Source Host in renderNetDiagUI")
 	}
-	if !strings.Contains(body, `height: 28px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;`) {
+	if !strings.Contains(ui, `height: 28px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;`) {
 		t.Errorf("expected aligned 28px header row for Target Mode in renderNetDiagUI")
 	}
 }

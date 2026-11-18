@@ -6,7 +6,7 @@ import (
 )
 
 func TestHostComparisonUIInIndexHTML(t *testing.T) {
-	html := string(embeddedHTML)
+	html := uiSourceForTest(t)
 
 	// 1. Verify header button btnHeaderCompare exists with proper icon and onclick handler
 	if !strings.Contains(html, `id="btnHeaderCompare"`) {
@@ -95,9 +95,10 @@ func TestHostComparisonUIInIndexHTML(t *testing.T) {
 		"async function copyComparisonMarkdown",
 		"function renderHostCompareView",
 	}
+	ui := uiSourceForTest(t)
 	for _, fn := range jsFunctions {
-		if !strings.Contains(html, fn) {
-			t.Errorf("expected JS function %q in index.html", fn)
+		if !strings.Contains(ui, fn) {
+			t.Errorf("expected JS function %q in index.html or core modules", fn)
 		}
 	}
 
@@ -115,24 +116,23 @@ func TestHostComparisonUIInIndexHTML(t *testing.T) {
 }
 
 func TestCopyComparisonMarkdownClipboardInsecureContextFallback(t *testing.T) {
-	html := string(embeddedHTML)
+	ui := uiSourceForTest(t)
 
 	// In non-secure contexts (HTTP over LAN IP, e.g. http://192.168.x.x:8080),
 	// navigator.clipboard is undefined in all modern browsers.
 	// copyComparisonMarkdown must use copyTextToClipboard or provide execCommand fallback,
 	// and must NOT invoke navigator.clipboard.writeText without a null-check.
-	copyFnIdx := strings.Index(html, "function copyComparisonMarkdown")
+	copyFnIdx := strings.Index(ui, "function copyComparisonMarkdown")
 	if copyFnIdx == -1 {
-		t.Fatalf("function copyComparisonMarkdown not found in index.html")
+		t.Fatalf("function copyComparisonMarkdown not found in index.html or core modules")
 	}
 
 	// Extract the body of copyComparisonMarkdown up to next function
-	copyFnEnd := strings.Index(html[copyFnIdx:], "function renderHostCompareView")
+	copyFnEnd := strings.Index(ui[copyFnIdx:], "function renderHostCompareView")
 	if copyFnEnd == -1 {
-		copyFnEnd = len(html) - copyFnIdx
+		copyFnEnd = len(ui) - copyFnIdx
 	}
-	copyFnBody := html[copyFnIdx : copyFnIdx+copyFnEnd]
-
+	copyFnBody := ui[copyFnIdx : copyFnIdx+copyFnEnd]
 	if !strings.Contains(copyFnBody, "copyTextToClipboard") {
 		t.Errorf("copyComparisonMarkdown must use copyTextToClipboard to support non-HTTPS LAN access (execCommand fallback), but got: %s", copyFnBody)
 	}

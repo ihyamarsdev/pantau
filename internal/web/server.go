@@ -273,6 +273,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/docs", s.handleDocs)
 
 	// App bundles: first-party UI modules, concatenated from embedded static/app/<dir>
+	// Core UI modules: native ES modules served per-file so relative imports resolve.
+	s.mux.Handle("/app/core/", http.StripPrefix("/app/core/", http.HandlerFunc(serveCoreModules)))
 	s.mux.HandleFunc("/app/ansible.js", serveAppBundle("ansible", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/ansible.css", serveAppBundle("ansible", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/terraform.css", serveAppBundle("terraform", ".css", "text/css; charset=utf-8"))

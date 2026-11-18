@@ -41,7 +41,7 @@ func TestTerraformDrawerTabsRegistered(t *testing.T) {
 		t.Error("tfDirtyGuard not declared")
 	}
 	// /app/terraform.js script tag
-	if !strings.Contains(html, `<script src="/app/terraform.js"></script>`) {
+	if !strings.Contains(html, `<script type="module" src="/app/terraform.js"></script>`) {
 		t.Error("/app/terraform.js script tag missing")
 	}
 	// tab order: overview, config, runs, state, variables, drift, settings
@@ -103,6 +103,7 @@ func TestTerraformVariableDetectUI(t *testing.T) {
 // Audit tab, Gate extras / template-picker hooks, widened dialogs and narrow-viewport CSS.
 func TestTerraformUIHooksAuditGateTemplates(t *testing.T) {
 	html := string(embeddedHTML)
+	ui := html + "\n" + coreJSSource(t)
 	for _, s := range []string{
 		`id="tabTfAudit"`, `aria-controls="tfPanelAudit"`, `id="tfPanelAudit"`, `id="tfAuditRoot"`,
 		`'policies', 'modules', 'registry', 'audit', 'gate'`, `tfAuditRefresh`,
@@ -111,11 +112,11 @@ func TestTerraformUIHooksAuditGateTemplates(t *testing.T) {
 		`if (!ws && typeof tfTplInject === 'function') tfTplInject();`,
 		`'min(' + (width || 560) + 'px, 96vw)'`, `'startTfRun()')), 720)`,
 	} {
-		if !strings.Contains(html, s) {
+		if !strings.Contains(ui, s) {
 			t.Errorf("index.html missing %s", s)
 		}
 	}
-	if n := strings.Count(html, `"tf_tab_audit":`); n != 2 {
+	if n := strings.Count(ui, `"tf_tab_audit":`); n != 2 {
 		t.Errorf("tf_tab_audit must exist in EN and ID dictionaries, found %d", n)
 	}
 	if strings.Index(html, `id="tfGateExtras"`) < strings.Index(html, `id="tfPanelGate"`) || strings.Index(html, `id="tfGateExtras"`) > strings.Index(html, `id="tfPanelAudit"`) {
