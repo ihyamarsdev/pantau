@@ -1,6 +1,12 @@
-import { test } from '@e2e-dev/web';
+import { afterEach, test } from '@e2e-dev/web';
 import { expect } from 'e2e';
-import { initApp } from './helpers.js';
+import { deleteHosts, initApp } from './helpers.js';
+
+// The whole run shares one database, so the host this test adds is removed again. afterEach runs
+// after a failure too, so the host never survives a failing test either.
+afterEach(async ({ browser }) => {
+  await deleteHosts(browser, ['dockersec']);
+});
 
 // The Docker security data is answered in the browser: the host has no Docker daemon, the panel UI is
 // what is under test (the Go side of the audit and of the scan is covered by the Go tests).

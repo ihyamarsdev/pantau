@@ -1,6 +1,6 @@
 import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
-import { initApp } from './helpers.js';
+import { deleteHosts, initApp } from './helpers.js';
 
 type PageGlobals = {
   openHostDetail(id: number): Promise<void>;
@@ -43,24 +43,29 @@ test('private ip: shown on the host and sent as the inter-host probe target', as
     return null;
   });
 
-  let asked = '';
-  await browser.route('**/api/netdiag/stream*', async (route) => {
-    asked = route.request.url;
-    await route.fulfill({ status: 200, headers: { 'Content-Type': 'text/event-stream' }, body: '' });
-  });
+  // The whole run shares one database, so the hosts this test added are removed again.
+  try {
+    let asked = '';
+    await browser.route('**/api/netdiag/stream*', async (route) => {
+      asked = route.request.url;
+      await route.fulfill({ status: 200, headers: { 'Content-Type': 'text/event-stream' }, body: '' });
+    });
 
-  await browser.evaluate(async (src) => {
-    const w = window as unknown as PageGlobals;
-    await w.loadHosts();
-    w.openNetDiagModal(src);
-    return null;
-  }, srcID);
+    await browser.evaluate(async (src) => {
+      const w = window as unknown as PageGlobals;
+      await w.loadHosts();
+      w.openNetDiagModal(src);
+      return null;
+    }, srcID);
 
-  await expect(browser.locator('#netdiag_modal_viaPrivate')).toBeVisible();
-  await browser.locator('#netdiag_modal_targetHost').selectOption({ value: String(dstID) });
-  await expect(browser.locator('#netdiag_modal_viaPrivateNote')).toContainText('10.20.0.7');
+    await expect(browser.locator('#netdiag_modal_viaPrivate')).toBeVisible();
+    await browser.locator('#netdiag_modal_targetHost').selectOption({ value: String(dstID) });
+    await expect(browser.locator('#netdiag_modal_viaPrivateNote')).toContainText('10.20.0.7');
 
-  await browser.locator('#netdiag_modal_viaPrivate').check();
-  await browser.locator('#netdiag_modal_runBtn').click();
-  await expect.poll(() => asked).toContain('via=private');
+    await browser.locator('#netdiag_modal_viaPrivate').check();
+    await browser.locator('#netdiag_modal_runBtn').click();
+    await expect.poll(() => asked).toContain('via=private');
+  } finally {
+    await deleteHosts(browser, ['src', 'dst']);
+  }
 });

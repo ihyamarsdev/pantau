@@ -792,9 +792,17 @@ _Avoid_: Billing
 Saklar opt-in admin (`terraform_enabled`, default mati) sebelum Run dapat dijalankan.
 _Avoid_: Feature flag
 
+**Gateway CLI Update Check**:
+Pemeriksaan read-only on-demand atas versi CLI yang terpasang di server Pantau untuk sebuah *gateway* (Ansible atau Terraform), yang membandingkan versi terpasang dengan versi rilis terbaru yang dipublikasikan upstream dan melaporkan hasilnya — ada versi lebih baru, sudah terbaru, atau tidak dapat dibandingkan. Tidak memasang, tidak mengunduh, dan tidak mengubah biner apa pun.
+_Avoid_: Update Checker, Self-Update, package update
+
 **Terraform Registry**:
 Penjelajah modul dan provider dari Terraform Registry publik (atau mirror lewat `tf_registry_url`) yang diambil Pantau di sisi server (cache 5 menit); dipakai untuk menyisipkan snippet ke konfigurasi dan memeriksa versi (`Check versions`) pada workspace inline. Bukan registry privat dan bukan endpoint untuk `terraform init`.
 _Avoid_: Module marketplace, Private Module Catalog
+
+**Gateway CLI Update**:
+Pemasangan versi CLI gateway yang lebih baru — `ansible-playbook`, `terraform` atau `tofu` — ke direktori yang dikelola Pantau, setelah unduhannya diverifikasi terhadap checksum yang dipublikasikan upstream, tanpa menyentuh salinan sistem di `/usr/bin`. Biner yang dikelola dipakai lebih dulu, sehingga pembaruan langsung berlaku.
+_Avoid_: Self-Update, package update, apt upgrade
 
 **Git Editor**:
 Komponen antarmuka untuk menjelajah pohon berkas repositori, membuat berkas baru, menghapus berkas, menyunting konten dengan CodeMirror, serta melakukan commit dan push langsung ke repositori remote. Pada Playbook Ansible tampil sebagai bagian **Files** di tab Edit pada Side Drawer; pada Workspace Terraform tampil di Workspace Modal.

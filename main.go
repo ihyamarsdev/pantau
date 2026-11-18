@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"log/slog"
+	"pantau/internal/gwupdate"
 	"pantau/internal/inspector"
 	"pantau/internal/instance"
 	"pantau/internal/logger"
@@ -411,6 +412,9 @@ func main() {
 	server.SetSnapshotManager(snapshotMgr)
 	server.SetUpdaterManager(updaterMgr)
 	server.SetAnsibleLibraryDir(filepath.Join(filepath.Dir(dbPath), "ansible-library"))
+	// Pantau installs the CLIs it manages into its own directory, so an update needs neither root
+	// nor a package manager and never touches the system copy in /usr/bin.
+	gwupdate.SetManagedRoot(filepath.Join(filepath.Dir(dbPath), "cli"))
 	server.StartAnsibleScheduler(ctx)
 	server.SetReposDir(filepath.Join(filepath.Dir(dbPath), "repos"))
 	tfDataDir := filepath.Join(filepath.Dir(dbPath), "terraform")

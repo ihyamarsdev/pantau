@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
-import { initApp } from './helpers.js';
+import { deleteHosts, initApp } from './helpers.js';
 
 type ChatMessage = { role: string; content?: string; tool_call_id?: string };
 
@@ -141,6 +141,8 @@ test('agent: settings configure a provider, the chat streams a tool, and an exec
     expect(shown.page).not.toContain('k-test');
   } finally {
     await llm.close();
+    // The whole run shares one database, so the host this test added is removed again.
+    await deleteHosts(browser, ['e2e']);
   }
 });
 
@@ -183,6 +185,8 @@ test('agent: "Approve for this session" runs the next command on that host witho
     await expect(browser.locator('#agentApprovals .ag-grants')).toBeHidden();
   } finally {
     await llm.close();
+    // The whole run shares one database, so the host this test added is removed again.
+    await deleteHosts(browser, ['e2e-grant']);
   }
 });
 

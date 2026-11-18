@@ -428,6 +428,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/ansible/adhoc/", s.authMiddleware(s.handleAnsibleAdhocRoute))
 	s.mux.HandleFunc("/api/ansible/hosts/", s.authMiddleware(s.handleAnsibleHostFacts))
 	s.mux.HandleFunc("/api/ansible/explorer", s.authMiddleware(s.handleAnsibleExplorer))
+	s.mux.HandleFunc("/api/ansible/update-check", s.authMiddleware(s.handleAnsibleUpdateCheck))
+	s.mux.HandleFunc("/api/ansible/install", s.authMiddleware(s.handleCLIInstall))
 	// Terraform Management
 	s.mux.HandleFunc("/api/repos", s.authMiddleware(s.handleRepos))
 	s.mux.HandleFunc("/api/repos/", s.authMiddleware(s.handleRepoRoute))
@@ -446,6 +448,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/terraform/policies", s.authMiddleware(s.handleTerraformPolicies))
 	s.mux.HandleFunc("/api/terraform/policies/", s.authMiddleware(s.handleTerraformPolicyRoute))
 	s.mux.HandleFunc("/api/terraform/audit", s.authMiddleware(s.handleTerraformAudit))
+	s.mux.HandleFunc("/api/terraform/update-check", s.authMiddleware(s.handleTerraformUpdateCheck))
+	s.mux.HandleFunc("/api/terraform/install", s.authMiddleware(s.handleCLIInstall))
 	s.mux.HandleFunc("/api/terraform/modules", s.authMiddleware(s.handleTerraformModules))
 	s.mux.HandleFunc("/api/terraform/modules/", s.authMiddleware(s.handleTerraformModuleRoute))
 	s.mux.HandleFunc("/api/terraform/registry/", s.authMiddleware(s.handleTerraformRegistry))

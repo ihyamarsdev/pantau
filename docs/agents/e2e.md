@@ -9,7 +9,7 @@ e2e/
 ├── e2e.config.ts        # web engine, starts the app itself
 ├── scripts/start-app.sh # go build + throwaway temp DB, port 18199
 ├── tests/
-│   ├── helpers.ts       # shared login + first-run modal handling
+│   ├── helpers.ts       # shared login + first-run modal handling, host cleanup, unique host names
 │   ├── smoke.e2e.ts     # app opens, starts fresh, login, dashboard
 │   ├── ansible.e2e.ts   # gate blocked state, enable gate, create playbook, invalid YAML
 │   ├── kube-workspaces.e2e.ts # Kubernetes: saved workspace cards, open/back, reload (kube API stubbed with browser.route)
@@ -23,6 +23,7 @@ e2e/
 │   ├── private-ip.e2e.ts # Private IP shown on the host, Use private IP sends the inter-host probe down the private path (host APIs stubbed)
 │   ├── docker-security.e2e.ts # Docker Security: summary strip, grouped findings, image table, chunked CVE detail (security API stubbed with browser.route)
 │   ├── agent.e2e.ts    # AI Agent: Settings panel (provider/base URL/key/model + Test connection), chat tool line, exec_command approval card, deny (LLM endpoint stubbed with a fake OpenAI-compatible server)
+│   ├── gateway-update-check.e2e.ts # Gateway CLI Update Check + Update: installed/latest version, failure state, the install streaming its steps
 │   └── terraform-helpers.ts  # shared Terraform workspace/runner helpers
 └── package.json
 ```
@@ -43,6 +44,9 @@ The runner builds the binary and starts Pantau itself (`app.command` → `script
 - Deterministic locators only (`screen.getByRole/getByText`, element ids as fallback). No AI model is configured; `agent.*` steps would need one (see e2e docs) — don't add them.
 - One atomic check per line, no sleeps. Auto-waiting locators + `expect` handle timing.
 - `tests/helpers.ts` `initApp()` runs at the start of every test: log in (`admin` — the fresh-DB default) and dismiss the first-run "Restore Pantau from Backup" modal via Start Fresh. Each test gets a fresh page, so both may reappear.
+- **The whole run shares one database.** `scripts/start-app.sh` starts Pantau on a throwaway temp DB, and that DB lives for the whole run: a host one test adds is still there for the next test. A test that adds hosts must remove them again — `deleteHosts(browser, ['name-a', 'name-b'])` in `tests/helpers.ts` does that, in a `finally` or in an `afterEach` (an `afterEach` runs after a failure too, so it covers a failing test). Hosts are removed by the name the test gave them, so a test never touches a host another test is using.
+- **A test that picks a host by name needs a name no other test uses.** Use `uniqueHostName('alpha')`; a fixed name collides with a host another test left behind, and the lookup then matches two rows.
+- **A host added through the API is not in the page yet.** The page keeps its own host list, refreshed only by `loadHosts()`. Call it (`await browser.evaluate(async () => { (window as unknown as { loadHosts(): Promise<void> }).loadHosts(); return null; })`) after adding a host, or a dialog that lists the hosts shows the old list.
 - Prefer stable element ids (`#ansiblePlaybookName`, `[data-sub="tasks"]`, …) over text that changes with the UI language.
 
 ## Failures

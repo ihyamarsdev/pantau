@@ -11,6 +11,8 @@ type BrowserHandle = {
     fill(value: string): Promise<void>;
     click(): Promise<void>;
   };
+  evaluate<T, A>(fn: (arg: A) => T | Promise<T>, arg: A): Promise<T>;
+  unrouteAll(): Promise<void>;
 };
 
 /**
@@ -33,4 +35,38 @@ export async function initApp(screen: Screen, browser: BrowserHandle): Promise<v
     await screen.getByText('Start from Scratch (Fresh)').click();
     await expect(modal).toBeHidden();
   }
+}
+
+/**
+ * Removes the hosts a test created, so the next test starts from a clean fleet.
+ *
+ * The whole e2e run shares one Pantau database, so a host left behind by one test is still there
+ * for the next one. That is what makes a test that counts hosts, or that picks a host by name,
+ * fail depending on which tests ran before it.
+ *
+ * The hosts are removed by the name the test gave them, so a test that seeded nothing removes
+ * nothing and cannot touch a host another test is using.
+ */
+export async function deleteHosts(browser: BrowserHandle, names: string[]): Promise<void> {
+  if (!names.length) return;
+  // A test that stubbed the host API would otherwise swallow the delete, so the stubs go first.
+  // unrouteAll() takes every route the browser fixture holds; the cleanup is the last thing a test
+  // does, so no route is needed after it.
+  await browser.unrouteAll();
+  await browser.evaluate(async (wanted: string[]) => {
+    const res = await fetch('/api/hosts');
+    const hosts = (await res.json()) as { id: number; name: string }[];
+    for (const host of hosts) {
+      if (wanted.includes(host.name)) {
+        await fetch('/api/hosts/' + host.id, { method: 'DELETE' });
+      }
+    }
+  }, names);
+}
+
+/**
+ * A host name that no other test uses, so a host from another test can never be mistaken for it.
+ */
+export function uniqueHostName(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
 }

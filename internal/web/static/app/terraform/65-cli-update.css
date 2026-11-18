@@ -1,0 +1,13 @@
+/* Gateway CLI Update Check card — scoped under .tf-cli-card. */
+.tf-cli-card { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+.tf-cli-card .card-title { margin-bottom: 0; }
+.tf-cli-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.tf-cli-name { font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: 600; }
+.tf-cli-kv { display: flex; gap: 10px; font-size: var(--fs-xs); color: var(--text-muted); }
+.tf-cli-kv > span:first-child { min-width: 90px; }
+.tf-cli-kv .tf-mono { font-family: var(--font-mono); color: var(--text); }
+.tf-cli-err { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--danger); margin-top: 4px; }
+.tf-cli-log { margin: 0; max-height: 220px; overflow: auto; padding: 10px 12px; background: var(--code-bg); border: 1px solid var(--card-border); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 11.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+.tf-cli-log[hidden] { display: none; }
+.tf-cli-update { margin-left: auto; }
+.tf-cli-msg { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-muted); }

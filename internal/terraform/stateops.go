@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"time"
+
+	"pantau/internal/gwupdate"
 )
 
 const addrSeg = `[A-Za-z_][A-Za-z0-9_-]*(?:\[(?:[0-9]+|"[A-Za-z0-9_./:@=+,-]*")\])*`
@@ -100,7 +102,7 @@ func StateOp(ctx context.Context, spec StateOpSpec) (*StateOpResult, error) {
 	if err := spec.Validate(); err != nil {
 		return nil, err
 	}
-	binPath, err := exec.LookPath(spec.Binary)
+	binPath, err := gwupdate.ResolveBinary(spec.Binary)
 	if err != nil {
 		return nil, fmt.Errorf("%s binary not found in PATH: %w", spec.Binary, err)
 	}

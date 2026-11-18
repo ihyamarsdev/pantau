@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"time"
+
+	"pantau/internal/gwupdate"
 )
 
 type ApplySpec struct {
@@ -47,7 +49,7 @@ func Apply(ctx context.Context, spec ApplySpec, log io.Writer) (*ApplyResult, er
 		return nil, err
 	}
 
-	binPath, err := exec.LookPath(spec.Binary)
+	binPath, err := gwupdate.ResolveBinary(spec.Binary)
 	if err != nil {
 		return nil, fmt.Errorf("%s binary not found in PATH: %w", spec.Binary, err)
 	}

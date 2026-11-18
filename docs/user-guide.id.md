@@ -661,6 +661,28 @@ Untuk mencegah eksekusi yang tidak diinginkan:
 3. Pengaktifan gerbang mewajibkan konfirmasi dialog keamanan eksplisit yang menegaskan bahwa sesi admin Pantau dengan Ansible aktif setara dengan akses eksekusi di server master.
 4. Sistem juga memverifikasi keberadaan biner `ansible-playbook` di `PATH` server Pantau.
 
+#### Gateway CLI Update Check (Ansible & Terraform)
+
+Kedua panel gate menampilkan versi CLI yang terpasang di server Pantau. Tombol **Periksa pembaruan** membandingkannya dengan rilis terbaru yang dipublikasikan upstream dan memberi tahu apakah versi terpasang sudah tertinggal:
+
+- **Ansible → Pengaturan → Ansible Gate**: membandingkan `ansible-playbook` yang terpasang dengan rilis `ansible-core` terbaru di PyPI.
+- **Terraform → Terraform Gate → Pemeriksaan pembaruan CLI**: membandingkan `terraform` dan `tofu` yang terpasang dengan rilis terbaru dari HashiCorp dan OpenTofu. Setiap biner yang terpasang mendapat barisnya sendiri; biner yang tidak terpasang tidak ditampilkan.
+
+Hasilnya menampilkan versi terpasang, versi terbaru, tautan ke halaman rilis, dan waktu pemeriksaan. Status yang mungkin muncul: **Pembaruan tersedia**, **Terbaru**, **Versi tidak diketahui** (versi tidak bisa dibandingkan), dan **Pemeriksaan gagal** (upstream tidak bisa dihubungi).
+
+Pemeriksaan ini **hanya membaca**: tidak pernah memasang, mengunduh, atau mengubah biner, dan tetap bisa dipakai saat Gate masih nonaktif. Upstream yang tidak bisa dihubungi dilaporkan sebagai **Pemeriksaan gagal** — tidak pernah sebagai "terbaru".
+
+#### Memasang pembaruan
+
+Saat rilis lebih baru ditemukan, kartu yang sama menawarkan **Perbarui sekarang**. Pantau mengunduh rilis, memverifikasinya terhadap checksum yang dipublikasikan upstream, lalu memasangnya ke direktori yang dikelolanya (`<data>/cli/`) — tanpa `sudo`, tanpa manajer paket, dan salinan sistem di `/usr/bin` tidak disentuh. Langkah-langkahnya ditampilkan saat berjalan.
+
+- **Terraform dan OpenTofu** dipasang dari arsip upstream: satu biner, diverifikasi, lalu dipasang.
+- **Ansible** memasang `ansible-core` ke virtualenv Python berversi dan mengarahkan symlink `venv` yang dikelola ke sana. Ini memerlukan `python3` dengan modul `venv` (`python3-venv` di Debian) dan akses internet ke PyPI untuk dependensinya.
+
+Versi baru baru dipasang setelah dijalankan dan melaporkan versi yang benar, sehingga pembaruan yang gagal meninggalkan versi yang berjalan tetap utuh. Pantau memakai biner yang dikelola sejak saat itu, jadi pembaruan langsung berlaku — tanpa restart. Biner yang Anda pasang di sistem tidak berubah: `terraform version` di shell Anda tetap melaporkan versi yang Anda pasang.
+
+Untuk kembali ke biner sistem, hapus direktori yang dikelola Pantau (`<data>/cli/`).
+
 #### Menulis & Menyimpan Playbook
 
 1. Pada **Side Panel**, pilih **Ansible → Playbook** lalu klik tombol **Playbook Baru**.

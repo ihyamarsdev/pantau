@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"pantau/internal/gwupdate"
 )
 
 // GitSource describes a playbook stored in a Git repository. The repository is shallow-cloned into the run
@@ -113,7 +115,7 @@ func (g GitSource) Validate() error {
 
 func gitEnv(workDir, protocols string) []string {
 	env := []string{
-		"PATH=" + os.Getenv("PATH"),
+		"PATH=" + gwupdate.PrependPath(os.Getenv("PATH")),
 		"LANG=C.UTF-8",
 		"HOME=" + workDir,
 		"GIT_TERMINAL_PROMPT=0",

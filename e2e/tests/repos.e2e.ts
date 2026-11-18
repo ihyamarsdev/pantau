@@ -1,6 +1,6 @@
 import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
-import { initApp } from './helpers.js';
+import { deleteHosts, initApp } from './helpers.js';
 
 // The fixtures a test body receives, derived from `test`.
 type Fixtures = Parameters<Parameters<typeof test>[1]>[0];
@@ -238,14 +238,30 @@ test('repositories: copy a repository to a host from its card', async (fx) => {
     return (await r.json()).id;
   })) as number;
 
-  await browser.locator('[data-rp-copy="3"]').click();
-  await expect(browser.locator('#repoDlgBody')).toContainText('2 uncommitted change(s) are included');
-  await expect(browser.locator('#rpCopyPath')).toHaveValue('/opt/infra');
-  await browser.locator('#rpCopyPath').fill('/srv/infra');
-  await browser.locator('#rpCopyGit').check();
-  await browser.locator('#rpCopyGo').click();
-  await expect(browser.locator('#transfersListModal')).toBeVisible();
-  if (JSON.stringify(sent) !== JSON.stringify({ host_id: hostId, path: '/srv/infra', include_git: true })) throw new Error('unexpected copy request: ' + JSON.stringify(sent));
+  try {
+    // The copy dialog lists the hosts the page knows about, and that list is only refreshed by the
+    // page's own loader. Without it the host added above is not in the dialog.
+    await browser.evaluate(async () => {
+      const w = window as unknown as { loadHosts(): Promise<void> };
+      await w.loadHosts();
+      return null;
+    });
+
+    await browser.locator('[data-rp-copy="3"]').click();
+    await expect(browser.locator('#repoDlgBody')).toContainText('2 uncommitted change(s) are included');
+    await expect(browser.locator('#rpCopyPath')).toHaveValue('/opt/infra');
+    await browser.locator('#rpCopyPath').fill('/srv/infra');
+    await browser.locator('#rpCopyGit').check();
+    // The dialog picks the first host of the fleet by default. The whole run shares one database, so
+    // that host is whatever an earlier test left behind: this test names its own host instead.
+    await browser.locator('#rpCopyHost').selectOption({ value: String(hostId) });
+    await browser.locator('#rpCopyGo').click();
+    await expect(browser.locator('#transfersListModal')).toBeVisible();
+    if (JSON.stringify(sent) !== JSON.stringify({ host_id: hostId, path: '/srv/infra', include_git: true })) throw new Error('unexpected copy request: ' + JSON.stringify(sent));
+  } finally {
+    // The whole run shares one database, so the host this test added is removed again.
+    await deleteHosts(browser, ['web1']);
+  }
 });
 
 // Branches: the dialog lists local and remote branches, switches, creates at HEAD and deletes a local branch.

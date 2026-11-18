@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"pantau/internal/gwupdate"
 )
 
 const (
@@ -47,7 +49,7 @@ func lookTool(binary string) (string, error) {
 	if binary != "terraform" && binary != "tofu" {
 		return "", fmt.Errorf("invalid binary %q, must be terraform or tofu", binary)
 	}
-	p, err := exec.LookPath(binary)
+	p, err := gwupdate.ResolveBinary(binary)
 	if err != nil {
 		return "", fmt.Errorf("%s binary not found in PATH: %w", binary, err)
 	}

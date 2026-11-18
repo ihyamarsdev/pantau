@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"pantau/internal/gwupdate"
 )
 
 const MaxConcurrentRuns = 3
@@ -25,6 +27,14 @@ var (
 	tagsRegex  = regexp.MustCompile(`^[A-Za-z0-9_.,:-]{1,256}$`)
 	limitRegex = regexp.MustCompile(`^[A-Za-z0-9_.,:!&*\[\]-]{1,256}$`)
 )
+
+// InvalidateAvailableCache drops the cached ansible-playbook lookup. It is called after Pantau
+// installs a new ansible-core, so the next lookup sees the new version right away.
+func InvalidateAvailableCache() {
+	availMu.Lock()
+	cachedPath, cachedVer, cachedErr, cachedAt = "", "", nil, time.Time{}
+	availMu.Unlock()
+}
 
 // ValidatePattern checks an Ansible host pattern (--limit) against the allowed charset. Empty is valid.
 func ValidatePattern(p string) error {
@@ -60,7 +70,7 @@ func Available() (path, version string, err error) {
 		return cachedPath, cachedVer, cachedErr
 	}
 
-	p, err := exec.LookPath("ansible-playbook")
+	p, err := gwupdate.ResolveVenvCommand("ansible-playbook")
 	if err != nil {
 		cachedPath, cachedVer, cachedErr = "", "", err
 		cachedAt = time.Now()

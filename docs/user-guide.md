@@ -661,6 +661,28 @@ To prevent unauthorized execution:
 3. Enabling the gate requires confirming an explicit security prompt acknowledging that admin access in Pantau with Ansible enabled is equivalent to local process execution on the server host.
 4. The system also verifies that the `ansible-playbook` binary is installed and reachable in `PATH`.
 
+#### Gateway CLI Update Check (Ansible & Terraform)
+
+Both gate panels show the CLI version installed on the Pantau server. **Check for updates** compares it with the latest release published upstream and tells you whether the installed version is behind:
+
+- **Ansible → Settings → Ansible Gate**: compares the installed `ansible-playbook` with the newest `ansible-core` release on PyPI.
+- **Terraform → Terraform Gate → CLI update check**: compares the installed `terraform` and `tofu` with the newest releases from HashiCorp and OpenTofu. Each installed binary gets its own row; a binary that is not installed is not listed.
+
+The result shows the installed version, the latest version, a link to the release page and when the check ran. The statuses are **Update available**, **Up to date**, **Version unknown** (the version cannot be compared) and **Check failed** (the upstream could not be reached).
+
+The check **only reads**: it never installs, downloads or changes a binary, and it works while the Gate is still off. An upstream that cannot be reached is reported as **Check failed** — never as "up to date".
+
+#### Installing the update
+
+When a newer release is found, the same card offers **Update now**. Pantau downloads the release, verifies it against the checksum the upstream publishes, and installs it into the directory it manages (`<data>/cli/`) — no `sudo`, no package manager, and the system copy in `/usr/bin` is left untouched. The steps are shown while they run.
+
+- **Terraform and OpenTofu** install from the upstream archive: one binary, verified, then put in place.
+- **Ansible** installs `ansible-core` into a versioned Python virtualenv and points the managed `venv` symlink at it. This needs `python3` with the `venv` module (`python3-venv` on Debian) and internet access to PyPI for its dependencies.
+
+The new version is only put in place after it has been run and reports the expected version, so a failed update leaves the working version intact. Pantau uses the managed binary from then on, so the update takes effect immediately — no restart. The binaries you installed system-wide are not changed: `terraform version` in your own shell still reports what you installed.
+
+To go back to the system binary, remove the directory Pantau manages (`<data>/cli/`).
+
 #### Writing & Storing Playbooks
 
 1. In the **Side Panel**, navigate to **Ansible → Playbooks** and click **New Playbook**.

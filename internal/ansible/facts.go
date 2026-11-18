@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"pantau/internal/gwupdate"
 )
 
 const (
@@ -31,7 +33,7 @@ func GatherFacts(ctx context.Context, t Target, cfg, libDir string, log io.Write
 	if err := ValidatePattern(""); err != nil { // no-op, keeps the pattern contract documented in one place
 		return nil, err
 	}
-	binPath, err := exec.LookPath("ansible")
+	binPath, err := gwupdate.ResolveVenvCommand("ansible")
 	if err != nil {
 		return nil, fmt.Errorf("ansible not found in PATH: %w", err)
 	}
@@ -82,7 +84,7 @@ func GatherFacts(ctx context.Context, t Target, cfg, libDir string, log io.Write
 	ansibleHome := filepath.Join(workDir, ".ansible")
 	_ = os.MkdirAll(ansibleHome, 0700)
 	cleanEnv := []string{
-		"PATH=" + os.Getenv("PATH"),
+		"PATH=" + gwupdate.PrependPath(os.Getenv("PATH")),
 		"LANG=C.UTF-8",
 		"HOME=" + workDir,
 		"ANSIBLE_CONFIG=" + cfgPath,

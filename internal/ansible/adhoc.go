@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"pantau/internal/gwupdate"
 )
 
 const (
@@ -83,7 +85,7 @@ func RunAdhoc(ctx context.Context, spec AdhocSpec, log io.Writer) (int, error) {
 	if err := spec.Validate(); err != nil {
 		return 0, err
 	}
-	binPath, err := exec.LookPath("ansible")
+	binPath, err := gwupdate.ResolveVenvCommand("ansible")
 	if err != nil {
 		return 0, fmt.Errorf("ansible not found in PATH: %w", err)
 	}
@@ -168,7 +170,7 @@ func RunAdhoc(ctx context.Context, spec AdhocSpec, log io.Writer) (int, error) {
 	ansibleHome := filepath.Join(workDir, ".ansible")
 	_ = os.MkdirAll(ansibleHome, 0700)
 	cleanEnv := []string{
-		"PATH=" + os.Getenv("PATH"),
+		"PATH=" + gwupdate.PrependPath(os.Getenv("PATH")),
 		"LANG=C.UTF-8",
 		"HOME=" + workDir,
 		"ANSIBLE_CONFIG=" + cfgPath,

@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"pantau/internal/gwupdate"
 )
 
 // Run creates a temporary workspace, writes playbook.yml, inventory.json, ansible.cfg, extra.json, key files,
@@ -23,7 +25,7 @@ func Run(ctx context.Context, spec RunSpec, log io.Writer) (exitCode int, err er
 		return 0, err
 	}
 
-	binPath, err := exec.LookPath("ansible-playbook")
+	binPath, err := gwupdate.ResolveVenvCommand("ansible-playbook")
 	if err != nil {
 		return 0, fmt.Errorf("ansible-playbook not found in PATH: %w", err)
 	}

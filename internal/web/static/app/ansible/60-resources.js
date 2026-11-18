@@ -33,6 +33,11 @@
       ans_rs_upd_summary: '{u} update(s) available · {c} up to date · {o} other', ans_rs_upd_current: 'Up to date', ans_rs_upd_gone: 'Not on Galaxy', ans_rs_upd_unknown: 'Version unknown', ans_rs_upd_error: 'Check failed', ans_rs_upd_failed: 'Could not check for updates', ans_rs_update: 'Update',
       ans_rs_gsearch: 'Search Galaxy', ans_rs_gsearch_ph: 'Keyword, e.g. nginx', ans_rs_gsearch_btn: 'Search', ans_rs_gsearch_short: 'Enter at least 2 characters.', ans_rs_searching: 'Searching…', ans_rs_search_failed: 'Galaxy search failed',
       ans_rs_gsearch_none: 'No collections or roles match "{q}".', ans_rs_gsearch_count: 'Showing {n} of {total}', ans_rs_gsearch_installed: 'Installed {v}',
+      ans_rs_cli_check: 'Check for updates', ans_rs_cli_checking: 'Checking…', ans_rs_cli_available: 'Update available', ans_rs_cli_current: 'Up to date', ans_rs_cli_unknown: 'Version unknown',
+      ans_rs_cli_versions: 'Installed / latest', ans_rs_cli_release: 'Release', ans_rs_cli_checked_at: 'Checked at', ans_rs_cli_hint: 'Compares the installed ansible-playbook with the newest ansible-core release on PyPI. The check only reads; the update installs into the directory Pantau manages.',
+      ans_rs_cli_failed: 'Could not check for updates',
+      ans_rs_cli_update: 'Update now', ans_rs_cli_updating: 'Updating…', ans_rs_cli_install_failed: 'The update failed', ans_rs_cli_install_hint: 'The update installs the new version into the directory Pantau manages and verifies it against the checksum the upstream publishes. The system copy of the CLI is left untouched.',
+      ans_rs_cli_check_failed: 'Check failed',
     },
     id: {
       ans_rs_sub_templates: 'Template', ans_rs_sub_files: 'Berkas', ans_rs_sub_library: 'Pustaka',
@@ -62,6 +67,11 @@
       ans_rs_upd_summary: '{u} pembaruan tersedia · {c} terbaru · {o} lainnya', ans_rs_upd_current: 'Terbaru', ans_rs_upd_gone: 'Tidak ada di Galaxy', ans_rs_upd_unknown: 'Versi tidak diketahui', ans_rs_upd_error: 'Pemeriksaan gagal', ans_rs_upd_failed: 'Gagal memeriksa pembaruan', ans_rs_update: 'Perbarui',
       ans_rs_gsearch: 'Cari di Galaxy', ans_rs_gsearch_ph: 'Kata kunci, mis. nginx', ans_rs_gsearch_btn: 'Cari', ans_rs_gsearch_short: 'Masukkan minimal 2 karakter.', ans_rs_searching: 'Mencari…', ans_rs_search_failed: 'Pencarian Galaxy gagal',
       ans_rs_gsearch_none: 'Tidak ada collection atau role yang cocok dengan "{q}".', ans_rs_gsearch_count: 'Menampilkan {n} dari {total}', ans_rs_gsearch_installed: 'Terpasang {v}',
+      ans_rs_cli_check: 'Periksa pembaruan', ans_rs_cli_checking: 'Memeriksa…', ans_rs_cli_available: 'Pembaruan tersedia', ans_rs_cli_current: 'Terbaru', ans_rs_cli_unknown: 'Versi tidak diketahui',
+      ans_rs_cli_versions: 'Terpasang / terbaru', ans_rs_cli_release: 'Rilis', ans_rs_cli_checked_at: 'Diperiksa pada', ans_rs_cli_hint: 'Membandingkan ansible-playbook yang terpasang dengan rilis ansible-core terbaru di PyPI. Pemeriksaan hanya membaca; pembaruan memasang ke direktori yang dikelola Pantau.',
+      ans_rs_cli_failed: 'Gagal memeriksa pembaruan',
+      ans_rs_cli_check_failed: 'Pemeriksaan gagal',
+      ans_rs_cli_update: 'Perbarui sekarang', ans_rs_cli_updating: 'Memperbarui…', ans_rs_cli_install_failed: 'Pembaruan gagal', ans_rs_cli_install_hint: 'Pembaruan memasang versi baru ke direktori yang dikelola Pantau dan memverifikasinya terhadap checksum yang dipublikasikan upstream. Salinan sistem CLI tidak disentuh.',
     },
   });
 
@@ -428,7 +438,31 @@
   }
 
   /* ===================== Settings tab ===================== */
-  const SETT = { root: null, cfg: null, cfgText: '', saved: '' };
+  const SETT = { root: null, cfg: null, cfgText: '', saved: '', update: null, updateBusy: false, updateLog: '' };
+
+  // The Gateway CLI Update Check (ADR 0080): compares the installed ansible-playbook with the
+  // newest ansible-core release on PyPI. It only reads; nothing is installed.
+  function updateCheckBlock() {
+    if (SETT.updateBusy) {
+      return '<div class="ans-rs-kvs"><div class="ans-rs-kv"><span class="ans-rn-mk">' + esc(T('ans_rs_cli_check')) + '</span><span class="ans-mono" id="ansibleCliUpdateStatus">' + esc(T('ans_rs_cli_checking')) + '</span></div></div>';
+    }
+    const r = SETT.update;
+    if (!r) return '';
+    const cls = r.status === 'update' ? 'badge-warning' : r.status === 'current' ? 'badge-healthy' : 'badge-danger';
+    const label = r.status === 'update' ? T('ans_rs_cli_available')
+      : r.status === 'current' ? T('ans_rs_cli_current')
+      : r.status === 'error' ? T('ans_rs_cli_check_failed') : T('ans_rs_cli_unknown');
+    const versions = '<div class="ans-rs-kv"><span class="ans-rn-mk">' + esc(T('ans_rs_cli_versions')) + '</span><span class="ans-mono">' +
+      esc(r.installed || '-') + ' &rarr; ' + esc(r.latest || '-') + '</span></div>';
+    const link = r.release_url
+      ? '<div class="ans-rs-kv"><span class="ans-rn-mk">' + esc(T('ans_rs_cli_release')) + '</span><span><a href="' + esc(r.release_url) + '" target="_blank" rel="noopener noreferrer">' + esc(r.release_url) + '</a></span></div>'
+      : '';
+    const err = r.error ? '<div class="ans-error" role="status">' + icon('triangle-alert') + '<span>' + esc(r.error) + '</span></div>' : '';
+    return '<div class="ans-rs-kvs" id="ansibleCliUpdateResult"><div class="ans-rs-kv"><span class="ans-rn-mk">' + esc(T('ans_rs_cli_check')) + '</span><span class="badge ' + cls + '" id="ansibleCliUpdateStatus">' + esc(label) + '</span></div>' +
+      versions + link +
+      '<div class="ans-rs-kv"><span class="ans-rn-mk">' + esc(T('ans_rs_cli_checked_at')) + '</span><span class="ans-mono">' + esc(r.checked_at ? Ans.fmt.dt(r.checked_at) : '-') + '</span></div></div>' + err;
+  }
+
   function gateCard() {
     const s = Ans.state.status;
     if (!s) return Ans.ui.skeleton(2);
@@ -438,6 +472,12 @@
     return '<div class="ans-card" id="ansibleGateBannerCard"><div class="ans-row"><div class="ans-card-title">' + icon('shield', 'icon-sm') + esc(T('ans_rs_gate')) + '</div><span class="badge ' + cls + '">' + esc(label) + '</span><span class="ans-spacer"></span>' +
       (s.available ? '<button type="button" class="btn btn-sm ' + (s.enabled ? '' : 'btn-primary') + '" data-st="gate">' + icon('power', 'icon-sm') + ' ' + esc(s.enabled ? T('ans_gate_disable') : T('ans_gate_enable')) + '</button>' : '') + '</div>' +
       '<div class="ans-rs-kvs">' + row(T('ans_rs_version'), '<span class="ans-mono">' + esc(s.version || '-') + '</span>') + row(T('ans_rs_tz'), esc(s.timezone || '-')) + row(T('ans_rs_conc'), esc(s.max_concurrent || '-')) + row(T('ans_rs_git'), s.git_available === false ? '<span class="ans-err">' + esc(T('ans_rs_git_no')) + '</span>' : esc(T('ans_rs_git_yes'))) + '</div>' +
+      '<div class="ans-row"><button type="button" class="btn btn-sm" data-st="update-check">' + icon('refresh-cw', 'icon-sm') + ' ' + esc(T('ans_rs_cli_check')) + '</button>' +
+      (SETT.update && SETT.update.status === 'update' ? '<button type="button" class="btn btn-sm btn-primary" data-st="update-install">' + icon('download', 'icon-sm') + ' ' + esc(T('ans_rs_cli_update')) + '</button>' : '') +
+      '<span class="ans-spacer"></span></div>' +
+      updateCheckBlock() +
+      '<pre class="ans-rs-out" id="ansibleCliUpdateLog"' + (SETT.updateLog ? '' : ' hidden') + '>' + esc(SETT.updateLog || '') + '</pre>' +
+      '<div class="ans-hint">' + icon('info', 'icon-sm') + ' ' + esc(T('ans_rs_cli_hint')) + '</div>' +
       (s.error && !s.available ? '<div class="ans-error">' + icon('triangle-alert') + '<span>' + esc(s.error) + '</span></div>' : '') +
       '<div class="ans-hint">' + icon('shield-alert', 'icon-sm') + ' ' + esc(T('ans_rs_gate_warn')) + '</div></div>';
   }
@@ -461,12 +501,53 @@
     SETT.root.innerHTML = '<div class="ans-rs-settings">' + gateCard() + cfgCard() + '</div>';
     if (focus) { const t = SETT.root.querySelector('#ansibleConfigContent'); if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } }
   }
+
+  // Runs the Gateway CLI Update Check and shows the result in the Gate card. A failed check keeps
+  // its own error text; it never reads as "up to date".
+  async function checkCLIUpdate() {
+    SETT.updateBusy = true;
+    paintSettings();
+    try {
+      SETT.update = await Ans.api.get('/api/ansible/update-check');
+    } catch (e) {
+      SETT.update = { status: 'error', error: e.message };
+    } finally {
+      SETT.updateBusy = false;
+      paintSettings();
+    }
+  }
+
+  // Installs the newest ansible-core into the directory Pantau manages (ADR 0081). The install log
+  // is streamed, so the steps show while they run.
+  async function installCLIUpdate() {
+    // The card is not repainted while the install runs: painting rebuilds the DOM and would throw
+    // away the log element the stream is writing into. The log is captured into state afterwards so
+    // the repaint that follows still shows it.
+    const out = SETT.root && SETT.root.querySelector('#ansibleCliUpdateLog');
+    if (!out) return;
+    SETT.updateLog = '';
+    try {
+      const err = await streamInstall('/api/ansible/install', { target: 'ansible' }, out);
+      SETT.updateLog = out.textContent || '';
+      if (err) {
+        SETT.updateLog += '\n' + err;
+        SETT.update = { status: 'error', error: err };
+      } else {
+        await checkCLIUpdate();
+      }
+    } catch (e) {
+      SETT.update = { status: 'error', error: e.message };
+    }
+    paintSettings();
+  }
   function renderSettings(panel) {
     SETT.root = panel;
     panel.addEventListener('click', async function (e) {
       const b = e.target.closest('[data-st]'); if (!b) return;
       const a = b.getAttribute('data-st');
       if (a === 'gate') { await Ans.toggleGate(); await loadCfg(); paintSettings(); }
+      else if (a === 'update-check') await checkCLIUpdate();
+      else if (a === 'update-install') await installCLIUpdate();
       else if (a === 'save') {
         const err = SETT.root.querySelector('#ansibleConfigError'); err.hidden = true; b.disabled = true;
         try { await Ans.api.put('/api/ansible/config', { content: SETT.cfgText }); SETT.saved = SETT.cfgText; Ans.toast(T('ans_rs_cfg_saved'), 'success'); paintSettings(); }

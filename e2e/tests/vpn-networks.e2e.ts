@@ -1,6 +1,12 @@
-import { test } from '@e2e-dev/web';
+import { afterEach, test } from '@e2e-dev/web';
 import { expect } from 'e2e';
-import { initApp } from './helpers.js';
+import { deleteHosts, initApp } from './helpers.js';
+
+// The whole run shares one database, so the hosts this test adds are removed again. afterEach runs
+// after a failure too, so they never survive a failing test either.
+afterEach(async ({ browser }) => {
+  await deleteHosts(browser, ['e2e-private', 'e2e-behind-dead']);
+});
 
 // The VPN gate is off by default; a network whose bring-up fails must read as a network problem, not a dead host.
 test('a host behind a VPN network dials through its tunnel, and a dead tunnel is reported as such', async ({ app, screen, browser }) => {

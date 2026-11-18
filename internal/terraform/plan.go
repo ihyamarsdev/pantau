@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"pantau/internal/ansible"
+	"pantau/internal/gwupdate"
 )
 
 type PlanSpec struct {
@@ -98,7 +99,7 @@ func Plan(ctx context.Context, spec PlanSpec, log io.Writer) (*PlanResult, error
 		return nil, err
 	}
 
-	binPath, err := exec.LookPath(spec.Binary)
+	binPath, err := gwupdate.ResolveBinary(spec.Binary)
 	if err != nil {
 		return nil, fmt.Errorf("%s binary not found in PATH: %w", spec.Binary, err)
 	}

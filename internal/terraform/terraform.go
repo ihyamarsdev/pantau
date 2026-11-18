@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"pantau/internal/ansible"
+	"pantau/internal/gwupdate"
 )
 
 const MaxConcurrentRuns = 3
@@ -105,7 +106,7 @@ func Detect() []Binary {
 			continue
 		}
 
-		p, err := exec.LookPath(name)
+		p, err := gwupdate.ResolveBinary(name)
 		if err != nil {
 			b.Err = fmt.Sprintf("%s not found in PATH", name)
 			res[i] = b
@@ -133,6 +134,14 @@ func Detect() []Binary {
 	copy(detectCache, res)
 	detectTime = time.Now()
 	return res
+}
+
+// InvalidateDetectCache drops the cached binary detection. It is called after Pantau installs a new
+// terraform or tofu, so the next detection sees the new version right away.
+func InvalidateDetectCache() {
+	detectMu.Lock()
+	detectCache, detectTime = nil, time.Time{}
+	detectMu.Unlock()
 }
 
 // Infracost detects infracost binary path and version.
@@ -227,7 +236,7 @@ func ValidateFiles(files map[string]string) error {
 // prepareEnv builds the sanitized environment variables for terraform/tofu executions.
 func (c Config) prepareEnv() []string {
 	cleanEnv := []string{
-		"PATH=" + os.Getenv("PATH"),
+		"PATH=" + gwupdate.PrependPath(os.Getenv("PATH")),
 		"LANG=C.UTF-8",
 		"HOME=" + filepath.Join(c.Root, "home"),
 		"TF_IN_AUTOMATION=1",
