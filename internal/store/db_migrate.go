@@ -648,6 +648,8 @@ func (d *DB) migrate() error {
 	_ = d.alterAddColumn("agent_memory", "cluster_id", "INTEGER")
 	_ = d.alterAddColumn("agent_memory", "domain", "TEXT NOT NULL DEFAULT ''")
 	_, _ = d.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_memory_domain ON agent_memory(domain)`)
+	// Fleet search filters actual_items by kind alone; the UNIQUE(host_id,kind,target) index cannot serve it.
+	_, _ = d.Exec(`CREATE INDEX IF NOT EXISTS idx_actual_items_kind ON actual_items(kind)`)
 	if err := d.migrateAgentSettings(); err != nil {
 		return fmt.Errorf("migrate agent settings: %w", err)
 	}

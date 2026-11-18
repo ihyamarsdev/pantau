@@ -456,17 +456,21 @@
       const near = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 48;
       if (ctx.follow !== near) { ctx.follow = near; const f = pane.querySelector('[data-lg="follow"]'); if (f) f.setAttribute('aria-pressed', String(near)); }
     });
-    pane.addEventListener('click', function (e) {
-      const b = e.target.closest('[data-lg]'); if (!b) return;
-      const k = b.getAttribute('data-lg');
-      if (k === 'follow') { ctx.follow = !ctx.follow; b.setAttribute('aria-pressed', String(ctx.follow)); if (ctx.follow) logEl.scrollTop = logEl.scrollHeight; }
-      else if (k === 'wrap') { ctx.wrap = !ctx.wrap; b.setAttribute('aria-pressed', String(ctx.wrap)); logEl.classList.toggle('wrap', ctx.wrap); }
-      else if (k === 'copy') { copyText(stripAnsi(ctx.full)).then(function () { Ans.toast(T('ans_rn_copied'), 'success'); }); }
-      else if (k === 'download') downloadLog(ctx);
-      else if (k === 'prev') stepHit(ctx, -1); else if (k === 'next') stepHit(ctx, 1);
-    });
-    pane.addEventListener('input', function (e) { if (e.target.matches('[data-lg="q"]')) { ctx.search = e.target.value; runSearch(ctx); } });
-    pane.addEventListener('keydown', function (e) { if (e.target.matches('[data-lg="q"]') && e.key === 'Enter') { e.preventDefault(); stepHit(ctx, e.shiftKey ? -1 : 1); } });
+    // The pane element is persistent across tab switches; keep one handler set per run context.
+    if (!ctx.logPaneBound) {
+      ctx.logPaneBound = true;
+      pane.addEventListener('click', function (e) {
+        const b = e.target.closest('[data-lg]'); if (!b) return;
+        const k = b.getAttribute('data-lg');
+        if (k === 'follow') { ctx.follow = !ctx.follow; b.setAttribute('aria-pressed', String(ctx.follow)); if (ctx.follow && ctx.logEl) ctx.logEl.scrollTop = ctx.logEl.scrollHeight; }
+        else if (k === 'wrap') { ctx.wrap = !ctx.wrap; b.setAttribute('aria-pressed', String(ctx.wrap)); if (ctx.logEl) ctx.logEl.classList.toggle('wrap', ctx.wrap); }
+        else if (k === 'copy') { copyText(stripAnsi(ctx.full)).then(function () { Ans.toast(T('ans_rn_copied'), 'success'); }); }
+        else if (k === 'download') downloadLog(ctx);
+        else if (k === 'prev') stepHit(ctx, -1); else if (k === 'next') stepHit(ctx, 1);
+      });
+      pane.addEventListener('input', function (e) { if (e.target.matches('[data-lg="q"]')) { ctx.search = e.target.value; runSearch(ctx); } });
+      pane.addEventListener('keydown', function (e) { if (e.target.matches('[data-lg="q"]') && e.key === 'Enter') { e.preventDefault(); stepHit(ctx, e.shiftKey ? -1 : 1); } });
+    }
     if (ctx.follow) logEl.scrollTop = logEl.scrollHeight;
     if (ctx.search) runSearch(ctx);
   }

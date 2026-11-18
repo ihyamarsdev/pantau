@@ -169,7 +169,7 @@ func parseNetworkMetrics(h *store.Host, netDevSec, pingSec, pubIPSec, estSec, li
 		ip    string
 		count int
 	}
-	var pairs []ipCountPair
+	pairs := make([]ipCountPair, 0, len(ipCounts))
 	for ip, count := range ipCounts {
 		pairs = append(pairs, ipCountPair{ip: ip, count: count})
 	}
@@ -177,11 +177,11 @@ func parseNetworkMetrics(h *store.Host, netDevSec, pingSec, pubIPSec, estSec, li
 		return pairs[i].count > pairs[j].count
 	})
 
-	topConns := []store.TopConn{}
 	limit := 10
 	if len(pairs) < limit {
 		limit = len(pairs)
 	}
+	topConns := make([]store.TopConn, 0, limit)
 	for i := 0; i < limit; i++ {
 		topConns = append(topConns, store.TopConn{
 			RemoteIP: pairs[i].ip,
@@ -195,8 +195,9 @@ func parseNetworkMetrics(h *store.Host, netDevSec, pingSec, pubIPSec, estSec, li
 	// Services that should never face the internet directly (databases, caches, admin/control planes, legacy cleartext, file sharing, remote desktop).
 	// The sensitive port list lives in the package scope (sensitivePorts) and is shared with the
 	// Docker container audit.
-	listening := []store.ListeningPort{}
-	for _, line := range strings.Split(listenSec, "\n") {
+	listenLines := strings.Split(listenSec, "\n")
+	listening := make([]store.ListeningPort, 0, len(listenLines))
+	for _, line := range listenLines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -325,7 +326,8 @@ func parseDiskIOMetrics(h *store.Host, diskStatsSec string) {
 
 func parseOSInfo(osRelease string) string {
 	var prettyName, name, version string
-	for _, line := range strings.Split(osRelease, "\n") {
+	lines := strings.Split(osRelease, "\n")
+	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "PRETTY_NAME=") {
 			prettyName = strings.Trim(strings.TrimPrefix(line, "PRETTY_NAME="), `"`)
@@ -369,7 +371,7 @@ func parseOSInfo(osRelease string) string {
 		return name
 	}
 	// Fallback for non-systemd / legacy distributions (CentOS 6, Debian 7) without standard key=value os-release
-	for _, line := range strings.Split(osRelease, "\n") {
+	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue

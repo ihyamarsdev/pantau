@@ -201,6 +201,10 @@ var (
 	ufwRuleRe = regexp.MustCompile(`^\[\s*(\d+)\]\s+(.+?)\s{2,}(ALLOW|DENY|REJECT|LIMIT)(?:\s+(IN|OUT|FWD))?\s{2,}(.+?)\s*$`)
 	ufwToRe   = regexp.MustCompile(`^(\d+(?::\d+)?)(?:/(tcp|udp))?( \(v6\))?$`)
 	ipAddrRe  = regexp.MustCompile(`^[0-9a-fA-F:.]+(?:/\d{1,3})?$`)
+	// ufwFromCleaner strips annotation suffixes from a rule's source; shared across all rules of a read.
+	ufwFromCleaner = strings.NewReplacer("(v6)", "", "(out)", "")
+	// fwdKindBySection maps a firewalld section heading to the rule Kind it produces.
+	fwdKindBySection = map[string]string{"services": "service", "ports": "port"}
 )
 
 func parseUfw(b *FirewallBackend, verbose, numbered string) {
@@ -235,7 +239,7 @@ func parseUfw(b *FirewallBackend, verbose, numbered string) {
 			r.Port, r.Proto = toM[1], toM[2]
 		}
 		v6 := strings.Contains(m[5], "(v6)") || (toM != nil && toM[3] != "")
-		from = strings.TrimSpace(strings.NewReplacer("(v6)", "", "(out)", "").Replace(from))
+		from = strings.TrimSpace(ufwFromCleaner.Replace(from))
 		if strings.EqualFold(from, "Anywhere") {
 			from = ""
 		}
@@ -390,7 +394,7 @@ func parseFirewalldZones(text string) (zones []string, rules []FirewallRule) {
 			continue
 		}
 		inRich = key == "rich rules"
-		kind := map[string]string{"services": "service", "ports": "port"}[key]
+		kind := fwdKindBySection[key]
 		if kind == "" {
 			continue
 		}

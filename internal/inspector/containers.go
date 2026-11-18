@@ -100,8 +100,9 @@ func (ins *Inspector) collectHostContainers(host *store.Host, runner sshrunner.R
 const dockerProbeTimeout = 20 * time.Second
 
 func parseDockerPS(out string) []DockerContainer {
-	containers := []DockerContainer{}
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	containers := make([]DockerContainer, 0, len(lines))
+	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

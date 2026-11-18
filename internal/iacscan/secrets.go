@@ -49,6 +49,36 @@ var secretValuePatterns = []*regexp.Regexp{
 	regexp.MustCompile(`eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}`),
 }
 
+// secretLineRules are the token-signatures checked on every line of every scanned file.
+// The regexes are shared with secretValuePatterns (redaction) so they compile once per process.
+var secretLineRules = []struct {
+	re      *regexp.Regexp
+	ruleID  string
+	title   string
+	detail  string
+	rem     string
+	severit string
+}{
+	{secretValuePatterns[0], "secret.aws-access-key", "AWS access key ID",
+		"An AWS access key ID is hard-coded in the file.", "Revoke the key in IAM and read it from the environment or a secret store.", SeverityCritical},
+	{secretValuePatterns[1], "secret.aws-access-key", "AWS access key ID",
+		"An AWS access key ID is hard-coded in the file.", "Revoke the key in IAM and read it from the environment or a secret store.", SeverityCritical},
+	{secretValuePatterns[2], "secret.github-token", "GitHub token",
+		"A GitHub personal access / OAuth / app token is hard-coded in the file.", "Revoke the token on GitHub and read it from the environment.", SeverityCritical},
+	{secretValuePatterns[3], "secret.github-token", "GitHub token",
+		"A GitHub fine-grained token is hard-coded in the file.", "Revoke the token on GitHub and read it from the environment.", SeverityCritical},
+	{secretValuePatterns[4], "secret.gitlab-token", "GitLab token",
+		"A GitLab personal access token is hard-coded in the file.", "Revoke the token on GitLab and read it from the environment.", SeverityCritical},
+	{secretValuePatterns[5], "secret.slack-token", "Slack token",
+		"A Slack token is hard-coded in the file.", "Revoke the token in Slack and read it from the environment.", SeverityCritical},
+	{secretValuePatterns[6], "secret.google-api-key", "Google API key",
+		"A Google API key is hard-coded in the file.", "Restrict the key in the Cloud Console and read it from the environment.", SeverityHigh},
+	{secretValuePatterns[7], "secret.stripe-key", "Stripe live secret key",
+		"A Stripe live key is hard-coded in the file.", "Roll the key in the Stripe dashboard and read it from the environment.", SeverityCritical},
+	{secretValuePatterns[8], "secret.jwt", "JSON Web Token",
+		"A JSON Web Token is hard-coded in the file.", "Do not commit tokens; mint them at runtime.", SeverityHigh},
+}
+
 // genericSecretAssign matches `key = "value"` or `key: value` for a secret-looking key.
 var genericSecretAssign = regexp.MustCompile(`(?i)([A-Za-z0-9_.-]*(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credential)[A-Za-z0-9_.-]*)\s*[:=]\s*["']?([^"'\s,}]+)`)
 
@@ -167,33 +197,7 @@ func scanSecrets(res *Result, rel string, lines []string) {
 			continue
 		}
 
-		for _, r := range []struct {
-			re      *regexp.Regexp
-			ruleID  string
-			title   string
-			detail  string
-			rem     string
-			severit string
-		}{
-			{regexp.MustCompile(`AKIA[0-9A-Z]{16}`), "secret.aws-access-key", "AWS access key ID",
-				"An AWS access key ID is hard-coded in the file.", "Revoke the key in IAM and read it from the environment or a secret store.", SeverityCritical},
-			{regexp.MustCompile(`ASIA[0-9A-Z]{16}`), "secret.aws-access-key", "AWS access key ID",
-				"An AWS access key ID is hard-coded in the file.", "Revoke the key in IAM and read it from the environment or a secret store.", SeverityCritical},
-			{regexp.MustCompile(`gh[pousr]_[A-Za-z0-9]{20,}`), "secret.github-token", "GitHub token",
-				"A GitHub personal access / OAuth / app token is hard-coded in the file.", "Revoke the token on GitHub and read it from the environment.", SeverityCritical},
-			{regexp.MustCompile(`github_pat_[A-Za-z0-9_]{20,}`), "secret.github-token", "GitHub token",
-				"A GitHub fine-grained token is hard-coded in the file.", "Revoke the token on GitHub and read it from the environment.", SeverityCritical},
-			{regexp.MustCompile(`glpat-[A-Za-z0-9_-]{16,}`), "secret.gitlab-token", "GitLab token",
-				"A GitLab personal access token is hard-coded in the file.", "Revoke the token on GitLab and read it from the environment.", SeverityCritical},
-			{regexp.MustCompile(`xox[baprs]-[A-Za-z0-9-]{10,}`), "secret.slack-token", "Slack token",
-				"A Slack token is hard-coded in the file.", "Revoke the token in Slack and read it from the environment.", SeverityCritical},
-			{regexp.MustCompile(`AIza[0-9A-Za-z_-]{30,}`), "secret.google-api-key", "Google API key",
-				"A Google API key is hard-coded in the file.", "Restrict the key in the Cloud Console and read it from the environment.", SeverityHigh},
-			{regexp.MustCompile(`sk_live_[0-9A-Za-z]{10,}`), "secret.stripe-key", "Stripe live secret key",
-				"A Stripe live key is hard-coded in the file.", "Roll the key in the Stripe dashboard and read it from the environment.", SeverityCritical},
-			{regexp.MustCompile(`eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}`), "secret.jwt", "JSON Web Token",
-				"A JSON Web Token is hard-coded in the file.", "Do not commit tokens; mint them at runtime.", SeverityHigh},
-		} {
+		for _, r := range secretLineRules {
 			if r.re.MatchString(line) {
 				add(res, Finding{
 					RuleID: r.ruleID, Category: CategorySecret, Severity: r.severit, File: rel, Line: ln,

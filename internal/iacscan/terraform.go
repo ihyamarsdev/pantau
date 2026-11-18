@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // tfBlock is a brace-aware block of a .tf file: its header, its body lines and its start line.
@@ -44,6 +45,9 @@ func parseTFBlocks(lines []string) []tfBlock {
 
 // stripTFComment removes a trailing comment and the content of quoted strings from a line.
 func stripTFComment(line string) string {
+	if !strings.ContainsAny(line, "\"#/") {
+		return line
+	}
 	var b strings.Builder
 	inStr := false
 	for i := 0; i < len(line); i++ {
@@ -86,7 +90,7 @@ func tfBlockName(header string) string {
 
 // tfAttr finds an attribute inside a block body: `name = value` on one line.
 func tfAttr(b tfBlock, name string) (string, bool) {
-	re := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(name) + `\s*=\s*(.+?)\s*$`)
+	re := tfAttrRegex(name)
 	for _, line := range b.lines {
 		if m := re.FindStringSubmatch(stripTFComment(line)); m != nil {
 			return strings.Trim(m[1], `"`), true
@@ -97,13 +101,38 @@ func tfAttr(b tfBlock, name string) (string, bool) {
 
 // tfAttrPresent reports whether the block has the attribute at all.
 func tfAttrPresent(b tfBlock, name string) bool {
-	re := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(name) + `\s*=`)
+	re := tfAttrExistsRegex(name)
 	for _, line := range b.lines {
 		if re.MatchString(stripTFComment(line)) {
 			return true
 		}
 	}
 	return false
+}
+
+// Attribute names come from a small fixed set; compile each pattern once instead of on every lookup.
+// sync.Map because ScanDir is reachable from concurrent HTTP requests.
+var (
+	tfAttrCache       sync.Map
+	tfAttrExistsCache sync.Map
+)
+
+func tfAttrRegex(name string) *regexp.Regexp {
+	if re, ok := tfAttrCache.Load(name); ok {
+		return re.(*regexp.Regexp)
+	}
+	re := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(name) + `\s*=\s*(.+?)\s*$`)
+	actual, _ := tfAttrCache.LoadOrStore(name, re)
+	return actual.(*regexp.Regexp)
+}
+
+func tfAttrExistsRegex(name string) *regexp.Regexp {
+	if re, ok := tfAttrExistsCache.Load(name); ok {
+		return re.(*regexp.Regexp)
+	}
+	re := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(name) + `\s*=`)
+	actual, _ := tfAttrExistsCache.LoadOrStore(name, re)
+	return actual.(*regexp.Regexp)
 }
 
 var tfOpenCIDRs = []string{"0.0.0.0/0", "::/0"}

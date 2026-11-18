@@ -270,13 +270,31 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 		return nil, fmt.Errorf("list hosts: %w", err)
 	}
 
+	// One set-based read replaces one query per Host; bucket by host_id and append in the
+	// same order ListHosts returns so the snapshot payload stays byte-identical.
+	rulesByHost := make(map[int64][]DesiredRule)
+	ruleRows, err := d.Query(`SELECT id, host_id, kind, target, expected, enabled FROM desired_rules ORDER BY host_id, kind, target`)
+	if err != nil {
+		return nil, fmt.Errorf("list desired rules: %w", err)
+	}
+	for ruleRows.Next() {
+		var r DesiredRule
+		var enabled int
+		if err := ruleRows.Scan(&r.ID, &r.HostID, &r.Kind, &r.Target, &r.Expected, &enabled); err != nil {
+			ruleRows.Close()
+			return nil, fmt.Errorf("scan desired rule: %w", err)
+		}
+		r.Enabled = enabled == 1
+		rulesByHost[r.HostID] = append(rulesByHost[r.HostID], r)
+	}
+	if err := ruleRows.Err(); err != nil {
+		ruleRows.Close()
+		return nil, fmt.Errorf("iterate desired rules: %w", err)
+	}
+	ruleRows.Close()
 	var allRules []DesiredRule
 	for _, h := range hosts {
-		rules, err := d.ListDesiredRules(h.ID)
-		if err != nil {
-			return nil, fmt.Errorf("list rules for host %d: %w", h.ID, err)
-		}
-		allRules = append(allRules, rules...)
+		allRules = append(allRules, rulesByHost[h.ID]...)
 	}
 
 	settings := make(map[string]string)

@@ -114,7 +114,7 @@ func (ins *Inspector) evaluateDesiredRules(h *store.Host, runner sshrunner.Runne
 	}
 
 	driftFound := false
-	var driftSummaries []string
+	driftSummaries := make([]string, 0, len(rules))
 	checkedCount := 0
 	cronMemo := &crontabMemoRunner{Runner: runner}
 
@@ -136,7 +136,7 @@ func (ins *Inspector) evaluateDesiredRules(h *store.Host, runner sshrunner.Runne
 		}
 	}
 
-	var actualItems []*store.ActualItem // ponytail: one batched transaction instead of one commit per rule
+	actualItems := make([]*store.ActualItem, 0, len(rules)) // ponytail: one batched transaction instead of one commit per rule
 
 	for _, rule := range rules {
 		if !rule.Enabled {
