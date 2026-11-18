@@ -47,6 +47,7 @@ Pantau beroperasi **100% agentless** melalui protokol standar SSH (`port 22`). S
    - [Pin Berkas dengan Catatan Operasional & Global Bookmarks](#pin-berkas-dengan-catatan-operasional--global-bookmarks)
 6. [Fase 5: Pengerasan Keamanan, Snapshot & Pemulihan Bencana](#6-fase-5-pengerasan-keamanan-snapshot--pemulihan-bencana)
    - [Two-Factor Authentication (2FA) & 2FA Bypass Flag](#two-factor-authentication-2fa--2fa-bypass-flag)
+   - [Secrets Vault: Mengelola Rahasia & Sinkronisasi .env](#secrets-vault-mengelola-rahasia-sinkronisasi-env)
    - [System Snapshot Terenkripsi & Disaster Recovery GitHub](#system-snapshot-terenkripsi--disaster-recovery-github)
 7. [Fase 6: Pemeliharaan Sistem & Pembaruan (Update Checker & Self-Update)](#7-fase-6-pemeliharaan-sistem--pembaruan-update-checker--self-update)
    - [Update Checker & Siklus Deteksi Rilis](#update-checker--siklus-deteksi-rilis)
@@ -1399,6 +1400,29 @@ Untuk melindungi akses administratif dari kebocoran kata sandi:
   ./pantau -port 8080 -db /data/pantau.db -disable-2fa
   ```
   Perintah ini akan langsung menonaktifkan konfigurasi TOTP dari SQLite dan memulihkan akses login administrator.
+
+### Secrets Vault: Mengelola Rahasia & Sinkronisasi .env
+
+**Masalah yang dipecahkan.** Token, kata sandi, dan kunci API sering berakhir di berkas `.env` biasa pada server, sehingga siapa pun yang membaca berkas itu melihat rahasianya. **Secrets Vault** (sebuah *vault* — "brankas" yang aman — untuk rahasia Anda) menyimpan nilai-nilai itu terenkripsi di satu tempat dan mengirimnya keluar hanya saat Anda meminta. Yang dimaksud *rahasia* (*secret*) adalah nilai sensitif apa pun: token, kata sandi, atau kunci API.
+
+Ikuti langkah-langkah ini saat pertama kali:
+
+1. **Buka bagian Secrets.** Di side panel, klik **Secrets**. Workspace Vault terbuka. Tampil strip status (jumlah kunci, jumlah yang perlu diputar, jumlah target sinkronisasi) dan daftar rahasia.
+2. **Tambah rahasia.** Klik **Add secret** dan isi:
+   - **Key** — nama yang akan Anda pakai, mis. `DB_PASSWORD`.
+   - **Value** — nilai rahasia sebenarnya. Nilai dienkripsi dengan AES-256-GCM saat disimpan (disimpan dalam bentuk teracak di database).
+   - **Scope** — tempat berlakunya rahasia (*scope* = ruang lingkup: `global` untuk semua tempat, atau hanya satu `group`, `host`, atau `cluster`). Ini memungkinkan staging dan produksi memakai nama kunci yang sama dengan nilai berbeda.
+   - **Expiry / rotation** — tanggal kedaluwarsa atau jeda rotasi dalam hari. Pantau memberi peringatan saat waktunya memutar (mengganti) nilai.
+   Nilai **disamarkan secara bawaan** (`••••••••`). Untuk melihatnya, klik **Reveal** — klik itu dicatat di jejak audit (catatan siapa melakukan apa dan kapan), seperti halnya buat, ubah, *rollback*, dan hapus.
+3. **Buat template `.env`.** Di area **Templates**, tulis isi berkas dengan placeholder seperti `DB_PASSWORD={{ vault.DB_PASSWORD }}`. Placeholder `{{ vault.KEY }}` diganti dengan rahasia saat sinkronisasi. Autocomplete menyarankan kunci yang benar saat Anda mengetik, dan validasi menandai kunci yang tidak dikenal atau salah eja. Klik **Render** untuk melihat pratinjau — nilai tampil sebagai `[REDACTED]`, tidak pernah dalam bentuk asli di halaman.
+4. **Hubungkan target sinkronisasi dan lakukan sync.** Di area **Targets**, klik **Add target** dan pilih tujuan template yang sudah dirender:
+   - **`.env` Host** — pilih host dan path berkas. Pantau menulis berkas dengan mode `0600` (hanya pemilik yang bisa membacanya). Opsional, atur **post-sync hook** untuk memuat ulang layanan: `systemd:<unit>:restart` atau restart container Docker. Setelah **Sync**, badge **SHA-256** (sidik jari berkas) menampilkan `in-sync`, `drift` (berkas berubah di server), atau `error`.
+   - **Kubernetes Secret** — pilih klaster dan namespace; Pantau menerapkan `v1/Secret` dari template.
+   - **Injeksi env sementara** — untuk Terraform (`TF_VAR_*`), *extra vars* Ansible, atau Docker (`-e`), nilai hanya masuk ke memori, sehingga tidak ada berkas rahasia teks asli yang ditulis ke disk.
+   Klik **Sync** untuk mengirim. Badge drift dan waktu `last sync` ikut diperbarui.
+5. **Rollback atau rotasi.** Buka **Versions** sebuah rahasia untuk melihat riwayatnya. Setiap perubahan menyimpan nilai lama, dan **Rollback** menambah versi baru alih-alih menghapus riwayat, jadi tidak ada yang hilang. Saat sebuah rahasia mendekati tanggal kedaluwarsa atau rotasinya, peringatan muncul di strip status dan daftar — putar nilainya (beri nilai baru) untuk menghapus peringatan itu.
+
+**Catatan tentang AI agent.** Agent dapat mendaftar kunci rahasia dan memicu sinkronisasi (dengan persetujuan Anda), tetapi tidak pernah melihat nilainya — agent hanya bisa merujuknya sebagai `{{ vault.KEY }}`. Tidak ada teks rahasia yang pernah masuk ke percakapan AI.
 
 ### Tetap Masuk (Sesi)
 

@@ -129,7 +129,8 @@ func agentToolDomain(name string) toolDomain {
 	case strings.HasPrefix(name, "cf_"), name == "vpn_networks", name == "net_diag",
 		name == "firewall_action", name == "domain_config_remove", name == "fleet_forwards":
 		return domainNetwork
-	case strings.HasPrefix(name, "ansible_"), strings.HasPrefix(name, "tf_"), name == "gateway_cli":
+	case strings.HasPrefix(name, "ansible_"), strings.HasPrefix(name, "tf_"), name == "gateway_cli",
+		name == "list_vault_keys", name == "trigger_env_sync":
 		return domainAutomation
 	case strings.HasPrefix(name, "repo_"):
 		return domainRepo

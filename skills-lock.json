@@ -1,0 +1,33 @@
+{
+  "version": 2,
+  "skills": {
+    "golang-pprof-collect": {
+      "source": "rumstead/golang-pprof-skills",
+      "commit": "d1a17803b065ceef1881f281ba875684d3f36b49",
+      "sourceType": "github",
+      "skillPath": "golang-pprof-collect/SKILL.md",
+      "computedHash": "a0ec3142c1c9510d090e3de53227fa7805d9bfbc628872933c3c1deeee7b59c6"
+    },
+    "golang-profile-cpu": {
+      "source": "rumstead/golang-pprof-skills",
+      "commit": "d1a17803b065ceef1881f281ba875684d3f36b49",
+      "sourceType": "github",
+      "skillPath": "golang-profile-cpu/SKILL.md",
+      "computedHash": "f2e8df801f2c15f9f241b1024a111eb3e5ce1f6d429851eab7db77deeee3b16b"
+    },
+    "golang-profile-goroutine": {
+      "source": "rumstead/golang-pprof-skills",
+      "commit": "d1a17803b065ceef1881f281ba875684d3f36b49",
+      "sourceType": "github",
+      "skillPath": "golang-profile-goroutine/SKILL.md",
+      "computedHash": "b986dd8e0011a2b715ef0a30713288ebecece3cb0c8ec8becccf40ee3797b8fb"
+    },
+    "golang-profile-heap": {
+      "source": "rumstead/golang-pprof-skills",
+      "commit": "d1a17803b065ceef1881f281ba875684d3f36b49",
+      "sourceType": "github",
+      "skillPath": "golang-profile-heap/SKILL.md",
+      "computedHash": "ac12f56bf8e3db547db61b71e5d85554ac6e05f4f8f33c38952ff953c3e2294b"
+    }
+  }
+}

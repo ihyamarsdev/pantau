@@ -875,3 +875,35 @@ _Avoid_: Bookmark, external link, service tile, homepage entry
 **Shortcut Auto Login**:
 Kredensial opsional pada sebuah Custom Shortcut (nama pengguna, kata sandi, alamat formulir login, nama kolom pengguna dan sandi, serta kolom tambahan) yang membuat tile-nya menaut ke halaman Pantau `/shortcut-login/<id>`; halaman itu mem-POST kredensial ke formulir login situs tujuan sebagai navigasi biasa, sehingga satu klik berakhir di situs dalam keadaan sudah masuk. Kata sandi hanya bisa ditulis (API mengembalikan `login_pass_set`, bukan nilainya) dan halaman itu tidak di-cache serta tidak mengirim referrer.
 _Avoid_: Saved password, credential store, password manager, SSO
+
+**Secrets Vault**:
+Fasilitas terpusat di Pantau untuk menyimpan, memversi, memutar, dan menyuntikkan rahasia (token, kata sandi, kunci API) dengan enkripsi AES-256-GCM *at rest* di bawah kunci master 32 byte, disensor dari seluruh log, dan tidak pernah diekspos sebagai plaintext kecuali lewat endpoint reveal eksplisit; kunci master disimpan di tabel `settings` (`vault_master_key`) sehingga ikut terlindungi dalam System Snapshot terenkripsi (lihat [ADR-0084](docs/adr/0084-universal-secrets-vault-and-env-sync.md)).
+_Avoid_: Password manager, credential store, keychain, env file store
+
+**Vault Secret**:
+Satu entri rahasia di Secrets Vault yang memiliki kunci unik, nilai terenkripsi, cakupan, nomor versi, metadata rotasi (`expires_at`/`rotation_days`), dan riwayat perubahan; nilai mentahnya hanya bisa dibaca lewat aksi reveal yang tercatat di audit.
+_Avoid_: Config value, environment variable, plain credential
+
+**Secret Scope**:
+Cakupan berlaku sebuah Vault Secret — `global` (seluruh sistem), `group` (satu Host Group), `host` (satu Host), atau `cluster` (satu Kubernetes Cluster) — yang menentukan ke mana rahasia disuntikkan saat sinkronisasi.
+_Avoid_: Visibility level, permission tier, access group
+
+**.env Template**:
+Teks dengan placeholder `{{ vault.KEY }}` yang disimpan di Secrets Vault dan dirender menjadi berkas `.env` atau `Secret` Kubernetes; kunci placeholder divalidasi terhadap daftar rahasia yang dikenal dan nilai yang dirender selalu ditampilkan sebagai `[REDACTED]` di pratinjau.
+_Avoid_: Config file, env dump, dotenv snapshot
+
+**Sync Target**:
+Definisi tujuan sinkronisasi sebuah `.env Template`: Host (penulisan berkas `.env` lewat SFTP mode 0600 dengan verifikasi SHA-256 dan *post-sync hook* opsional) atau Kubernetes (`v1/Secret` lewat `KubeApply` dengan id klaster negatif), lengkap dengan status drift terakhir.
+_Avoid_: Destination, deploy target, remote path
+
+**Drift Status (Vault)**:
+Status hasil perbandingan antara nilai rahasia yang tersimpan dan nilai aktual di Sync Target — `unknown` (belum pernah disinkronisasi), `in-sync` (SHA-256 cocok), `drift` (berbeda), atau `error` (target tidak terjangkau); ditampilkan sebagai badge pada workspace vault.
+_Avoid_: Sync state, mismatch flag, health badge
+
+**Secret Rotation**:
+Proses memperbarui nilai Vault Secret yang mengarsipkan ciphertext lama sebagai versi baru; rollback juga menciptakan versi baru sehingga riwayat tetap lengkap, dengan penanda `expires_at` dan `rotation_days` yang memicu peringatan kedaluwarsa.
+_Avoid_: Key reset, password change, token refresh
+
+**Blind Injection**:
+Mekanisme penyuntikan rahasia ke proses (Terraform `TF_VAR_*`/env, *extra vars* Ansible, env Docker `-e`) hanya lewat memori tanpa berkas plaintext di disk, dan tanpa pernah memasukkan nilai ke konteks AI Agent — tool agent hanya mengembalikan metadata (`list_vault_keys`) dan status (`trigger_env_sync`) agar model bekerja dengan placeholder.
+_Avoid_: Secret injection, env export, credential passthrough

@@ -8,6 +8,7 @@ import (
 
 	"pantau/internal/ansible"
 	"pantau/internal/store"
+	"pantau/internal/vault"
 )
 
 // ansibleRunParams is everything needed to start one run; shared by the manual run endpoint and the scheduler.
@@ -86,6 +87,22 @@ func (s *Server) launchAnsibleRun(pb *store.AnsiblePlaybook, p ansibleRunParams)
 			return nil, launchErr(http.StatusInternalServerError, "%v", err)
 		}
 		recordVars = masked
+	}
+
+	// Vault secrets are injected as extra vars for this run only. They live in
+	// memory and the existing 0600 extra.json in the temp workspace; they are
+	// never added to the stored run record (recordVars stays as-is).
+	secrets := vaultSecretsMapDB(s.db)
+	if len(secrets) > 0 {
+		vaultVars, err := json.Marshal(vault.InjectEnv(map[string]string{}, secrets, ""))
+		if err != nil {
+			return nil, launchErr(http.StatusInternalServerError, "%v", err)
+		}
+		merged, err := mergeExtraVars(extraVars, string(vaultVars))
+		if err != nil {
+			return nil, launchErr(http.StatusInternalServerError, "%v", err)
+		}
+		extraVars = merged
 	}
 
 	// Target resolution: union of host_ids + hosts matching group

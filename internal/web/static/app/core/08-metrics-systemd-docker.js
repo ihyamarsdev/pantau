@@ -1306,6 +1306,8 @@ function switchSideNav(section) {
   if (secRepos) secRepos.style.display = section === 'repos' ? 'block' : 'none';
   const secShortcuts = document.getElementById('sectionShortcuts');
   if (secShortcuts) secShortcuts.style.display = section === 'shortcuts' ? 'block' : 'none';
+  const secSecrets = document.getElementById('sectionSecrets');
+  if (secSecrets) secSecrets.style.display = section === 'secrets' ? 'block' : 'none';
   toggleSidePanelMobile(false);
   if (section !== 'kube') stopKubeAutorefresh();
   if (section === 'docker') renderDockerSection();
@@ -1315,6 +1317,7 @@ function switchSideNav(section) {
   else if (section === 'terraform') { refreshTfSection(); }
   else if (section === 'repos') { if (window.Repos) Repos.refresh(); }
   else if (section === 'shortcuts') { if (window.Shortcuts) Shortcuts.refresh(); }
+  else if (section === 'secrets') { if (window.Vault) Vault.refresh(); }
 }
 
 function updateSideNavData() {

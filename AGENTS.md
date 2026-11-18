@@ -29,3 +29,14 @@ Applies to every working session.
 
 Always use codebase-memory-mcp first for code exploration: read the `codebase-memory` skill (`skill://codebase-memory`), then `search_graph` for symbols, `trace_path` for callers/callees, `get_code_snippet` for source, `query_graph` for multi-hop, `get_architecture` for overview, and `detect_changes` for impact analysis. Fall back to `grep`/`read` only for literals or when `check_index_coverage` shows a gap. Re-index with `index_repository` if the project is not indexed or stale.
 
+### Go profiling (pprof)
+
+Four composable skills from `rumstead/golang-pprof-skills` are installed project-wide under `.agents/skills/` (also symlinked into `.claude/skills/`); versions are pinned in `skills-lock.json`. Use them for performance work on the Pantau binary.
+
+- `skill://golang-pprof-collect` — collect a profile from a running process (or a Kubernetes pod via port-forward) into a `.pb.gz` file. Start here when no profile file exists yet.
+- `skill://golang-profile-cpu` — analyze CPU profiles: hot functions, call graphs, contention indicators.
+- `skill://golang-profile-heap` — analyze heap profiles: memory consumers, allocation paths, GC pressure.
+- `skill://golang-profile-goroutine` — analyze goroutine profiles: leaks, blocking stacks, state breakdown.
+
+The three analysis skills depend on `golang-pprof-collect` and delegate collection to it. Read the relevant `SKILL.md` before running `go tool pprof`. `// turbo` annotations mark steps safe to auto-run. Profiles are written to the workspace root — keep them out of git (`.gitignore`).
+

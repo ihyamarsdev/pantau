@@ -320,6 +320,19 @@ Private hosts that only exist behind a VPN are managed like any other host: **Se
 - **Inside Docker**: the shipped `docker-compose.yml` bakes the checksum-verified NetBird CLI plus `netclient`, `tailscale`/`tailscaled`, `openvpn` and `wireguard-tools` into the image, grants `NET_ADMIN`/`NET_RAW` and `/dev/net/tun`, and keeps `/var/lib/netbird` in a named volume, so the container runs its own client: create the network with driver `netbird`, **mode `instance`**, for example interface `wt1` and WireGuard port `51821`, then `docker compose up -d --build`. A container that should reuse the host's daemon instead needs `network_mode: host` plus the host's `/usr/bin/netbird`, `/var/run/netbird.sock` and `/var/lib/netbird` mounted, and **mode `shared`**.
 - **Opt-in**: `vpn_enabled` is off by default (like the Terraform Gate) because the vendor CLI runs with master privileges. Credentials are write-only in the API (`setup_key_set`, `token_set`, …), never logged, and restored through the encrypted System Snapshot (`hosts.network_id` + `vpn_networks`).
 
+### 35. 🔐 Secrets Vault & Multi-Target .env Sync
+
+Tired of pasting tokens, passwords and API keys into plain `.env` files on every server? The **Secrets Vault** is one encrypted place for all your secrets — a *vault* (brankas) for the sensitive values Pantau and your hosts need. Nothing sensitive has to sit in clear text on disk anymore.
+
+- **Encrypted at rest**: every secret is sealed with AES-256-GCM in the database. Plaintext never appears in an API response or a log stream — logs redact known secret values into `[REDACTED]` automatically.
+- **Masked by default, revealed on purpose**: values show as `••••••••` in the UI. An explicit **Reveal** click fetches the plaintext, and every create, update, reveal, rollback, delete and sync is written to an audit trail so you can see who changed what and when.
+- **`.env` templates with placeholders**: write a template using `{{ vault.KEY }}` (for example `DB_PASSWORD={{ vault.DB_PASSWORD }}`). Live autocomplete and validation catch misspelled or unknown keys, and **Render** previews the result with `[REDACTED]` — no real value is ever shown on the page.
+- **Scopes**: each secret is `global`, or limited to one `group`, `host`, or `cluster` (scope = where the secret applies). That lets you keep staging and production values apart under the same key name.
+- **Versions & rollback**: each change saves the old value as a new version, and a rollback adds another version instead of erasing history. Nothing is lost, and the full history stays auditable.
+- **Rotation reminders**: set an expiry date or a rotation interval (in days) and Pantau flags secrets that need rotating with a warning in the status strip and the secret list.
+- **Sync targets**: push the rendered template to a host `.env` file (written with mode `0600`, checked by SHA-256 with a drift badge, and an optional `systemd`/Docker post-sync hook to reload the service), to a Kubernetes `Secret` (cluster + namespace), or inject values as ephemeral environment variables into Terraform (`TF_VAR_*`), Ansible extra vars and Docker (`-e`) — no plaintext secret file is left on disk.
+- **The AI agent stays blind**: the agent can list secret keys and trigger a sync (with your approval), but it never sees the values — it can only refer to them as `{{ vault.KEY }}`, so no secret ever reaches the LLM.
+
 ---
 
 ## 🤖 AI Agent (optional, built in)

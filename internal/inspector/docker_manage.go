@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"pantau/internal/logger"
+	"pantau/internal/vault"
 )
 
 // Docker management (Portainer-style): inspect, container lifecycle, create/run, images, volumes, networks,
@@ -342,8 +344,53 @@ func buildDockerRun(spec DockerRunSpec) (string, error) {
 	return b.String(), nil
 }
 
+
+// vaultSecretsMap returns key -> decrypted value for all stored vault secrets.
+// Plaintext exists only in this Go map; it is passed straight to the container
+// environment and never written to disk by this package.
+func (ins *Inspector) vaultSecretsMap() map[string]string {
+	out := map[string]string{}
+	if ins == nil || ins.db == nil {
+		return out
+	}
+	metas, err := ins.db.ListVaultSecrets()
+	if err != nil {
+		return out
+	}
+	for _, m := range metas {
+		sec, err := ins.db.GetVaultSecret(m.ID)
+		if err != nil || sec == nil {
+			continue
+		}
+		out[sec.Key] = sec.Value
+	}
+	return out
+}
 // DockerRunContainer creates and starts a container (pulling the image when it is missing) and returns its ID.
 func (ins *Inspector) DockerRunContainer(hostID int64, spec DockerRunSpec) (string, error) {
+	// Merge vault secrets into the container environment in memory only. The
+	// resulting KEY=VALUE entries are passed to `docker run -e` and never
+	// written to a file by this package.
+	secrets := ins.vaultSecretsMap()
+	if len(secrets) > 0 {
+		base := map[string]string{}
+		for _, e := range spec.Env {
+			if k, v, ok := strings.Cut(e, "="); ok {
+				base[k] = v
+			}
+		}
+		merged := vault.InjectEnv(base, secrets, "")
+		keys := make([]string, 0, len(merged))
+		for k := range merged {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		env := make([]string, 0, len(merged))
+		for _, k := range keys {
+			env = append(env, k+"="+merged[k])
+		}
+		spec.Env = env
+	}
 	cmd, err := buildDockerRun(spec)
 	if err != nil {
 		return "", err

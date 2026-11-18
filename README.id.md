@@ -319,6 +319,19 @@ Host privat yang hanya hidup di balik VPN kini dikelola seperti host biasa: **Se
 - **Di dalam Docker**: `docker-compose.yml` bawaan menanam NetBird CLI (checksum diverifikasi) plus `netclient`, `tailscale`/`tailscaled`, `openvpn`, dan `wireguard-tools` ke image, memberi `NET_ADMIN`/`NET_RAW` dan `/dev/net/tun`, serta menyimpan `/var/lib/netbird` sebagai volume — jadi container menjalankan kliennya sendiri: buat jaringan dengan driver `netbird`, **mode `instance`**, mis. interface `wt1` dan port WireGuard `51821`, lalu `docker compose up -d --build`. Bila ingin memakai daemon milik host, container perlu `network_mode: host` dan mount `/usr/bin/netbird`, `/var/run/netbird.sock`, `/var/lib/netbird`, dengan **mode `shared`**.
 - **Opt-in**: `vpn_enabled` default mati (seperti Terraform Gate) karena biner vendor berjalan dengan privilese master. Kredensial hanya bisa ditulis (`setup_key_set`, `token_set`, …), tidak pernah masuk log, dan ikut System Snapshot terenkripsi (`hosts.network_id` + `vpn_networks`).
 
+### 35. 🔐 Secrets Vault & Sinkronisasi .env Multi-Target
+
+Kapankah Anda harus menempelkan token, kata sandi, dan kunci API ke berkas `.env` biasa di setiap server? **Secrets Vault** adalah satu tempat terenkripsi untuk semua rahasia Anda — sebuah *vault* (brankas) untuk nilai sensitif yang dibutuhkan Pantau dan host Anda. Tidak ada lagi data sensitif yang dibiarkan dalam teks terbuka di disk.
+
+- **Terenkripsi saat disimpan (*at rest*)**: setiap rahasia disegel dengan AES-256-GCM di database. Teks asli tidak pernah muncul di respons API atau aliran log — log otomatis menyensor nilai rahasia yang dikenal menjadi `[REDACTED]`.
+- **Disamarkan secara bawaan, dibuka sesuai kebutuhan**: nilai tampil sebagai `••••••••` di antarmuka. Klik **Reveal** secara eksplisit untuk mengambil teks aslinya, dan setiap pembuatan, pembaruan, pembukaan, *rollback*, penghapusan, serta sinkronisasi dicatat dalam jejak audit agar Anda tahu siapa mengubah apa dan kapan.
+- **Template `.env` dengan placeholder**: tulis template memakai `{{ vault.KEY }}` (misalnya `DB_PASSWORD={{ vault.DB_PASSWORD }}`). Autocomplete dan validasi langsung menangkap kunci yang salah eja atau tidak dikenal, dan **Render** menampilkan pratinjau dengan `[REDACTED]` — nilai asli tidak pernah ditampilkan di halaman.
+- **Cakupan (*scope*)**: setiap rahasia bersifat `global`, atau dibatasi pada satu `group`, `host`, atau `cluster` (scope = tempat berlakunya rahasia). Ini memungkinkan nilai staging dan produksi dipisahkan di bawah nama kunci yang sama.
+- **Versi & *rollback***: setiap perubahan menyimpan nilai lama sebagai versi baru, dan *rollback* menambah versi lagi alih-alih menghapus riwayat. Tidak ada yang hilang, dan seluruh riwayat tetap dapat diaudit.
+- **Pengingat rotasi**: tentukan tanggal kedaluwarsa atau jeda rotasi (dalam hari) dan Pantau menandai rahasia yang perlu diputar dengan peringatan di strip status dan daftar rahasia.
+- **Target sinkronisasi**: kirim template yang sudah dirender ke berkas `.env` host (ditulis dengan mode `0600`, diverifikasi SHA-256 dengan badge drift, serta *post-sync hook* `systemd`/Docker opsional untuk memuat ulang layanan), ke `Secret` Kubernetes (klaster + namespace), atau suntikkan nilai sebagai variabel lingkungan sementara ke Terraform (`TF_VAR_*`), *extra vars* Ansible, dan Docker (`-e`) — tidak ada berkas rahasia teks asli yang tertinggal di disk.
+- **AI agent tetap buta**: agent dapat mendaftar kunci rahasia dan memicu sinkronisasi (dengan persetujuan Anda), tetapi tidak pernah melihat nilainya — agent hanya bisa merujuknya sebagai `{{ vault.KEY }}`, sehingga tidak ada rahasia yang sampai ke LLM.
+
 ---
 
 ## 🤖 AI Agent (opsional, bawaan Pantau)

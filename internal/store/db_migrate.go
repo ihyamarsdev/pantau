@@ -571,6 +571,56 @@ func (d *DB) migrate() error {
 		UNIQUE (workspace_id, var_name)
 	);
 	CREATE TABLE IF NOT EXISTS tf_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, ts DATETIME NOT NULL, level TEXT NOT NULL, host TEXT NOT NULL DEFAULT '', message TEXT NOT NULL);
+
+	CREATE TABLE IF NOT EXISTS vault_secrets (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		key TEXT NOT NULL UNIQUE COLLATE NOCASE,
+		scope TEXT NOT NULL DEFAULT 'global',
+		scope_ref TEXT NOT NULL DEFAULT '',
+		ciphertext BLOB NOT NULL,
+		current_version INTEGER NOT NULL DEFAULT 1,
+		expires_at DATETIME,
+		rotation_days INTEGER NOT NULL DEFAULT 0,
+		created_at DATETIME NOT NULL,
+		updated_at DATETIME NOT NULL
+	);
+	CREATE TABLE IF NOT EXISTS vault_versions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		secret_id INTEGER NOT NULL REFERENCES vault_secrets(id) ON DELETE CASCADE,
+		version INTEGER NOT NULL,
+		ciphertext BLOB NOT NULL,
+		created_at DATETIME NOT NULL,
+		UNIQUE (secret_id, version)
+	);
+	CREATE TABLE IF NOT EXISTS vault_templates (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL UNIQUE,
+		body TEXT NOT NULL DEFAULT '',
+		created_at DATETIME NOT NULL,
+		updated_at DATETIME NOT NULL
+	);
+	CREATE TABLE IF NOT EXISTS vault_targets (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		kind TEXT NOT NULL,
+		template_id INTEGER NOT NULL DEFAULT 0,
+		target_ref TEXT NOT NULL DEFAULT '',
+		path TEXT NOT NULL DEFAULT '',
+		namespace TEXT NOT NULL DEFAULT '',
+		post_sync_hook TEXT NOT NULL DEFAULT '',
+		last_sync_sha TEXT NOT NULL DEFAULT '',
+		last_sync_at DATETIME,
+		drift_status TEXT NOT NULL DEFAULT 'unknown',
+		created_at DATETIME NOT NULL
+	);
+	CREATE TABLE IF NOT EXISTS vault_audit (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		ts DATETIME NOT NULL,
+		action TEXT NOT NULL,
+		detail TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX IF NOT EXISTS idx_vault_versions_secret ON vault_versions(secret_id);
+	CREATE INDEX IF NOT EXISTS idx_vault_targets_kind ON vault_targets(kind);
 	`
 	_, err := d.Exec(schema)
 	if err != nil {

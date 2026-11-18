@@ -47,6 +47,7 @@ Pantau operates **100% agentless** over standard SSH (`port 22`). It requires ze
    - [File Pinning with Notes & Global Bookmarks](#file-pinning-with-notes--global-bookmarks)
 6. [Phase 5: Hardening, Snapshots & Disaster Recovery](#6-phase-5-hardening-snapshots--disaster-recovery)
    - [Two-Factor Authentication (2FA) & Emergency Bypass](#two-factor-authentication-2fa--emergency-bypass)
+   - [Secrets Vault: Managing Secrets & .env Sync](#secrets-vault-managing-secrets-env-sync)
    - [Encrypted System Snapshots & GitHub Disaster Recovery](#encrypted-system-snapshots--github-disaster-recovery)
 7. [Phase 6: Maintenance & Updates (Update Checker & Self-Update)](#7-phase-6-maintenance--updates-update-checker--self-update)
    - [Update Checker & Release Discovery](#update-checker--release-discovery)
@@ -1397,6 +1398,29 @@ To protect management actions against credential theft:
   ./pantau -port 8080 -db /data/pantau.db -disable-2fa
   ```
   This immediately clears active TOTP configurations from SQLite and allows administrative login.
+
+### Secrets Vault: Managing Secrets & .env Sync
+
+**The problem it solves.** Tokens, passwords and API keys often end up in plain `.env` files on servers, where anyone who reads the file sees the secret. The **Secrets Vault** (a *vault* — a secure "brankas" — for your secrets) keeps those values encrypted in one place and pushes them out only when you ask. A *secret* is any sensitive value: a token, a password, an API key.
+
+Follow these steps the first time:
+
+1. **Open the Secrets section.** In the side panel, click **Secrets**. The Vault workspace opens. It shows the status strip (how many keys you have, how many need rotation, how many sync targets) and the list of secrets.
+2. **Add a secret.** Click **Add secret** and fill in:
+   - **Key** — the name you will reference, e.g. `DB_PASSWORD`.
+   - **Value** — the actual secret. It is encrypted with AES-256-GCM at rest (stored in scrambled form in the database).
+   - **Scope** — where the secret applies (*scope* = ruang lingkup: `global` for everywhere, or only one `group`, `host`, or `cluster`). This lets staging and production use the same key name with different values.
+   - **Expiry / rotation** — an expiry date or a rotation interval in days. Pantau warns you when it is time to rotate (change) the value.
+   The value is **masked by default** (`••••••••`). To see it, click **Reveal** — that click is recorded in the audit trail (a log of who did what and when), just like create, edit, rollback and delete.
+3. **Create a `.env` template.** In the **Templates** area, write the file content with placeholders like `DB_PASSWORD={{ vault.DB_PASSWORD }}`. The `{{ vault.KEY }}` placeholder is replaced by the secret at sync time. Autocomplete suggests real keys as you type, and validation flags unknown or misspelled keys. Click **Render** to preview the result — values appear as `[REDACTED]`, never in real form on the page.
+4. **Bind a sync target and sync.** In the **Targets** area, click **Add target** and choose where the rendered template goes:
+   - **Host `.env`** — pick a host and a file path. Pantau writes the file with mode `0600` (only the owner can read it). Optionally set a **post-sync hook** to reload the service: `systemd:<unit>:restart` or a Docker container restart. After **Sync**, a **SHA-256** badge (a file fingerprint) shows `in-sync`, `drift` (the file changed on the server), or `error`.
+   - **Kubernetes Secret** — pick a cluster and namespace; Pantau applies a `v1/Secret` from the template.
+   - **Ephemeral env injection** — for Terraform (`TF_VAR_*`), Ansible extra vars or Docker (`-e`), values go into memory only, so no plaintext secret file is written to disk.
+   Click **Sync** to push. The drift badge and `last sync` time update.
+5. **Roll back or rotate.** Open a secret's **Versions** to see its history. Every edit saves the old value, and **Rollback** adds a new version rather than erasing history, so nothing is lost. When a secret is near its expiry or rotation date, a warning appears in the status strip and the list — rotate it (set a new value) to clear the warning.
+
+**Note on the AI agent.** The agent can list secret keys and trigger a sync (with your approval), but it never sees the values — it can only refer to them as `{{ vault.KEY }}`. No secret plaintext ever enters the AI conversation.
 
 ### Staying Signed In (Session)
 

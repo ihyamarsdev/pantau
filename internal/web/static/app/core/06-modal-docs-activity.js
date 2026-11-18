@@ -511,6 +511,299 @@ function renderDocData(parsed) {
   }
   const pane = document.getElementById('docsContentPane');
   if (pane) pane.scrollTop = 0;
+  applyDocsSearch();
+}
+
+// --- Client-side full-text search within the open documentation (ADR 0017) ---
+S.docsSearchQuery = S.docsSearchQuery || '';
+S.docsSearchMarks = S.docsSearchMarks || [];
+S.docsSearchMarkIndex = S.docsSearchMarkIndex || 0;
+
+// Synonym dictionary for client-side docs search (EN + ID, normalized tokens).
+// Keys are canonical tokens; values are accepted variants. Search is symmetric:
+// a query token and a document word match when their expanded synonym sets
+// intersect, so "secrets" finds "rahasia"/"vault"/"brankas" and vice versa.
+const DOCS_SYNONYMS = {
+  secret: ['secret','secrets','rahasia','kunci','credential','credentials','kredensial','token','password','sandi','vault','brankas'],
+  vault: ['vault','brankas','secrets','rahasia',' encrypted','encrypted','enkripsi','tersimpan'],
+  env: ['env','dotenv','environment','lingkungan','template','templat','konfigurasi','configuration'],
+  sync: ['sync','sinkron','sinkronisasi','synchronize','push','kirim','deploy'],
+  host: ['host','server','mesin','node'],
+  docker: ['docker','container','kontainer','compose'],
+  kubernetes: ['kubernetes','kube','k8s','klaster','cluster'],
+  terraform: ['terraform','tf','infrastructure','infrastruktur','iac'],
+  ansible: ['ansible','playbook','otomasi','automation'],
+  agent: ['agent','agen','ai','llm','asisten','assistant'],
+  monitoring: ['monitoring','monitor','pantau','pemantauan','observability','observabilitas'],
+  inspection: ['inspection','inspeksi','inspect','check','pemeriksaan'],
+  drift: ['drift','deviasi','penyimpangan','mismatch'],
+  snapshot: ['snapshot','backup','cadangan','restore','pemulihan'],
+  ssh: ['ssh','key','kunci','private','publik','public'],
+  terminal: ['terminal','shell','pty','console','konsol'],
+  security: ['security','keamanan','scan','pemindaian','hardening','cve','vulnerability','kerentanan'],
+  user: ['user','pengguna','panduan','guide','docs','dokumentasi','bantuan','help'],
+  search: ['search','cari','pencarian','find','temukan'],
+  network: ['network','jaringan','vpn','tunnel','terowongan','port'],
+  database: ['database','db','sql','sqlite'],
+  file: ['file','berkas','folder','direktori','directory','sftp'],
+  alert: ['alert','peringatan','notifikasi','notification'],
+  rotation: ['rotation','rotasi','rotate','expiry','expired','kedaluwarsa','expires'],
+};
+
+// Lowercase, strip diacritics, trim, and crudely drop a trailing plural.
+function normalizeDocsToken(s) {
+  let out = String(s == null ? '' : s)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+  if (out.length > 3 && out.endsWith('es')) out = out.slice(0, -2);
+  else if (out.length > 2 && out.endsWith('s')) out = out.slice(0, -1);
+  return out;
+}
+
+// Split arbitrary text into normalized tokens (non-alphanumeric separators).
+function docsTokens(text) {
+  return String(text == null ? '' : text)
+    .split(/[^\p{L}\p{N}_]+/u)
+    .map(normalizeDocsToken)
+    .filter(Boolean);
+}
+
+// Common words that must not drive a search on their own (EN + ID).
+const DOCS_STOPWORDS = new Set([
+  'no', 'the', 'and', 'for', 'with', 'this', 'that', 'this', 'from', 'into', 'your', 'you', 'are', 'was', 'not', 'but', 'all', 'any',
+  'yang', 'dan', 'untuk', 'dengan', 'tidak', 'dari', 'ini', 'itu', 'atau', 'pada', 'juga', 'akan', 'dalam', 'sebuah', 'para',
+]);
+
+// Expand a query into normalized tokens plus every synonym group it touches.
+function docsSynonyms(q) {
+  const result = new Set();
+  docsTokens(q).forEach(tok => {
+    if (!tok || tok.length < 3 || DOCS_STOPWORDS.has(tok)) return;
+    result.add(tok);
+    if (Object.prototype.hasOwnProperty.call(DOCS_SYNONYMS, tok)) {
+      DOCS_SYNONYMS[tok].forEach(s => result.add(normalizeDocsToken(s)));
+    }
+    Object.keys(DOCS_SYNONYMS).forEach(key => {
+      const group = DOCS_SYNONYMS[key];
+      if (group.some(s => normalizeDocsToken(s) === tok)) {
+        result.add(key);
+        group.forEach(s => result.add(normalizeDocsToken(s)));
+      }
+    });
+  });
+  return Array.from(result);
+}
+
+// Count how many query tokens appear in the document text's tokens.
+function searchDocsScore(text, queryTokens) {
+  const set = new Set(docsTokens(text));
+  const qt = Array.isArray(queryTokens) ? queryTokens : docsSynonyms(queryTokens);
+  let score = 0;
+  qt.forEach(tok => { if (tok && set.has(tok)) score++; });
+  return score;
+}
+
+// True when a single document word should be highlighted for this query.
+function wordMatchesDocsQuery(word, queryTokens) {
+  if (!word) return false;
+  const norm = normalizeDocsToken(word);
+  if (!norm) return false;
+  const qt = Array.isArray(queryTokens) ? queryTokens : docsSynonyms(queryTokens);
+  if (qt.indexOf(norm) !== -1) return true;
+  const wordSyns = docsSynonyms(word);
+  for (let i = 0; i < wordSyns.length; i++) {
+    if (qt.indexOf(wordSyns[i]) !== -1) return true;
+  }
+  for (let i = 0; i < qt.length; i++) {
+    const tok = qt[i];
+    if (tok && tok.length >= 3 && norm.indexOf(tok) !== -1) return true;
+  }
+  return false;
+}
+
+// Inject the beginner search hint once, using inline design tokens only
+// (markup/CSS are owned by other slices).
+function ensureDocsSearchHint() {
+  if (document.getElementById('docsSearchHint')) return;
+  const input = document.getElementById('docsSearchInput');
+  if (!input) return;
+  const wrap = input.closest('.docs-search-wrap') || input.parentElement;
+  if (!wrap) return;
+  const hint = document.createElement('div');
+  hint.id = 'docsSearchHint';
+  hint.className = 'docs-search-hint';
+  hint.style.cssText = 'font-size:var(--fs-xs);color:var(--text-faint);padding:0 8px 6px;';
+  hint.textContent = t('docs_search_hint', 'Tip: search secret, vault, docker, terraform, ssh, sync...');
+  wrap.insertAdjacentElement('afterend', hint);
+}
+
+// Inject the hint as soon as the DOM is ready (works whether or not a search
+// is ever performed); applyDocsSearch also calls this as a safety net.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', ensureDocsSearchHint);
+} else {
+  ensureDocsSearchHint();
+}
+
+function getDocsSearchQuery() {
+  return (S.docsSearchQuery || '').toLowerCase().trim();
+}
+
+function setDocsSearchQuery(q) {
+  S.docsSearchQuery = q || '';
+  applyDocsSearch();
+}
+
+function onDocsSearchInput(val) {
+  setDocsSearchQuery(val);
+}
+
+const onDocsSearchInputDebounced = debounce(onDocsSearchInput, 120);
+
+function clearDocsSearch() {
+  const input = document.getElementById('docsSearchInput');
+  if (input) input.value = '';
+  setDocsSearchQuery('');
+}
+
+function highlightCurrentDocsMatch() {
+  const marks = S.docsSearchMarks || [];
+  if (!marks.length) return;
+  if (S.docsSearchMarkIndex < 0) S.docsSearchMarkIndex = 0;
+  if (S.docsSearchMarkIndex >= marks.length) S.docsSearchMarkIndex = 0;
+  marks.forEach(m => m.classList.remove('docs-search-current'));
+  const current = marks[S.docsSearchMarkIndex];
+  current.classList.add('docs-search-current');
+  current.scrollIntoView({ block: 'center' });
+}
+
+function nextDocsMatch(dir) {
+  const marks = S.docsSearchMarks || [];
+  if (!marks.length) return;
+  S.docsSearchMarkIndex = (S.docsSearchMarkIndex + dir + marks.length) % marks.length;
+  highlightCurrentDocsMatch();
+}
+
+function onDocsSearchKeydown(e) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    nextDocsMatch(e.shiftKey ? -1 : 1);
+  }
+}
+
+function applyDocsSearch() {
+  const query = getDocsSearchQuery();
+  ensureDocsSearchHint();
+  const summaryEl = document.getElementById('docsSearchSummary');
+  const clearBtn = document.getElementById('docsSearchClear');
+  const bodyEl = document.getElementById('docsContentBody');
+  const tocEl = document.getElementById('docsTocList');
+
+  // Clear previous highlights first so re-searching never stacks marks.
+  if (bodyEl) {
+    bodyEl.querySelectorAll('mark.docs-search-hit').forEach(mark => {
+      mark.replaceWith(document.createTextNode(mark.textContent));
+    });
+    bodyEl.querySelectorAll('.docs-search-current').forEach(el => {
+      el.classList.remove('docs-search-current');
+    });
+  }
+  if (tocEl) {
+    tocEl.querySelectorAll('.docs-search-empty').forEach(el => el.remove());
+  }
+  S.docsSearchMarks = [];
+  S.docsSearchMarkIndex = 0;
+
+  if (clearBtn) clearBtn.style.display = query ? '' : 'none';
+
+  if (!query) {
+    if (summaryEl) summaryEl.style.display = 'none';
+    if (tocEl) {
+      tocEl.querySelectorAll('.docs-toc-item').forEach(item => {
+        item.style.display = '';
+      });
+    }
+    return;
+  }
+
+  const parsed = S.docsCache[S.currentDoc + '_' + S.docsModalLang];
+  if (!parsed) {
+    if (summaryEl) summaryEl.style.display = 'none';
+    return;
+  }
+
+  // Token-based highlighting (ADR 0085): split text nodes into unicode words
+  // and highlight any word matching the query via synonym intersection,
+  // normalized equality, or substring. Code/pre blocks are skipped.
+  const queryTokens = docsSynonyms(query);
+  if (bodyEl) {
+    const walker = document.createTreeWalker(bodyEl, NodeFilter.SHOW_TEXT, null);
+    const textNodes = [];
+    let node;
+    while ((node = walker.nextNode())) {
+      if (node.parentElement && node.parentElement.closest('pre, code')) continue;
+      textNodes.push(node);
+    }
+    textNodes.forEach(textNode => {
+      const value = textNode.nodeValue;
+      const matches = [];
+      const wordRe = /\b[\p{L}\p{N}_]+\b/gu;
+      let m;
+      while ((m = wordRe.exec(value)) !== null) {
+        if (wordMatchesDocsQuery(m[0], queryTokens)) {
+          matches.push({ start: m.index, end: m.index + m[0].length });
+        }
+      }
+      if (!matches.length) return;
+      const frag = document.createDocumentFragment();
+      let cursor = 0;
+      matches.forEach(span => {
+        if (span.start > cursor) frag.appendChild(document.createTextNode(value.slice(cursor, span.start)));
+        const mark = document.createElement('mark');
+        mark.className = 'docs-search-hit';
+        mark.textContent = value.slice(span.start, span.end);
+        frag.appendChild(mark);
+        S.docsSearchMarks.push(mark);
+        cursor = span.end;
+      });
+      if (cursor < value.length) frag.appendChild(document.createTextNode(value.slice(cursor)));
+      textNode.replaceWith(frag);
+    });
+  }
+
+  // Filter TOC items by synonym-aware score or normalized substring.
+  let visibleSections = 0;
+  if (tocEl) {
+    tocEl.querySelectorAll('.docs-toc-item').forEach(item => {
+      const heading = (item.textContent || '').toLowerCase().trim();
+      const normHeading = normalizeDocsToken(heading);
+      const substringMatch = queryTokens.some(tok => tok && tok.length >= 3 && normHeading.indexOf(tok) !== -1);
+      const match = searchDocsScore(heading, queryTokens) > 0 || substringMatch;
+      item.style.display = match ? '' : 'none';
+      if (match) visibleSections++;
+    });
+    if (visibleSections === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'docs-search-empty';
+      empty.textContent = t('docs_search_no_sections', 'No matching sections');
+      tocEl.appendChild(empty);
+    }
+  }
+
+  // Summary + first-match highlight.
+  const count = S.docsSearchMarks.length;
+  if (summaryEl) {
+    summaryEl.style.display = '';
+    summaryEl.textContent = count > 0
+      ? t('docs_search_matches', '{n} matches').replace('{n}', count)
+      : t('docs_search_no_matches', 'No matches in this document');
+  }
+  if (count > 0) {
+    S.docsSearchMarkIndex = 0;
+    highlightCurrentDocsMatch();
+  }
 }
 
 function scrollToDocAnchor(id) {
@@ -906,4 +1199,4 @@ document.addEventListener('click', (e) => {
   }
 });
 
-export { openModal, closeModal, escapeHtml, jsArg, updateDocsLangButton, openDocumentationModal, toggleDocsLanguage, switchDoc, sanitizeHtml, parseMicroMarkdown, loadDocContent, renderDocData, scrollToDocAnchor, connectActivityEventSource, handleIncomingActivityEvent, scheduleActivityRender, updateActivityErrorBadge, toggleActivityConsole, toggleActivityMaximize, toggleActivityPause, setActivityLevelFilter, onActivitySearchInput, onActivitySearchInputDebounced, clearActivityLogs, handleActivityScroll, scrollActivityToBottom, renderActivityLogs, toggleActivityRowDetail, formatActivityTime, getActivityLevelBadge, getActivityModuleBadge, getActivityMetaString, toggleActivityExportMenu, exportActivityLogs };
+export { openModal, closeModal, escapeHtml, jsArg, updateDocsLangButton, openDocumentationModal, toggleDocsLanguage, switchDoc, sanitizeHtml, parseMicroMarkdown, loadDocContent, renderDocData, scrollToDocAnchor, normalizeDocsToken, docsTokens, docsSynonyms, searchDocsScore, wordMatchesDocsQuery, getDocsSearchQuery, setDocsSearchQuery, onDocsSearchInput, onDocsSearchInputDebounced, clearDocsSearch, highlightCurrentDocsMatch, nextDocsMatch, onDocsSearchKeydown, applyDocsSearch, connectActivityEventSource, handleIncomingActivityEvent, scheduleActivityRender, updateActivityErrorBadge, toggleActivityConsole, toggleActivityMaximize, toggleActivityPause, setActivityLevelFilter, onActivitySearchInput, onActivitySearchInputDebounced, clearActivityLogs, handleActivityScroll, scrollActivityToBottom, renderActivityLogs, toggleActivityRowDetail, formatActivityTime, getActivityLevelBadge, getActivityModuleBadge, getActivityMetaString, toggleActivityExportMenu, exportActivityLogs };

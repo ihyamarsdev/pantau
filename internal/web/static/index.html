@@ -26,6 +26,7 @@
 <link rel="stylesheet" href="/app/dockerprogress.css" />
 <link rel="stylesheet" href="/app/scanprogress.css" />
 <link rel="stylesheet" href="/app/topology.css" />
+<link rel="stylesheet" href="/app/vault.css" />
 <style>
 @font-face { font-family: 'Inter'; src: url('/vendor/fonts/inter-latin-var.woff2') format('woff2'); font-weight: 100 900; font-style: normal; font-display: swap; }
 @font-face { font-family: 'JetBrains Mono'; src: url('/vendor/fonts/jetbrains-mono-latin-var.woff2') format('woff2'); font-weight: 100 800; font-style: normal; font-display: swap; }
@@ -3457,6 +3458,16 @@ header {
   border-bottom: 1px solid var(--card-border);
   margin-bottom: 6px;
 }
+.docs-search-wrap { position: relative; display: flex; align-items: center; margin-bottom: 8px; }
+.docs-search-icon { position: absolute; left: 10px; color: var(--text-faint); pointer-events: none; }
+#docsSearchInput { padding-left: 32px; padding-right: 30px; font-size: var(--fs-xs); height: 32px; }
+.docs-search-clear { position: absolute; right: 4px; }
+.docs-search-summary { font-size: var(--fs-xs); color: var(--text-muted); padding: 4px 8px; border-bottom: 1px solid var(--card-border); margin-bottom: 6px; }
+.docs-search-hit { color: var(--accent-text); background: var(--accent-soft); border-radius: 2px; padding: 0 1px; }
+.docs-search-current { outline: 2px solid var(--primary); outline-offset: 1px; }
+.docs-search-empty { padding: 10px 8px; font-size: var(--fs-xs); color: var(--text-muted); }
+.docs-search-hint { font-size: var(--fs-xs); color: var(--text-faint); padding: 0 8px 6px; }
+.btn-xs { height: 22px; min-width: 22px; padding: 0 5px; }
 
 /* --- Confirmation Dialog Polish --- */
 .confirm-body-wrapper {
@@ -3881,6 +3892,10 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <svg class="icon"><use href="#i-link"/></svg>
         <span class="side-panel-label" data-i18n="nav_shortcuts">Shortcuts</span>
       </button>
+      <button type="button" class="side-panel-item" id="navItemSecrets" onclick="switchSideNav('secrets')" role="tab" aria-selected="false" title="Secrets" data-i18n-title="nav_secrets">
+        <svg class="icon"><use href="#i-key-round"/></svg>
+        <span class="side-panel-label" data-i18n="nav_secrets">Secrets</span>
+      </button>
     </div>
     <div class="side-panel-footer">
       <button type="button" class="side-panel-collapse-btn" id="btnSidePanelCollapse" onclick="toggleSidePanelCollapse()" title="Collapse navigation" data-i18n-title="nav_collapse_title" aria-label="Collapse navigation">
@@ -4168,6 +4183,20 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         </div>
       </div>
       <div id="reposRoot"></div>
+    </div>
+    <div id="sectionSecrets" class="app-section" style="display:none;">
+      <div class="section-header" style="margin-bottom:20px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <div>
+            <h2 style="margin:0 0 4px 0;font-size:var(--fs-xl);font-weight:600;" data-i18n="vault_title">Vault</h2>
+            <p style="margin:0;color:var(--text-muted);font-size:var(--fs-sm);" data-i18n="vault_desc">Encrypted secrets, templates and sync targets for your fleet.</p>
+          </div>
+          <button type="button" class="btn btn-sm btn-primary" onclick="Vault.openModal()" style="height:34px;display:inline-flex;align-items:center;gap:6px;">
+            <svg class="icon icon-sm"><use href="#i-lock"/></svg> <span data-i18n="vault_open">Open Vault</span>
+          </button>
+        </div>
+      </div>
+      <div id="vaultStatusStrip" class="vault-status-strip"></div>
     </div>
     <div id="sectionTerraform" class="app-section" style="display:none;">
       <div class="section-header" style="margin-bottom:20px;position:relative;z-index:20;">
@@ -4775,6 +4804,109 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
     <div id="tfWsTabs" class="tabs tf-drawer-tabs" role="tablist"></div>
     <div id="tfWsBody" class="tf-drawer-body"></div>
   </aside>
+</div>
+
+<!-- Vault: Secrets, Templates, Sync Targets and Audit (Workspace Modal) -->
+<div id="vaultModal" role="dialog" aria-modal="true" class="modal">
+  <div class="modal-content modal-workspace" style="display:flex;flex-direction:column;">
+    <div class="modal-header" style="user-select:none;">
+      <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1;">
+        <svg class="icon icon-sm text-accent"><use href="#i-lock"/></svg>
+        <h3 style="font-size:var(--fs-md);margin:0;" data-i18n="vault_title">Vault</h3>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button class="btn btn-icon btn-sm" onclick="Vault.refresh()" title="Refresh" data-i18n-title="vault_refresh"><svg class="icon icon-sm"><use href="#i-refresh-cw"/></svg></button>
+        <button class="btn btn-icon btn-sm" onclick="Vault.closeModal()" title="Close" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+      </div>
+    </div>
+    <div class="vault-tabs-bar">
+      <div class="tabs" role="tablist">
+        <button type="button" class="tab vault-tab active" data-tab="secrets" onclick="switchVaultTab('secrets')" data-i18n="vault_tab_secrets">Secrets</button>
+        <button type="button" class="tab vault-tab" data-tab="templates" onclick="switchVaultTab('templates')" data-i18n="vault_tab_templates">Templates</button>
+        <button type="button" class="tab vault-tab" data-tab="targets" onclick="switchVaultTab('targets')" data-i18n="vault_tab_targets">Sync Targets</button>
+        <button type="button" class="tab vault-tab" data-tab="audit" onclick="switchVaultTab('audit')" data-i18n="vault_tab_audit">Audit</button>
+      </div>
+    </div>
+
+    <!-- Secrets panel -->
+    <div id="vaultPanelSecrets" class="vault-panel active">
+      <div id="vaultSecretsList"></div>
+      <div class="vault-card">
+        <div class="vault-card-title"><svg class="icon icon-sm"><use href="#i-key-round"/></svg> <span data-i18n="vault_add_secret">New secret</span></div>
+        <div id="vaultSecretForm" class="vault-form">
+          <div class="vault-field"><label for="vaultSecretKey" data-i18n="vault_key">Key</label><input id="vaultSecretKey" type="text" autocomplete="off" spellcheck="false" placeholder="API_TOKEN"/></div>
+          <div class="vault-field"><label for="vaultSecretScope" data-i18n="vault_scope">Scope</label>
+            <select id="vaultSecretScope"><option value="global">global</option><option value="group">group</option><option value="host">host</option><option value="cluster">cluster</option></select>
+          </div>
+          <div class="vault-field vault-field-full"><label for="vaultSecretValue" data-i18n="vault_value">Value</label><input id="vaultSecretValue" type="password" autocomplete="new-password" spellcheck="false"/></div>
+          <div class="vault-field"><label for="vaultSecretScopeRef" data-i18n="vault_scope_ref">Scope reference</label><input id="vaultSecretScopeRef" type="text" autocomplete="off" spellcheck="false"/></div>
+          <div class="vault-field"><label for="vaultSecretExpiresAt" data-i18n="vault_expires">Expires at</label><input id="vaultSecretExpiresAt" type="date"/></div>
+          <div class="vault-field"><label for="vaultSecretRotationDays" data-i18n="vault_rotation">Rotation (days)</label><input id="vaultSecretRotationDays" type="number" min="0" value="0"/></div>
+          <div class="vault-form-actions">
+            <button type="button" id="vaultSecretDelete" class="btn btn-danger" style="display:none;" data-i18n="vault_delete">Delete</button>
+            <button type="button" id="vaultSecretSave" class="btn btn-primary" data-i18n="vault_save">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Templates panel -->
+    <div id="vaultPanelTemplates" class="vault-panel">
+      <div id="vaultTemplatesList"></div>
+      <div id="vaultTemplateEditor" class="vault-card">
+        <div class="vault-card-title"><svg class="icon icon-sm"><use href="#i-file-code"/></svg> <span data-i18n="vault_template_title">Template editor</span></div>
+        <div class="vault-editor-grid">
+          <div class="vault-field">
+            <label for="vaultTemplateBody" data-i18n="vault_template_body">Body</label>
+            <textarea id="vaultTemplateBody" spellcheck="false" placeholder="{{ vault.KEY }}"></textarea>
+            <div id="vaultTemplateValidation"></div>
+            <div class="vault-autocomplete" id="vaultTemplateKeys"></div>
+          </div>
+          <div class="vault-field">
+            <label for="vaultTemplateRendered" data-i18n="vault_template_rendered">Rendered preview</label>
+            <div id="vaultTemplateRendered" readonly></div>
+            <div class="vault-field" style="margin-top:12px;"><label for="vaultTemplateName" data-i18n="vault_template_name">Template name</label><input id="vaultTemplateName" type="text" autocomplete="off" spellcheck="false"/></div>
+            <div class="vault-form-actions" style="grid-column:auto;">
+              <button type="button" id="vaultTemplateRender" class="btn" data-i18n="vault_template_render">Render</button>
+              <button type="button" id="vaultTemplateSave" class="btn btn-primary" data-i18n="vault_template_save">Save template</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Targets panel -->
+    <div id="vaultPanelTargets" class="vault-panel">
+      <div id="vaultTargetsList"></div>
+      <div class="vault-card">
+        <div class="vault-card-title"><svg class="icon icon-sm"><use href="#i-server"/></svg> <span data-i18n="vault_target_title">Sync targets</span></div>
+        <div id="vaultTargetForm" class="vault-form">
+          <div class="vault-field"><label for="vaultTargetName" data-i18n="vault_target_name">Name</label><input id="vaultTargetName" type="text" autocomplete="off" spellcheck="false"/></div>
+          <div class="vault-field"><label for="vaultTargetKind" data-i18n="vault_target_kind">Kind</label>
+            <select id="vaultTargetKind"><option value="host">host</option><option value="kube">kube</option></select>
+          </div>
+          <div class="vault-field"><label for="vaultTargetTemplate" data-i18n="vault_target_template">Template</label><select id="vaultTargetTemplate"></select></div>
+          <div class="vault-field"><label for="vaultTargetRef" data-i18n="vault_target_ref">Target reference</label><input id="vaultTargetRef" type="text" autocomplete="off" spellcheck="false"/></div>
+          <div class="vault-field"><label for="vaultTargetPath" data-i18n="vault_target_path">Remote path</label><input id="vaultTargetPath" type="text" autocomplete="off" spellcheck="false"/></div>
+          <div class="vault-field"><label for="vaultTargetNamespace" data-i18n="vault_target_namespace">Namespace</label><input id="vaultTargetNamespace" type="text" autocomplete="off" spellcheck="false"/></div>
+          <div class="vault-field vault-field-full"><label for="vaultTargetHook" data-i18n="vault_target_hook">Post-sync hook</label><input id="vaultTargetHook" type="text" autocomplete="off" spellcheck="false" placeholder="systemd:nginx:restart"/></div>
+          <div class="vault-form-actions">
+            <button type="button" id="vaultTargetDelete" class="btn btn-danger" style="display:none;" data-i18n="vault_delete">Delete</button>
+            <button type="button" id="vaultTargetSync" class="btn" data-i18n="vault_target_sync">Sync now</button>
+            <button type="button" id="vaultTargetSave" class="btn btn-primary" data-i18n="vault_target_save">Save target</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audit panel -->
+    <div id="vaultPanelAudit" class="vault-panel">
+      <div class="vault-card">
+        <div class="vault-card-title"><svg class="icon icon-sm"><use href="#i-list-checks"/></svg> <span data-i18n="vault_audit_title">Recent activity</span></div>
+        <div id="vaultAuditList"></div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Repositories: Git editor (Workspace Modal) and action dialog -->
@@ -5631,6 +5763,18 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
     <div style="display: flex; flex: 1; min-height: 0; overflow: hidden;">
       <!-- Sidebar Table of Contents -->
       <div id="docsSidebar">
+        <div class="docs-search-wrap">
+          <svg class="icon icon-sm docs-search-icon"><use href="#i-search"/></svg>
+          <input type="text" id="docsSearchInput" autocomplete="off" spellcheck="false"
+                 oninput="onDocsSearchInputDebounced(this.value)"
+                 onkeydown="onDocsSearchKeydown(event)"
+                 data-i18n-placeholder="doc_search_placeholder" placeholder="Search in this document..."/>
+          <button type="button" class="btn btn-icon btn-xs docs-search-clear" id="docsSearchClear"
+                  onclick="clearDocsSearch()" aria-label="Clear search" style="display:none;">
+            <svg class="icon icon-xs"><use href="#i-x"/></svg>
+          </button>
+        </div>
+        <div id="docsSearchSummary" class="docs-search-summary" style="display:none;"></div>
         <div class="docs-toc-header" data-i18n="doc_toc">Table of Contents</div>
         <div id="docsTocList" style="display: flex; flex-direction: column; gap: 2px;"></div>
       </div>
@@ -6949,5 +7093,6 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 <script type="module" src="/app/agent.js"></script>
 <script type="module" src="/app/iacscan.js"></script>
 <script type="module" src="/app/fim.js"></script>
+<script type="module" src="/app/vault.js"></script>
 </body>
 </html>

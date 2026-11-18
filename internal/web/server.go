@@ -178,6 +178,7 @@ func NewServer(db *store.DB, ins *inspector.Inspector, disp *notify.Dispatcher) 
 	}
 	s.prepareHTML(embeddedHTML)
 	s.routes()
+	s.refreshVaultRedactor()
 	return s
 }
 
@@ -319,6 +320,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/app/dockerprogress.css", serveAppBundle("dockerprogress", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/topology.js", serveAppBundle("topology", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/topology.css", serveAppBundle("topology", ".css", "text/css; charset=utf-8"))
+	s.mux.HandleFunc("/app/vault.js", serveAppBundle("vault", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/vault.css", serveAppBundle("vault", ".css", "text/css; charset=utf-8"))
 
 	// Vendor static assets (airgapped / local cache)
 	vendorHandler := http.StripPrefix("/vendor/", http.FileServer(http.FS(vendorFS())))
@@ -498,6 +501,7 @@ func (s *Server) routes() {
 	s.registerDatabaseRoutes()
 	s.registerAgentRoutes()
 	s.registerTriageRoutes()
+	s.registerVaultRoutes()
 }
 
 func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {

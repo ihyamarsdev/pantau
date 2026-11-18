@@ -16,6 +16,7 @@ import (
 	"pantau/internal/logger"
 	"pantau/internal/store"
 	"pantau/internal/terraform"
+	"pantau/internal/vault"
 )
 
 type activeTFRun struct {
@@ -172,6 +173,13 @@ func (m *TerraformRunManager) BuildRunConfig(ws *store.TFWorkspace) (terraform.C
 			})
 		}
 	}
+
+	// Vault secrets are injected into the process environment only (never disk).
+	// They are redacted in plan/apply logs via the vault redactor registered at
+	// server startup. A TF_VAR_ copy exposes them to inline Terraform variables.
+	secrets := vaultSecretsMapDB(m.db)
+	cfg.Env = vault.InjectEnv(cfg.Env, secrets, "TF_VAR_")
+	cfg.Env = vault.InjectEnv(cfg.Env, secrets, "")
 
 	if err := m.injectOutputLinks(ws, &cfg); err != nil {
 		return cfg, err

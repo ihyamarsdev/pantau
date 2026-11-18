@@ -329,7 +329,9 @@ var toolResultHints = map[string]string{
 	"docker_security":   "read one section: the audit findings or one image, not both",
 	"iac_findings":      "read one source: call iac_findings with kind and id",
 	"fleet_search":      "narrow the query, or raise limit",
-	"host_info":         "ask for one part: host_info with what=resources, updates, firewall, domains or databases",
+	"host_info":          "ask for one part: host_info with what=resources, updates, firewall, domains or databases",
+	"list_vault_keys":    "narrow it: call list_vault_keys with a scope filter",
+	"trigger_env_sync":   "sync one target at a time: call trigger_env_sync with a single target_id",
 }
 
 // truncateToolResult cuts an oversized tool result to a head and a tail joined by a structured notice, so the

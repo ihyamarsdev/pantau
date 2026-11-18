@@ -137,8 +137,35 @@ func IsSensitiveKey(key string) bool {
 	return false
 }
 
+// Secret redaction hook. The vault package installs a redactor here so every
+// log line is scrubbed of active secret values without logger importing vault.
+var (
+	secretRedactorMu sync.RWMutex
+	secretRedactor   func(string) string
+)
+
+// SetSecretRedactor installs fn as the global secret-redaction hook.
+func SetSecretRedactor(fn func(string) string) {
+	secretRedactorMu.Lock()
+	secretRedactor = fn
+	secretRedactorMu.Unlock()
+}
+
+// ClearSecretRedactor removes the global secret-redaction hook.
+func ClearSecretRedactor() {
+	secretRedactorMu.Lock()
+	secretRedactor = nil
+	secretRedactorMu.Unlock()
+}
+
 // RedactString sanitizes private keys or embedded passwords in log strings.
 func RedactString(s string) string {
+	secretRedactorMu.RLock()
+	fn := secretRedactor
+	secretRedactorMu.RUnlock()
+	if fn != nil {
+		s = fn(s)
+	}
 	if strings.Contains(s, "PRIVATE KEY") {
 		return "[REDACTED PRIVATE KEY]"
 	}

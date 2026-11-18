@@ -5,6 +5,8 @@ data/
 *.db-shm
 *.db.lock
 *.tar.gz
+*.pb.gz
+goroutine-debug2-*.txt
 dist/
 e2e/node_modules/
 e2e/.e2e/
