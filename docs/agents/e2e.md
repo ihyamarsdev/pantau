@@ -28,6 +28,18 @@ e2e/
 └── package.json
 ```
 
+## Deferred & Targeted Testing Policy
+
+Binding for every session.
+
+1. **No mid-iteration runs.** Do not run `go test`, `go vet`, `go build`, or any E2E test while code is still being written. Never test after each freshly edited file.
+2. **Finish, then verify once.** Complete the whole implementation and write all the tests first. Verify a single time, at the very end.
+3. **Targeted verification only.** At the final check run:
+   - `go test ./internal/<package>` for each changed package only;
+   - one related E2E spec: `cd e2e && npx e2e run tests/<feature>.e2e.ts`.
+
+   Do not run the full Go suite (`go test ./...`) or the full E2E suite (`npm test`) unless the user explicitly asks.
+
 ## Run
 
 ```bash

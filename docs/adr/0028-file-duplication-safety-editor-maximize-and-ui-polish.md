@@ -39,7 +39,7 @@ Modul SFTP File Manager pada Pantau sebelumnya mendukung penjelajahan direktori,
    - Sistem memverifikasi keberadaan path tujuan via SFTP `Stat`. Jika path tujuan sudah ada, proses ditolak dengan HTTP 409 Conflict (*"Target file or folder already exists"*).
 
 5. **Editor Modal Maximize (CSS Full-Viewport 100vw × 100vh)**:
-   - Mengikuti pola `Workspace Modal Maximize` (ADR-0026) dengan tombol maximize/restore `⛶` / `🗗` di header modal, pintasan *double-click* pada header, dan penyelarasan ulang ukuran editor (`codeEditor.refresh()`).
+   - Mengikuti pola `Workspace Modal Maximize` (ADR-0083) dengan tombol maximize/restore `⛶` / `🗗` di header modal, pintasan *double-click* pada header, dan penyelarasan ulang ukuran editor (`codeEditor.refresh()`).
    - Tidak menggunakan API `requestFullscreen()` native browser guna menghindari prompt izin peramban dan memelihara kebebasan navigasi keyboard.
 
 6. **Tema Tersemat VS Code Dark+ & Deteksi Mode Bahasa Dinamis**:

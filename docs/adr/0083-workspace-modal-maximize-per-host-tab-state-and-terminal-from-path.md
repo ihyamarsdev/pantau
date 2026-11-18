@@ -1,4 +1,4 @@
-# Workspace Modal Maximize, Per-Host Tab State, dan Terminal From Path
+# 0083. Workspace Modal Maximize, Per-Host Tab State, dan Terminal From Path
 
 Penerapan mode CSS full-viewport pada Workspace Modal (Host Detail), isolasi state navigasi tab per host berbasis browser session, dan integrasi peluncuran terminal kontekstual dari SFTP File Manager.
 

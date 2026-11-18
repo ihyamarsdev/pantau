@@ -32,3 +32,8 @@ Namun sebelumnya, dokumentasi ini hanya dapat diakses melalui repositori Git eks
 
 5. **Client-Side In-Memory Cache**:
    - Dokumen yang telah diunduh oleh peramban disimpan dalam variabel cache memori per sesi (`docsCache`), mengeliminasi request jaringan berulang saat pengguna berpindah tab dokumen atau mengganti bahasa.
+
+## Konsekuensi & Batasan
+
+- `/api/docs` memetakan satu `name` ke satu berkas markdown utuh (`guide` → `docs/user-guide.md` atau `docs/user-guide.id.md`); modal tidak mendukung pemuatan per-bab/topik. Panduan pengguna sengaja dipertahankan sebagai satu berkas per bahasa agar TOC dinamis, anchor `h2`/`h3`, dan tautan internal tetap utuh. Memecahnya menjadi beberapa berkas akan memutus navigasi dan mengharuskan perubahan pada `go:embed`, handler API, dan parser frontend.
+- `shortcut: seluruh dokumen dimuat sekaligus, upgrade hanya jika ukuran guide melebihi batas praktis (lihat catatan `handleDocs` di `internal/web/server.go`).`

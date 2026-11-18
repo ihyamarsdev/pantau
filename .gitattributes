@@ -1,2 +1,3 @@
 # Exclude embedded static web assets from GitHub Linguist language statistics
 internal/web/static/** linguist-vendored
+.scratch/** export-ignore
