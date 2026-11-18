@@ -21830,6 +21830,7 @@ function getActivityModuleBadge(mod) {
   const m = (mod || 'system').toLowerCase();
   let bg = 'var(--surface-2)', color = 'var(--text-muted)', border = 'var(--card-border)';
   if (m === 'inspect') { bg = 'var(--primary-soft)'; color = 'var(--accent-text)'; border = 'var(--card-border)'; }
+  else if (m === 'agent') { bg = 'var(--info-soft)'; color = 'var(--info)'; border = 'var(--info-border)'; }
   else if (m === 'ssh') { bg = 'var(--primary-soft)'; color = 'var(--accent-text)'; border = 'var(--card-border)'; }
   else if (m === 'transfer') { bg = 'var(--success-soft)'; color = 'var(--success)'; border = 'var(--success-border)'; }
   else if (m === 'terminal') { bg = 'var(--warning-soft)'; color = 'var(--warning)'; border = 'var(--warning-border)'; }
@@ -21842,18 +21843,18 @@ function getActivityModuleBadge(mod) {
 function getActivityMetaString(item) {
   if (!item.attrs) return '';
   const parts = [];
-  if (item.attrs.duration_ms !== undefined) {
-    parts.push(`${item.attrs.duration_ms}ms`);
-  }
-  if (item.attrs.drift_rules !== undefined) {
-    parts.push(`${item.attrs.drift_rules} drift`);
-  }
-  if (item.attrs.port !== undefined) {
-    parts.push(`port ${item.attrs.port}`);
-  }
+  if (item.attrs.tool !== undefined) parts.push(item.attrs.tool);
+  if (item.attrs.domain !== undefined) parts.push(item.attrs.domain);
+  if (item.attrs.status !== undefined) parts.push(item.attrs.status);
+  if (item.attrs.duration_ms !== undefined) parts.push(`${item.attrs.duration_ms}ms`);
+  if (item.attrs.prompt_size !== undefined) parts.push(`in ${item.attrs.prompt_size}`);
+  if (item.attrs.reply_size !== undefined) parts.push(`out ${item.attrs.reply_size}`);
+  if (item.attrs.tools !== undefined) parts.push(`${item.attrs.tools} tools`);
+  if (item.attrs.drift_rules !== undefined) parts.push(`${item.attrs.drift_rules} drift`);
+  if (item.attrs.port !== undefined) parts.push(`port ${item.attrs.port}`);
   return parts.join(' • ');
-}
 
+}
 function toggleActivityExportMenu() {
   const menu = document.getElementById('activityExportMenu');
   if (menu) {

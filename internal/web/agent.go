@@ -241,6 +241,7 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Message   string `json:"message"`
 		SessionID string `json:"session_id"`
+		Page      string `json:"page"` // active UI page; narrows the tools offered to the model
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&req); err != nil || strings.TrimSpace(req.Message) == "" || !agentSessionRe.MatchString(req.SessionID) {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -255,11 +256,11 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the AI agent is not configured: choose a provider and a model in Settings -> AI Agent"})
 		return
 	}
-	s.chatNative(w, r, c, req.Message, req.SessionID)
+	s.chatNative(w, r, c, req.Message, req.SessionID, req.Page)
 }
 
 // chatNative runs one turn of the in-process agent: Pantau calls the provider itself and streams the answer.
-func (s *Server) chatNative(w http.ResponseWriter, r *http.Request, c agentCfg, message, sessionID string) {
+func (s *Server) chatNative(w http.ResponseWriter, r *http.Request, c agentCfg, message, sessionID, page string) {
 	if c.Model == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no model is configured in Settings (AI agent)"})
 		return
@@ -279,6 +280,13 @@ func (s *Server) chatNative(w http.ResponseWriter, r *http.Request, c agentCfg, 
 		return
 	}
 	defer s.endConv(conv)
+	// A page context narrows the tools. An empty page (API callers) keeps all tools; a set_tool_domain
+	// meta-tool can still widen it later in the conversation.
+	if d := agentDomainForContext(page); d != domainAll {
+		conv.mu.Lock()
+		conv.domain = d
+		conv.mu.Unlock()
+	}
 	s.runAgentTurn(w, r, c, client, conv, message)
 }
 

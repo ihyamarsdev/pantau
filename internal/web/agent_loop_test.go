@@ -80,7 +80,11 @@ func nativeAgent(t *testing.T, f *fakeLLM) (*Server, *store.DB) {
 }
 
 func chatPost(srv *Server, session, message string) *httptest.ResponseRecorder {
-	body, _ := json.Marshal(map[string]string{"message": message, "session_id": session})
+	return chatPostPage(srv, session, message, "")
+}
+
+func chatPostPage(srv *Server, session, message, page string) *httptest.ResponseRecorder {
+	body, _ := json.Marshal(map[string]string{"message": message, "session_id": session, "page": page})
 	w := httptest.NewRecorder()
 	srv.handleAgentChat(w, httptest.NewRequest(http.MethodPost, "/api/agent/chat", strings.NewReader(string(body))))
 	return w
@@ -859,5 +863,68 @@ func TestAgentLoopGate2WaitsForApproval(t *testing.T) {
 				t.Fatalf("a denied command must reach the model as an error: %+v", last)
 			}
 		}
+	}
+}
+
+// Domain-aware filtering: a page context narrows the tools, an empty context keeps all of them, and a
+// set_tool_domain meta-tool widens the domain for the next model call in the same turn.
+func TestAgentDomainFiltering(t *testing.T) {
+	has := func(specs []llmToolSpec, name string) bool {
+		for _, s := range specs {
+			if s.Name == name {
+				return true
+			}
+		}
+		return false
+	}
+	all := agentToolSpecsFor(domainAll)
+	if len(all) != len(agentTools) {
+		t.Fatalf("no context must offer all tools: %d vs %d", len(all), len(agentTools))
+	}
+	host := agentToolSpecsFor(domainHost)
+	if !has(host, "systemd_list") || !has(host, "list_hosts") || !has(host, "find_tools") {
+		t.Fatalf("host domain must carry host + core + meta tools")
+	}
+	if has(host, "kube_get") || has(host, "cf_dns_list") {
+		t.Fatalf("host domain must not carry infra/network tools")
+	}
+	net := agentToolSpecsFor(domainNetwork)
+	if !has(net, "cf_dns_list") || has(net, "systemd_list") {
+		t.Fatalf("network domain must carry only network tools")
+	}
+	if len(host) >= len(all) || len(net) >= len(all) {
+		t.Fatalf("a domain must be smaller than the full list")
+	}
+	if agentDomainForContext("cloudflare") != domainNetwork || agentDomainForContext("") != domainAll {
+		t.Fatal("page-to-domain mapping is wrong")
+	}
+}
+
+func TestAgentMetaToolCrossDomainFallback(t *testing.T) {
+	f := &fakeLLM{results: []llmResult{
+		{Text: "looking", ToolCalls: []llmToolCall{{ID: "c1", Name: "find_tools", Args: `{"query":"dns record"}`}}},
+		{Text: "switching", ToolCalls: []llmToolCall{{ID: "c2", Name: "set_tool_domain", Args: `{"domain":"network"}`}}},
+		{Text: "done"},
+	}}
+	srv, _ := nativeAgent(t, f)
+	w := chatPostPage(srv, "s1", "check dns", "hosts")
+	if !strings.Contains(w.Body.String(), "data: [DONE]") {
+		t.Fatalf("turn must finish: %s", w.Body.String())
+	}
+	found := f.call(1).Messages
+	last := found[len(found)-1]
+	if last.IsError || !strings.Contains(last.Text, "cf_dns_list") {
+		t.Fatalf("find_tools must list a cross-domain tool: %+v", last)
+	}
+	// After set_tool_domain, the next model call must offer the network tools.
+	switched := f.call(2)
+	var hasCF bool
+	for _, s := range switched.Tools {
+		if s.Name == "cf_dns_list" {
+			hasCF = true
+		}
+	}
+	if !hasCF {
+		t.Fatal("set_tool_domain must widen the advertised tools for the next call")
 	}
 }

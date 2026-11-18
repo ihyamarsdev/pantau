@@ -129,7 +129,8 @@
       if (m.role === 'user') return `<div class="ag-msg ag-user">${esc(m.text)}</div>`;
       if (m.role === 'tool') {
         const mark = m.status === 'error' ? svgIcon('x', 'icon-sm') : m.status === 'done' ? svgIcon('check', 'icon-sm') : svgIcon('wrench', 'icon-sm');
-        return `<div class="ag-tool ag-tool-${m.status || 'running'}">${mark} ${esc(m.text)}</div>`;
+        const meta = [m.domain, m.duration_ms !== undefined ? m.duration_ms + 'ms' : ''].filter(Boolean).join(' · ');
+        return `<div class="ag-tool ag-tool-${m.status || 'running'}">${mark} ${esc(m.text)}${meta ? ` <span style="opacity:.6;font-size:.85em;">${esc(meta)}</span>` : ''}</div>`;
       }
       if (m.role === 'error') return `<div class="ag-err">${esc(m.text)}${m.settings ? `<div style="margin-top:8px;"><button class="btn btn-sm btn-primary" onclick="AG.toggle(false); openSettingsModal('agent')">${esc(t('ag_open_settings'))}</button></div>` : ''}</div>`;
       if (!m.text) return `<div class="ag-msg ag-bot">${S.approvals.length ? SP.html(t('ag_waiting_approval'), S.apprT0) : SP.html(t('ag_working'), S.chatT0)}</div>`;
@@ -329,7 +330,7 @@
     try {
       const res = await fetch('/api/agent/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: S.abort.signal,
-        body: JSON.stringify({ message: text, session_id: S.session })
+        body: JSON.stringify({ message: text, session_id: S.session, page: typeof currentSideNav === 'string' ? currentSideNav : '' })
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
@@ -340,7 +341,7 @@
       await readSSE(res.body, (ev, data) => {
         if (ev === 'agent.tool') {
           const label = (data.tool || 'tool') + (data.label && data.label !== data.tool ? ': ' + data.label : '');
-          const line = { role: 'tool', text: label, status: data.status, id: data.toolCallId };
+          const line = { role: 'tool', text: label, status: data.status, id: data.toolCallId, domain: data.domain, duration_ms: data.duration_ms };
           const prev = S.msgs.findIndex((m) => m.role === 'tool' && m.id === data.toolCallId);
           if (prev >= 0 && data.status !== 'running') S.msgs[prev] = line;
           else S.msgs.splice(S.msgs.indexOf(bot) < 0 ? S.msgs.length : S.msgs.indexOf(bot), 0, line);

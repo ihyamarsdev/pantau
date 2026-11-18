@@ -12,6 +12,8 @@ type FakeLLM = {
   hostId: number;
   /** How many chat turns (not the settings test ping) the fake has answered. */
   chats: number;
+  /** Tool names offered in the most recent chat request (captured for the domain-filtering check). */
+  lastTools: string[];
   close(): Promise<void>;
 };
 
@@ -23,16 +25,17 @@ type ScriptedCall = { name: string; args: (f: FakeLLM) => unknown };
 // the next scripted tool call (exec_command on the test host by default), and a turn that already carries
 // every tool result gets the final text.
 async function startFakeLLM(toolCalls = 1, calls?: ScriptedCall[]): Promise<FakeLLM> {
-  const fake: FakeLLM = { url: '', hostId: 0, chats: 0, close: async () => {} };
+  const fake: FakeLLM = { url: '', hostId: 0, chats: 0, lastTools: [], close: async () => {} };
   const server = createServer((req, res) => {
     let raw = '';
     req.on('data', (c) => { raw += c; });
     req.on('end', () => {
-      let body: { messages?: ChatMessage[] } = {};
+      let body: { messages?: ChatMessage[]; tools?: { function?: { name?: string } }[] } = {};
       try { body = JSON.parse(raw); } catch { /* an unparsable body is answered like an empty one */ }
       const messages = body.messages || [];
       const last = messages[messages.length - 1];
       const isPing = last?.role === 'user' && last.content === 'ping';
+      if (!isPing) fake.lastTools = (body.tools || []).map((t) => t.function?.name || '').filter(Boolean);
       const results = messages.filter((m) => m.role === 'tool');
       if (!isPing) fake.chats++;
 
@@ -77,6 +80,8 @@ async function startFakeLLM(toolCalls = 1, calls?: ScriptedCall[]): Promise<Fake
 type PageGlobals = {
   openSettingsModal(tab: string): void;
   closeModal(id: string): void;
+  switchSideNav(section: string): void;
+  toggleActivityConsole(f: boolean): void;
   AG: { init(): void; newChat(): void };
 };
 
@@ -392,4 +397,66 @@ test('agent: a note can be filed under a domain from the Memory panel', async ({
     if (n) await fetch('/api/agent/memory?id=' + n.id, { method: 'DELETE' });
     return null;
   });
+});
+
+test('agent: multi-step troubleshooting narrows tools by page, streams telemetry, and asks before a fix', async ({ app, screen, browser }) => {
+  // Three reads then one change: detect the failed service, read its journal, check the config, then
+  // propose a fix that must wait for the operator. All reads are gate 0, the restart is gate 1.
+  const llm = await startFakeLLM(4, [
+    { name: 'systemd_list', args: (f) => ({ host_id: f.hostId, only_problems: true }) },
+    { name: 'systemd_detail', args: (f) => ({ host_id: f.hostId, unit: 'nginx.service', errors_only: true }) },
+    { name: 'read_file', args: (f) => ({ host_id: f.hostId, path: '/etc/nginx/nginx.conf' }) },
+    { name: 'systemd_action', args: (f) => ({ host_id: f.hostId, unit: 'nginx.service', action: 'restart' }) }
+  ]);
+  try {
+    await app.open('/');
+    await initApp(screen, browser);
+
+    llm.hostId = (await browser.evaluate(async () => {
+      const h = await (await fetch('/api/hosts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'e2e-troubleshoot', host: '127.0.0.1', port: 1, user: 'x' }) })).json();
+      return h.id as number;
+    })) as number;
+
+    await browser.evaluate(async (base) => {
+      await fetch('/api/agent/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true, provider: 'openai', base_url: base, api_key: 'k-test', model: 'gpt-4o', approval: 'ask' }) });
+      const g = window as unknown as PageGlobals;
+      g.AG.init();
+      g.AG.newChat();
+      return null;
+    }, llm.url);
+
+    // Start on the Hosts page: the agent must see only the host domain's tools, not Kubernetes/Cloudflare.
+    await browser.evaluate(() => { (window as unknown as PageGlobals).switchSideNav('hosts'); return null; });
+    await browser.locator('#agentFab').click();
+    await browser.locator('#agentInput').fill('nginx is down: find the root cause and propose a fix');
+    await browser.locator('#agentSend').click();
+
+    // The first read appears; the active page narrowed the advertised tool list. Reads on the fake host
+    // may error (it is not really connected), so match any tool-line status.
+    await expect(browser.locator('#agentLog .ag-tool').first()).toContainText('systemd_list', { timeout: 60000 });
+    expect(llm.lastTools).toContain('systemd_list');
+    expect(llm.lastTools).not.toContain('kube_get');
+    expect(llm.lastTools).toContain('find_tools'); // cross-domain fallback stays available
+
+    // The agent works through journal and config before it proposes the change.
+    await expect(browser.locator('#agentLog')).toContainText('systemd_detail');
+    await expect(browser.locator('#agentLog')).toContainText('read_file');
+
+    // The fix is a change: it blocks on an approval card that shows the exact action.
+    await expect(browser.locator('#agentApprovals .ag-appr pre')).toContainText('systemctl restart nginx.service', { timeout: 60000 });
+    // Deny: the final answer must not claim the service was fixed.
+    await browser.locator('#agentApprovals .ag-appr-btns button').first().click();
+    await expect(browser.locator('#agentLog .ag-tool-error').last()).toContainText('systemd_action');
+    await expect(browser.locator('#agentLog .ag-bot').last()).toContainText('denied');
+
+    // Every tool call emitted start/finish telemetry into the ADR-0030 Activity Console. Open the drawer
+    // and assert the agent events are rendered there in real time.
+    await browser.evaluate(() => { (window as unknown as PageGlobals).toggleActivityConsole(true); return null; });
+    await expect(browser.locator('#activityTableBody')).toContainText('tool call started', { timeout: 15000 });
+    await expect(browser.locator('#activityTableBody')).toContainText('tool call failed', { timeout: 15000 });
+    await expect(browser.locator('#activityTableBody')).toContainText('model call finished', { timeout: 15000 });
+  } finally {
+    await llm.close();
+    await deleteHosts(browser, ['e2e-troubleshoot']);
+  }
 });

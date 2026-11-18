@@ -73,25 +73,184 @@ var agentTools = []agentTool{
 		InputSchema: schema([]string{"host_id", "command"}, map[string]interface{}{"host_id": pHost, "command": map[string]interface{}{"type": "string"}}), run: toolExec},
 }
 
+// Meta-tools stay in every domain: they are how the model reaches a tool outside the active domain.
+func init() { agentTools = append(agentTools, metaTools...) }
+
+var metaTools = []agentTool{
+	{Name: "find_tools", Description: "Find a Pantau tool by keyword across ALL domains when the tool you need is not in your current tool list. Returns name, domain and description. Then call set_tool_domain to load that domain's tools, or call the tool by name directly.", InputSchema: schema([]string{"query"}, map[string]interface{}{"query": map[string]interface{}{"type": "string", "description": "word or phrase from a tool name or description"}}), run: toolFindTools},
+	{Name: "set_tool_domain", Description: "Switch the active tool domain for the rest of this chat (and later turns) so the relevant tool definitions are loaded. Use find_tools first if you do not know which domain a tool belongs to. Domains: host, infra, network, automation, security, repo.", InputSchema: schema([]string{"domain"}, map[string]interface{}{"domain": map[string]interface{}{"type": "string", "enum": agentDomainNames}}), run: toolSetDomain},
+}
+
+// Tool domains. The UI sends the active page as the chat context; only that domain's tools (plus the
+// always-on core and the two meta-tools) are advertised to the model. An empty context means all tools,
+// which keeps direct/API callers and the existing tests working. A meta-tool can widen the domain mid-chat.
+type toolDomain string
+
+const (
+	domainAll        toolDomain = ""     // no context: advertise everything
+	domainCore       toolDomain = "core" // always available, never filtered out
+	domainHost       toolDomain = "host"
+	domainInfra      toolDomain = "infra"
+	domainNetwork    toolDomain = "network"
+	domainAutomation toolDomain = "automation"
+	domainSecurity   toolDomain = "security"
+	domainRepo       toolDomain = "repo"
+)
+
+var agentDomainNames = []string{"host", "infra", "network", "automation", "security", "repo"}
+
+var agentDomains = func() map[string]bool {
+	m := make(map[string]bool, len(agentDomainNames))
+	for _, d := range agentDomainNames {
+		m[d] = true
+	}
+	return m
+}()
+
+// agentToolDomain classifies a tool by name. Kept in one place so a new tool gets a domain without
+// touching the ten registration files; unclassified tools fall into core and stay always available.
+func agentToolDomain(name string) toolDomain {
+	switch {
+	case name == "find_tools", name == "set_tool_domain",
+		name == "list_hosts", name == "get_host_state", name == "list_alerts", name == "inspect_host",
+		name == "read_file", name == "fleet_search", name == "exec_command",
+		strings.HasPrefix(name, "memory_"):
+		return domainCore
+	case strings.HasPrefix(name, "systemd_"), name == "host_info", name == "list_dir", name == "disk_usage",
+		name == "inventory_scan", name == "alert_ack", strings.HasPrefix(name, "pkg_"),
+		strings.HasPrefix(name, "file_"), strings.HasPrefix(name, "transfer_"), name == "ssh_keys":
+		return domainHost
+	case strings.HasPrefix(name, "docker_security"), strings.HasPrefix(name, "security_"),
+		name == "vuln_status", strings.HasPrefix(name, "account_audit"), name == "fleet_keys",
+		strings.HasPrefix(name, "iac_"), name == "fim_diff":
+		return domainSecurity
+	case strings.HasPrefix(name, "docker_"), strings.HasPrefix(name, "kube_"), name == "dockerhub_search":
+		return domainInfra
+	case strings.HasPrefix(name, "cf_"), name == "vpn_networks", name == "net_diag",
+		name == "firewall_action", name == "domain_config_remove", name == "fleet_forwards":
+		return domainNetwork
+	case strings.HasPrefix(name, "ansible_"), strings.HasPrefix(name, "tf_"), name == "gateway_cli":
+		return domainAutomation
+	case strings.HasPrefix(name, "repo_"):
+		return domainRepo
+	default:
+		return domainCore
+	}
+}
+
+// agentDomainForContext maps the active side-nav page to a tool domain. An empty context means no page
+// information (API callers, older clients): advertise everything. Unknown pages stay on the hosts domain.
+func agentDomainForContext(page string) toolDomain {
+	switch strings.ToLower(strings.TrimSpace(page)) {
+	case "":
+		return domainAll
+	case "docker", "kube":
+		return domainInfra
+	case "cloudflare":
+		return domainNetwork
+	case "ansible", "terraform":
+		return domainAutomation
+	case "security":
+		return domainSecurity
+	case "repos":
+		return domainRepo
+	default:
+		return domainHost
+	}
+}
+
+// agentToolSpecsFor returns the tool definitions advertised to the model. domainAll keeps the full list
+// (backward compatible); a concrete domain offers only core tools plus that domain's tools.
+func agentToolSpecsFor(domain toolDomain) []llmToolSpec {
+	specs := make([]llmToolSpec, 0, len(agentTools))
+	for _, t := range agentTools {
+		td := agentToolDomain(t.Name)
+		if domain != domainAll && td != domainCore && td != domain {
+			continue
+		}
+		specs = append(specs, llmToolSpec{Name: t.Name, Description: t.Description, Schema: t.InputSchema})
+	}
+	return specs
+}
+
+// toolFindTools and toolSetDomain are the cross-domain fallback: the model can discover a tool outside
+// the active domain by keyword, then load that domain for the next model call.
+func toolFindTools(s *Server, r *http.Request, args map[string]interface{}) (string, error) {
+	q, _ := args["query"].(string)
+	q = strings.ToLower(strings.TrimSpace(q))
+	if q == "" {
+		return "", fmt.Errorf("query is required")
+	}
+	const head = "name\tdomain\tdescription\n"
+	var b strings.Builder
+	b.WriteString(head)
+	for _, t := range agentTools {
+		if t.Name == "find_tools" || t.Name == "set_tool_domain" {
+			continue
+		}
+		if !strings.Contains(strings.ToLower(t.Name+" "+t.Description), q) {
+			continue
+		}
+		b.WriteString(t.Name + "\t" + string(agentToolDomain(t.Name)) + "\t" + clipTo(t.Description, 160) + "\n")
+	}
+	if b.Len() == len(head) {
+		return "no tool matches " + q, nil
+	}
+	return b.String(), nil
+}
+
+// agentDomainKey carries a pointer to the conversation's active domain through the request, so the
+// set_tool_domain meta-tool can widen it for the next model call in the same turn.
+type agentDomainKey struct{}
+
+func toolSetDomain(s *Server, r *http.Request, args map[string]interface{}) (string, error) {
+	d, _ := args["domain"].(string)
+	if !agentDomains[d] {
+		return "", fmt.Errorf("unknown domain %q", d)
+	}
+	if p, ok := r.Context().Value(agentDomainKey{}).(*toolDomain); ok && p != nil {
+		*p = toolDomain(d)
+	}
+	names := make([]string, 0, len(agentTools))
+	for _, t := range agentTools {
+		if td := agentToolDomain(t.Name); td == domainCore || td == toolDomain(d) {
+			names = append(names, t.Name)
+		}
+	}
+	return "active domain: " + d + "\navailable tools: " + strings.Join(names, ", "), nil
+}
+
 // callAgentTool runs one tool and returns its result text. A failure is reported as an error result.
+// Every call emits a telemetry event (start, then duration/status) to the ADR-0030 Activity Console.
 func (s *Server) callAgentTool(r *http.Request, name string, args map[string]interface{}) (string, bool) {
 	tool := findAgentTool(name)
 	if tool == nil {
+		logger.Warn("agent", name, "tool call failed", "tool", name, "status", "error", "error", "unknown tool")
 		return "unknown tool: " + name, true
 	}
-	// The gate mark lets loopback refuse a change that skipped agentGate. Every call is audited, reads included.
 	raw, _ := json.Marshal(args)
+	params := clipTo(string(raw), 300)
+	started := time.Now()
+	logger.Info("agent", name, "tool call started", "tool", name, "event", "start", "params", params, "domain", string(agentToolDomain(name)))
+	// The gate mark lets loopback refuse a change that skipped agentGate. Every call is audited, reads included.
+	ctx := context.WithValue(r.Context(), gateKey{}, new(bool))
+	if p, ok := r.Context().Value(agentDomainKey{}).(*toolDomain); ok && p != nil {
+		ctx = context.WithValue(ctx, agentDomainKey{}, p)
+	}
 	out, err := "", checkArgs(tool.InputSchema, args)
 	if err == nil {
-		out, err = tool.run(s, r.WithContext(context.WithValue(r.Context(), gateKey{}, new(bool))), args)
+		out, err = tool.run(s, r.WithContext(ctx), args)
 	}
+	attrs := []any{"tool", name, "params", params, "duration_ms", time.Since(started).Milliseconds(), "domain", string(agentToolDomain(name))}
 	if err == nil {
-		logger.Info("agent", name, fmt.Sprintf("%s %s", name, clipTo(string(raw), 300)))
+		attrs = append(attrs, "status", "success")
+		logger.Info("agent", name, "tool call finished", attrs...)
 		// The result is not cut here: truncateToolResult keeps the head and the tail and says how to get
 		// the rest. Cutting here would silently drop the end of a log before the model ever sees it.
 		return out, false
 	}
-	logger.Warn("agent", name, fmt.Sprintf("%s %s: %v", name, clipTo(string(raw), 300), err))
+	attrs = append(attrs, "status", "error", "error", err.Error())
+	logger.Warn("agent", name, "tool call failed", attrs...)
 	return strings.TrimSpace(out + "\nERROR: " + err.Error()), true
 }
 

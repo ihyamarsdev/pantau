@@ -32,7 +32,8 @@ type agentConv struct {
 	msgs       []llmMessage
 	lastUse    time.Time
 	running    bool
-	lastTokens int // the prompt size of the last model call, 0 when unknown
+	lastTokens int        // the prompt size of the last model call, 0 when unknown
+	domain     toolDomain // active tool domain, set from the UI page and mutable via set_tool_domain
 }
 
 type agentToolEvent struct {
@@ -40,6 +41,8 @@ type agentToolEvent struct {
 	Label      string `json:"label"`
 	Status     string `json:"status"`
 	ToolCallID string `json:"toolCallId"`
+	Domain     string `json:"domain,omitempty"`
+	DurationMS int64  `json:"duration_ms,omitempty"`
 }
 
 // agentSSE writes the browser stream: text deltas, tool progress and errors.
@@ -163,9 +166,11 @@ func (s *Server) evictConvsLocked() {
 func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg, client llmClient, conv *agentConv, message string) bool {
 	conv.mu.Lock()
 	lastTokens := conv.lastTokens
+	domain := conv.domain
 	history := append([]llmMessage{}, conv.msgs...)
 	conv.mu.Unlock()
-
+	// The domain pointer travels with the request so set_tool_domain can widen it mid-turn.
+	rctx := r.WithContext(context.WithValue(r.Context(), agentDomainKey{}, &domain))
 	history = append(history, llmMessage{Role: llmRoleUser, Text: message})
 	// saved is what a failed turn keeps: the history up to the last complete tool batch. Without it the agent
 	// would forget that it already restarted a service and would repeat the action.
@@ -179,6 +184,7 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 		case saved != nil:
 			conv.msgs = saved
 		}
+		conv.domain = domain
 		conv.mu.Unlock()
 	}()
 
@@ -190,13 +196,16 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 	if lastTokens > 0 && lastTokens+len(message)/3 > agentCompactTokens {
 		history = s.compactHistory(r.Context(), client, c, history)
 	}
-	for range agentMaxSteps {
-		if err := r.Context().Err(); err != nil {
+	for step := range agentMaxSteps {
+		if err := rctx.Context().Err(); err != nil {
 			sse.errorEvent("the chat was cancelled")
 			return false
 		}
-		req := llmRequest{Model: c.Model, System: system, Messages: shrinkOldToolResults(history), Tools: agentToolSpecs()}
-		res, err := client.Stream(r.Context(), req, sse.textDelta)
+		req := llmRequest{Model: c.Model, System: system, Messages: shrinkOldToolResults(history), Tools: agentToolSpecsFor(domain)}
+		modelStart := time.Now()
+		res, err := client.Stream(rctx.Context(), req, sse.textDelta)
+		logger.Info("agent", "", "model call finished", "step", step+1, "model", c.Model, "domain", string(domain), "tools", len(req.Tools),
+			"prompt_size", res.InputTokens, "reply_size", res.OutputTokens, "duration_ms", time.Since(modelStart).Milliseconds(), "status", map[bool]string{true: "error", false: "success"}[err != nil])
 		if err != nil {
 			sse.errorEvent(redactSecret(err.Error(), c.Key))
 			return false
@@ -206,7 +215,6 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 		conv.mu.Lock()
 		conv.lastTokens = tokens
 		conv.mu.Unlock()
-
 		calls := make([]llmToolCall, 0, len(res.ToolCalls))
 		for _, tc := range res.ToolCalls {
 			if tc.ID == "" {
@@ -223,7 +231,7 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 		// The calls of one batch run one after the other; a call that did not run still gets a result, so the
 		// history stays valid and the batch can be kept.
 		for i, tc := range calls {
-			if err := r.Context().Err(); err != nil {
+			if err := rctx.Context().Err(); err != nil {
 				for _, rest := range calls[i:] {
 					history = append(history, llmMessage{Role: llmRoleTool, ToolCallID: rest.ID, Text: "not run: the chat was cancelled", IsError: true})
 				}
@@ -233,18 +241,20 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 			}
 			args, argErr := agentToolArgs(tc.Args)
 			label := agentToolLabel(args)
-			sse.toolEvent(agentToolEvent{Tool: tc.Name, Label: label, Status: "running", ToolCallID: tc.ID})
+			toolDomainName := string(agentToolDomain(tc.Name))
+			sse.toolEvent(agentToolEvent{Tool: tc.Name, Label: label, Status: "running", ToolCallID: tc.ID, Domain: toolDomainName})
+			callStart := time.Now()
 			text, isErr := "", true
 			if argErr != nil {
 				text = "the tool arguments are not valid JSON"
 			} else {
-				text, isErr = s.callAgentTool(r, tc.Name, args)
+				text, isErr = s.callAgentTool(rctx, tc.Name, args)
 			}
 			status := "done"
 			if isErr {
 				status = "error"
 			}
-			sse.toolEvent(agentToolEvent{Tool: tc.Name, Label: label, Status: status, ToolCallID: tc.ID})
+			sse.toolEvent(agentToolEvent{Tool: tc.Name, Label: label, Status: status, ToolCallID: tc.ID, Domain: toolDomainName, DurationMS: time.Since(callStart).Milliseconds()})
 			history = append(history, llmMessage{Role: llmRoleTool, ToolCallID: tc.ID, Text: truncateToolResult(tc.Name, text), IsError: isErr})
 		}
 		// The batch is complete: it is kept even if the turn fails later.
