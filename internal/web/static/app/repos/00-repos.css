@@ -63,7 +63,6 @@
 .rp-log { margin: 0; height: 260px; overflow: auto; padding: 10px 12px; background: var(--code-bg); border: 1px solid var(--card-border); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: var(--fs-xs); white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .rp-dir { color: var(--text-muted); font-weight: 400; }
-.rp-row { min-width: 0; }
 
 /* Branch dialog */
 .rp-br-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; max-height: 300px; overflow: auto; }

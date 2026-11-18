@@ -60,6 +60,7 @@
   --success-solid: #30a46c;    /* filled success buttons (white text) */
   /* ---- Shape / elevation ---- */
   --radius-sm: 6px; --radius: 8px; --radius-lg: 12px; --radius-xl: 16px; --radius-full: 9999px;
+  --side-panel-width: 200px;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
   --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.45);
   --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.6);
@@ -69,7 +70,6 @@
   --fs-xs: 0.72rem; --fs-sm: 0.8rem; --fs-base: 0.875rem; --fs-md: 0.95rem; --fs-lg: 1.125rem; --fs-xl: 1.5rem;
   /* ---- Motion ---- */
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
-  --dur: 0.15s;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html { -webkit-text-size-adjust: 100%; }
@@ -96,9 +96,9 @@ code, pre, kbd, samp { font-family: var(--font-mono); }
 header { position: fixed; top: 0; left: 0; right: 0; height: 56px; z-index: 40; background: color-mix(in srgb, var(--card-bg) 85%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid var(--card-border); box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4); padding: 0 24px; display: flex; align-items: center; justify-content: space-between; }
 footer { position: fixed; bottom: 0; left: 0; right: 0; height: 36px; z-index: 40; background: color-mix(in srgb, var(--card-bg) 85%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-top: 1px solid var(--card-border); box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4); padding: 0 20px; display: flex; align-items: center; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); }
 .footer-zone { display: flex; align-items: center; gap: 8px; }
-.footer-badge { background: color-mix(in srgb, var(--text) 5%, transparent); border: 1px solid color-mix(in srgb, var(--text) 10%, transparent); padding: 1px 6px; border-radius: 4px; font-size: 0.7rem; font-family: var(--font-mono); color: var(--text-muted); cursor: pointer; transition: all 0.15s ease; }
+.footer-badge { background: color-mix(in srgb, var(--text) 5%, transparent); border: 1px solid color-mix(in srgb, var(--text) 10%, transparent); padding: 1px 6px; border-radius: 4px; font-size: 0.7rem; font-family: var(--font-mono); color: var(--text-muted); cursor: pointer; transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease }
 .footer-badge:hover { color: var(--accent-text); border-color: color-mix(in srgb, var(--primary) 40%, transparent); background: color-mix(in srgb, var(--primary) 12%, transparent); }
-.footer-pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 9999px; background: color-mix(in srgb, var(--text) 5%, transparent); border: 1px solid var(--card-border); color: var(--text); text-decoration: none; font-size: 0.72rem; transition: all 0.15s ease; }
+.footer-pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 9999px; background: color-mix(in srgb, var(--text) 5%, transparent); border: 1px solid var(--card-border); color: var(--text); text-decoration: none; font-size: 0.72rem; transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease }
 .footer-pill:hover { background: color-mix(in srgb, var(--primary) 12%, transparent); border-color: color-mix(in srgb, var(--primary) 40%, transparent); color: var(--accent-text); text-decoration: none; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; background: var(--text-muted); flex: none; }
 /* One look per Host state: healthy = green calm, degraded/drift = amber urgent, down = red fast, unknown = grey still. */
@@ -131,7 +131,7 @@ td .btn-danger:disabled, .action-grid .btn-danger:disabled { background: transpa
 .btn-warning:hover { background: #ffb53d; border-color: transparent; color: #1a1100; }
 .btn-sm { height: 26px; padding: 0 9px; font-size: var(--fs-xs); border-radius: var(--radius-sm); }
 .btn-icon { min-width: 32px; height: 32px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
-.btn-inspect-quick { width: 24px; height: 24px; padding: 0; display: inline-flex; align-items: center; justify-content: center; background: transparent; border: 1px solid transparent; color: var(--text-muted); border-radius: var(--radius-sm); cursor: pointer; transition: all var(--dur) var(--ease); }
+.btn-inspect-quick { width: 24px; height: 24px; padding: 0; display: inline-flex; align-items: center; justify-content: center; background: transparent; border: 1px solid transparent; color: var(--text-muted); border-radius: var(--radius-sm); cursor: pointer; transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
 .btn-inspect-quick:hover { color: var(--accent-text); background: var(--accent-soft); }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .spinning { animation: spin 0.8s linear infinite; pointer-events: none; opacity: 0.7; transform-origin: center; display: inline-block; }
@@ -187,7 +187,7 @@ td .btn-danger:disabled, .action-grid .btn-danger:disabled { background: transpa
 .modal.open { display: flex; animation: fadeIn 0.15s ease-out; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes modalIn { from { opacity: 0; transform: translateY(6px) scale(0.985); } to { opacity: 1; transform: none; } }
-.modal-content { background: var(--card-bg); border: 1px solid var(--border-strong); border-radius: var(--radius-xl); display: flex; flex-direction: column; overflow: hidden; box-shadow: var(--shadow-lg); }
+.modal-content { background: var(--card-bg); border: 1px solid var(--border-strong); border-radius: var(--radius-xl); display: flex; flex-direction: column; overflow: hidden; box-shadow: var(--shadow-lg); contain: layout style; }
 .modal.open > .modal-content { animation: modalIn 0.2s var(--ease); }
 .modal-workspace { width: 85vw; height: 84vh; max-width: 1500px; min-width: 760px; }
 .modal-dialog { width: 100%; max-width: 520px; max-height: 90vh; }
@@ -231,7 +231,7 @@ td .btn-danger:disabled, .action-grid .btn-danger:disabled { background: transpa
 .modal-header { padding: 14px 20px; border-bottom: 1px solid var(--card-border); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; font-weight: 600; font-size: var(--fs-md); }
 .modal-tabs-bar { padding: 0 20px; border-bottom: 1px solid var(--card-border); flex-shrink: 0; overflow-x: auto; background: transparent; }
 .modal-tabs-bar .tabs { margin-bottom: 0; border-bottom: none; }
-.modal-body { padding: 20px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+.modal-body { padding: 20px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 16px; min-height: 0; contain: layout style; }
 .modal-footer { padding: 12px 20px; border-top: 1px solid var(--card-border); display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0; background: transparent; }
 .tabs { display: flex; gap: 4px; overflow-x: auto; white-space: nowrap; }
 .tab { padding: 10px 12px; cursor: pointer; color: var(--text-muted); font-size: var(--fs-sm); font-weight: 500; border-bottom: 2px solid transparent; flex-shrink: 0; transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease); }
@@ -387,7 +387,7 @@ select option { background-color: var(--card-bg); color: var(--text); }
   font-size: var(--fs-xs);
   white-space: nowrap;
   cursor: pointer;
-  transition: all var(--dur) var(--ease);
+  transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 .file-pin-chip:hover {
   background: var(--surface-3);
@@ -580,13 +580,13 @@ body.host-select-on #hostGrid, body.host-select-on #hostList { padding-bottom: 7
 .file-search-clear { background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: var(--fs-xs); padding: 0 4px; line-height: 1; display: none; align-items: center; }
 .file-search-clear:hover { color: var(--text); }
 .file-pill-group { display: inline-flex; align-items: center; background: var(--surface-2); border: 1px solid var(--card-border); border-radius: var(--radius-sm); padding: 2px; height: 32px; box-sizing: border-box; }
-.file-pill-btn { background: transparent; border: none; border-radius: 4px; padding: 0 10px; height: 100%; display: inline-flex; align-items: center; justify-content: center; color: var(--text-muted); cursor: pointer; font-size: var(--fs-xs); font-weight: 500; transition: all var(--dur) ease; white-space: nowrap; font-family: inherit; }
+.file-pill-btn { background: transparent; border: none; border-radius: 4px; padding: 0 10px; height: 100%; display: inline-flex; align-items: center; justify-content: center; color: var(--text-muted); cursor: pointer; font-size: var(--fs-xs); font-weight: 500; transition: color var(--dur) ease, background-color var(--dur) ease, border-color var(--dur) ease, box-shadow var(--dur) ease; white-space: nowrap; font-family: inherit; }
 .file-pill-btn:hover { color: var(--text); }
 .file-pill-btn.active { background: var(--surface-3); color: var(--text); font-weight: 600; box-shadow: var(--shadow-sm); }
 .sortable-th { cursor: pointer; user-select: none; display: inline-flex; align-items: center; gap: 4px; transition: color var(--dur) ease; }
 .sortable-th:hover { color: var(--text); }
 .sortable-th .sort-arrow { display: inline-flex; align-items: center; color: var(--accent-text); margin-left: 2px; }
-.host-note-badge { background: color-mix(in srgb, var(--primary) 8%, transparent); border: 1px dashed color-mix(in srgb, var(--primary) 30%, transparent); color: var(--accent-text); border-radius: 6px; padding: 6px 10px; font-size: 0.8rem; line-height: 1.35; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; cursor: pointer; transition: all 0.15s; }
+.host-note-badge { background: color-mix(in srgb, var(--primary) 8%, transparent); border: 1px dashed color-mix(in srgb, var(--primary) 30%, transparent); color: var(--accent-text); border-radius: 6px; padding: 6px 10px; font-size: 0.8rem; line-height: 1.35; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; cursor: pointer; transition: color 0.15s, background-color 0.15s, border-color 0.15s, box-shadow 0.15s }
 .host-note-badge:hover { border-color: var(--accent-text); background: color-mix(in srgb, var(--primary) 15%, transparent); color: var(--accent-text); }
 .drag-handle { cursor: grab; color: var(--text-muted); user-select: none; font-size: 1rem; padding: 2px 4px; border-radius: 4px; }
 .drag-handle:hover { color: var(--accent-text); background: color-mix(in srgb, var(--primary) 10%, transparent); }
@@ -679,7 +679,7 @@ body.has-workspace-shelf .container {
   font-size: 0.78rem;
   color: var(--text);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease
   user-select: none;
   max-width: 260px;
   flex-shrink: 0;
@@ -727,7 +727,7 @@ body.has-workspace-shelf .container {
   align-items: center;
   justify-content: center;
   padding: 4px 8px;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease
 }
 .btn-modal-minimize:hover {
   color: var(--text);
@@ -816,7 +816,7 @@ body.has-workspace-shelf .container {
   color: var(--text-muted);
   cursor: pointer;
   white-space: nowrap;
-  transition: all var(--dur) var(--ease);
+  transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
   max-width: 220px;
 }
 .terminal-dock-tab:hover {
@@ -859,9 +859,9 @@ body.has-workspace-shelf .container {
   background: var(--warning);
   flex-shrink: 0;
   box-shadow: 0 0 6px var(--warning);
-  animation: pulseDot 1.5s infinite;
+  animation: pulseActivityDot 1.5s infinite;
 }
-@keyframes pulseDot {
+@keyframes pulseActivityDot {
   0% { opacity: 0.4; transform: scale(0.9); }
   50% { opacity: 1; transform: scale(1.2); }
   100% { opacity: 0.4; transform: scale(0.9); }
@@ -911,7 +911,7 @@ body.has-workspace-shelf .container {
   background: transparent;
   border: 1px solid transparent;
   cursor: pointer;
-  transition: all var(--dur) var(--ease);
+  transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 .dock-action-btn:hover {
   color: var(--text);
@@ -1030,7 +1030,7 @@ body.has-workspace-shelf .container {
   font-size: var(--fs-xs);
   font-family: var(--font-mono);
   cursor: pointer;
-  transition: all var(--dur) var(--ease);
+  transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1040,7 +1040,7 @@ body.has-workspace-shelf .container {
   color: var(--text);
   border-color: var(--border-strong);
 }
-.docs-toc-item { padding: 6px 10px; border-radius: var(--radius-sm); font-size: var(--fs-xs); color: var(--text-muted); text-decoration: none; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: all var(--dur) var(--ease); cursor: pointer; }
+.docs-toc-item { padding: 6px 10px; border-radius: var(--radius-sm); font-size: var(--fs-xs); color: var(--text-muted); text-decoration: none; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease); cursor: pointer; }
 .docs-toc-item:hover { color: var(--text); background: var(--hover); }
 .docs-toc-item.level-3 { padding-left: 20px; opacity: 0.85; }
 .docs-toc-item.active { color: var(--accent-text); font-weight: 600; background: var(--accent-soft); }
@@ -1081,6 +1081,7 @@ body.has-workspace-shelf .container {
   border-top: 1px solid var(--card-border);
   box-shadow: 0 -8px 25px rgba(0, 0, 0, 0.5);
   transition: height 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  contain: layout style;
 }
 .activity-console-drawer.maximized {
   height: 50vh;
@@ -1148,7 +1149,7 @@ body.has-workspace-shelf .container {
   padding: 2px 8px;
   border-radius: 4px;
   cursor: pointer;
-  transition: all var(--dur) var(--ease);
+  transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 .activity-filter-btn:hover {
   color: var(--text);
@@ -1184,7 +1185,7 @@ body.has-workspace-shelf .container {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  transition: all var(--dur) var(--ease);
+  transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 .activity-btn:hover {
   background: var(--hover);
@@ -1235,6 +1236,7 @@ body.has-workspace-shelf .container {
   font-size: 0.72rem;
   background: var(--code-bg);
   user-select: text;
+  contain: layout style;
 }
 .activity-table {
   width: 100%;
@@ -1407,7 +1409,7 @@ header {
   font-size: var(--fs-xs);
   color: var(--text);
   cursor: pointer;
-  transition: all var(--dur) var(--ease);
+  transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
   white-space: nowrap;
   user-select: none;
 }
@@ -1576,7 +1578,7 @@ header {
   justify-content: center;
   color: var(--text-muted);
   cursor: pointer;
-  transition: all var(--dur) var(--ease);
+  transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 .view-mode-toggle .view-btn:hover {
   color: var(--text);
@@ -1991,7 +1993,7 @@ header {
   background: var(--surface-2);
   border: 1px solid var(--card-border);
   cursor: pointer;
-  transition: all var(--dur);
+  transition: color var(--dur), background-color var(--dur), border-color var(--dur), box-shadow var(--dur);
 }
 .host-score-chip:hover {
   border-color: var(--border-strong);
@@ -2009,7 +2011,7 @@ header {
   border-radius: var(--radius-sm);
   padding: 4px 8px;
   cursor: pointer;
-  transition: all var(--dur);
+  transition: color var(--dur), background-color var(--dur), border-color var(--dur), box-shadow var(--dur);
   width: 100%;
   box-sizing: border-box;
 }
@@ -2955,7 +2957,7 @@ header {
   border-radius: var(--radius-sm);
   color: var(--text);
   cursor: pointer;
-  transition: all var(--dur) var(--ease);
+  transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 .terminal-port-chip:hover {
   background: var(--hover);
@@ -3101,7 +3103,7 @@ header {
   border-left: 2px solid transparent;
   border-bottom: none;
   cursor: pointer;
-  transition: all var(--dur) var(--ease);
+  transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
   width: 100%;
   box-sizing: border-box;
   white-space: nowrap;
@@ -3551,18 +3553,17 @@ div.spinner { border: 2px solid var(--card-border); border-top-color: var(--prim
 #settingsPanelSecurity > .form-grid-2 { grid-template-columns: 1fr; }
 #settingPubKey { height: auto; min-height: 96px; }
 /* ===== SLICE-E:END ===== */
-:root { --side-panel-width: 200px; }
 body.side-panel-collapsed { --side-panel-width: 56px; }
-.side-panel { position: fixed; top: 52px; bottom: 36px; left: 0; width: var(--side-panel-width); background: color-mix(in srgb, var(--card-bg) 85%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-right: 1px solid var(--card-border); box-shadow: 4px 0 20px rgba(0, 0, 0, 0.25); z-index: 38; display: flex; flex-direction: column; justify-content: space-between; transition: width var(--dur) var(--ease), transform var(--dur) var(--ease); box-sizing: border-box; }
+.side-panel { position: fixed; top: 52px; bottom: 36px; left: 0; width: var(--side-panel-width); background: color-mix(in srgb, var(--card-bg) 85%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-right: 1px solid var(--card-border); box-shadow: 4px 0 20px rgba(0, 0, 0, 0.25); z-index: 38; display: flex; flex-direction: column; justify-content: space-between; transition: width var(--dur) var(--ease), transform var(--dur) var(--ease); box-sizing: border-box; contain: layout style; }
 .side-panel-nav { display: flex; flex-direction: column; gap: 4px; padding: 12px 8px; }
-.side-panel-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--radius-md); border: none; background: transparent; color: var(--text-muted); font-size: var(--fs-sm); font-weight: 500; cursor: pointer; text-align: left; width: 100%; box-sizing: border-box; transition: all var(--dur) var(--ease); white-space: nowrap; overflow: hidden; position: relative; }
+.side-panel-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--radius-md); border: none; background: transparent; color: var(--text-muted); font-size: var(--fs-sm); font-weight: 500; cursor: pointer; text-align: left; width: 100%; box-sizing: border-box; transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease); white-space: nowrap; overflow: hidden; position: relative; }
 .side-panel-item .icon { flex-shrink: 0; }
 .side-panel-item:hover { background: var(--hover); color: var(--text); }
 .side-panel-item:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: -2px; }
 .side-panel-item.active { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
 .side-panel-item.active::before { content: ''; position: absolute; left: 0; top: 6px; bottom: 6px; width: 3px; border-radius: 0 2px 2px 0; background: var(--primary); }
 .side-panel-footer { padding: 8px; border-top: 1px solid var(--card-border); }
-.side-panel-collapse-btn { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: var(--radius-md); border: none; background: transparent; color: var(--text-muted); font-size: var(--fs-xs); cursor: pointer; width: 100%; box-sizing: border-box; transition: all var(--dur) var(--ease); white-space: nowrap; overflow: hidden; }
+.side-panel-collapse-btn { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: var(--radius-md); border: none; background: transparent; color: var(--text-muted); font-size: var(--fs-xs); cursor: pointer; width: 100%; box-sizing: border-box; transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease); white-space: nowrap; overflow: hidden; }
 .side-panel-collapse-btn:hover { background: var(--hover); color: var(--text); }
 .side-panel-collapse-btn:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: -2px; }
 body.side-panel-collapsed .side-panel-label { display: none; }
@@ -3884,7 +3885,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
       <div class="search-box">
         <svg class="icon icon-sm text-muted"><use href="#i-search"/></svg>
         <input type="text" id="hostSearchInput" placeholder="Search hosts by name, IP, OS, notes..." data-i18n-placeholder="search_hosts_ph" oninput="onSearchInput()" />
-        <button id="clearSearchBtn" class="btn btn-sm" style="display: none; padding: 2px 6px; background: transparent; color: var(--text-muted);" onclick="clearSearch()"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+        <button id="clearSearchBtn" aria-label="Clear search" title="Clear search" class="btn btn-sm" style="display: none; padding: 2px 6px; background: transparent; color: var(--text-muted);" onclick="clearSearch()"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
       </div>
       <div class="toolbar-controls">
         <span id="inspectionPausedBadge" style="display: none; align-items: center; gap: 6px; padding: 4px 10px; border-radius: var(--radius-sm); background: var(--warning-soft); border: 1px solid var(--warning-border); color: var(--warning); font-size: var(--fs-xs); font-weight: 500; cursor: pointer;" onclick="openSettingsModal('general')" title="Background Inspection is paused. Click to open Settings.">
@@ -3929,7 +3930,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <div class="search-box">
           <svg class="icon icon-sm text-muted"><use href="#i-search"/></svg>
           <input type="text" id="dockerHostSearchInput" placeholder="Search hosts by name, IP..." data-i18n-placeholder="search_hosts_ph" oninput="filterDockerSectionHosts()" />
-          <button id="clearDockerSearchBtn" class="btn btn-sm" style="display:none;padding:2px 6px;background:transparent;color:var(--text-muted);" onclick="clearDockerSectionSearch()"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+          <button id="clearDockerSearchBtn" aria-label="Clear search" title="Clear search" class="btn btn-sm" style="display:none;padding:2px 6px;background:transparent;color:var(--text-muted);" onclick="clearDockerSectionSearch()"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
         </div>
       </div>
       <div id="dockerHostsGrid" class="grid"></div>
@@ -4409,7 +4410,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 <div id="toastContainer"></div>
 
 <!-- Inject Key Modal (Action Dialog) -->
-<div id="injectKeyModal" class="modal">
+<div id="injectKeyModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width: 480px;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
@@ -4436,14 +4437,14 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
   </div>
 </div>
 
-<div id="kubeScaleModal" class="modal">
+<div id="kubeScaleModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width:400px;">
     <div class="modal-header">
       <div style="display:flex;align-items:center;gap:8px;">
         <svg class="icon icon-sm" style="color:var(--accent-text);"><use href="#i-boxes"/></svg>
         <h3 id="kubeScaleModalTitle" style="font-size:var(--fs-md);margin:0;" data-i18n="kube_scale_title">Scale Workload</h3>
       </div>
-      <button class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('kubeScaleModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+      <button aria-label="Close" title="Close" class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('kubeScaleModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
     </div>
     <div class="modal-body" style="padding:16px 20px;">
       <div style="margin-bottom:12px;font-size:var(--fs-sm);color:var(--text-muted);" id="kubeScaleWorkloadDesc"></div>
@@ -4459,14 +4460,14 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
   </div>
 </div>
 
-<div id="kubeContainerModal" class="modal">
+<div id="kubeContainerModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width:400px;">
     <div class="modal-header">
       <div style="display:flex;align-items:center;gap:8px;">
         <svg class="icon icon-sm" style="color:var(--accent-text);"><use href="#i-boxes"/></svg>
         <h3 id="kubeContainerModalTitle" style="font-size:var(--fs-md);margin:0;" data-i18n="kube_select_container">Select Container</h3>
       </div>
-      <button class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('kubeContainerModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+      <button aria-label="Close" title="Close" class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('kubeContainerModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
     </div>
     <div class="modal-body" style="padding:16px 20px;">
       <div style="margin-bottom:12px;font-size:var(--fs-sm);color:var(--text-muted);" id="kubeContainerModalDesc"></div>
@@ -4483,7 +4484,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Kubernetes Pod Logs Modal (Live Streaming over WebSocket) -->
-<div id="kubeLogsModal" class="modal">
+<div id="kubeLogsModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-workspace">
     <div class="modal-header" style="flex-wrap:wrap;gap:8px;">
       <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;">
@@ -4526,7 +4527,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         </label>
         <button class="btn btn-sm" onclick="copyKubeLogs()" data-i18n="copy">Copy</button>
         <button class="btn btn-sm" onclick="document.getElementById('kubeLogsOutput').textContent='';onKubeLogsFilterInput()" data-i18n="docker_logs_clear">Clear</button>
-        <button class="btn btn-icon btn-sm" onclick="closeModal('kubeLogsModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+        <button aria-label="Close" title="Close" class="btn btn-icon btn-sm" onclick="closeModal('kubeLogsModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
       </div>
     </div>
     <div class="modal-body" style="padding:0;flex:1;min-height:0;gap:0;background:var(--bg);">
@@ -4536,7 +4537,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Kubernetes Edit YAML Modal -->
-<div id="kubeYamlModal" class="modal">
+<div id="kubeYamlModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-workspace" style="max-width:900px;">
     <div class="modal-header">
       <div style="display:flex;align-items:center;gap:8px;min-width:0;">
@@ -4567,7 +4568,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Kubernetes Drain Modal -->
-<div id="kubeDrainModal" class="modal">
+<div id="kubeDrainModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width:560px;">
     <div class="modal-header">
       <h3 data-i18n="kube_drain_title">Drain Node</h3>
@@ -4589,7 +4590,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Kubernetes External Cluster Modal (Action Dialog) -->
-<div id="kubeClusterModal" class="modal">
+<div id="kubeClusterModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog-lg" style="max-width: 640px;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
@@ -4651,7 +4652,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
   </div>
 </div>
 <!-- Kubernetes Host Cluster Rename Modal (Action Dialog) -->
-<div id="kubeHostClusterModal" class="modal">
+<div id="kubeHostClusterModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width: 460px;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
@@ -4675,7 +4676,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
   </div>
 </div>
 <!-- Cloudflare Account Modal (Action Dialog) -->
-<div id="cfAccountModal" class="modal">
+<div id="cfAccountModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width: 520px;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
@@ -4748,7 +4749,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Repositories: Git editor (Workspace Modal) and action dialog -->
-<div id="repoModal" class="modal">
+<div id="repoModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-workspace">
     <div class="modal-header rp-head">
       <svg class="icon icon-sm text-accent"><use href="#i-git-branch"/></svg>
@@ -4760,7 +4761,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
     <div id="rpBody" class="rp-body"></div>
   </div>
 </div>
-<div id="repoDlg" class="modal">
+<div id="repoDlg" role="dialog" aria-modal="true" class="modal">
   <div id="repoDlgContent" class="modal-content modal-dialog" style="max-width: 560px;">
     <div class="modal-header"><h3 id="repoDlgTitle" style="font-size: var(--fs-md); margin: 0;"></h3>
       <button class="btn btn-icon btn-sm btn-ghost" onclick="Repos.dlgClose()" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button></div>
@@ -4771,7 +4772,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Terraform Action Dialogs (level 1 and stacked level 2) -->
-<div id="tfDlg1" class="modal">
+<div id="tfDlg1" role="dialog" aria-modal="true" class="modal">
   <div id="tfDlg1Content" class="modal-content modal-dialog" style="max-width: 560px;">
     <div class="modal-header"><h3 id="tfDlg1Title" style="font-size: var(--fs-md); margin: 0;"></h3>
       <button class="btn btn-icon btn-sm btn-ghost" onclick="tfDlgClose(1)" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button></div>
@@ -4780,7 +4781,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
     <div id="tfDlg1Footer" class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end; align-items: center;"></div>
   </div>
 </div>
-<div id="tfDlg2" class="modal">
+<div id="tfDlg2" role="dialog" aria-modal="true" class="modal">
   <div id="tfDlg2Content" class="modal-content modal-dialog" style="max-width: 560px;">
     <div class="modal-header"><h3 id="tfDlg2Title" style="font-size: var(--fs-md); margin: 0;"></h3>
       <button class="btn btn-icon btn-sm btn-ghost" onclick="tfDlgClose(2)" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button></div>
@@ -4791,7 +4792,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Cloudflare Zone Workspace Modal -->
-<div id="cfZoneModal" class="modal">
+<div id="cfZoneModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-workspace" style="display: flex; flex-direction: column;">
     <div class="modal-header" id="cfZoneModalHeader" style="user-select: none;">
       <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1;">
@@ -4940,7 +4941,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Cloudflare DNS Record Modal (Action Dialog) -->
-<div id="cfRecordModal" class="modal">
+<div id="cfRecordModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width: 520px;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
@@ -5014,7 +5015,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Generic Confirmation Modal (Action Dialog) -->
-<div id="confirmModal" class="modal">
+<div id="confirmModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width: 460px;">
     <div class="modal-header">
       <h3 id="confirmModalTitle" data-i18n="confirm">Confirm</h3>
@@ -5037,14 +5038,14 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Remote Web Service Tunnel Modal -->
-<div id="tunnelModal" class="modal">
+<div id="tunnelModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width: 480px;">
     <div class="modal-header">
       <h3 style="display: flex; align-items: center; gap: 8px;">
         <svg class="icon icon-sm text-primary"><use href="#i-globe"/></svg>
         <span data-i18n="tunnel_service_title">Remote Web Service</span>
       </h3>
-      <button class="btn btn-sm btn-icon" onclick="closeModal('tunnelModal')">
+      <button aria-label="Close" title="Close" class="btn btn-sm btn-icon" onclick="closeModal('tunnelModal')">
         <svg class="icon icon-sm"><use href="#i-x"/></svg>
       </button>
     </div>
@@ -5077,14 +5078,14 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Add Desired State Rule Modal (Action Dialog) -->
-<div id="ruleModal" class="modal">
+<div id="ruleModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width: 480px;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
         <svg class="icon"><use href="#i-sliders-horizontal"/></svg>
         <h3 id="ruleModalTitle" data-i18n="add_rule_title" style="margin: 0; font-size: var(--fs-md); font-weight: 600;">Add Desired State Rule</h3>
       </div>
-      <button class="btn btn-sm btn-ghost btn-icon" onclick="closeModal('ruleModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+      <button aria-label="Close" title="Close" class="btn btn-sm btn-ghost btn-icon" onclick="closeModal('ruleModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="ruleHostId" />
@@ -5143,7 +5144,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Snapshot Export Modal (Action Dialog) -->
-<div id="snapshotExportModal" class="modal">
+<div id="snapshotExportModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width: 480px;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
@@ -5174,7 +5175,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Add/Edit Host Modal -->
-<div id="hostModal" class="modal">
+<div id="hostModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width: 520px;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
@@ -5259,7 +5260,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Rename Host Group Modal -->
-<div id="hostGroupModal" class="modal">
+<div id="hostGroupModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width: 480px;">
     <div class="modal-header">
       <h3 style="font-size: var(--fs-md); margin: 0;" data-i18n="host_group_rename">Rename group</h3>
@@ -5280,7 +5281,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Import Hosts from SSH Config Modal -->
-<div id="importHostsModal" class="modal">
+<div id="importHostsModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog-lg" style="max-width: 740px;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
@@ -5361,14 +5362,14 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Commission Date Quick Modal -->
-<div id="commissionDateModal" class="modal">
+<div id="commissionDateModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width: 480px;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
         <svg class="icon"><use href="#i-calendar"/></svg>
         <h3 id="commissionDateModalTitle" data-i18n="commission_date_title" style="margin: 0; font-size: var(--fs-md); font-weight: 600;">Set Hardware Commission Date</h3>
       </div>
-      <button class="btn btn-sm btn-ghost btn-icon" onclick="closeModal('commissionDateModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+      <button aria-label="Close" title="Close" class="btn btn-sm btn-ghost btn-icon" onclick="closeModal('commissionDateModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="quickCommHostId" />
@@ -5393,14 +5394,14 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Bulk Change Group Modal (host multi-select) -->
-<div id="bulkGroupModal" class="modal">
+<div id="bulkGroupModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width: 480px;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
         <svg class="icon"><use href="#i-folder"/></svg>
         <h3 data-i18n="host_select_group_title" style="margin: 0; font-size: var(--fs-md); font-weight: 600;">Change group</h3>
       </div>
-      <button class="btn btn-sm btn-ghost btn-icon" onclick="closeModal('bulkGroupModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+      <button aria-label="Close" title="Close" class="btn btn-sm btn-ghost btn-icon" onclick="closeModal('bulkGroupModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
     </div>
     <div class="modal-body">
       <p id="bulkGroupDesc" style="font-size: var(--fs-sm); color: var(--text-muted); margin-bottom: 12px; line-height: 1.5;"></p>
@@ -5419,7 +5420,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Global Notes Modal -->
-<div id="globalNotesModal" class="modal">
+<div id="globalNotesModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog-md" style="max-width: 600px;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
@@ -5448,14 +5449,14 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Global Bookmarks Modal -->
-<div id="globalPinsModal" class="modal">
+<div id="globalPinsModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog-lg">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
         <svg class="icon"><use href="#i-bookmark"/></svg>
         <h3 data-i18n="global_pins_heading">Global Bookmarks</h3>
       </div>
-      <button class="btn btn-sm btn-icon" onclick="closeModal('globalPinsModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+      <button aria-label="Close" title="Close" class="btn btn-sm btn-icon" onclick="closeModal('globalPinsModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
     </div>
     <div class="modal-body" style="padding: 16px;">
       <div style="margin-bottom: 12px;">
@@ -5473,7 +5474,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- File Pin & Note Modal -->
-<div id="filePinModal" class="modal">
+<div id="filePinModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width: 480px;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
@@ -5481,7 +5482,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <h3 data-i18n="pin_file_modal_title">Pin to Quick Access</h3>
         <span id="pinModalHostBadge" class="badge badge-info" style="display: none;"></span>
       </div>
-      <button class="btn btn-sm btn-icon" onclick="closeModal('filePinModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+      <button aria-label="Close" title="Close" class="btn btn-sm btn-icon" onclick="closeModal('filePinModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
     </div>
     <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px; padding: 18px;">
       <div>
@@ -5510,7 +5511,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Edit Host Note Modal -->
-<div id="hostNoteModal" class="modal">
+<div id="hostNoteModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width: 480px;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
@@ -5534,7 +5535,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Host Details Modal -->
-<div id="hostDetailModal" class="modal">
+<div id="hostDetailModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-workspace">
     <div class="modal-header" id="hostDetailModalHeader" ondblclick="toggleHostDetailMaximize(event)" style="cursor: pointer; user-select: none;">
       <div class="host-detail-title-group">
@@ -5579,7 +5580,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Documentation Modal (Workspace Modal layout 75vw x 80vh) -->
-<div id="documentationModal" class="modal">
+<div id="documentationModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-workspace" style="display: flex; flex-direction: column;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 10px;">
@@ -5613,7 +5614,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Global Multi-Tab Terminal Dock -->
-<div id="terminalDockModal" class="modal terminal-dock-modal" style="display: none;">
+<div id="terminalDockModal" role="dialog" aria-modal="true" class="modal terminal-dock-modal" style="display: none;">
   <div class="modal-content modal-workspace terminal-dock-content" id="terminalDockContent">
     <div class="terminal-dock-header">
       <div class="terminal-tabs-container">
@@ -5648,7 +5649,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Settings Modal -->
-<div id="settingsModal" class="modal">
+<div id="settingsModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog-lg">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
@@ -6211,7 +6212,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- First-Boot / Restore Wizard Modal -->
-<div id="restoreModal" class="modal">
+<div id="restoreModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width: 500px;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
@@ -6286,7 +6287,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Code Editor Modal -->
-<div id="editorModal" class="modal">
+<div id="editorModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-workspace">
     <div class="modal-header" id="editorModalHeader" ondblclick="toggleEditorMaximize(event)" style="cursor: pointer; user-select: none;">
       <div class="editor-header-left">
@@ -6306,7 +6307,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <button id="btnEditorMax" class="btn btn-sm btn-icon dock-action-btn" onclick="toggleEditorMaximize(event)" title="Maximize Workspace" data-i18n-title="maximize_workspace">
           <svg class="icon icon-sm"><use href="#i-maximize-2"/></svg>
         </button>
-        <button class="btn btn-sm btn-icon" onclick="closeEditorModalWithConfirm()">
+        <button aria-label="Close" title="Close" class="btn btn-sm btn-icon" onclick="closeEditorModalWithConfirm()">
           <svg class="icon icon-sm"><use href="#i-x"/></svg>
         </button>
       </div>
@@ -6328,7 +6329,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Docker Container Logs Modal -->
-<div id="dockerLogsModal" class="modal">
+<div id="dockerLogsModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-workspace">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
@@ -6342,7 +6343,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
           <span data-i18n="docker_logs_autoscroll">Auto-scroll</span>
         </label>
         <button class="btn btn-sm" onclick="document.getElementById('dockerLogsOutput').textContent = ''" data-i18n="docker_logs_clear">Clear</button>
-        <button class="btn btn-icon btn-sm" onclick="closeModal('dockerLogsModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+        <button aria-label="Close" title="Close" class="btn btn-icon btn-sm" onclick="closeModal('dockerLogsModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
       </div>
     </div>
     <div class="modal-body" style="padding: 0; flex: 1; min-height: 0; gap: 0; background: var(--bg);">
@@ -6352,14 +6353,14 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Docker generic form modal (add container, pull image, create volume/network, rename, stack editor) -->
-<div id="dockerFormModal" class="modal">
+<div id="dockerFormModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog-lg">
     <div class="modal-header">
       <div class="sd-title">
         <svg class="icon icon-sm text-accent"><use href="#i-container"/></svg>
         <h3 id="dockerFormTitle" style="font-family: var(--font-sans); font-size: var(--fs-md);"></h3>
       </div>
-      <button class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('dockerFormModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+      <button aria-label="Close" title="Close" class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('dockerFormModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
     </div>
     <div class="modal-body" id="dockerFormBody"></div>
     <div class="modal-footer">
@@ -6370,7 +6371,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Docker container inspect modal -->
-<div id="dockerInspectModal" class="modal">
+<div id="dockerInspectModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog-lg sd-dialog">
     <div class="modal-header">
       <div class="sd-title">
@@ -6378,7 +6379,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <h3 id="dockerInspectTitle"></h3>
         <span id="dockerInspectBadge" class="badge badge-unknown"></span>
       </div>
-      <button class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('dockerInspectModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+      <button aria-label="Close" title="Close" class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('dockerInspectModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
     </div>
     <div class="modal-body" id="dockerInspectBody"></div>
     <div class="modal-footer sd-footer" id="dockerInspectFooter"></div>
@@ -6386,7 +6387,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- systemd Service Detail / Debug Modal -->
-<div id="systemdDetailModal" class="modal">
+<div id="systemdDetailModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog-lg sd-dialog">
     <div class="modal-header">
       <div class="sd-title">
@@ -6394,7 +6395,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <h3 id="systemdDetailTitle"></h3>
         <span id="systemdDetailBadge" class="badge badge-unknown"></span>
       </div>
-      <button class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('systemdDetailModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+      <button aria-label="Close" title="Close" class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('systemdDetailModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
     </div>
     <div class="modal-body" id="systemdDetailBody"></div>
     <div class="modal-footer sd-footer" id="systemdDetailFooter"></div>
@@ -6402,14 +6403,14 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Duplicate File/Folder Modal -->
-<div id="duplicateModal" class="modal">
+<div id="duplicateModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width: 480px;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
         <svg class="icon"><use href="#i-copy"/></svg>
         <h3 data-i18n="duplicate_modal_title">Duplicate File / Folder</h3>
       </div>
-      <button class="btn btn-sm btn-icon" onclick="closeModal('duplicateModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+      <button aria-label="Close" title="Close" class="btn btn-sm btn-icon" onclick="closeModal('duplicateModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
     </div>
     <div class="modal-body" style="padding: 16px 20px; display: flex; flex-direction: column; gap: 14px;">
       <div>
@@ -6450,14 +6451,14 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Cross-Host Transfer Modal -->
-<div id="transferModal" class="modal">
+<div id="transferModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width: 520px;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
         <svg class="icon"><use href="#i-arrow-left-right"/></svg>
         <h3 data-i18n="transfer_modal_title">Copy File / Folder to Another Host</h3>
       </div>
-      <button class="btn btn-sm btn-icon" onclick="closeModal('transferModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+      <button aria-label="Close" title="Close" class="btn btn-sm btn-icon" onclick="closeModal('transferModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
     </div>
     <div class="modal-body" style="padding: 16px 20px; display: flex; flex-direction: column; gap: 14px;">
       <div class="form-group">
@@ -6496,14 +6497,14 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Upload to S3 Modal -->
-<div id="s3UploadModal" class="modal">
+<div id="s3UploadModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width: 520px;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
         <svg class="icon"><use href="#i-cloud"/></svg>
         <h3 data-i18n="s3_upload_title">Upload to S3</h3>
       </div>
-      <button class="btn btn-sm btn-icon" onclick="closeModal('s3UploadModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+      <button aria-label="Close" title="Close" class="btn btn-sm btn-icon" onclick="closeModal('s3UploadModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
     </div>
     <div class="modal-body" style="padding: 16px 20px; display: flex; flex-direction: column; gap: 14px;">
       <div class="form-group">
@@ -6533,7 +6534,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Transfers List Modal -->
-<div id="transfersListModal" class="modal">
+<div id="transfersListModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-workspace">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
@@ -6542,7 +6543,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
       </div>
       <div style="display: flex; gap: 8px; align-items: center;">
         <button class="btn btn-sm btn-icon" onclick="loadTransfers()" title="Refresh" data-i18n-title="refresh"><svg class="icon icon-sm"><use href="#i-refresh-cw"/></svg></button>
-        <button class="btn btn-sm btn-icon" onclick="closeModal('transfersListModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+        <button aria-label="Close" title="Close" class="btn btn-sm btn-icon" onclick="closeModal('transfersListModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
       </div>
     </div>
     <div class="modal-tabs-bar">
@@ -6558,14 +6559,14 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Terminal Preset Modal (Action Dialog) -->
-<div id="presetModal" class="modal">
+<div id="presetModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width: 480px;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
         <svg class="icon icon-sm text-primary"><use href="#i-zap"/></svg>
         <h3 id="presetModalTitle" data-i18n="add_preset">Add Terminal Preset</h3>
       </div>
-      <button class="btn btn-sm btn-icon" onclick="closeModal('presetModal')">
+      <button aria-label="Close" title="Close" class="btn btn-sm btn-icon" onclick="closeModal('presetModal')">
         <svg class="icon icon-sm"><use href="#i-x"/></svg>
       </button>
     </div>
@@ -6601,7 +6602,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Preset Manager Modal (Action Dialog) -->
-<div id="presetManagerModal" class="modal">
+<div id="presetManagerModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog-lg">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
@@ -6613,7 +6614,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
           <svg class="icon icon-xs"><use href="#i-plus"/></svg>
           <span data-i18n="add_preset">Add Preset</span>
         </button>
-        <button class="btn btn-sm btn-icon" onclick="closeModal('presetManagerModal')">
+        <button aria-label="Close" title="Close" class="btn btn-sm btn-icon" onclick="closeModal('presetManagerModal')">
           <svg class="icon icon-sm"><use href="#i-x"/></svg>
         </button>
       </div>
@@ -6629,14 +6630,14 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
   </div>
 </div>
 <!-- Network Diagnostics Modal (Action Dialog) -->
-<div id="netDiagModal" class="modal">
+<div id="netDiagModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog-lg" style="display: flex; flex-direction: column; max-height: 85vh;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
         <svg class="icon" style="color: var(--accent-text);"><use href="#i-radar"/></svg>
         <h3 data-i18n="netdiag_title" style="margin: 0; font-size: var(--fs-md); font-weight: 600;">Network Diagnostics</h3>
       </div>
-      <button class="btn btn-sm btn-ghost btn-icon" onclick="closeModal('netDiagModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+      <button aria-label="Close" title="Close" class="btn btn-sm btn-ghost btn-icon" onclick="closeModal('netDiagModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
     </div>
     <div class="modal-body" id="netDiagModalBody" style="padding: 16px; overflow-y: auto;">
       <!-- Content populated dynamically -->
@@ -6645,7 +6646,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Host Comparison Modal (Workspace Modal layout 75vw x 80vh) -->
-<div id="hostCompareModal" class="modal">
+<div id="hostCompareModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-workspace" style="display: flex; flex-direction: column;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 10px;">
@@ -6681,7 +6682,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Bulk Command Execution Modal (Action Dialog) -->
-<div id="bulkExecModal" class="modal">
+<div id="bulkExecModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog-lg" style="max-width: 800px; display: flex; flex-direction: column; max-height: 90vh;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
@@ -6759,7 +6760,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Package Install Modal -->
-<div id="pkgInstallModal" class="modal">
+<div id="pkgInstallModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width: 460px;">
     <div class="modal-header">
       <h3 data-i18n="pkg_install_title">Install Packages</h3>
@@ -6777,7 +6778,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Package Upgrade Preview Modal (Action Dialog) -->
-<div id="pkgUpgradePreviewModal" class="modal">
+<div id="pkgUpgradePreviewModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog-lg" style="max-width: 680px; display: flex; flex-direction: column; max-height: 85vh;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px;">
@@ -6849,7 +6850,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Package Upgrade Streaming Log Modal (Workspace Modal layout) -->
-<div id="pkgUpgradeLogsModal" class="modal">
+<div id="pkgUpgradeLogsModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-workspace" style="display: flex; flex-direction: column;">
     <div class="modal-header">
       <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
@@ -6863,7 +6864,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
           <span data-i18n="docker_logs_autoscroll">Auto-scroll</span>
         </label>
         <button class="btn btn-sm" onclick="document.getElementById('pkgUpgradeLogsOutput').textContent = ''" data-i18n="docker_logs_clear">Clear</button>
-        <button class="btn btn-icon btn-sm" onclick="closeModal('pkgUpgradeLogsModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+        <button aria-label="Close" title="Close" class="btn btn-icon btn-sm" onclick="closeModal('pkgUpgradeLogsModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
       </div>
     </div>
     <div class="modal-body" style="padding: 0; flex: 1; min-height: 0; gap: 0; background: var(--bg);">
