@@ -149,6 +149,7 @@ function renderGridView(grid, isManualSort) {
 
   const groups = groupHosts(displayHosts);
   const showDividers = groups.length > 1 || (groups.length === 1 && !groups[0].isUngrouped);
+  const collapsed = getHostGroupsCollapsed();
   const nodes = [];
   groups.forEach(grp => {
     // A collapsed group keeps its header and hides its cards. Without dividers there is no header to click, so nothing collapses.

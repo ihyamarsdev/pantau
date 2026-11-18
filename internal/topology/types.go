@@ -33,12 +33,26 @@ type Metrics struct {
 	RAMPct float64 `json:"ram_pct,omitempty"` // 0-100
 }
 
+// Ring is the concentric band a node occupies in the radial radar: 0 = center
+// hub, 1 = inner ring (VPN / Cloudflare), 2 = outer ring (hosts / Kubernetes).
+// It is derived from Tier by Build so the frontend needs no layout logic.
+type Ring int
+
+const (
+	RingHub    Ring = 0
+	RingInner  Ring = 1
+	RingOuter  Ring = 2
+)
+
 // Node is one macro vertex.
 type Node struct {
 	ID       string   `json:"id"`
 	Kind     NodeKind `json:"kind"`
 	Label    string   `json:"label"`
 	Tier     Tier     `json:"tier"`
+	Ring     Ring     `json:"ring"`
+	Sector   int      `json:"sector"`   // stable angular slot within the ring (0-based)
+	Sectors  int      `json:"sectors"`  // total slots in the ring, for even angular spacing
 	Status   string   `json:"status"` // healthy, degraded, down, unknown
 	Group    string   `json:"group,omitempty"`
 	Network  string   `json:"network,omitempty"` // VPN name, empty = direct

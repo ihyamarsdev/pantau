@@ -89,18 +89,88 @@ func TestBuildMacroOnly(t *testing.T) {
 		t.Fatalf("cloudflare should be unknown: %+v", nodes["cf:3"])
 	}
 
-	// Edges only connect macro tiers; host reached via VPN, not directly.
-	var vpnEdge, directEdge bool
+	// Edges only connect macro tiers; host reached via VPN, not directly, and
+	// the VPN has a gateway uplink so the whole route is highlightable.
+	var vpnEdge, gatewayVpnEdge, directEdge bool
 	for _, e := range g.Edges {
 		if e.Kind == "vpn" && e.Source == "vpn:7" && e.Target == "host:1" && e.LatencyMs == 42 && e.Hops == 2 && e.Active {
 			vpnEdge = true
+		}
+		if e.Source == "gateway" && e.Target == "vpn:7" && e.Active {
+			gatewayVpnEdge = true
 		}
 		if e.Kind == "direct" && e.Target == "host:1" {
 			directEdge = true
 		}
 	}
-	if !vpnEdge || directEdge {
+	if !vpnEdge || !gatewayVpnEdge || directEdge {
 		t.Fatalf("vpn/direct edges wrong: %+v", g.Edges)
+	}
+}
+
+func TestBuildRadialRingsAndSectors(t *testing.T) {
+	f := &fakeStore{
+		hosts: []store.Host{
+			{ID: 1, Name: "web-a", Status: "healthy", GroupName: "Web"},
+			{ID: 2, Name: "web-b", Status: "degraded", GroupName: "Web"},
+			{ID: 3, Name: "db-a", Status: "down", GroupName: "Data"},
+		},
+		networks: []store.VPNNetwork{{ID: 7, Name: "netbird-lab", Driver: "netbird", Enabled: true, LastState: "up"}},
+		accounts: []store.CloudflareAccount{{ID: 3, Name: "CF Prod"}},
+		clusters: []store.KubeCluster{{ID: 1, Name: "prod-k3s", Provider: "k3s"}},
+	}
+	g, err := Build(f, time.Now())
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	nodes := indexNodes(g)
+
+	// Center hub is the gateway, alone in ring 0.
+	if nodes["gateway"].Ring != RingHub || nodes["gateway"].Sectors != 1 {
+		t.Fatalf("gateway should be the lone hub: %+v", nodes["gateway"])
+	}
+
+	// VPN + Cloudflare occupy the inner ring with stable, distinct slots.
+	inner := []Node{nodes["vpn:7"], nodes["cf:3"]}
+	for _, n := range inner {
+		if n.Ring != RingInner || n.Sectors != 2 {
+			t.Fatalf("inner ring wrong: %+v", n)
+		}
+	}
+	if inner[0].Sector == inner[1].Sector {
+		t.Fatalf("inner sectors must be distinct: %+v", inner)
+	}
+
+	// Hosts + Kubernetes occupy the outer ring; members of the same group get
+	// adjacent sectors (sorted by group then id).
+	outer := []Node{nodes["host:1"], nodes["host:2"], nodes["host:3"], nodes["kube:1"]}
+	for _, n := range outer {
+		if n.Ring != RingOuter || n.Sectors != 4 {
+			t.Fatalf("outer ring wrong: %+v", n)
+		}
+	}
+	if nodes["host:1"].Group != "Web" || nodes["host:2"].Group != "Web" ||
+		nodes["host:1"].Sector+1 != nodes["host:2"].Sector {
+		t.Fatalf("same-group hosts must be adjacent: %+v %+v", nodes["host:1"], nodes["host:2"])
+	}
+	seen := map[int]bool{}
+	for _, n := range outer {
+		if seen[n.Sector] {
+			t.Fatalf("duplicate outer sector %d", n.Sector)
+		}
+		seen[n.Sector] = true
+	}
+
+	// Layout is deterministic across builds of the same inventory.
+	g2, err := Build(f, time.Now())
+	if err != nil {
+		t.Fatalf("second build: %v", err)
+	}
+	n2 := indexNodes(g2)
+	for id, n := range nodes {
+		if n2[id].Ring != n.Ring || n2[id].Sector != n.Sector || n2[id].Sectors != n.Sectors {
+			t.Fatalf("non-deterministic layout for %s: %+v vs %+v", id, n, n2[id])
+		}
 	}
 }
 

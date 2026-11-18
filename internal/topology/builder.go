@@ -2,6 +2,7 @@ package topology
 
 import (
 	"encoding/json"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -107,6 +108,7 @@ func Build(s Store, now time.Time) (*Graph, error) {
 			ID: "vpn:" + strconv.FormatInt(n.ID, 10), Kind: NodeVPN, Tier: TierEdge,
 			Label: n.Name, Status: vpnStatus(n), Network: n.Driver,
 		})
+		g.connect("gateway", "vpn:"+strconv.FormatInt(n.ID, 10), "tunnel", 0, 1, n.Enabled && n.LastState == "up")
 	}
 	for _, a := range accounts {
 		g.add(Node{
@@ -167,7 +169,52 @@ func Build(s Store, now time.Time) (*Graph, error) {
 			g.connect("gateway", nodeID, "cluster", 0, 1, true)
 		}
 	}
+	// Assign deterministic angular slots per ring. Hosts are ordered by group so
+	// members of the same Host Group occupy adjacent sectors; the frontend only
+	// reads sector/sectors and does polar math — no physics, no DOM measurement.
+	assignSectors(g)
 	return g, nil
+}
+
+// assignSectors gives every non-hub node a stable (sector, sectors) pair within
+// its ring. Ordering is deterministic: inner ring by kind then id, outer ring
+// by group then id, so a given inventory always produces the same layout.
+func assignSectors(g *Graph) {
+	inner := make([]*Node, 0)
+	outer := make([]*Node, 0)
+	for i := range g.Nodes {
+		n := &g.Nodes[i]
+		switch n.Tier {
+		case TierEdge:
+			if n.Kind == NodeGateway {
+				n.Ring, n.Sector, n.Sectors = RingHub, 0, 1
+			} else {
+				n.Ring = RingInner
+				inner = append(inner, n)
+			}
+		case TierCompute, TierCluster:
+			n.Ring = RingOuter
+			outer = append(outer, n)
+		}
+	}
+	sort.Slice(inner, func(i, j int) bool {
+		if inner[i].Kind != inner[j].Kind {
+			return inner[i].Kind < inner[j].Kind
+		}
+		return inner[i].ID < inner[j].ID
+	})
+	sort.Slice(outer, func(i, j int) bool {
+		if outer[i].Group != outer[j].Group {
+			return outer[i].Group < outer[j].Group
+		}
+		return outer[i].ID < outer[j].ID
+	})
+	for i, n := range inner {
+		n.Sector, n.Sectors = i, len(inner)
+	}
+	for i, n := range outer {
+		n.Sector, n.Sectors = i, len(outer)
+	}
 }
 
 func (g *Graph) add(n Node) {
