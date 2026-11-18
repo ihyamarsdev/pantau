@@ -98,6 +98,7 @@ type Server struct {
 	htmlContentGz     []byte
 	htmlETag          string
 	docsFS            fs.FS
+	docsCache         map[string][]byte // preloaded embedded docs, keyed by "name_lang"; immutable after SetDocsFS
 	tunnelRunners     sync.Map // hostID -> *tunnelRunnerEntry
 	tunnelPort        int      // dedicated loopback port for the tunnel origin (0 = disabled)
 	portFwd           *portForwardManager
@@ -210,6 +211,21 @@ func (s *Server) SetVersion(version string) {
 
 func (s *Server) SetDocsFS(dfs fs.FS) {
 	s.docsFS = dfs
+	// Preload every embedded document once so /api/docs never calls embed.FS.ReadFile
+	// on the request path (the pprof heap profile showed this as the top allocator).
+	s.docsCache = make(map[string][]byte, 8)
+	files := map[string]string{
+		"readme_en":    "README.md",
+		"readme_id":    "README.id.md",
+		"guide_en":     "docs/user-guide.md",
+		"guide_id":     "docs/user-guide.id.md",
+		"changelog_en": "CHANGELOG.md",
+	}
+	for key, path := range files {
+		if data, err := fs.ReadFile(dfs, path); err == nil {
+			s.docsCache[key] = data
+		}
+	}
 }
 func (s *Server) SetTerraformRunManager(mgr *TerraformRunManager) {
 	s.tfMgr = mgr
@@ -3521,6 +3537,14 @@ func (s *Server) handleDocs(w http.ResponseWriter, r *http.Request) {
 		filePath = "CHANGELOG.md"
 	default:
 		http.Error(w, "Invalid document name", http.StatusBadRequest)
+		return
+	}
+
+	// Serve from the preloaded cache when available; no per-request embed.FS.ReadFile.
+	if data, ok := s.docsCache[name+"_"+lang]; ok {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		_, _ = w.Write(data)
 		return
 	}
 

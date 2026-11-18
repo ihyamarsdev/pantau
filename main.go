@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -252,7 +253,8 @@ func main() {
 	disable2FAFlag := flag.Bool("disable-2fa", false, "Emergency bypass flag to disable 2FA")
 	logLevelFlag := flag.String("log-level", "", "Console log level (debug, info, warn, error, off; default: error) [env: PANTAU_LOG_LEVEL]")
 	quietFlag := flag.Bool("quiet", false, "Suppress non-error console logs (shorthand for -log-level=error)")
-	flag.BoolVar(quietFlag, "q", false, "Suppress non-error console logs (shorthand)")
+	pprofFlag := flag.Bool("pprof", false, "Enable the pprof debug server on 127.0.0.1 (opt-in; for local profiling only)")
+	pprofPortFlag := flag.Int("pprof-port", 6060, "pprof debug server port (used only with -pprof) [env: PANTAU_PPROF_PORT]")
 	flag.Parse()
 	listenFlagSet := false
 	flag.Visit(func(f *flag.Flag) {
@@ -530,6 +532,23 @@ func main() {
 			os.Exit(1)
 		}
 	}()
+
+	if *pprofFlag {
+		pprofPort := *pprofPortFlag
+		if env := strings.TrimSpace(os.Getenv("PANTAU_PPROF_PORT")); env != "" {
+			if n, err := strconv.Atoi(env); err == nil && n > 0 {
+				pprofPort = n
+			}
+		}
+		pprofAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(pprofPort))
+		fmt.Printf("🔬 pprof debug server on http://%s/debug/pprof/ (localhost only)\n", pprofAddr)
+		logger.Info("system", "", "pprof debug server enabled", "addr", pprofAddr)
+		go func() {
+			if err := http.ListenAndServe(pprofAddr, nil); err != nil && err != http.ErrServerClosed {
+				logger.Error("system", "", "pprof server error: "+err.Error())
+			}
+		}()
+	}
 	if *openBrowserFlag {
 		go func() {
 			time.Sleep(150 * time.Millisecond)
