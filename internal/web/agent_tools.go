@@ -77,7 +77,7 @@ var agentTools = []agentTool{
 func (s *Server) callAgentTool(r *http.Request, name string, args map[string]interface{}) (string, bool) {
 	tool := findAgentTool(name)
 	if tool == nil {
-		return clip("unknown tool: " + name), true
+		return "unknown tool: " + name, true
 	}
 	// The gate mark lets loopback refuse a change that skipped agentGate. Every call is audited, reads included.
 	raw, _ := json.Marshal(args)
@@ -87,10 +87,12 @@ func (s *Server) callAgentTool(r *http.Request, name string, args map[string]int
 	}
 	if err == nil {
 		logger.Info("agent", name, fmt.Sprintf("%s %s", name, clipTo(string(raw), 300)))
-		return clip(out), false
+		// The result is not cut here: truncateToolResult keeps the head and the tail and says how to get
+		// the rest. Cutting here would silently drop the end of a log before the model ever sees it.
+		return out, false
 	}
 	logger.Warn("agent", name, fmt.Sprintf("%s %s: %v", name, clipTo(string(raw), 300), err))
-	return clip(strings.TrimSpace(out + "\nERROR: " + err.Error())), true
+	return strings.TrimSpace(out + "\nERROR: " + err.Error()), true
 }
 
 // agentToolSpecs exposes the tools to the in-process agent.
@@ -110,13 +112,6 @@ func findAgentTool(name string) *agentTool {
 		}
 	}
 	return nil
-}
-
-func clip(s string) string {
-	if len(s) <= agentMaxResultBytes {
-		return s
-	}
-	return s[:agentMaxResultBytes] + "\n…[truncated]"
 }
 
 // ---------------------------------------------------------------- argument helpers

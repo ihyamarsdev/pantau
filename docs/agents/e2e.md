@@ -22,7 +22,7 @@ e2e/
 │   ├── hosts-import.e2e.ts # Import hosts dialog sends the chosen SSH key (key library and import API stubbed with browser.route)
 │   ├── private-ip.e2e.ts # Private IP shown on the host, Use private IP sends the inter-host probe down the private path (host APIs stubbed)
 │   ├── docker-security.e2e.ts # Docker Security: summary strip, grouped findings, image table, chunked CVE detail (security API stubbed with browser.route)
-│   ├── agent.e2e.ts    # AI Agent: Settings panel (provider/base URL/key/model + Test connection), chat tool line, exec_command approval card, deny (LLM endpoint stubbed with a fake OpenAI-compatible server)
+│   ├── agent.e2e.ts    # AI Agent: Settings panel (provider/base URL/key/model + Test connection), chat tool line, exec_command approval card, deny, the read tools of the recent features, a note filed under a domain (LLM endpoint stubbed with a fake OpenAI-compatible server)
 │   ├── gateway-update-check.e2e.ts # Gateway CLI Update Check + Update: installed/latest version, failure state, the install streaming its steps
 │   └── terraform-helpers.ts  # shared Terraform workspace/runner helpers
 └── package.json

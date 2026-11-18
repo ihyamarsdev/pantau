@@ -80,7 +80,7 @@ Keputusan operator (setujui/tolak) atas satu aksi pengubah yang diminta AI Agent
 _Avoid_: Confirmation dialog, permission prompt
 
 **Agent Memory**:
-Kumpulan catatan permanen (maks. 200, masing-masing maks. 500 karakter; lingkup seluruh fleet atau satu Host) yang disimpan AI Agent lewat `memory_save` dan operator lewat Settings, lalu disisipkan ke pesan sistem setiap chat agar agent makin memahami infrastruktur dari waktu ke waktu. Catatan diperlakukan sebagai data, bukan instruksi.
+Kumpulan catatan permanen (maks. 200, masing-masing maks. 500 karakter) yang disimpan AI Agent lewat `memory_save` dan operator lewat Settings. Setiap catatan berlingkup pada paling banyak satu: seluruh fleet, satu **Host**, satu **Kubernetes Cluster**, atau satu **domain** fungsional (security, network, docker, ansible, terraform, kubernetes, database, storage). Hanya catatan yang relevan dengan pertanyaan yang disisipkan ke pesan sistem, bersama ringkasan inventaris yang disebut pertanyaan itu; sisanya dijangkau satu panggilan `memory_list`. Catatan diperlakukan sebagai data, bukan instruksi.
 _Avoid_: Chat history, knowledge base, agent training
 
 **Disk I/O Rate**:

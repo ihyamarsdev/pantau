@@ -34,6 +34,7 @@
       ag_q_alert: 'Alert on host "{host}" (id {id}): {msg}\nRoot cause excerpt:\n{rc}\nInvestigate and propose a fix. Do not change anything until I confirm the plan.',
       ag_m_title: 'Agent memory', ag_m_desc: 'Durable notes the agent saves about your infrastructure and re-reads at the start of every chat. Review them: delete anything wrong. Notes are sent to your LLM provider with every chat.',
       ag_m_empty: 'No notes yet. The agent adds them as it learns your setup; you can add your own below.', ag_m_fleet: 'Whole fleet', ag_m_ph: 'e.g. Backups run at 02:00 via /opt/backup.sh',
+      ag_m_scope: 'Scope', ag_m_scope_fleet: 'Whole fleet', ag_m_scope_host: 'One host', ag_m_scope_cluster: 'One cluster', ag_m_scope_domain: 'One domain',
       ag_m_add: 'Add', ag_m_forget: 'Forget', ag_m_forget_confirm: 'Delete this note?', ag_m_by_agent: 'agent', ag_m_by_you: 'you',
       ag_q_security: 'Review the latest security scan of host "{host}" (id {id}): pending security updates and failing hardening checks. Rank what matters and propose safe fixes. Do not change anything until I confirm the plan.'
     },
@@ -61,6 +62,7 @@
       ag_q_alert: 'Alert di host "{host}" (id {id}): {msg}\nCuplikan root cause:\n{rc}\nSelidiki dan usulkan perbaikan. Jangan ubah apa pun sebelum saya setujui rencananya.',
       ag_m_title: 'Memori agent', ag_m_desc: 'Catatan permanen yang disimpan agent tentang infrastruktur Anda dan dibaca ulang di awal setiap chat. Tinjau: hapus yang salah. Catatan dikirim ke penyedia LLM Anda di setiap chat.',
       ag_m_empty: 'Belum ada catatan. Agent menambahkannya saat memahami setup Anda; Anda juga bisa menambah sendiri di bawah.', ag_m_fleet: 'Seluruh fleet', ag_m_ph: 'misal: Backup jalan jam 02:00 lewat /opt/backup.sh',
+      ag_m_scope: 'Lingkup', ag_m_scope_fleet: 'Seluruh fleet', ag_m_scope_host: 'Satu host', ag_m_scope_cluster: 'Satu cluster', ag_m_scope_domain: 'Satu domain',
       ag_m_add: 'Tambah', ag_m_forget: 'Lupakan', ag_m_forget_confirm: 'Hapus catatan ini?', ag_m_by_agent: 'agent', ag_m_by_you: 'Anda',
       ag_q_security: 'Tinjau scan keamanan terakhir host "{host}" (id {id}): update keamanan tertunda dan hardening yang gagal. Urutkan yang penting dan usulkan perbaikan aman. Jangan ubah apa pun sebelum saya setujui rencananya.'
     }
@@ -572,28 +574,53 @@
     const name = (id) => (hosts.find((h) => h.id === id) || {}).name || '#' + id;
     const notes = r.data.notes || [];
     const rows = notes.map((n) => `<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-top:1px solid var(--card-border);">
-        <span class="badge ${n.host_id ? 'badge-info' : ''}" style="flex:none;">${esc(n.host_id ? name(n.host_id) : t('ag_m_fleet'))}</span>
+        <span class="badge ${n.host_id || n.cluster_id || n.domain ? 'badge-info' : ''}" style="flex:none;">${esc(n.host_id ? name(n.host_id) : n.cluster_id ? '#' + n.cluster_id : n.domain || t('ag_m_fleet'))}</span>
         <span style="flex:1;font-size:var(--fs-sm);white-space:pre-wrap;word-break:break-word;">${esc(n.content)}</span>
         <span style="flex:none;font-size:var(--fs-xs);color:var(--text-muted);">${esc(n.source === 'agent' ? t('ag_m_by_agent') : t('ag_m_by_you'))}</span>
         <button class="btn btn-sm btn-icon btn-ghost" aria-label="${esc(t('ag_m_forget'))}" title="${esc(t('ag_m_forget'))}" onclick="AG.delMemory(${n.id})">${svgIcon('trash-2', 'icon-sm')}</button></div>`).join('');
+    // The clusters are only needed for the scope picker, so they are fetched once per panel load.
+    const kc = await api('/api/kube/clusters');
+    const clusters = kc.ok ? (kc.data.clusters || []) : [];
+    const domains = ['security', 'network', 'docker', 'ansible', 'terraform', 'kubernetes', 'database', 'storage'];
     box.innerHTML = `
       <div class="set-card">
         <div class="set-header"><div><h4 class="set-title">${svgIcon('bookmark')} <span>${esc(t('ag_m_title'))} (${notes.length}/${r.data.max})</span></h4>
           <p class="set-desc">${esc(t('ag_m_desc'))}</p></div></div>
         ${rows || `<div style="font-size:var(--fs-sm);color:var(--text-muted);">${esc(t('ag_m_empty'))}</div>`}
-        <div style="display:flex;gap:8px;margin-top:10px;">
-          <select id="agMemHost" style="width:auto;max-width:160px;"><option value="">${esc(t('ag_m_fleet'))}</option>${hosts.map((h) => `<option value="${h.id}">${esc(h.name)}</option>`).join('')}</select>
-          <input type="text" id="agMemText" maxlength="${r.data.max_len}" placeholder="${esc(t('ag_m_ph'))}" style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();AG.addMemory();}">
-          <button class="btn btn-primary btn-sm" onclick="AG.addMemory()">${svgIcon('plus', 'icon-sm')} <span>${esc(t('ag_m_add'))}</span></button>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+          <select id="agMemScope" style="width:auto;max-width:170px;" onchange="AG.memScopeChanged()">
+            <option value="fleet">${esc(t('ag_m_scope_fleet'))}</option>
+            <option value="host">${esc(t('ag_m_scope_host'))}</option>
+            <option value="cluster">${esc(t('ag_m_scope_cluster'))}</option>
+            <option value="domain">${esc(t('ag_m_scope_domain'))}</option>
+          </select>
+          <select id="agMemHost" style="width:auto;max-width:160px;display:none;">${hosts.map((h) => `<option value="${h.id}">${esc(h.name)}</option>`).join('')}</select>
+          <select id="agMemCluster" style="width:auto;max-width:160px;display:none;">${clusters.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
+          <select id="agMemDomain" style="width:auto;max-width:160px;display:none;">${domains.map((d) => `<option value="${d}">${esc(d)}</option>`).join('')}</select>
+          <input type="text" id="agMemText" maxlength="${r.data.max_len}" placeholder="${esc(t('ag_m_ph'))}" style="flex:1;min-width:200px;" onkeydown="if(event.key==='Enter'){event.preventDefault();AG.addMemory();}">
+          <button class="btn btn-primary btn-sm" id="agMemAdd" onclick="AG.addMemory()">${svgIcon('plus', 'icon-sm')} <span>${esc(t('ag_m_add'))}</span></button>
         </div>
       </div>`;
+  };
+
+  // Only the picker of the chosen scope is shown: one note carries exactly one scope.
+  AG.memScopeChanged = function () {
+    const kind = $('agMemScope').value;
+    for (const [id, on] of [['agMemHost', 'host'], ['agMemCluster', 'cluster'], ['agMemDomain', 'domain']]) {
+      const el = $(id);
+      if (el) el.style.display = kind === on ? '' : 'none';
+    }
   };
 
   AG.addMemory = async function () {
     const text = $('agMemText').value.trim();
     if (!text) return;
-    const host = $('agMemHost').value;
-    const r = await post('/api/agent/memory', { content: text, host_id: host ? Number(host) : null });
+    const kind = $('agMemScope').value;
+    const body = { content: text };
+    if (kind === 'host') body.host_id = Number($('agMemHost').value);
+    else if (kind === 'cluster') body.cluster_id = Number($('agMemCluster').value);
+    else if (kind === 'domain') body.domain = $('agMemDomain').value;
+    const r = await post('/api/agent/memory', body);
     if (r.ok) AG.loadMemory();
     else showToast(r.data.error || 'error', 'error');
   };

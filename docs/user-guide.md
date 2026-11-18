@@ -31,6 +31,7 @@ Pantau operates **100% agentless** over standard SSH (`port 22`). It requires ze
    - [Evaluating Server Longevity with Lifecycle Assessment](#evaluating-server-longevity-with-lifecycle-assessment)
    - [Managing External Kubernetes Clusters (EKS, GKE, AKS & Custom Kubeconfig)](#managing-external-kubernetes-clusters-eks-gke-aks--custom-kubeconfig)
    - [Managing Cloudflare via REST API v4](#managing-cloudflare-via-rest-api-v4)
+   - [AI Agent: Memory, Scopes & Recall](#ai-agent-memory-scopes--recall)
    - [Ansible Playbooks (Semaphore-Style, Agentless)](#ansible-playbooks-semaphore-style-agentless)
    - [Reading a Run: Log, Task Tree, Recap & Diff](#reading-a-run-log-task-tree-recap--diff)
    - [Survey (Typed Launch Questions)](#survey-typed-launch-questions)
@@ -644,6 +645,23 @@ With the AI Agent enabled, `cf_accounts`, `cf_zones`, `cf_dns_list`, `cf_zone_se
 - **Credential Protection**: API tokens are stored in the local SQLite database similarly to SSH private keys, excluded from all REST API responses (`json:"-"`), redacted in logs, and included in encrypted **System Snapshots** (AES-256-GCM).
 - **Hardcoded Endpoint & Input Validation**: All outbound requests strictly target `https://api.cloudflare.com/client/v4` (mitigating SSRF), and URL identifiers (`zoneID`, `recordID`) are validated against `^[0-9a-f]{32}$` to prevent path injection.
 - **Explicit Non-Goals**: Cloudflare Workers, R2 Storage, creating or changing Cloudflare Tunnels (`cloudflared`; they are only listed), custom WAF/Firewall rules (only IP Access Rules are supported), and Page Rules remain out of scope and must be managed via Cloudflare's dashboard.
+
+### AI Agent: Memory, Scopes & Recall
+
+The **Agent Memory** card in **Settings → AI Agent** holds the durable notes the agent keeps about your infrastructure. Every note carries exactly one **scope**:
+
+- **Whole fleet** — the note is about everything.
+- **One host** — the note is about that host.
+- **One cluster** — the note is about one Kubernetes cluster.
+- **One domain** — the note is about a functional area: `security`, `network`, `docker`, `ansible`, `terraform`, `kubernetes`, `database` or `storage`.
+
+Pick the scope with the **Scope** picker above the note field; only the picker of the chosen scope is shown. The badge next to a saved note says what it is filed under. Notes are treated as data, never as instructions, and a note that looks like a credential is refused.
+
+Only the notes a question is about reach the model. Pantau reads the question, finds the host or the domain it names, and puts the matching notes into the prompt — a note about another host is never injected. When the question names something Pantau has already stored (a package, a container, a domain), a one-line summary of that inventory is added too, read from the local database without any SSH connection. Everything else is one `memory_list` call away, so a long chat does not carry the whole table in every prompt.
+
+Long tool output is cut to a head and a tail with a notice that says how many bytes were omitted and how to fetch the rest for that tool (for example, `docker_logs` again with a smaller tail). Tool results older than the four newest are trimmed before each model call, and the trim is announced too — the agent is never left believing it saw the whole output.
+
+Related decision: [ADR 0082](adr/0082-scoped-agent-memory-and-local-recall.md).
 
 ### Ansible Playbooks (Semaphore-Style, Agentless)
 

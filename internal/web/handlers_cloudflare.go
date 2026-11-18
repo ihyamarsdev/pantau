@@ -239,6 +239,19 @@ func (s *Server) handleCloudflareAccountRoute(w http.ResponseWriter, r *http.Req
 
 func (s *Server) handleAccountDetail(w http.ResponseWriter, r *http.Request, account *store.CloudflareAccount) {
 	switch r.Method {
+	case http.MethodGet:
+		// Verifies the stored token against Cloudflare and answers what it covers, so the operator (and the
+		// agent) can tell a missing permission from an expired token. The token itself is never returned.
+		info, err := s.getCFClient(account).VerifyToken(r.Context(), account.AccountID)
+		if err != nil {
+			s.writeCFError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"account": account,
+			"token":   info,
+		})
+
 	case http.MethodPut:
 		var req struct {
 			Name      string `json:"name"`

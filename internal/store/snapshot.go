@@ -685,12 +685,15 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 	}
 
 	for _, m := range payload.AgentMemory {
-		var hid interface{} = nil
+		var hid, cid interface{} = nil, nil
 		if m.HostID != nil {
 			hid = *m.HostID
 		}
-		_, err := tx.Exec(`INSERT INTO agent_memory (id, host_id, content, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-			m.ID, hid, m.Content, m.Source, m.CreatedAt, m.UpdatedAt)
+		if m.ClusterID != nil {
+			cid = *m.ClusterID
+		}
+		_, err := tx.Exec(`INSERT INTO agent_memory (id, host_id, cluster_id, domain, content, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			m.ID, hid, cid, m.Domain, m.Content, m.Source, m.CreatedAt, m.UpdatedAt)
 		if err != nil {
 			return fmt.Errorf("insert agent memory %d: %w", m.ID, err)
 		}

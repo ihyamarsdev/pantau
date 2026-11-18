@@ -335,7 +335,7 @@ Pantau can hand failures to its own AI agent: a floating chat (bottom-right) plu
 5. **Test connection**: one tiny model call to check the key, the URL and the model.
 6. Pick the **approval mode**: `ask` (every change waits for you, the default) or `auto` (routine changes are approved, `exec_command` still always asks).
 
-The agent's identity and rules (SOUL) are editable in the same panel. The chat history lives in memory only and is lost when Pantau restarts; the agent's own memory notes (about your infrastructure) are stored in the database and survive a restart.
+The agent's identity and rules (SOUL) are editable in the same panel. The chat history lives in memory only and is lost when Pantau restarts; the agent's own memory notes (about your infrastructure) are stored in the database and survive a restart. A note is filed under one scope — the whole fleet, one host, one Kubernetes cluster or one domain (security, network, docker, ansible, terraform, kubernetes, database, storage) — and only the notes a question is about, plus a summary of the stored inventory it names, are put into the prompt. Long tool output is cut to a head and a tail with a notice that says how to fetch the rest, so a long chat stays readable.
 
 ## 🚀 Quick Start
 

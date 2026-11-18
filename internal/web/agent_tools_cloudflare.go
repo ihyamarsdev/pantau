@@ -43,6 +43,10 @@ var cloudflareTools = []agentTool{
 		InputSchema: schema([]string{"zone", "action"}, map[string]interface{}{"account": pCFAccount, "zone": pCFZone, "action": map[string]interface{}{"type": "string", "enum": []string{"create", "delete"}}, "rule_id": str, "mode": map[string]interface{}{"type": "string", "enum": cloudflare.AccessRuleModes}, "target": map[string]interface{}{"type": "string", "enum": cloudflare.AccessRuleTargets}, "value": str, "notes": str}), run: toolCFAccessRuleChange},
 	{Name: "cf_tunnels", Description: "Cloudflare Tunnels (cloudflared) of an account with their health status (healthy, degraded, down, inactive). Read-only.",
 		InputSchema: schema(nil, map[string]interface{}{"account": pCFAccount}), run: toolCFTunnels},
+	{Name: "cf_dns_export", Description: "Export a zone's DNS records as a BIND zone file (the same text Export downloads). Read-only; pass the zone whose records the operator wants to keep or diff.",
+		InputSchema: schema([]string{"zone"}, map[string]interface{}{"account": pCFAccount, "zone": pCFZone}), run: toolCFDNSExport},
+	{Name: "cf_token_verify", Description: "Verify the API token of a Cloudflare account against Cloudflare: its status and expiry. A token that Cloudflare refuses says which permission is missing, so use it when another cf_* tool answers forbidden. The token itself is never shown.",
+		InputSchema: schema(nil, map[string]interface{}{"account": pCFAccount}), run: toolCFTokenVerify},
 }
 
 type cfZone struct {
@@ -389,4 +393,33 @@ func toolCFTunnels(s *Server, r *http.Request, args map[string]interface{}) (str
 		return "", err
 	}
 	return jsonText(pickAll(m["tunnels"], "name", "status", "tun_type", "created_at", "conns_active_at", "conns_inactive_at"))
+}
+
+// toolCFDNSExport returns the zone's BIND file. The endpoint answers text, not JSON, so it reads the raw body.
+func toolCFDNSExport(s *Server, r *http.Request, args map[string]interface{}) (string, error) {
+	z, err := s.cfZoneOf(r, args)
+	if err != nil {
+		return "", err
+	}
+	code, b := s.loopback(r.Context(), http.MethodGet, z.path("/dns/export"), nil)
+	if code/100 != 2 {
+		return "", fmt.Errorf("%s (HTTP %d)", clipTo(strings.TrimSpace(string(b)), 300), code)
+	}
+	return clipTo(string(b), 16<<10), nil
+}
+
+func toolCFTokenVerify(s *Server, r *http.Request, args map[string]interface{}) (string, error) {
+	acc, err := s.cfAccountOf(args)
+	if err != nil {
+		return "", err
+	}
+	m, err := s.loopJSON(r.Context(), http.MethodGet, fmt.Sprintf("/api/cloudflare/accounts/%d", acc), nil)
+	if err != nil {
+		// A refused token is the answer to this tool, not a failure of it: report it as the finding.
+		return "", fmt.Errorf("%v (the token is refused: check its permissions and expiry in Cloudflare)", err)
+	}
+	account, _ := m["account"].(map[string]interface{})
+	out := pick(account, "name", "account_id")
+	out["token"] = m["token"]
+	return jsonText(out)
 }

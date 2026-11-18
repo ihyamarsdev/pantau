@@ -179,6 +179,8 @@ func (d *DB) migrate() error {
 	CREATE TABLE IF NOT EXISTS agent_memory (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		host_id INTEGER REFERENCES hosts(id) ON DELETE CASCADE,
+		cluster_id INTEGER REFERENCES kube_clusters(id) ON DELETE CASCADE,
+		domain TEXT NOT NULL DEFAULT '',
 		content TEXT NOT NULL,
 		source TEXT NOT NULL DEFAULT 'agent',
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -642,6 +644,10 @@ func (d *DB) migrate() error {
 	_ = d.alterAddColumn("hosts", "kube_mode", "TEXT NOT NULL DEFAULT 'full'")
 	_ = d.alterAddColumn("hosts", "network_id", "INTEGER NOT NULL DEFAULT 0")
 	_, _ = d.Exec(`CREATE INDEX IF NOT EXISTS idx_hosts_network ON hosts(network_id)`)
+	// A note may be scoped to a cluster or a functional domain as well as to a host (all optional, '' = none).
+	_ = d.alterAddColumn("agent_memory", "cluster_id", "INTEGER")
+	_ = d.alterAddColumn("agent_memory", "domain", "TEXT NOT NULL DEFAULT ''")
+	_, _ = d.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_memory_domain ON agent_memory(domain)`)
 	if err := d.migrateAgentSettings(); err != nil {
 		return fmt.Errorf("migrate agent settings: %w", err)
 	}

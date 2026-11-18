@@ -31,6 +31,7 @@ Pantau beroperasi **100% agentless** melalui protokol standar SSH (`port 22`). S
    - [Evaluasi Kelayakan Server dengan Lifecycle Assessment](#evaluasi-kelayakan-server-dengan-lifecycle-assessment)
    - [Pengelolaan Klaster Kubernetes Eksternal (EKS, GKE, AKS & Kubeconfig Mandiri)](#pengelolaan-klaster-kubernetes-eksternal-eks-gke-aks--kubeconfig-mandiri)
    - [Pengelolaan Cloudflare via REST API v4](#pengelolaan-cloudflare-via-rest-api-v4)
+   - [AI Agent: Memori, Lingkup, dan Recall](#ai-agent-memori-lingkup-dan-recall)
    - [Ansible Playbooks (Gaya Semaphore, Agentless)](#ansible-playbooks-gaya-semaphore-agentless)
    - [Membaca Run: Log, Task Tree, Recap & Diff](#membaca-run-log-task-tree-recap--diff)
    - [Survey (Pertanyaan Launch Bertipe)](#survey-pertanyaan-launch-bertipe)
@@ -644,6 +645,23 @@ Saat AI Agent aktif, `cf_accounts`, `cf_zones`, `cf_dns_list`, `cf_zone_settings
 - **Perlindungan Token**: API Token disimpan di basis data SQLite lokal setara dengan kunci privat SSH, tidak pernah diekspos melalui respons REST API (`json:"-"`), disensor dari logging, serta terenkripsi di dalam **System Snapshot** (AES-256-GCM).
 - **Pencegahan SSRF & Path Injection**: Panggilan keluar dipatok tetap ke `https://api.cloudflare.com/client/v4`, dan identifier URL divalidasi dengan regex heksadesimal 32 karakter `^[0-9a-f]{32}$`.
 - **Batas Non-Goals**: Cloudflare Workers, R2 Storage, pembuatan atau perubahan Cloudflare Tunnels (`cloudflared`; hanya ditampilkan), aturan WAF/Firewall kustom (hanya IP Access Rules yang didukung), dan Page Rules berada di luar cakupan Pantau dan tetap dikelola melalui dasbor resmi Cloudflare.
+
+### AI Agent: Memori, Lingkup, dan Recall
+
+Kartu **Agent Memory** di **Pengaturan → AI Agent** berisi catatan permanen yang disimpan agent tentang infrastruktur Anda. Setiap catatan memiliki tepat satu **lingkup**:
+
+- **Seluruh fleet** — catatan berlaku untuk semuanya.
+- **Satu host** — catatan tentang host itu.
+- **Satu cluster** — catatan tentang satu klaster Kubernetes.
+- **Satu domain** — catatan tentang satu area fungsional: `security`, `network`, `docker`, `ansible`, `terraform`, `kubernetes`, `database`, atau `storage`.
+
+Pilih lingkup dengan pemilih **Lingkup** di atas kolom catatan; hanya pemilih lingkup yang dipilih yang ditampilkan. Badge di sebelah catatan yang tersimpan menunjukkan lingkupnya. Catatan diperlakukan sebagai data, bukan instruksi, dan catatan yang mirip berisi kredensial ditolak.
+
+Hanya catatan yang relevan dengan pertanyaan yang sampai ke model. Pantau membaca pertanyaan, menemukan host atau domain yang disebut, lalu memasukkan catatan yang cocok ke prompt — catatan tentang host lain tidak pernah disuntikkan. Bila pertanyaan menyebut sesuatu yang sudah tersimpan di Pantau (paket, container, domain), ringkasan satu baris inventaris itu ikut ditambahkan, dibaca dari basis data lokal tanpa koneksi SSH. Sisanya dijangkau satu panggilan `memory_list`, sehingga chat panjang tidak membawa seluruh tabel di setiap prompt.
+
+Keluaran tool yang panjang dipotong menjadi kepala dan ekor dengan pemberitahuan yang menyebut berapa byte yang dilewati dan bagaimana mengambil sisanya untuk tool itu (misalnya `docker_logs` lagi dengan tail lebih kecil). Hasil tool yang lebih tua dari empat terbaru dipangkas sebelum setiap panggilan model, dan pemotongan itu juga diumumkan — agent tidak pernah mengira ia sudah melihat seluruh keluaran.
+
+Keputusan terkait: [ADR 0082](adr/0082-scoped-agent-memory-and-local-recall.md).
 
 ### Ansible Playbooks (Gaya Semaphore, Agentless)
 

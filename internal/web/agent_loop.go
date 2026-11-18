@@ -21,6 +21,8 @@ const (
 	agentMaxConvs      = 20
 	agentConvTTL       = 2 * time.Hour
 	agentToolResultMax = 24 << 10 // one tool result in the history
+	agentStaleKeep     = 4        // newest tool results kept whole; older ones are trimmed before a model call
+	agentStaleBytes    = 2 << 10  // bytes of an older tool result that stay in the history
 	agentLabelMax      = 80
 )
 
@@ -182,7 +184,7 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 
 	sse := newAgentSSE(w)
 	// The system prompt is rebuilt every turn and never stored in the history.
-	system := c.Soul + "\n\n" + s.agentMemoryPrompt()
+	system := c.Soul + "\n\n" + s.agentMemoryPrompt(message)
 
 	// A long text-only exchange never reaches a tool batch, so the history is compacted here too.
 	if lastTokens > 0 && lastTokens+len(message)/3 > agentCompactTokens {
@@ -193,13 +195,14 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 			sse.errorEvent("the chat was cancelled")
 			return false
 		}
-		req := llmRequest{Model: c.Model, System: system, Messages: history, Tools: agentToolSpecs()}
+		req := llmRequest{Model: c.Model, System: system, Messages: shrinkOldToolResults(history), Tools: agentToolSpecs()}
 		res, err := client.Stream(r.Context(), req, sse.textDelta)
 		if err != nil {
 			sse.errorEvent(redactSecret(err.Error(), c.Key))
 			return false
 		}
-		tokens := agentPromptTokens(system, history, res.InputTokens)
+		// The size is measured on what was sent (after the trim), so a trimmed history is not compacted twice.
+		tokens := agentPromptTokens(system, req.Messages, res.InputTokens)
 		conv.mu.Lock()
 		conv.lastTokens = tokens
 		conv.mu.Unlock()
@@ -242,7 +245,7 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 				status = "error"
 			}
 			sse.toolEvent(agentToolEvent{Tool: tc.Name, Label: label, Status: status, ToolCallID: tc.ID})
-			history = append(history, llmMessage{Role: llmRoleTool, ToolCallID: tc.ID, Text: clipToolResult(text), IsError: isErr})
+			history = append(history, llmMessage{Role: llmRoleTool, ToolCallID: tc.ID, Text: truncateToolResult(tc.Name, text), IsError: isErr})
 		}
 		// The batch is complete: it is kept even if the turn fails later.
 		saved = append([]llmMessage{}, history...)
@@ -300,14 +303,68 @@ func agentToolLabel(args map[string]interface{}) string {
 	return ""
 }
 
-func clipToolResult(s string) string {
+// toolResultHints say, per tool, how to get the part of an oversized result that was cut. A tool without a hint
+// falls back to a generic line, so the model always knows the result was cut and how to narrow it.
+var toolResultHints = map[string]string{
+	"docker_logs":       "read the tail only: call docker_logs again with a smaller tail, or exec_command with `docker logs --tail 200 <container>`",
+	"kube_logs":         "read the tail only: call kube_logs again with a smaller tail",
+	"read_file":         "read the rest: call read_file again with offset set past the bytes already shown",
+	"list_dir":          "narrow it: list a subdirectory instead of the whole tree",
+	"disk_usage":        "drill down: call disk_usage again on one child directory",
+	"systemd_detail":    "read the journal of one unit only: repeat systemd_detail with errors_only=true",
+	"ansible_resources": "read one part: call ansible_resources with a single action (facts, library, adhoc, ...)",
+	"ansible_runs":      "read one run: call ansible_runs with run_id for its status and recap",
+	"tf_runs":           "read one run: call tf_runs with run_id",
+	"vuln_status":       "narrow it: call vuln_status with unfixed=false, or fleet_search for one package",
+	"docker_security":   "read one section: the audit findings or one image, not both",
+	"iac_findings":      "read one source: call iac_findings with kind and id",
+	"fleet_search":      "narrow the query, or raise limit",
+	"host_info":         "ask for one part: host_info with what=resources, updates, firewall, domains or databases",
+}
+
+// truncateToolResult cuts an oversized tool result to a head and a tail joined by a structured notice, so the
+// model keeps the beginning (what the command was) and the end (how it failed, the last lines of a log) and is
+// told how to fetch the middle. A cut is never silent: an unnotified truncation would make the model believe it
+// saw the whole output.
+func truncateToolResult(tool, s string) string {
 	if len(s) <= agentToolResultMax {
 		return s
 	}
-	return s[:agentToolResultMax] + "\n…[truncated]"
+	// Half the budget to the head, half to the tail: an error and a summary usually sit at one end or the other.
+	head := agentToolResultMax / 2
+	tail := agentToolResultMax - head
+	hint, ok := toolResultHints[tool]
+	if !ok {
+		hint = "narrow the call (fewer lines, one item or one host at a time) to see the rest"
+	}
+	cut := len(s) - head - tail
+	return fmt.Sprintf("%s\n\n[tool result truncated: %d of %d bytes omitted from the middle. %s]\n\n%s",
+		s[:head], cut, len(s), hint, s[len(s)-tail:])
 }
 
 // ---------------------------------------------------------------- compaction
+
+// shrinkOldToolResults is the cheap, deterministic pass that runs before any model call: a tool result older
+// than the newest agentStaleKeep tool messages is cut to its head, because the model already acted on it. It
+// costs no tokens and no request, and it keeps ten log dumps from filling the window on their own.
+func shrinkOldToolResults(msgs []llmMessage) []llmMessage {
+	tools := make([]int, 0, len(msgs))
+	for i, m := range msgs {
+		if m.Role == llmRoleTool {
+			tools = append(tools, i)
+		}
+	}
+	if len(tools) <= agentStaleKeep {
+		return msgs
+	}
+	for _, i := range tools[:len(tools)-agentStaleKeep] {
+		if len(msgs[i].Text) > agentStaleBytes {
+			msgs[i].Text = fmt.Sprintf("%s\n[older tool result trimmed: %d of %d bytes kept; ask again for the rest]",
+				msgs[i].Text[:agentStaleBytes], agentStaleBytes, len(msgs[i].Text))
+		}
+	}
+	return msgs
+}
 
 // agentCompactCut returns the index where the history may be cut: the second newest user message. The cut is
 // always at a user message, so an assistant tool_use is never separated from its tool results, and the two

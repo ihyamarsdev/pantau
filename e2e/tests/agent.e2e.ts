@@ -8,17 +8,21 @@ type ChatMessage = { role: string; content?: string; tool_call_id?: string };
 
 type FakeLLM = {
   url: string;
-  /** The host the exec_command tool call runs on; the test creates it. */
+  /** The host the scripted tools act on; the test creates it. */
   hostId: number;
   /** How many chat turns (not the settings test ping) the fake has answered. */
   chats: number;
   close(): Promise<void>;
 };
 
+/** One tool call the fake asks for: the tool name and its arguments (built from the fake, which knows the host). */
+type ScriptedCall = { name: string; args: (f: FakeLLM) => unknown };
+
 // Stand-in for an OpenAI-compatible LLM endpoint: it answers POST /v1/chat/completions with a scripted
 // SSE stream. The script follows the request: the settings test ping gets a short text, a chat turn gets
-// an exec_command tool call, and a turn that already carries every tool result gets the final text.
-async function startFakeLLM(toolCalls = 1): Promise<FakeLLM> {
+// the next scripted tool call (exec_command on the test host by default), and a turn that already carries
+// every tool result gets the final text.
+async function startFakeLLM(toolCalls = 1, calls?: ScriptedCall[]): Promise<FakeLLM> {
   const fake: FakeLLM = { url: '', hostId: 0, chats: 0, close: async () => {} };
   const server = createServer((req, res) => {
     let raw = '';
@@ -38,10 +42,14 @@ async function startFakeLLM(toolCalls = 1): Promise<FakeLLM> {
         chunk({ choices: [{ delta: { content: 'pong' }, finish_reason: null }] });
         chunk({ choices: [{ delta: {}, finish_reason: 'stop' }] });
       } else if (results.length < toolCalls) {
+        const call = calls?.[results.length] ?? {
+          name: 'exec_command',
+          args: () => ({ host_id: fake.hostId, command: 'systemctl status nginx' })
+        };
         chunk({
           choices: [{
             delta: {
-              tool_calls: [{ index: 0, id: 'call_' + (results.length + 1), type: 'function', function: { name: 'exec_command', arguments: JSON.stringify({ host_id: fake.hostId, command: 'systemctl status nginx' }) } }]
+              tool_calls: [{ index: 0, id: 'call_' + (results.length + 1), type: 'function', function: { name: call.name, arguments: JSON.stringify(call.args(fake)) } }]
             },
             finish_reason: null
           }]
@@ -303,4 +311,85 @@ test('agent: the bubble is a solid, draggable anchor, and a click outside closes
   const reloaded = await fabBox();
   expect(Math.abs(reloaded.x - after.x)).toBeLessThan(2);
   expect(Math.abs(reloaded.y - after.y)).toBeLessThan(2);
+});
+
+test('agent: the read tools of the recent features answer in the chat without an approval card', async ({ app, screen, browser }) => {
+  // One chat turn per tool, in order: the VPN networks, the stored package update check of a host, and the
+  // Gateway CLI versions. All three are reads, so none of them may show an approval card.
+  const llm = await startFakeLLM(3, [
+    { name: 'vpn_networks', args: () => ({ what: 'networks' }) },
+    { name: 'pkg_updates', args: (f) => ({ host_id: f.hostId }) },
+    { name: 'gateway_cli', args: () => ({ target: 'ansible' }) }
+  ]);
+  try {
+    await app.open('/');
+    await initApp(screen, browser);
+
+    // The agent is on and points at the fake provider.
+    await browser.evaluate(async (base) => {
+      await fetch('/api/agent/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true, provider: 'openai', base_url: base, api_key: 'k-test', model: 'gpt-4o', approval: 'auto' }) });
+      const g = window as unknown as PageGlobals;
+      g.AG.init();
+      g.AG.newChat();
+      return null;
+    }, llm.url);
+
+    // A host never checked for package updates: the tool must answer checked:false rather than invent a result.
+    llm.hostId = (await browser.evaluate(async () => {
+      const h = await (await fetch('/api/hosts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'e2e-recent', host: '127.0.0.1', port: 1, user: 'x' }) })).json();
+      return h.id as number;
+    })) as number;
+
+    await browser.locator('#agentFab').click();
+    await browser.locator('#agentInput').fill('check the vpn, the updates and the gateway');
+    await browser.locator('#agentSend').click();
+
+    // Every tool of the run is shown as a finished line, and no card ever asks: all three are reads.
+    await expect(browser.locator('#agentLog .ag-tool-done')).toHaveCount(3, { timeout: 60000 });
+    await expect(browser.locator('#agentApprovals .ag-appr')).toBeHidden();
+    // Three tool turns plus the final answer: the loop asked the provider once per tool and once to conclude.
+    expect(llm.chats).toBe(4);
+  } finally {
+    await llm.close();
+    // The whole run shares one database, so the host this test added is removed again.
+    await deleteHosts(browser, ['e2e-recent']);
+  }
+});
+
+test('agent: a note can be filed under a domain from the Memory panel', async ({ app, screen, browser }) => {
+  await app.open('/');
+  await initApp(screen, browser);
+
+  await browser.evaluate(() => { (window as unknown as PageGlobals).openSettingsModal('agent'); return null; });
+  await expect(browser.locator('#agMemory')).toBeVisible();
+
+  // The scope picker chooses what the note is about: a fleet note is the default, a domain note is a choice.
+  await browser.locator('#agMemScope').selectOption({ value: 'domain' });
+  await expect(browser.locator('#agMemDomain')).toBeVisible();
+  await browser.locator('#agMemDomain').selectOption({ value: 'security' });
+  await browser.locator('#agMemText').fill('fail2ban bans after 5 failed logins');
+  await browser.locator('#agMemAdd').click();
+
+  // The note is listed with its scope, and it is stored as a domain note.
+  await expect(browser.locator('#agMemory')).toContainText('fail2ban bans after 5 failed logins');
+  await expect(browser.locator('#agMemory')).toContainText('security');
+  const scope = (await browser.evaluate(async () => {
+    const r = await fetch('/api/agent/memory');
+    const j = await r.json();
+    const n = (j.notes || []).find((x: { content: string }) => x.content.includes('fail2ban'));
+    return n ? { domain: n.domain || '', host_id: n.host_id || 0, source: n.source } : null;
+  })) as { domain: string; host_id: number; source: string } | null;
+  expect(scope).not.toBeNull();
+  expect(scope?.domain).toBe('security');
+  expect(scope?.host_id).toBe(0);
+  expect(scope?.source).toBe('operator');
+
+  // The note is removed again, so the shared database stays as it was.
+  await browser.evaluate(async () => {
+    const r = await fetch('/api/agent/memory');
+    const j = await r.json();
+    const n = (j.notes || []).find((x: { content: string }) => x.content.includes('fail2ban'));
+    if (n) await fetch('/api/agent/memory?id=' + n.id, { method: 'DELETE' });
+    return null;
+  });
 });

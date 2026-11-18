@@ -18,7 +18,9 @@ const pkgUpdateCooldown = 60 * time.Second
 // handlePackageUpdates serves GET /api/hosts/{id}/packages/updates (the stored result of the last check)
 // and POST /api/hosts/{id}/packages/updates/check (run the check now).
 func (s *Server) handlePackageUpdates(w http.ResponseWriter, r *http.Request, hostID int64, check bool) {
-	if s.inspector == nil {
+	// Only the check talks to the host: reading the stored result is a database read and must work even
+	// when no inspector was wired up.
+	if check && s.inspector == nil {
 		http.Error(w, "inspector not available", http.StatusInternalServerError)
 		return
 	}

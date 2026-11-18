@@ -334,7 +334,7 @@ Pantau bisa menyerahkan kegagalan ke AI agent-nya sendiri: chat melayang (pojok 
 5. **Test connection**: satu panggilan model kecil untuk memeriksa kunci, URL, dan model.
 6. Pilih **mode persetujuan**: `ask` (semua perubahan menunggu Anda, bawaan) atau `auto` (perubahan rutin disetujui otomatis, `exec_command` tetap selalu meminta).
 
-Identitas dan aturan agent (SOUL) dapat disunting di panel yang sama. Riwayat chat hanya ada di memori dan hilang saat Pantau restart; catatan memori agent (tentang infrastruktur Anda) tersimpan di database dan bertahan melewati restart.
+Identitas dan aturan agent (SOUL) dapat disunting di panel yang sama. Riwayat chat hanya ada di memori dan hilang saat Pantau restart; catatan memori agent (tentang infrastruktur Anda) tersimpan di database dan bertahan melewati restart. Satu catatan berlingkup pada satu hal — seluruh fleet, satu host, satu klaster Kubernetes, atau satu domain (security, network, docker, ansible, terraform, kubernetes, database, storage) — dan hanya catatan yang relevan dengan pertanyaan, beserta ringkasan inventaris yang disebut pertanyaan itu, yang masuk ke prompt. Keluaran tool yang panjang dipotong menjadi kepala dan ekor dengan pemberitahuan cara mengambil sisanya, sehingga chat panjang tetap terbaca.
 
 ## 🚀 Panduan Memulai Cepat (Quick Start)
 
