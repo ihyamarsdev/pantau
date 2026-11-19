@@ -14,6 +14,12 @@ services:
       - "${PANTAU_BIND:-0.0.0.0}:8080:8080"
       - "127.0.0.1:8081:8081"
       - "127.0.0.1:15000-15019:15000-15019"
+    # The host resolver is taken over by Tailscale's MagicDNS (100.100.100.100), which cannot
+    # resolve the public management URLs of the other VPN networks. Give the container resolvers
+    # that work regardless of the host's DNS state.
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     cap_add:
       - NET_ADMIN # create the tunnel interface (netbird instance, wg-quick, openvpn)
       - NET_RAW   # bind an SSH socket to that interface (SO_BINDTODEVICE)
