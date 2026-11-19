@@ -8,9 +8,13 @@ Issues are tracked as local markdown files under `.scratch/`. See `docs/agents/i
 
 Default five canonical roles (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
 
-### Domain docs
+### Domain docs (token-efficient)
 
-Single-context layout (`CONTEXT.md` + `docs/adr/` at the repo root). See `docs/agents/domain.md`.
+Single-context layout. `CONTEXT.md` is a **map** (<6 KB) with a lookup table. Read **only** the targeted
+`docs/agents/context/*.md` slice for your task, plus the relevant ADR(s) from `docs/adr/` (see
+`docs/agents/context/adr-index.md`). Do **not** read all of `CONTEXT.md`'s former content in one go, and do
+**not** read `docs/user-guide*.md` (~200 KB) unless the task is about end-user documentation. Use the glossary
+vocabulary from the slice; flag ADR conflicts explicitly. See `docs/agents/domain.md`.
 
 ### Testing
 
@@ -18,11 +22,15 @@ UI and end-to-end tests use e2e (https://github.com/tester-army/e2e); tests live
 
 ### Deferred & Targeted Testing Policy
 
-Applies to every working session.
+Applies to every working session. Single-pass execution: finish all edits, then verify once.
 
-- **No mid-iteration checks.** While writing code, do NOT run `go test`, `go vet`, `go build`, or any E2E test (`npm test`, `npx e2e run`). Do not verify file by file after each edit.
-- **Finish first, verify once.** Complete 100% of the implementation and write all the tests it needs before running anything. Verification happens one time, at the very end.
-- **Targeted final verification only.** Run `go test ./internal/<package>` for each changed package only, plus the single related E2E spec `cd e2e && npx e2e run tests/<feature>.e2e.ts`. Do NOT run the full Go or E2E suite unless the user explicitly asks for it.
+- **No mid-iteration checks.** While writing code, do NOT run `go test`, `go vet`, `go build`, or any E2E test
+  (`npm test`, `npx e2e run`, `e2e-inc/e2e`). Do not verify file by file after each edit. `gofmt` for syntax is fine.
+- **Finish first, verify once.** Complete 100% of the implementation (backend, migrations, UI hooks, docs, tests)
+  before running anything. Verification happens one time, at the very end.
+- **Targeted final verification only.** Run `go test ./internal/<package>` for each changed package only, plus the
+  single related E2E spec `cd e2e && npx e2e run tests/<feature>.e2e.ts`. Do NOT run the full Go or E2E suite unless
+  the user explicitly asks for it. Telemetry stays disabled (`E2E_TELEMETRY_DISABLED=1`).
 - Details and commands: `docs/agents/e2e.md`.
 
 ### Code navigation
