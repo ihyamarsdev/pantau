@@ -14,6 +14,8 @@ type FakeLLM = {
   chats: number;
   /** Tool names offered in the most recent chat request (captured for the domain-filtering check). */
   lastTools: string[];
+  /** System message of the most recent chat request (captured for the fingerprint check). */
+  lastSystem: string;
   close(): Promise<void>;
 };
 
@@ -25,17 +27,21 @@ type ScriptedCall = { name: string; args: (f: FakeLLM) => unknown };
 // the next scripted tool call (exec_command on the test host by default), and a turn that already carries
 // every tool result gets the final text.
 async function startFakeLLM(toolCalls = 1, calls?: ScriptedCall[]): Promise<FakeLLM> {
-  const fake: FakeLLM = { url: '', hostId: 0, chats: 0, lastTools: [], close: async () => {} };
+  const fake: FakeLLM = { url: '', hostId: 0, chats: 0, lastTools: [], lastSystem: '', close: async () => {} };
   const server = createServer((req, res) => {
     let raw = '';
     req.on('data', (c) => { raw += c; });
     req.on('end', () => {
-      let body: { messages?: ChatMessage[]; tools?: { function?: { name?: string } }[] } = {};
+      let body: { messages?: ChatMessage[]; tools?: { function?: { name?: string } }[]; system?: string } = {};
       try { body = JSON.parse(raw); } catch { /* an unparsable body is answered like an empty one */ }
       const messages = body.messages || [];
       const last = messages[messages.length - 1];
       const isPing = last?.role === 'user' && last.content === 'ping';
-      if (!isPing) fake.lastTools = (body.tools || []).map((t) => t.function?.name || '').filter(Boolean);
+      if (!isPing) {
+        fake.lastTools = (body.tools || []).map((t) => t.function?.name || '').filter(Boolean);
+        const sys = (messages.find((m) => m.role === 'system') || {}).content || body.system || '';
+        if (sys) fake.lastSystem = sys;
+      }
       const results = messages.filter((m) => m.role === 'tool');
       if (!isPing) fake.chats++;
 
@@ -572,5 +578,82 @@ test('agent: a destructive shell command carries the destructive risk tier and w
   } finally {
     await llm.close();
     await deleteHosts(browser, ['e2e-guard']);
+  }
+});
+
+// --- Smart context-aware SSH execution (ADR 0086) ---------------------------
+
+test('agent: ssh_batch_inspect runs read-only probes in one call without an approval card', async ({ app, screen, browser }) => {
+  // The batch tool is gate 0: the fake LLM asks for it once, the probes return labeled sections,
+  // and no approval card appears. The tool line shows the batch call.
+  const llm = await startFakeLLM(1, [
+    { name: 'ssh_batch_inspect', args: (f) => ({ host_id: f.hostId, commands: ['uptime', 'df -h'], labels: ['LOAD', 'DISK'] }) }
+  ]);
+  try {
+    await app.open('/');
+    await initApp(screen, browser);
+
+    llm.hostId = (await browser.evaluate(async () => {
+      const h = await (await fetch('/api/hosts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'e2e-batch', host: '127.0.0.1', port: 1, user: 'x' }) })).json();
+      return h.id as number;
+    })) as number;
+
+    await browser.evaluate(async (base) => {
+      await fetch('/api/agent/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true, provider: 'openai', base_url: base, api_key: 'k-test', model: 'gpt-4o', approval: 'ask' }) });
+      const g = window as unknown as PageGlobals;
+      g.AG.init();
+      g.AG.newChat();
+      return null;
+    }, llm.url);
+
+    await browser.locator('#agentFab').click();
+    await browser.locator('#agentInput').fill('check load and disk');
+    await browser.locator('#agentSend').click();
+
+    await expect(browser.locator('#agentLog .ag-tool')).toContainText('ssh_batch_inspect', { timeout: 60000 });
+    // Gate 0: no approval card for the batch read.
+    await expect(browser.locator('#agentApprovals .ag-appr')).toBeHidden();
+    // The final reply arrives (the probes return an empty mock result, which is not an error).
+    await expect(browser.locator('#agentLog .ag-bot').last()).toBeVisible({ timeout: 60000 });
+  } finally {
+    await llm.close();
+    await deleteHosts(browser, ['e2e-batch']);
+  }
+});
+
+test('agent: the host fingerprint is injected into the system prompt when a host is named', async ({ app, screen, browser }) => {
+  // The fake LLM records the system message. A question naming the test host must carry its compact
+  // fingerprint (os=... init=... net=...) so the model picks OS-correct commands on the first try.
+  const llm = await startFakeLLM(0);
+  try {
+    await app.open('/');
+    await initApp(screen, browser);
+
+    const hostName = 'e2e-fingerprint';
+    llm.hostId = (await browser.evaluate(async (name) => {
+      const h = await (await fetch('/api/hosts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, host: '127.0.0.1', port: 1, user: 'x' }) })).json();
+      return h.id as number;
+    }, hostName)) as number;
+
+    await browser.evaluate(async (base) => {
+      await fetch('/api/agent/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true, provider: 'openai', base_url: base, api_key: 'k-test', model: 'gpt-4o', approval: 'ask' }) });
+      const g = window as unknown as PageGlobals;
+      g.AG.init();
+      g.AG.newChat();
+      return null;
+    }, llm.url);
+
+    await browser.locator('#agentFab').click();
+    await browser.locator('#agentInput').fill(`is ${hostName} healthy?`);
+    await browser.locator('#agentSend').click();
+    await expect(browser.locator('#agentLog .ag-bot').last()).toBeVisible({ timeout: 60000 });
+
+    const system = llm.lastSystem;
+    expect(system).toContain('Host Execution Fingerprint');
+    expect(system).toContain('os=');
+    expect(system).toContain('net=');
+  } finally {
+    await llm.close();
+    await deleteHosts(browser, ['e2e-fingerprint']);
   }
 });

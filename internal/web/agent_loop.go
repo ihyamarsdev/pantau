@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"pantau/internal/inspector"
 	"pantau/internal/logger"
 )
 
@@ -32,8 +33,9 @@ type agentConv struct {
 	msgs       []llmMessage
 	lastUse    time.Time
 	running    bool
-	lastTokens int        // the prompt size of the last model call, 0 when unknown
-	domain     toolDomain // active tool domain, set from the UI page and mutable via set_tool_domain
+	lastTokens int                          // the prompt size of the last model call, 0 when unknown
+	domain     toolDomain                   // active tool domain, set from the UI page and mutable via set_tool_domain
+	exec       *inspector.AgentSessionState // per-session SSH cwd state (ADR 0086)
 }
 
 type agentToolEvent struct {
@@ -104,7 +106,7 @@ func (s *Server) acquireConv(id string) (*agentConv, bool) {
 		}
 	}
 	if !ok {
-		c = &agentConv{}
+		c = &agentConv{exec: inspector.NewAgentSessionState()}
 		s.agent.convs[id] = c
 	}
 	c.mu.Lock()
@@ -170,8 +172,13 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 	domain := conv.domain
 	history := append([]llmMessage{}, conv.msgs...)
 	conv.mu.Unlock()
-	// The domain pointer travels with the request so set_tool_domain can widen it mid-turn.
+	// The domain pointer and the per-session cwd state travel with the request so tools can widen the
+	// domain and run relative to the session's working directory (ADR 0086).
 	rctx := r.WithContext(context.WithValue(r.Context(), agentDomainKey{}, &domain))
+	if conv.exec == nil {
+		conv.exec = inspector.NewAgentSessionState()
+	}
+	rctx = rctx.WithContext(inspector.WithAgentSessionState(rctx.Context(), conv.exec))
 	history = append(history, llmMessage{Role: llmRoleUser, Text: message})
 	// saved is what a failed turn keeps: the history up to the last complete tool batch. Without it the agent
 	// would forget that it already restarted a service and would repeat the action.
@@ -190,8 +197,9 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 	}()
 
 	sse := newAgentSSE(w)
-	// The system prompt is rebuilt every turn and never stored in the history.
-	system := c.Soul + "\n\n" + s.agentMemoryPrompt(message)
+	// The system prompt is rebuilt every turn and never stored in the history. A host fingerprint gives the
+	// model OS-correct execution context before it writes any shell command (ADR 0086).
+	system := c.Soul + "\n\n" + s.agentMemoryPrompt(message) + "\n" + s.agentFingerprintPrompt(message)
 
 	// A long text-only exchange never reaches a tool batch, so the history is compacted here too.
 	if lastTokens > 0 && lastTokens+len(message)/3 > c.CompactTokens {

@@ -1,8 +1,14 @@
 package inspector
 
+// Smart, context-aware SSH execution for the in-process AI agent (ADR 0086). Every model-supplied
+// command passes through: VPN fast-fail (ADR 0077), interactive-command linting, non-interactive sudo,
+// the 3-tier safety gate, a strict context deadline, OS-aware Darwin PATH prelude (ADR 0038), secret
+// redaction and token-saving output compression (ADR 0031/0037).
+
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -22,7 +28,7 @@ func (ins *Inspector) DockerLogs(hostID int64, name string, tail int) (string, e
 		return "", dockerCommandError("docker logs", stdout, stderr, code)
 	}
 	// Large logs must never blow up the LLM context window. Keep the head and the tail.
-	return TruncateAgentOutput(RedactAgentSecrets(stdout), 3000, 50), nil
+	return CompressAgentOutput(stdout, 3000, 50), nil
 }
 
 // ExecShell runs one shell command as the host's SSH user. It performs no policy check: the AI agent gate
@@ -31,19 +37,35 @@ func (ins *Inspector) ExecShell(hostID int64, cmd string, timeout time.Duration)
 	return ins.ExecShellContext(context.Background(), hostID, cmd, timeout, DefaultAgentExecLimits())
 }
 
-// ExecShellContext runs one shell command with the agent's execution guardrails: strict context timeout,
-// argument sanitization, risk-tier classification, secret redaction and head+tail output truncation.
+// ExecShellContext runs one shell command with the agent's full guardrail chain (ADR 0086):
 //
-// A read_only or mutating_safe command runs immediately. A destructive command is refused unless ctx
-// carries the exact approval token from ApprovalTokenFor (an explicit human-in-the-loop decision, mirroring
-// ADR 0044). The returned stdout/stderr are redacted and capped; the exit code and errors are preserved.
+//  1. VPN fast-fail: a host bound to a down network is refused before any dial (ADR 0077).
+//  3. Pre-flight lint: interactive TUI/pager commands are refused with an actionable hint.
+//  4. Risk tier: destructive commands require the exact approval token (ADR 0044), checked against the
+//     original command so it matches the operator's approval card.
+//  5. Non-interactive sudo: a bare `sudo` is rewritten to `sudo -n` (ADR 0037).
+//  6. Strict deadline: the shorter of the caller timeout, limits and context deadline.
+//  7. OS-aware execution: Darwin PATH prelude (ADR 0038) and per-session cwd (when a state is set).
+//  8. Output: secrets redacted, consecutive duplicates collapsed, head+tail capped with metadata.
+//
+// A non-zero exit code is returned with exitCode and a recovery hint appended to stderr so the model
+// can choose a better next call instead of repeating a failing command.
 func (ins *Inspector) ExecShellContext(ctx context.Context, hostID int64, cmd string, timeout time.Duration, limits AgentExecLimits) (stdout, stderr string, exitCode int, err error) {
-	// 1. Argument sanitization: NUL bytes and control characters other than tab/newline are never valid in
-	//    a shell command coming from the model; they are a common injection vector.
+	// 1. VPN fast-fail — metadata only, never dials.
+	if err := ins.checkVPNDown(hostID); err != nil {
+		return "", "", -1, err
+	}
+	// 2. Argument sanitization: NUL bytes and C0/C1 controls other than tab/newline are never valid.
 	if err := sanitizeAgentCommand(cmd); err != nil {
 		return "", "", -1, err
 	}
-	// 2. Risk tier classification and the destructive gate.
+	// 3. Pre-flight anti-hang lint.
+	if hint := LintInteractiveCommand(cmd); hint != "" {
+		return "", "", -1, fmt.Errorf("pre-flight check refused the command: %s", hint)
+	}
+	// 4. Risk tier and the destructive gate. The token is derived from the *original* command so it
+	//    matches the approval card the operator saw in the web layer (which also uses the original text).
+	//    The sudo rewrite below does not change the tier: destructive patterns still match.
 	tier := ClassifyAgentCommand(cmd)
 	if tier == RiskDestructive {
 		token, _ := ctx.Value(agentApprovalKey{}).(string)
@@ -51,7 +73,10 @@ func (ins *Inspector) ExecShellContext(ctx context.Context, hostID int64, cmd st
 			return "", "", -1, fmt.Errorf("%w: %s (approval token %s)", ErrDestructiveNeedsApproval, cmd, ApprovalTokenFor(cmd))
 		}
 	}
-	// 3. Strict context execution timeout: the shorter of the caller's timeout and the context deadline.
+	// 5. Non-interactive sudo (ADR 0037): rewrite only after the approval token was checked.
+	cmd = sudoNoInteractive(cmd)
+
+	// 6. Strict context execution timeout: the shorter of the caller's timeout and the context deadline.
 	runTimeout := limits.Timeout
 	if runTimeout <= 0 {
 		runTimeout = DefaultAgentExecLimits().Timeout
@@ -66,20 +91,47 @@ func (ins *Inspector) ExecShellContext(ctx context.Context, hostID int64, cmd st
 			return "", "", -1, context.DeadlineExceeded
 		}
 	}
+
 	runner, err := ins.dockerRunner(hostID)
 	if err != nil {
 		return "", "", -1, err
 	}
 	defer runner.Close()
-	stdout, stderr, exitCode, err = runner.ExecTimeout("sh -c "+shellQuote(DarwinPathPrelude+cmd), runTimeout)
-	// 4. Redaction and head+tail truncation keep large, secret-bearing output out of the LLM context.
+
+	// 7. OS-aware execution: Darwin PATH prelude, then the session cwd if one was recorded.
+	prefix := DarwinPathPrelude
+	if st := sessionFromContext(ctx); st != nil {
+		prefix += st.cwdPrefix(hostID)
+	}
+	stdout, stderr, exitCode, err = runner.ExecTimeout("sh -c "+shellQuote(prefix+cmd), runTimeout)
+
+	// 8. Compress both streams: dedupe + redact + head/tail cap with metadata.
 	max := limits.MaxOutput
 	if max <= 0 {
 		max = DefaultAgentExecLimits().MaxOutput
 	}
-	stdout = TruncateAgentOutput(RedactAgentSecrets(stdout), max, limits.HeadFraction)
-	stderr = TruncateAgentOutput(RedactAgentSecrets(stderr), max, limits.HeadFraction)
+	stdout = CompressAgentOutput(stdout, max, limits.HeadFraction)
+	stderr = CompressAgentOutput(stderr, max, limits.HeadFraction)
+
+	// 9. Structured recovery hints for non-zero exits / transport errors.
+	if exitCode != 0 || err != nil {
+		stderr += "\n[hint] " + exitHint(exitCode, err, cmd)
+	}
 	return stdout, stderr, exitCode, err
+}
+
+// WithAgentSession attaches a per-chat execution state (cwd tracking) to a context.
+type agentSessionKey struct{}
+
+// WithAgentSessionState returns a context carrying the given session execution state.
+func WithAgentSessionState(ctx context.Context, st *AgentSessionState) context.Context {
+	return context.WithValue(ctx, agentSessionKey{}, st)
+}
+
+// sessionFromContext reads the session state from ctx.
+func sessionFromContext(ctx context.Context) *AgentSessionState {
+	st, _ := ctx.Value(agentSessionKey{}).(*AgentSessionState)
+	return st
 }
 
 // sanitizeAgentCommand refuses control characters and NUL bytes in a model-supplied command. Newlines and
@@ -94,4 +146,22 @@ func sanitizeAgentCommand(cmd string) error {
 		}
 	}
 	return nil
+}
+
+// TrackSessionCD records a successful `cd` into the session state attached to ctx. Call it after an
+// exec so subsequent commands in the same chat run relative to the new directory.
+func TrackSessionCD(ctx context.Context, hostID int64, cmd string, exitCode int) {
+	st := sessionFromContext(ctx)
+	if st == nil || exitCode != 0 {
+		return
+	}
+	dir := extractCD(strings.TrimSpace(cmd))
+	if dir != "" && !strings.HasPrefix(dir, "/") {
+		if cur := st.GetCWD(hostID); cur != "" {
+			dir = strings.TrimSuffix(cur, "/") + "/" + dir
+		}
+	}
+	if dir != "" {
+		_ = st.SetCWD(hostID, dir)
+	}
 }

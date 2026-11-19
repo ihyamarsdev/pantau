@@ -71,6 +71,8 @@ var agentTools = []agentTool{
 	{Name: "security_scan", Description: "Run a security scan now (pending updates, hardening checks); read the result with security_status.", gate: 1, InputSchema: schema(hostReq, map[string]interface{}{"host_id": pHost}), run: toolSecurityScan},
 	{Name: "exec_command", Description: "Run a shell command on a host as the SSH user (use `sudo -n` for root). Needed for editing config, package changes, etc. ALWAYS waits for explicit operator approval. Prefer the dedicated tools.", gate: 2,
 		InputSchema: schema([]string{"host_id", "command"}, map[string]interface{}{"host_id": pHost, "command": map[string]interface{}{"type": "string"}}), run: toolExec},
+	{Name: "ssh_batch_inspect", Description: "Run several read-only diagnostic commands on a host in ONE SSH round-trip, each under a labeled section with its exit code. Use it to gather related probes (uptime, disk, service status) in one call instead of many exec_command turns. Interactive TUI/pager commands are refused. Read-only: never mutates.", gate: 0,
+		InputSchema: schema([]string{"host_id", "commands"}, map[string]interface{}{"host_id": pHost, "commands": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "read-only shell commands, max 20"}, "labels": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "optional short label per command"}}), run: toolBatchInspect},
 }
 
 // Meta-tools stay in every domain: they are how the model reaches a tool outside the active domain.
@@ -128,7 +130,7 @@ func agentToolDomain(name string) toolDomain {
 	switch {
 	case name == "find_tools", name == "set_tool_domain",
 		name == "list_hosts", name == "get_host_state", name == "list_alerts", name == "inspect_host",
-		name == "read_file", name == "fleet_search", name == "exec_command",
+		name == "read_file", name == "fleet_search", name == "exec_command", name == "ssh_batch_inspect",
 		strings.HasPrefix(name, "memory_"):
 		return domainCore
 	case strings.HasPrefix(name, "systemd_"), name == "host_info", name == "list_dir", name == "disk_usage",
@@ -764,11 +766,49 @@ func toolExec(s *Server, r *http.Request, args map[string]interface{}) (string, 
 	if err != nil {
 		return "", err
 	}
-	// The inspector already redacts and caps both streams at ~3000 chars (head+tail); keep its output
-	// whole here so the announced truncation marker survives.
+	inspector.TrackSessionCD(ctx, id, cmd, code)
+	// The inspector already compresses both streams (dedupe + redact + head/tail cap with metadata);
+	// keep its output whole here so the announced truncation marker survives.
 	out := fmt.Sprintf("exit code: %d\n--- stdout ---\n%s\n--- stderr ---\n%s", code, stdout, stderr)
 	if code != 0 {
 		return out, fmt.Errorf("command exited %d", code)
+	}
+	return out, nil
+}
+
+// toolBatchInspect runs several read-only probes in one SSH round-trip. It is gate 0 (read-only): the
+// inspector still lints every command for interactive hangs, but no operator approval is required
+// because the tool contract forbids mutations.
+func toolBatchInspect(s *Server, r *http.Request, args map[string]interface{}) (string, error) {
+	id, err := argHost(args)
+	if err != nil {
+		return "", err
+	}
+	raw, _ := args["commands"].([]interface{})
+	if len(raw) == 0 {
+		return "", fmt.Errorf("commands is required (a non-empty array of read-only shell commands)")
+	}
+	commands := make([]string, 0, len(raw))
+	for _, v := range raw {
+		c, _ := v.(string)
+		c = strings.TrimSpace(c)
+		if c == "" {
+			return "", fmt.Errorf("commands must not contain empty strings")
+		}
+		commands = append(commands, c)
+	}
+	var labels []string
+	if rawLabels, ok := args["labels"].([]interface{}); ok {
+		for _, v := range rawLabels {
+			l, _ := v.(string)
+			labels = append(labels, l)
+		}
+	}
+	ctx, cancel := contextTimeout(r, agentExecTimeout)
+	defer cancel()
+	out, err := s.inspector.BatchInspect(ctx, id, commands, labels, agentExecTimeout, inspector.DefaultAgentExecLimits())
+	if err != nil {
+		return "", err
 	}
 	return out, nil
 }
