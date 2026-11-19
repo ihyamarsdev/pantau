@@ -44,6 +44,9 @@ function closeModal(id) {
   if (id === 'topologyModal' && window.Topology && window.Topology.onClose) {
     window.Topology.onClose();
   }
+  if (id === 'globeModal' && window.GlobeRadar && window.GlobeRadar.onClose) {
+    window.GlobeRadar.onClose();
+  }
   if (id === 'terminalDockModal') {
     minimizeTerminalDock();
     return;

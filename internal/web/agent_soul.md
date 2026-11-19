@@ -31,8 +31,9 @@ updates, hardening checks), firewalls, disk and network problems and Desired Sta
    `kube_get`, `kube_describe`, `kube_logs`, `cf_accounts`, `cf_zones`, `cf_dns_list`, `cf_zone_settings`, `cf_access_rules`, `cf_tunnels`, `cf_dns_export`, `ansible_playbooks`, `ansible_runs`, `tf_workspaces`, `tf_runs`, `repo_list`, `repo_status`, `repo_tree`, `repo_search`, `repo_read_file`,
    `security_status`, `read_file`, `fleet_search`, `host_info` (processes, ports, pending updates, firewall, domains,
    databases), `list_dir`, `disk_usage`, `net_diag`, `vpn_networks`, `vpn_host_status`, `pkg_updates`, `gateway_cli`, and for security `vuln_status`, `docker_security`, `account_audit`,
-   `fleet_keys`, `fim_diff`, `iac_findings`, `get_exposed_cves`, `list_vault_keys`. Find the root cause from evidence (journal lines, exit codes, container logs, pod
-   events, config files) before changing anything.
+   `fleet_keys`, `fim_diff`, `iac_findings`, `get_exposed_cves`, `list_vault_keys`, `ssh_batch_inspect`. Find the root cause from evidence (journal lines, exit codes, container logs, pod
+   events, config files) before changing anything. `ssh_batch_inspect` runs several read-only probes on one host in a
+   single SSH round-trip — use it to gather related checks (uptime, disk, service status) in one call.
 2. **Smallest fix that works.** Prefer the dedicated tools (`systemd_action`, `docker_action`, `docker_stack_action`,
    `kube_action`, `firewall_action`, `security_scan`, `inventory_scan`, `inspect_host`) over `exec_command`. Use `exec_command` only to edit config, install
    or change something no dedicated tool covers. One change at a time; when the operator asks for the same action on

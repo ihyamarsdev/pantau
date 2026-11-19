@@ -38,7 +38,7 @@ func ansibleBundle(t *testing.T) string {
 }
 
 func TestAnsibleSectionIsMountedByBundle(t *testing.T) {
-	html := string(embeddedHTML)
+	html := uiSourceForTest(t)
 	for _, want := range []string{
 		`id="sectionAnsible"`, `/app/ansible.css`, `/app/ansible.js`, `id="navItemAnsible"`, `switchSideNav('ansible')`,
 		`refreshAnsibleSection()`, `"nav_ansible": "Ansible"`,

@@ -34,6 +34,7 @@ import (
 	"pantau/internal/ansible"
 	"pantau/internal/cloudflare"
 	"pantau/internal/dockerhub"
+	"pantau/internal/globe"
 	"pantau/internal/inspector"
 	"pantau/internal/logger"
 	"pantau/internal/netdiag"
@@ -132,6 +133,8 @@ type Server struct {
 	repoClone         func(ctx context.Context, g ansible.GitSource, dir string, log io.Writer) (branch, sha string, err error)
 	repoJobs          repoJobSet
 	topologyCache     *topology.Cache
+	globeCache        *globe.Cache
+	geoResolver       *globe.Resolver
 }
 
 func (s *Server) prepareHTML(raw []byte) {
@@ -171,6 +174,8 @@ func NewServer(db *store.DB, ins *inspector.Inspector, disp *notify.Dispatcher) 
 	}
 	if db != nil {
 		s.topologyCache = topology.NewCache(db, topologyCacheTTL)
+		s.globeCache = globe.NewCache(db, globeCacheTTL)
+		s.geoResolver = globe.NewResolver(db)
 		_, _ = db.MarkAnsibleRunsInterrupted()
 		s.ansibleMgr = NewAnsibleRunManager(db, s.ansibleRun)
 		_, _ = db.MarkAnsibleAdhocRunsInterrupted()
@@ -340,6 +345,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/app/dockerprogress.css", serveAppBundle("dockerprogress", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/topology.js", serveAppBundle("topology", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/topology.css", serveAppBundle("topology", ".css", "text/css; charset=utf-8"))
+	s.mux.HandleFunc("/app/globe.js", serveAppBundle("globe", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/globe.css", serveAppBundle("globe", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/vault.js", serveAppBundle("vault", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/vault.css", serveAppBundle("vault", ".css", "text/css; charset=utf-8"))
 
@@ -512,6 +519,9 @@ func (s *Server) routes() {
 	// Live Fleet Topology graph (read-only projection of stored inventory)
 	s.mux.HandleFunc("/api/topology", s.authMiddleware(s.handleTopology))
 	s.mux.HandleFunc("/api/topology/host", s.authMiddleware(s.handleTopologyHost))
+	// 3D Globe Network Radar (ADR 0090)
+	s.mux.HandleFunc("/api/network-radar/globe", s.authMiddleware(s.handleGlobe))
+	s.mux.HandleFunc("/api/network-radar/globe/geo", s.authMiddleware(s.handleGlobeSetGeo))
 
 	// Network Diagnostics (ADR Network Diagnostic)
 	s.mux.HandleFunc("/api/netdiag/stream", s.authMiddleware(s.handleNetDiagStream))

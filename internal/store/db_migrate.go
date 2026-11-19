@@ -88,7 +88,32 @@ func (d *DB) migrate() error {
 		top_ram_processes TEXT DEFAULT '',
 		top_swap_processes TEXT DEFAULT '',
 		kube_cluster_id TEXT DEFAULT '',
-		kube_mode TEXT NOT NULL DEFAULT 'full'
+		kube_mode TEXT NOT NULL DEFAULT 'full',
+		geo_lat REAL DEFAULT 0,
+		geo_lon REAL DEFAULT 0,
+		geo_label TEXT DEFAULT ''
+	);
+
+	-- 3D Globe Network Radar (ADR 0090): offline-safe GeoIP cache with 30-day TTL.
+	CREATE TABLE IF NOT EXISTS geoip_cache (
+		ip TEXT PRIMARY KEY,
+		lat REAL NOT NULL DEFAULT 0,
+		lon REAL NOT NULL DEFAULT 0,
+		city TEXT NOT NULL DEFAULT '',
+		country_code TEXT NOT NULL DEFAULT '',
+		asn_org TEXT NOT NULL DEFAULT '',
+		source TEXT NOT NULL DEFAULT '',
+		updated_at DATETIME NOT NULL
+	);
+
+	-- Persisted netdiag ping results (gateway<->host and host<->host latency).
+	CREATE TABLE IF NOT EXISTS probe_results (
+		source_host_id INTEGER NOT NULL DEFAULT 0,
+		target_host_id INTEGER NOT NULL DEFAULT 0,
+		latency_ms REAL NOT NULL DEFAULT 0,
+		status TEXT NOT NULL DEFAULT '',
+		probed_at DATETIME NOT NULL,
+		PRIMARY KEY (source_host_id, target_host_id)
 	);
 
 	CREATE TABLE IF NOT EXISTS host_packages (
@@ -706,6 +731,9 @@ func (d *DB) migrate() error {
 	_ = d.alterAddColumn("hosts", "kube_cluster_id", "TEXT DEFAULT ''")
 	_ = d.alterAddColumn("hosts", "kube_mode", "TEXT NOT NULL DEFAULT 'full'")
 	_ = d.alterAddColumn("hosts", "network_id", "INTEGER NOT NULL DEFAULT 0")
+	_ = d.alterAddColumn("hosts", "geo_lat", "REAL DEFAULT 0")
+	_ = d.alterAddColumn("hosts", "geo_lon", "REAL DEFAULT 0")
+	_ = d.alterAddColumn("hosts", "geo_label", "TEXT DEFAULT ''")
 	_, _ = d.Exec(`CREATE INDEX IF NOT EXISTS idx_hosts_network ON hosts(network_id)`)
 	// A note may be scoped to a cluster or a functional domain as well as to a host (all optional, '' = none).
 	_ = d.alterAddColumn("agent_memory", "cluster_id", "INTEGER")

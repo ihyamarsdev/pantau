@@ -19,6 +19,7 @@ import (
 	"pantau/internal/store"
 	"pantau/internal/updater"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -591,7 +592,7 @@ func TestHandleDocs(t *testing.T) {
 }
 
 func TestDocumentationModalUI(t *testing.T) {
-	html := string(embeddedHTML)
+	html := uiSourceForTest(t)
 
 	// Check Workspace Modal container and elements
 	mustContain := []string{
@@ -618,7 +619,7 @@ func TestDocumentationModalUI(t *testing.T) {
 }
 
 func TestTerminalFontConfigurationUI(t *testing.T) {
-	html := string(embeddedHTML)
+	html := uiSourceForTest(t)
 
 	mustContain := []string{
 		`class="term-font-size-val"`,
@@ -629,7 +630,7 @@ func TestTerminalFontConfigurationUI(t *testing.T) {
 		`Cascadia Code`,
 		`getTerminalFontSize()`,
 		`applyTerminalFontSize()`,
-		`fontFamily: TERMINAL_FONT_FAMILY`,
+		`fontFamily: S.TERMINAL_FONT_FAMILY`,
 		`focusActiveTerminal()`,
 		`term.focus()`,
 	}
@@ -876,7 +877,7 @@ func TestPresetModalAndModalStacking(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
-	body := w.Body.String()
+	body := w.Body.String() + "\n" + coreJSSource(t)
 
 	// 1. Regression test: scope option must not have double emoji
 	if strings.Contains(body, "`🎯 ${t('scope_host')}") || strings.Contains(body, "🎯 ${t('scope_host')}") {
@@ -904,8 +905,9 @@ func TestPresetModalAndModalStacking(t *testing.T) {
 		}
 	}
 
-	// 4. Regression test: presetManagerModal layout and table column styling
-	if !strings.Contains(body, `<div id="presetManagerModal" class="modal">`+"\n"+`  <div class="modal-content modal-dialog-lg">`) {
+	// 4. Regression test: presetManagerModal layout and table column styling.
+	// The dialog markup is in index.html; the table (with the Command column) is rendered by core/04-terminal.js.
+	if !regexp.MustCompile(`(?s)id="presetManagerModal"[^>]*>\s*<div class="modal-content modal-dialog-lg"`).MatchString(body) {
 		t.Errorf("expected presetManagerModal to use modal-dialog-lg")
 	}
 	if !strings.Contains(body, `<th style="padding: 6px; width: 100%; min-width: 260px;">Command</th>`) {
@@ -1107,7 +1109,7 @@ func TestInspectAll_CooldownAndInFlight(t *testing.T) {
 }
 
 func TestFileManagerFilterAndSortUI(t *testing.T) {
-	html := string(embeddedHTML)
+	html := uiSourceForTest(t)
 
 	requiredUIElements := []string{
 		"file-filter-toolbar",
@@ -1218,7 +1220,7 @@ func TestAlertAckAllAndRunsFilter(t *testing.T) {
 	}
 
 	// 3. UI checks in embedded HTML
-	html := string(embeddedHTML)
+	html := uiSourceForTest(t)
 	requiredUI := []string{
 		"alert-summary-bar",
 		"alert-overlay-panel",
@@ -1394,7 +1396,7 @@ func TestCommissionDate_RoutesAndRecalculate(t *testing.T) {
 	}
 
 	// 5. Test UI elements & i18n keys
-	html := string(embeddedHTML)
+	html := uiSourceForTest(t)
 	uiChecks := []string{
 		"hostCommissionDate",
 		"commissionDateModal",
@@ -1423,7 +1425,7 @@ func TestCommissionDate_RoutesAndRecalculate(t *testing.T) {
 }
 
 func TestWorkspaceShelfAndSmartResumeUI(t *testing.T) {
-	html := string(embeddedHTML)
+	html := uiSourceForTest(t)
 
 	requiredUIElements := []string{
 		`id="workspaceShelf"`,
@@ -1468,7 +1470,7 @@ func TestWorkspaceShelfAndSmartResumeUI(t *testing.T) {
 }
 
 func TestWorkspaceModalMaximizeAndTerminalFromPath(t *testing.T) {
-	html := string(embeddedHTML)
+	html := uiSourceForTest(t)
 
 	// 1. Check Workspace Modal Maximize UI elements & CSS
 	maximizeElements := []string{

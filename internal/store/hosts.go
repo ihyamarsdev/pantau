@@ -49,27 +49,30 @@ type Host struct {
 	DiskReadSpeedBps  int64 `json:"disk_read_speed_bps"`
 	DiskWriteSpeedBps int64 `json:"disk_write_speed_bps"`
 
-	InternetOnline    bool   `json:"internet_online"`
-	InternetLatencyMs int64  `json:"internet_latency_ms"`
-	PublicIP          string `json:"public_ip"`
-	PrivateIPs        string `json:"private_ips"` // JSON serialized array of private IPv4 addresses, primary first
-	ActiveConnCount   int    `json:"active_conn_count"`
-	FailedLoginsCount int    `json:"failed_logins_count"`
-	TopConnections    string `json:"top_connections"` // JSON serialized array of TopConn
-	ListeningPorts    string `json:"listening_ports"` // JSON serialized array of ListeningPort
-	Notes             string `json:"notes"`
-	SortOrder         int    `json:"sort_order"`
-	GroupName         string `json:"group_name"`
-	LastDurationMs    int64  `json:"last_duration_ms"`
-	CommissionDate    string `json:"commission_date"`    // YYYY-MM-DD manual override for New Old Stock
-	BIOSDate          string `json:"bios_date"`          // Raw motherboard BIOS release date telemetry
-	OSInstallEpoch    int64  `json:"os_install_epoch"`   // Unix epoch of OS deployment for VM age tracking
-	TopCPUProcesses   string `json:"top_cpu_processes"`  // JSON serialized []ProcessInfo
-	TopRAMProcesses   string `json:"top_ram_processes"`  // JSON serialized []ProcessInfo
-	TopSwapProcesses  string `json:"top_swap_processes"` // JSON serialized []ProcessInfo
-	KubeClusterID     string `json:"kube_cluster_id,omitempty"`
-	KubeMode          string `json:"kube_mode"`
-	NetworkID         int64  `json:"network_id"` // VPN Network (0 = direct)
+	InternetOnline    bool    `json:"internet_online"`
+	InternetLatencyMs int64   `json:"internet_latency_ms"`
+	PublicIP          string  `json:"public_ip"`
+	PrivateIPs        string  `json:"private_ips"` // JSON serialized array of private IPv4 addresses, primary first
+	ActiveConnCount   int     `json:"active_conn_count"`
+	FailedLoginsCount int     `json:"failed_logins_count"`
+	TopConnections    string  `json:"top_connections"` // JSON serialized array of TopConn
+	ListeningPorts    string  `json:"listening_ports"` // JSON serialized array of ListeningPort
+	Notes             string  `json:"notes"`
+	SortOrder         int     `json:"sort_order"`
+	GroupName         string  `json:"group_name"`
+	LastDurationMs    int64   `json:"last_duration_ms"`
+	CommissionDate    string  `json:"commission_date"`    // YYYY-MM-DD manual override for New Old Stock
+	BIOSDate          string  `json:"bios_date"`          // Raw motherboard BIOS release date telemetry
+	OSInstallEpoch    int64   `json:"os_install_epoch"`   // Unix epoch of OS deployment for VM age tracking
+	TopCPUProcesses   string  `json:"top_cpu_processes"`  // JSON serialized []ProcessInfo
+	TopRAMProcesses   string  `json:"top_ram_processes"`  // JSON serialized []ProcessInfo
+	TopSwapProcesses  string  `json:"top_swap_processes"` // JSON serialized []ProcessInfo
+	KubeClusterID     string  `json:"kube_cluster_id,omitempty"`
+	KubeMode          string  `json:"kube_mode"`
+	NetworkID         int64   `json:"network_id"` // VPN Network (0 = direct)
+	GeoLat            float64 `json:"geo_lat"`
+	GeoLon            float64 `json:"geo_lon"`
+	GeoLabel          string  `json:"geo_label"`
 }
 
 // PrivateIPList returns the host's stored private IPv4 addresses, primary first.
@@ -116,7 +119,8 @@ const hostSelectCols = `SELECT id, name, host, port, user, COALESCE(custom_key,'
 	COALESCE(cpu_cores, 1), COALESCE(hardware_model, ''), COALESCE(swap_used_bytes, 0), COALESCE(swap_total_bytes, 0),
 	COALESCE(last_duration_ms, 0), COALESCE(commission_date, ''), COALESCE(bios_date, ''), COALESCE(os_install_epoch, 0),
 	COALESCE(top_cpu_processes, ''), COALESCE(top_ram_processes, ''), COALESCE(top_swap_processes, ''),
-	COALESCE(kube_cluster_id, ''), COALESCE(kube_mode, 'full'), COALESCE(network_id, 0)
+	COALESCE(kube_cluster_id, ''), COALESCE(kube_mode, 'full'), COALESCE(network_id, 0),
+	COALESCE(geo_lat, 0), COALESCE(geo_lon, 0), COALESCE(geo_label, '')
 	FROM hosts `
 
 func scanHost(s rowScanner) (*Host, error) {
@@ -132,7 +136,8 @@ func scanHost(s rowScanner) (*Host, error) {
 		&h.CPUCores, &h.HardwareModel, &h.SwapUsedBytes, &h.SwapTotalBytes,
 		&h.LastDurationMs, &h.CommissionDate, &h.BIOSDate, &h.OSInstallEpoch,
 		&h.TopCPUProcesses, &h.TopRAMProcesses, &h.TopSwapProcesses,
-		&h.KubeClusterID, &h.KubeMode, &h.NetworkID)
+		&h.KubeClusterID, &h.KubeMode, &h.NetworkID,
+		&h.GeoLat, &h.GeoLon, &h.GeoLabel)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +206,7 @@ func (d *DB) CreateHost(h *Host) (int64, error) {
 	}
 	var maxOrder int
 	_ = tx.QueryRow(`SELECT COALESCE(MAX(sort_order), 0) FROM hosts`).Scan(&maxOrder)
-	res, err := tx.Exec(`INSERT INTO hosts (name, host, port, user, custom_key, key_id, status, notes, sort_order, group_name, commission_date, bios_date, kube_cluster_id, kube_mode, network_id) VALUES (?, ?, ?, ?, ?, ?, 'unknown', ?, ?, ?, ?, ?, ?, ?, ?)`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, maxOrder+1, h.GroupName, h.CommissionDate, h.BIOSDate, h.KubeClusterID, h.KubeMode, h.NetworkID)
+	res, err := tx.Exec(`INSERT INTO hosts (name, host, port, user, custom_key, key_id, status, notes, sort_order, group_name, commission_date, bios_date, kube_cluster_id, kube_mode, network_id, geo_lat, geo_lon, geo_label) VALUES (?, ?, ?, ?, ?, ?, 'unknown', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, maxOrder+1, h.GroupName, h.CommissionDate, h.BIOSDate, h.KubeClusterID, h.KubeMode, h.NetworkID, h.GeoLat, h.GeoLon, h.GeoLabel)
 	if err != nil {
 		return 0, err
 	}
@@ -230,7 +235,7 @@ func (d *DB) UpdateHost(h *Host) error {
 	if h.GroupName, err = hostGroupSpelling(tx, h.GroupName, h.ID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`UPDATE hosts SET name=?, host=?, port=?, user=?, custom_key=?, key_id=?, notes=?, group_name=?, commission_date=?, kube_mode=?, network_id=? WHERE id=?`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, h.GroupName, h.CommissionDate, h.KubeMode, h.NetworkID, h.ID); err != nil {
+	if _, err := tx.Exec(`UPDATE hosts SET name=?, host=?, port=?, user=?, custom_key=?, key_id=?, notes=?, group_name=?, commission_date=?, kube_mode=?, network_id=?, geo_lat=?, geo_lon=?, geo_label=? WHERE id=?`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, h.GroupName, h.CommissionDate, h.KubeMode, h.NetworkID, h.GeoLat, h.GeoLon, h.GeoLabel, h.ID); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -238,6 +243,13 @@ func (d *DB) UpdateHost(h *Host) error {
 
 func (d *DB) SetHostKubeClusterID(id int64, clusterID string) error {
 	_, err := d.Exec(`UPDATE hosts SET kube_cluster_id=? WHERE id=?`, clusterID, id)
+	return err
+}
+
+// UpdateHostGeo sets the manual geo-coordinate override for an air-gapped or
+// private-IP host. Zero lat/lon with an empty label clears the override.
+func (d *DB) UpdateHostGeo(id int64, lat, lon float64, label string) error {
+	_, err := d.Exec(`UPDATE hosts SET geo_lat=?, geo_lon=?, geo_label=? WHERE id=?`, lat, lon, label, id)
 	return err
 }
 

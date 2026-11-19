@@ -68,7 +68,7 @@ func TestFileManagerActionButtonsGrid(t *testing.T) {
 }
 
 func TestFileManagerDuplicateAndEditorMaximizeUI(t *testing.T) {
-	html := string(embeddedHTML)
+	html := uiSourceForTest(t)
 
 	// Check Duplicate Modal and functions
 	duplicateElements := []string{
@@ -164,7 +164,7 @@ func TestFileManagerDownloadButton(t *testing.T) {
 }
 
 func TestFileManagerPinsAndGlobalBookmarksUI(t *testing.T) {
-	html := string(embeddedHTML)
+	html := uiSourceForTest(t)
 
 	// Check elements
 	requiredElements := []string{

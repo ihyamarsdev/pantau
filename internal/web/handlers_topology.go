@@ -65,4 +65,5 @@ func (s *Server) invalidateTopology() {
 	if s.topologyCache != nil {
 		s.topologyCache.Invalidate()
 	}
+	s.invalidateGlobe()
 }

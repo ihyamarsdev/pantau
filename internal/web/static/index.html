@@ -28,6 +28,7 @@
 <link rel="stylesheet" href="/app/dockerprogress.css" />
 <link rel="stylesheet" href="/app/scanprogress.css" />
 <link rel="stylesheet" href="/app/topology.css" />
+<link rel="stylesheet" href="/app/globe.css" />
 <link rel="stylesheet" href="/app/vault.css" />
 <style>
 @font-face { font-family: 'Inter'; src: url('/vendor/fonts/inter-latin-var.woff2') format('woff2'); font-weight: 100 900; font-style: normal; font-display: swap; }
@@ -3843,6 +3844,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
       <div class="header-cluster">
         <button class="btn btn-icon header-btn" id="btnHeaderNetDiag" onclick="openNetDiagModal()" title="Network Diagnostics" data-i18n-title="netdiag_title"><svg class="icon"><use href="#i-router"/></svg></button>
         <button class="btn btn-icon header-btn" id="btnHeaderTopology" onclick="window.Topology && Topology.open()" title="Fleet Topology" data-i18n-title="tp_title" aria-label="Fleet Topology"><svg class="icon"><use href="#i-network"/></svg></button>
+        <button class="btn btn-icon header-btn" id="btnHeaderGlobe" onclick="window.GlobeRadar && GlobeRadar.open()" title="3D Globe Network Radar" data-i18n-title="gl_title" aria-label="3D Globe Network Radar"><svg class="icon"><use href="#i-globe"/></svg></button>
         <button class="btn btn-icon header-btn" onclick="openTransfersModal()" title="Cross-Host Transfers" data-i18n-title="transfers_title"><svg class="icon"><use href="#i-arrow-left-right"/></svg><span id="activeTransferBadge" class="badge badge-healthy" style="display: none; margin-left: 2px;">0</span></button>
         <button class="btn btn-icon header-btn" onclick="openGlobalNotesModal()" title="Global Notes" data-i18n-title="global_notes_title"><svg class="icon"><use href="#i-file-text"/></svg></button>
         <button class="btn btn-icon header-btn" id="btnHeaderBookmarks" onclick="openGlobalPinsModal()" title="Global Bookmarks" data-i18n-title="global_pins_title"><svg class="icon"><use href="#i-bookmark"/></svg></button>
@@ -7103,6 +7105,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 <script type="module" src="/app/portfwd.js"></script>
 <script type="module" src="/app/fleetsearch.js"></script>
 <script type="module" src="/app/topology.js"></script>
+<script type="module" src="/app/globe.js"></script>
 <script type="module" src="/app/diskusage.js"></script>
 <script type="module" src="/app/domains.js"></script>
 <script type="module" src="/app/shortcuts.js"></script>

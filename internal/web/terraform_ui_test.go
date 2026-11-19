@@ -32,12 +32,12 @@ func TestTerraformGateHasNoBannerAboveTabs(t *testing.T) {
 }
 
 func TestTerraformDrawerTabsRegistered(t *testing.T) {
-	html := string(embeddedHTML)
-	// tfTabRenderers and tfDirtyGuard globals must exist
-	if !strings.Contains(html, "const tfTabRenderers = {}") {
+	html := uiSourceForTest(t)
+	// tfTabRenderers and tfDirtyGuard live in the S state object in core/00-state.js.
+	if !strings.Contains(html, `"tfTabRenderers": {}`) {
 		t.Error("tfTabRenderers registry not declared")
 	}
-	if !strings.Contains(html, "let tfDirtyGuard = null") {
+	if !strings.Contains(html, `"tfDirtyGuard": null`) {
 		t.Error("tfDirtyGuard not declared")
 	}
 	// /app/terraform.js script tag
@@ -68,7 +68,7 @@ func TestTerraformDrawerTabsRegistered(t *testing.T) {
 
 // Cloud Accounts tab hooks, i18n, overview row and the centered Runs-tab start button.
 func TestTerraformCloudTabHooks(t *testing.T) {
-	html := string(embeddedHTML)
+	html := uiSourceForTest(t)
 	for _, s := range []string{
 		`id="tabTfCloud"`, `data-tab="cloud"`, `aria-controls="tfPanelCloud"`, `id="tfPanelCloud"`, `id="tfCloudRoot"`,
 		`'varsets', 'cloud', 'policies'`, `tfCloudRefresh`, `id="tfRunStartBar"`, `id="tfRunStartBtn"`,
@@ -86,7 +86,7 @@ func TestTerraformCloudTabHooks(t *testing.T) {
 
 // Variables tab: "Detect from configuration" button, dialog list, add button and i18n (EN+ID).
 func TestTerraformVariableDetectUI(t *testing.T) {
-	html := string(embeddedHTML)
+	html := uiSourceForTest(t)
 	for _, s := range []string{
 		`id="tfVarDetectBtn"`, `id="tfVarDetectList"`, `id="tfVarDetectAdd"`, `data-vd="`,
 		`/variables/detect`, `tfDetectVars()`, `tfDetectAdd()`,
@@ -136,16 +136,17 @@ func TestTerraformUIHooksAuditGateTemplates(t *testing.T) {
 // Registry tab hooks in index.html plus the ids/hooks the bundled registry modules must expose.
 func TestTerraformRegistryUIHooks(t *testing.T) {
 	html := string(embeddedHTML)
+	ui := uiSourceForTest(t)
 	for _, s := range []string{
 		`id="tabTfRegistry"`, `data-tab="registry"`, `aria-controls="tfPanelRegistry"`, `id="tfPanelRegistry"`, `id="tfRegistryRoot"`,
 		`'policies', 'modules', 'registry', 'audit', 'gate'`, `tfRegistryRefresh`,
 		`"tf_tab_registry": "Registry"`,
 	} {
-		if !strings.Contains(html, s) {
+		if !strings.Contains(ui, s) {
 			t.Errorf("index.html missing %s", s)
 		}
 	}
-	if n := strings.Count(html, `"tf_tab_registry":`); n != 2 {
+	if n := strings.Count(ui, `"tf_tab_registry":`); n != 2 {
 		t.Errorf("tf_tab_registry must exist in EN and ID dictionaries, found %d", n)
 	}
 	if strings.Index(html, `id="tabTfRegistry"`) < strings.Index(html, `id="tabTfModules"`) || strings.Index(html, `id="tabTfRegistry"`) > strings.Index(html, `id="tabTfAudit"`) {

@@ -389,6 +389,18 @@ func (s *Service) ExecuteProbe(ctx context.Context, req ProbeRequest, eventSink 
 			Type: "ping_stats",
 			Ping: stats,
 		})
+		// ADR 0090: persist the measured latency for the globe's flow arcs.
+		// source_host_id 0 represents the Pantau Gateway (local source).
+		if s.db != nil && req.TargetType == "host" && req.TargetHostID > 0 {
+			sourceID := int64(0)
+			if !req.SourceLocal {
+				sourceID = req.SourceHostID
+			}
+			_ = s.db.UpsertProbeResult(store.ProbeResult{
+				SourceHostID: sourceID, TargetHostID: req.TargetHostID,
+				LatencyMs: stats.AvgMs, Status: stats.Status,
+			}, time.Now())
+		}
 
 	case ProbeTypePort:
 		stats := ParsePortOutput(fullOutput.String(), req.Port)

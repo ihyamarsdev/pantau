@@ -414,6 +414,8 @@ func main() {
 	server.SetSnapshotManager(snapshotMgr)
 	server.SetUpdaterManager(updaterMgr)
 	server.StartAITriage(ctx)
+	// ADR 0090: warm the offline-safe GeoIP cache in the background; never on the read path.
+	server.StartGeoResolver(ctx)
 	server.SetAnsibleLibraryDir(filepath.Join(filepath.Dir(dbPath), "ansible-library"))
 	// Pantau installs the CLIs it manages into its own directory, so an update needs neither root
 	// nor a package manager and never touches the system copy in /usr/bin.
