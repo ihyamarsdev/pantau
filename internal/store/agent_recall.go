@@ -50,6 +50,12 @@ func (d *DB) RecallContext(scope AgentMemoryScope, query string, limit int) (*Ag
 			return nil, err
 		}
 		for _, g := range res.Groups {
+			// Host-name matches are handled below with HostNameMatches, which respects
+			// separators. The fleet-search host category uses loose LIKE matching and
+			// would surface near misses (macmini-40 for "macmini-4").
+			if g.Kind == FleetSearchHostKind {
+				continue
+			}
 			key := g.Kind + "\x00" + g.Name
 			if seen[key] {
 				continue

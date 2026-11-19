@@ -34,9 +34,9 @@ func (s *Server) handleFleetSearch(w http.ResponseWriter, r *http.Request) {
 	if kind == "" {
 		kind = store.FleetSearchAll
 	}
-	if kind != store.FleetSearchAll && kind != store.FleetSearchPackage && kind != store.FleetSearchContainer && kind != store.FleetSearchDomain {
+	if !store.FleetKindValid(kind) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
-			"ok": false, "error": "kind must be all, package, container or domain",
+			"ok": false, "error": "unknown search kind: " + kind,
 		})
 		return
 	}
