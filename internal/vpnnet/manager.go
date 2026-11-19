@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand/v2"
 	"net"
 	"os"
 	"os/exec"
@@ -21,19 +22,10 @@ import (
 	"pantau/internal/store"
 )
 
-// Tunnel states reported to the UI.
-const (
-	StateDown     = "down"
-	StateStarting = "starting"
-	StateUp       = "up"
-	StateError    = "error"
-)
-
 const (
 	upTimeout      = 60 * time.Second
 	downTimeout    = 20 * time.Second
 	statusTimeout  = 10 * time.Second
-	retryBackoff   = 30 * time.Second
 	errorCooldown  = 5 * time.Minute
 	maxFails       = 3
 	maxChildProcs  = 5
@@ -41,12 +33,40 @@ const (
 	statusLoopTick = 30 * time.Second
 )
 
-// stopGrace is how long a tunnel process gets to exit after SIGINT before it is killed (a var so tests can shorten it).
-var stopGrace = 10 * time.Second
+// Exponential backoff with jitter. Tests in package vpnnet override these to be deterministic.
+var (
+	backoffBase   = 30 * time.Second
+	backoffCap    = 5 * time.Minute
+	backoffJitter = func() float64 { return 0.8 + rand.Float64()*0.4 } // [0.8, 1.2]
+)
 
-// fastPathTTL bounds how long a dial may trust the cached "up" verdict without re-reading the network row
-// (enabled flag, config). The status loop re-stamps it every tick, so a live tunnel never leaves the hot path.
-const fastPathTTL = 2 * statusLoopTick
+// backoffDelay returns the retry delay after `fails` consecutive failures. It grows exponentially from
+// backoffBase, is capped at backoffCap, then multiplied by backoffJitter so failing networks desynchronise.
+func backoffDelay(fails int) time.Duration {
+	if fails <= 0 {
+		return 0
+	}
+	d := backoffBase
+	for i := 1; i < fails; i++ {
+		d *= 2
+		if d >= backoffCap {
+			d = backoffCap
+			break
+		}
+	}
+	if d > backoffCap {
+		d = backoffCap
+	}
+	return time.Duration(float64(d) * backoffJitter())
+}
+
+// Circuit-breaker states reported by BreakerState.
+const (
+	breakerClosed   = "closed"
+	breakerOpen     = "open"
+	breakerHalfOpen = "half-open"
+)
+
 
 // Status is the supervisor's verdict for one network.
 type Status struct {
@@ -57,7 +77,52 @@ type Status struct {
 	Peers     int       `json:"peers"`
 	CheckedAt time.Time `json:"checked_at"`
 	DNS       []string  `json:"-"`
+
+	// Active link-probe telemetry. ProbeMs is -1 until a probe has run.
+	VirtualIP string `json:"virtual_ip"`
+	ProbeMs   int64  `json:"probe_ms"`
+	Degraded  bool   `json:"degraded"`
+	probed    bool   // internal: whether ProbeMs was actually measured
 }
+
+// preserveProbe carries probe telemetry forward onto a status that carries none of its own (e.g. a driver
+// refresh between two probes), so the API/UI do not lose virtual IP, latency or degraded state every tick.
+func preserveProbe(st, old Status) Status {
+	if !st.probed {
+		st.ProbeMs = old.ProbeMs
+		st.VirtualIP = old.VirtualIP
+		st.Degraded = old.Degraded
+		st.probed = old.probed
+	}
+	if !st.probed && st.ProbeMs == 0 {
+		st.ProbeMs = -1
+	}
+	return st
+}
+
+// breakerState is the per-network circuit breaker. A breaker that has cooled down is "half-open": Ensure
+// allows one trial, which closes it on success or re-opens it on failure.
+type breakerState struct {
+	name     string
+	openedAt time.Time
+}
+
+// Tunnel states reported to the UI.
+const (
+	StateDown     = "down"
+	StateStarting = "starting"
+	StateUp       = "up"
+	StateError    = "error"
+)
+
+
+// stopGrace is how long a tunnel process gets to exit after SIGINT before it is killed (a var so tests can shorten it).
+var stopGrace = 10 * time.Second
+
+// fastPathTTL bounds how long a dial may trust the cached "up" verdict without re-reading the network row
+// (enabled flag, config). The status loop re-stamps it every tick, so a live tunnel never leaves the hot path.
+const fastPathTTL = 2 * statusLoopTick
+
 
 type childProc struct {
 	cmd      *exec.Cmd
@@ -90,6 +155,9 @@ type Manager struct {
 	paths   map[int64]*Path // dial paths of networks last seen "up": the hot path of Ensure
 	flights map[int64]*flight
 	stopped map[int64]bool // stopped by hand: the status loop leaves them down
+	// breakers is the per-network circuit breaker. Keyed strictly by network_id so one network's
+	// failure never affects another's dial path.
+	breakers map[int64]*breakerState
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -118,6 +186,7 @@ func NewManager(opts Options) *Manager {
 		paths:   map[int64]*Path{},
 		flights: map[int64]*flight{},
 		stopped: map[int64]bool{},
+		breakers: map[int64]*breakerState{},
 		ctx:     ctx,
 		cancel:  cancel,
 	}
@@ -202,11 +271,94 @@ func (m *Manager) pathFor(n Network, iface string, dns []string) *Path {
 	return &Path{NetworkID: n.ID, Name: n.Name, Iface: iface, DNS: dns}
 }
 
+// breaker returns the network's breaker, creating it on first use. Caller holds m.mu.
+func (m *Manager) breaker(id int64) *breakerState {
+	b := m.breakers[id]
+	if b == nil {
+		b = &breakerState{}
+		m.breakers[id] = b
+	}
+	return b
+}
+
+// breakerCooled reports whether an open breaker has passed its cooldown (backoffDelay of the strike
+// count, at least one strike) and may be given one trial (half-open). Caller holds m.mu.
+func (m *Manager) breakerCooled(id int64) bool {
+	b := m.breakers[id]
+	if b == nil || b.openedAt.IsZero() {
+		return false
+	}
+	fails := m.fails[id]
+	if fails < 1 {
+		fails = 1 // a single down/error still gets a full base cooldown
+	}
+	return time.Since(b.openedAt) >= backoffDelay(fails)
+}
+
+// BreakerState reports "closed", "open" or "half-open" for a network. An open breaker that has cooled
+// down is half-open: Ensure lets one trial through.
+func (m *Manager) BreakerState(networkID int64) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.breakerStateLocked(networkID)
+}
+
+// breakerStateLocked is BreakerState with m.mu already held.
+func (m *Manager) breakerStateLocked(networkID int64) string {
+	b := m.breakers[networkID]
+	if b == nil || b.openedAt.IsZero() {
+		return breakerClosed
+	}
+	if m.breakerCooled(networkID) {
+		return breakerHalfOpen
+	}
+	return breakerOpen
+}
+
+// breakerOpen opens (or re-opens with a fresh cooldown) the network's breaker. The name is cached so Ensure
+// can name the network in its fail-fast error without reading the DB. Caller holds m.mu.
+func (m *Manager) breakerOpen(id int64, name string) {
+	b := m.breaker(id)
+	b.name = name
+	b.openedAt = time.Now()
+}
+
+// breakerName returns the cached network name of an open breaker (empty if unknown). Caller holds m.mu.
+func (m *Manager) breakerName(id int64) string {
+	if b := m.breakers[id]; b != nil {
+		return b.name
+	}
+	return ""
+}
+
+// breakerClose closes the network's breaker and clears its strike count. Caller holds m.mu.
+func (m *Manager) breakerClose(id int64) {
+	delete(m.breakers, id)
+}
+
+// breakerTrip is the fail-fast error emitted at the Ensure choke point when the breaker is open.
+func breakerTrip(name string) error {
+	return fmt.Errorf("%w: %s (circuit open)", ErrNetworkDown, name)
+}
+
 // Ensure returns the path a Host dials through, bringing the network up when needed.
 // A nil path means "direct": the Host has no network or has network 0.
 func (m *Manager) Ensure(ctx context.Context, networkID int64) (*Path, error) {
 	if networkID == 0 {
 		return nil, nil
+	}
+	// Circuit breaker: fail fast before any DB read, gate check or bring-up. A half-open breaker lets one
+	// trial through; an open one fails in microseconds with a named error, protecting every caller
+	// (inspection, transfer, key provisioning) without duplicating logic.
+	m.mu.Lock()
+	state := m.breakerStateLocked(networkID)
+	name := m.breakerName(networkID)
+	m.mu.Unlock()
+	if state == breakerOpen {
+		if name == "" {
+			name = fmt.Sprintf("network %d", networkID)
+		}
+		return nil, breakerTrip(name)
 	}
 	if !m.gate() {
 		return nil, ErrGateDisabled
@@ -324,11 +476,14 @@ func (m *Manager) Invalidate(id int64) {
 	defer m.mu.Unlock()
 	delete(m.paths, id)
 	m.fails[id] = 0
+	// A config change invalidates this network only; reset its breaker so the next dial re-reads the row.
+	m.breakerClose(id)
 	if st, ok := m.status[id]; ok {
 		st.CheckedAt = time.Time{}
 		m.status[id] = st
 	}
 }
+
 
 // Forget drops everything held for a deleted network, and stops the process it may still own.
 func (m *Manager) Forget(id int64) {
@@ -342,7 +497,9 @@ func (m *Manager) Forget(id int64) {
 	delete(m.fails, id)
 	delete(m.stopped, id)
 	delete(m.locks, id)
+	delete(m.breakers, id)
 }
+
 
 // Up is the manual bring-up. It overrides the retry backoff and the three-strike cooldown (that is what
 // "retry manually" means) and joins a bring-up already running instead of starting a second one.
@@ -356,6 +513,8 @@ func (m *Manager) Up(ctx context.Context, networkID int64) (Status, error) {
 	}
 	m.mu.Lock()
 	m.fails[n.ID] = 0
+	// Manual Up closes the breaker immediately: "retry manually" overrides the cooldown.
+	m.breakerClose(n.ID)
 	m.mu.Unlock()
 	return m.waitUp(ctx, n, m.startUp(n))
 }
@@ -370,7 +529,9 @@ func (m *Manager) bringUp(ctx context.Context, n Network) (Status, error) {
 	m.mu.Lock()
 	last, fails := m.attempt[n.ID], m.fails[n.ID]
 	m.mu.Unlock()
-	if fails > 0 && time.Since(last) < retryBackoff {
+	// Exponential backoff with jitter replaces the fixed 30s retry. The three-strike cooldown remains as the
+	// upper bound after which auto-up gives up until manual Up or the cooldown expires.
+	if fails > 0 && time.Since(last) < backoffDelay(fails) {
 		err := fmt.Errorf("%w: %s (retrying soon)", ErrNetworkDown, n.Name)
 		return Status{State: StateDown, Err: err.Error()}, err
 	}
@@ -439,7 +600,11 @@ func (m *Manager) Down(ctx context.Context, networkID int64) error {
 	m.fails[n.ID] = 0
 	m.stopped[n.ID] = true
 	delete(m.paths, n.ID)
-	m.status[n.ID] = Status{State: StateDown, Detail: "stopped", CheckedAt: time.Now()}
+	old := m.status[n.ID]
+	st := Status{State: StateDown, Detail: "stopped", CheckedAt: time.Now()}
+	m.status[n.ID] = preserveProbe(st, old)
+	// A manual down is a deliberate path failure: open this network's breaker only.
+	m.breakerOpen(n.ID, n.Name)
 	m.mu.Unlock()
 	_ = m.db.SetVPNNetworkState(n.ID, StateDown, "stopped")
 	return nil
@@ -475,6 +640,63 @@ func (m *Manager) Refresh(ctx context.Context, networkID int64) (Status, error) 
 	return st, nil
 }
 
+// probeIface is the active link-probe implementation. It is a var so unit tests can substitute a fake
+// interface (real interface state is a kernel property and cannot be faked portably).
+var probeIface = ifaceProbe
+
+// Probe is the active interface/link health check. It verifies the tunnel interface exists and carries a
+// usable non-loopback address, measures the elapsed time, refreshes telemetry and returns the status. It is
+// read-only: it never starts a process and never requires the VPN gate. A successful probe closes the
+// network's breaker; a failed one marks the status degraded and opens the breaker.
+func (m *Manager) Probe(ctx context.Context, networkID int64) (Status, error) {
+	select {
+	case <-ctx.Done():
+		return Status{State: StateDown}, ctx.Err()
+	default:
+	}
+	n, err := m.network(networkID)
+	if err != nil {
+		return Status{State: StateDown, Err: err.Error()}, err
+	}
+	iface := m.ifaceFor(n)
+	start := time.Now()
+	ip, ok := probeIface(iface)
+	elapsed := time.Since(start).Milliseconds()
+
+	m.mu.Lock()
+	st := m.status[networkID]
+	m.mu.Unlock()
+
+	st.Iface = iface
+	st.VirtualIP = ip
+	st.ProbeMs = elapsed
+	st.probed = true
+	st.CheckedAt = time.Now()
+
+	if !ok {
+		st.Degraded = true
+		st.State = StateDown
+		st.Detail = "link probe failed: interface missing or has no usable address"
+		m.record(n, st)
+		m.mu.Lock()
+		m.breakerOpen(n.ID, n.Name)
+		m.mu.Unlock()
+		return st, fmt.Errorf("%w: %s: %s", ErrNetworkDown, n.Name, st.Detail)
+	}
+
+	st.Degraded = false
+	// A usable interface is the link-health definition of "up" (the vendor's own state stays in Detail).
+	st.State = StateUp
+	st.Err = ""
+	st.Detail = "link probe ok"
+	m.record(n, st)
+	// A successful probe closes the breaker early (before the cooldown) so dials resume at once.
+	m.mu.Lock()
+	m.breakerClose(n.ID)
+	m.mu.Unlock()
+	return st, nil
+}
+
 // Status returns the cached state (no I/O).
 func (m *Manager) Status(networkID int64) Status {
 	m.mu.Lock()
@@ -482,7 +704,7 @@ func (m *Manager) Status(networkID int64) Status {
 	if st, ok := m.status[networkID]; ok {
 		return st
 	}
-	return Status{State: StateDown}
+	return Status{State: StateDown, ProbeMs: -1}
 }
 
 // ForEach walks every network once, for the background loop and the API list.
@@ -527,14 +749,19 @@ func (m *Manager) record(n Network, st Status) {
 		st.Err = strings.ReplaceAll(st.Err, s, "(redacted)")
 	}
 	m.mu.Lock()
+	st = preserveProbe(st, m.status[n.ID])
 	m.status[n.ID] = st
 	if st.State == StateUp {
 		m.attempt[n.ID] = time.Now()
 		m.paths[n.ID] = m.pathFor(n, st.Iface, st.DNS)
+		// A confirmed up closes the breaker.
+		m.breakerClose(n.ID)
 	} else {
 		delete(m.paths, n.ID)
 	}
 	m.mu.Unlock()
+	// A state transition may change the resolver: drop this network's cached DNS lookups.
+	InvalidateDNS(n.ID, "")
 	_ = m.db.SetVPNNetworkState(n.ID, st.State, strings.TrimSpace(st.Err+" "+st.Detail))
 }
 
@@ -550,6 +777,8 @@ func (m *Manager) setError(n Network, err error) {
 	st.CheckedAt = time.Now()
 	m.status[n.ID] = st
 	delete(m.paths, n.ID)
+	// An error is a path failure: open this network's breaker only.
+	m.breakerOpen(n.ID, n.Name)
 	m.mu.Unlock()
 	m.log("vpn: network %s: %s", n.Name, msg)
 	_ = m.db.SetVPNNetworkState(n.ID, StateError, msg)
@@ -567,7 +796,7 @@ func (m *Manager) spawn(n Network, name string, args ...string) error {
 		return fmt.Errorf("a tunnel process for %s is already running", n.Name)
 	}
 	cmd := exec.Command(name, args...)
-	cmd.Env = m.childEnv()
+	cmd.Env = m.childEnvFor(n)
 	cmd.Dir = n.Root
 	// A daemon's helpers may keep the output pipe open after it exits; Wait must not wait for them forever.
 	cmd.WaitDelay = 3 * time.Second
@@ -732,6 +961,11 @@ func (m *Manager) tick() {
 	used, _ := m.db.CountHostsByNetwork()
 	for _, row := range rows {
 		if !row.Enabled {
+			continue
+		}
+		// An open breaker blocks auto-up: no bring-up, no vendor CLI, no auth/CPU storm during an outage.
+		// Refresh stays cheap (cache work) and keeps the badge fresh; it never starts a process.
+		if m.BreakerState(row.ID) == breakerOpen {
 			continue
 		}
 		ctx, cancel := context.WithTimeout(m.ctx, statusTimeout)

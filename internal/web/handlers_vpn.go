@@ -110,6 +110,11 @@ func (s *Server) handleVPN(w http.ResponseWriter, r *http.Request) {
 				s.handleVPNNetworkLog(w, parts[0])
 				return
 			}
+		case "probe":
+			if r.Method == http.MethodPost {
+				s.handleVPNNetworkProbe(w, r, id)
+				return
+			}
 		}
 		_ = id
 	}
@@ -383,18 +388,30 @@ func (s *Server) handleVPNNetworkList(w http.ResponseWriter) {
 		LastChecked interface{}       `json:"last_checked,omitempty"`
 		LastUpAt    interface{}       `json:"last_up_at,omitempty"`
 		HostsCount  int               `json:"hosts_count"`
+		VirtualIP   string            `json:"virtual_ip"`
+		ProbeMs     int64             `json:"probe_ms"`
+		Degraded    bool              `json:"degraded"`
+		Breaker     string            `json:"breaker"`
 	}
 	out := make([]row, 0, len(rows))
 	for _, n := range rows {
 		state := n.LastState
+		virtualIP := ""
+		probeMs := int64(-1)
+		degraded := false
+		breaker := "closed"
 		if s.vpnMgr != nil {
-			if st := s.vpnMgr.Status(n.ID); st.State != "" {
+			st := s.vpnMgr.Status(n.ID)
+			if st.State != "" {
 				state = st.State
 			}
+			virtualIP, probeMs, degraded = st.VirtualIP, st.ProbeMs, st.Degraded
+			breaker = s.vpnMgr.BreakerState(n.ID)
 		}
 		out = append(out, row{ID: n.ID, Name: n.Name, Driver: n.Driver, Enabled: n.Enabled, AutoUp: n.AutoUp, Iface: n.Iface,
 			Config: redactVPNConfig(n.Driver, n.Config), LastState: state, LastError: n.LastError,
-			LastChecked: n.LastChecked, LastUpAt: n.LastUpAt, HostsCount: counts[n.ID]})
+			LastChecked: n.LastChecked, LastUpAt: n.LastUpAt, HostsCount: counts[n.ID],
+			VirtualIP: virtualIP, ProbeMs: probeMs, Degraded: degraded, Breaker: breaker})
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -530,6 +547,21 @@ func (s *Server) handleVPNNetworkAction(w http.ResponseWriter, r *http.Request, 
 	}
 	s.invalidateTopology()
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// handleVPNNetworkProbe runs a read-only active link health probe. Unlike up/down it does not require the VPN
+// gate: a probe only observes, so it works even while bring-up is disabled. A failed link is data (degraded),
+// not an HTTP failure; only a missing manager is a hard error.
+func (s *Server) handleVPNNetworkProbe(w http.ResponseWriter, r *http.Request, id int64) {
+	if s.vpnMgr == nil {
+		http.Error(w, "vpn manager unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	st, err := s.vpnMgr.Probe(r.Context(), id)
+	if err != nil && st.Err == "" {
+		st.Err = err.Error()
+	}
+	writeJSON(w, http.StatusOK, st)
 }
 
 func (s *Server) handleVPNNetworkLog(w http.ResponseWriter, rawID string) {

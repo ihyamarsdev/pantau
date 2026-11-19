@@ -129,6 +129,25 @@ func (m *Manager) homeDir() string {
 	return m.root
 }
 
+// networkHome is the HOME for a long-lived daemon of one network. Keeping it under that network's root
+// prevents two instances from sharing vendor state (config caches, profiles) via the environment.
+func (m *Manager) networkHome(n Network) string {
+	dir := n.Root + "/home"
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return n.Root
+	}
+	return dir
+}
+
+// childEnvFor is childEnv with a network-specific HOME, for long-lived daemons.
+func (m *Manager) childEnvFor(n Network) []string {
+	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + m.networkHome(n), "LANG=C.UTF-8"}
+	if runtime.GOOS == "windows" {
+		env = []string{"PATH=" + os.Getenv("PATH"), "USERPROFILE=" + m.networkHome(n), "SYSTEMROOT=" + os.Getenv("SYSTEMROOT")}
+	}
+	return env
+}
+
 // runCmd runs a vendor binary (argv, never a shell) and returns its combined output.
 func (m *Manager) runCmd(ctx context.Context, timeout time.Duration, name string, args ...string) (string, error) {
 	cctx, cancel := context.WithTimeout(ctx, timeout)
@@ -214,6 +233,39 @@ func ifaceReady(name string) bool {
 		return false
 	}
 	return true
+}
+
+// ifaceProbe is the active link probe: it verifies the interface exists, is up and carries at least one
+// usable non-loopback address, returning that address. It is deliberately NOT a PID/process check.
+func ifaceProbe(name string) (virtualIP string, ok bool) {
+	if name == "" {
+		return "", false
+	}
+	ifi, err := net.InterfaceByName(name)
+	if err != nil || ifi.Flags&net.FlagUp == 0 {
+		return "", false
+	}
+	addrs, err := ifi.Addrs()
+	if err != nil {
+		return "", false
+	}
+	for _, a := range addrs {
+		var ip net.IP
+		switch v := a.(type) {
+		case *net.IPNet:
+			ip = v.IP
+		case *net.IPAddr:
+			ip = v.IP
+		}
+		if ip == nil || ip.IsLoopback() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() {
+			continue
+		}
+		if ip4 := ip.To4(); ip4 != nil {
+			ip = ip4
+		}
+		return ip.String(), true
+	}
+	return "", false
 }
 
 // jsonBody drops vendor warnings printed before the JSON document (they would break the decoder).

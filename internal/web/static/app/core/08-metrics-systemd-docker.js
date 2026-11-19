@@ -24,12 +24,19 @@ function isHostStale(h) {
 
 function fleetCounts(list) {
   const hosts = list || [];
+  const netById = new Map((S.vpnNetworks || []).map(n => [Number(n.id), n]));
+  const networkDown = hosts.filter(h => {
+    const net = netById.get(Number(h.network_id));
+    if (!net) return false;
+    return (net.last_state && net.last_state !== 'up') || !!net.degraded;
+  }).length;
   return {
     total: hosts.length,
     healthy: hosts.filter(h => h.status === 'healthy').length,
     drift: hosts.filter(h => h.status === 'degraded' || h.drift).length,
     down: hosts.filter(h => h.status === 'down').length,
-    stale: hosts.filter(h => isHostStale(h)).length
+    stale: hosts.filter(h => isHostStale(h)).length,
+    network_down: networkDown
   };
 }
 
@@ -88,7 +95,7 @@ function renderKpiStrip(hosts) {
   const container = document.getElementById('kpiStrip');
   if (!container) return;
   const list = hosts || S.allRawHosts || [];
-  const { total, healthy, drift, down, stale } = fleetCounts(list);
+  const { total, healthy, drift, down, stale, network_down } = fleetCounts(list);
 
   let totalRamPct = 0;
   let ramCount = 0;
@@ -146,6 +153,14 @@ function renderKpiStrip(hosts) {
       </div>
       <div class="kpi-tile-value" style="color: ${stale > 0 ? 'var(--warning)' : 'var(--text-muted)'};">${stale}</div>
       <div class="kpi-tile-sub">${t('kpi_stale_sub', 'Not inspected recently')}</div>
+    </div>
+    <div class="kpi-tile ${currentFilter === 'network_down' ? 'active' : ''}" onclick="setKpiFilter('network_down')" title="${t('host_network_down', 'Network down')}">
+      <div class="kpi-tile-header">
+        <span>${t('host_network_down', 'Network down')}</span>
+        <span class="kpi-dot drift"></span>
+      </div>
+      <div class="kpi-tile-value" style="color: ${network_down > 0 ? 'var(--warning)' : 'var(--text-muted)'};">${network_down}</div>
+      <div class="kpi-tile-sub">${network_down > 0 ? t('kpi_network_down_sub', 'Tunnel path unavailable') : t('kpi_network_paths_ok', 'All paths up')}</div>
     </div>
     <div class="kpi-tile" onclick="setKpiFilter('all')" title="${t('kpi_resources_title', 'Fleet resource usage')}">
       <div class="kpi-tile-header">

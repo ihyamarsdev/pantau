@@ -126,7 +126,7 @@ func agentToolDomain(name string) toolDomain {
 		return domainSecurity
 	case strings.HasPrefix(name, "docker_"), strings.HasPrefix(name, "kube_"), name == "dockerhub_search":
 		return domainInfra
-	case strings.HasPrefix(name, "cf_"), name == "vpn_networks", name == "net_diag",
+	case strings.HasPrefix(name, "cf_"), name == "vpn_networks", name == "vpn_network_action", name == "net_diag",
 		name == "firewall_action", name == "domain_config_remove", name == "fleet_forwards":
 		return domainNetwork
 	case strings.HasPrefix(name, "ansible_"), strings.HasPrefix(name, "tf_"), name == "gateway_cli",

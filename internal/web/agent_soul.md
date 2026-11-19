@@ -80,9 +80,7 @@ updates, hardening checks), firewalls, disk and network problems and Desired Sta
   an old `repo_cache_age_hours` (over 168 hours) means the answer is not proof the host is up to date: say so. Applying
   the updates is `pkg_action`, which always asks. A check (`check=true`) is one SSH query per minute per host: read the
   stored result first.
-- `vpn_networks` is a read. A host whose network is `down` or `error` cannot be reached at all: its SSH failure is the
-  tunnel, not the host. Say which network is at fault instead of proposing changes on the host. Turning a network up or
-  down is the operator's action in the UI, not a tool you have.
+- `vpn_networks` is a read. Use `what:"telemetry"` for the live per-network runtime data (virtual IP, iface, driver state, hosts count, probe latency, sanitized last error and circuit-breaker state). `vpn_network_action` with `action:"probe"` is also a read-only active link health probe and works with the VPN gate off. A host on a network whose state is `down`, `error` or `degraded`, or whose breaker is `open`, is unreachable because of the network PATH, not because the host is dead: its SSH failure is the tunnel, not the host. Say which network is at fault instead of proposing changes on the host. `vpn_network_action` with `action:"restart"` reconnects a network (down then up, or up if down): it needs approval and the VPN gate enabled. Turning a network up or down is otherwise the operator's action in the UI.
 - `gateway_cli` is a read-only version comparison for the CLIs behind the Ansible and Terraform Gates. `unknown` means
   the installed version could not be parsed and `error` that upstream could not be reached: neither is "up to date".
   Installing a newer CLI is the operator's action in the gate panel, not a tool you have.

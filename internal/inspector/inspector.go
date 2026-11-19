@@ -100,9 +100,45 @@ func (ins *Inspector) netPath(h *store.Host) (*vpnnet.Path, error) {
 	defer cancel()
 	path, err := ins.paths.Ensure(ctx, h.NetworkID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: network down: %v", sshrunner.ErrNetworkUnavailable, err)
+		return nil, &networkDownError{Name: ins.networkName(h), cause: err}
 	}
 	return path, nil
+}
+
+// networkName resolves the VPN network's name for the machine-readable "network down: <name>"
+// marker. It never fails an inspection: a missing/unreadable row falls back to the numeric ID.
+func (ins *Inspector) networkName(h *store.Host) string {
+	if h == nil || h.NetworkID == 0 || ins.db == nil {
+		return "direct"
+	}
+	if n, err := ins.db.GetVPNNetwork(h.NetworkID); err == nil && n != nil && n.Name != "" {
+		return n.Name
+	}
+	return fmt.Sprintf("id=%d", h.NetworkID)
+}
+
+// networkDownError marks a failed VPN path. It wraps ErrNetworkUnavailable so callers keep using
+// errors.Is, and carries the exact network name so the "network down: <name>" marker is built from
+// a field rather than parsed back out of formatted text.
+type networkDownError struct {
+	Name  string
+	cause error
+}
+
+func (e *networkDownError) Error() string {
+	return fmt.Sprintf("%v: network down: %s: %v", sshrunner.ErrNetworkUnavailable, e.Name, e.cause)
+}
+
+func (e *networkDownError) Unwrap() error { return sshrunner.ErrNetworkUnavailable }
+
+// networkDownMarker returns the canonical "network down: <name>" marker. When err came from
+// netPath it uses the typed name; otherwise it falls back to the supplied name.
+func networkDownMarker(err error, fallbackName string) string {
+	var nde *networkDownError
+	if errors.As(err, &nde) && nde.Name != "" {
+		return "network down: " + nde.Name
+	}
+	return "network down: " + fallbackName
 }
 
 // IsInspecting reports whether an inspection is currently in-flight for the given host.
@@ -169,8 +205,14 @@ func (ins *Inspector) InspectHostWithTimeout(hostID int64, timeout time.Duration
 		networkDown := errors.Is(err, sshrunner.ErrNetworkUnavailable)
 		host.Status = "down"
 		summary := "SSH connection failed"
+		details := err.Error()
 		if networkDown {
-			summary = "Network path unavailable"
+			// Machine-readable marker "network down: <name>" is shared with the API and the
+			// /api/hosts/{id}/test toast. It makes the classification explicit so alerting can
+			// tell a path failure apart from a dead Host.
+			marker := networkDownMarker(err, ins.networkName(host))
+			summary = "Network path unavailable: " + marker
+			details = marker + ": " + err.Error()
 		}
 		host.LastDurationMs = duration
 		host.LifecycleNotes = fmt.Sprintf("%s: %v", summary, err)
@@ -181,13 +223,18 @@ func (ins *Inspector) InspectHostWithTimeout(hostID int64, timeout time.Duration
 			DurationMs: duration,
 			Status:     host.Status,
 			Summary:    summary,
-			Details:    err.Error(),
+			Details:    details,
 		})
 		if networkDown {
-			logger.Warn("inspect", host.Name, summary, "duration_ms", duration, "details", err.Error())
+			logger.Warn("inspect", host.Name, summary, "duration_ms", duration, "details", details)
 		} else {
 			logger.Error("inspect", host.Name, "SSH connection failed: "+err.Error(), "duration_ms", duration)
 		}
+		// Network-path failure is ONE infrastructure event shared by every Host behind the
+		// network. It is deliberately NOT a per-host alert: no db.CreateAlert, no
+		// notifier.SendAlert and no notify.SendEvent belong on this path. Any future alert
+		// emitter must stay below this early-return guard, or a single VPN drop fans out into
+		// one alert per Host (the exact false-positive storm section 7 suppresses).
 		return err
 	}
 	defer runner.Close()

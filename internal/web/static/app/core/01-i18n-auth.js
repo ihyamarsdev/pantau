@@ -374,6 +374,15 @@ function initDashboardToolbar() {
   const sortSelect = document.getElementById('sortSelect');
   const clearBtn = document.getElementById('clearSearchBtn');
 
+  // Network-down is a path condition, not a host status; the static markup
+  // predates it, so inject the option once here for the KPI filter to select.
+  if (statusSelect && !statusSelect.querySelector('option[value="network_down"]')) {
+    const opt = document.createElement('option');
+    opt.value = 'network_down';
+    opt.setAttribute('data-i18n', 'host_network_down');
+    opt.textContent = t('host_network_down', 'Network down');
+    statusSelect.appendChild(opt);
+  }
   if (statusSelect && prefs.statusFilter) statusSelect.value = prefs.statusFilter;
   if (sortSelect && prefs.sortBy) sortSelect.value = prefs.sortBy;
   updateViewModeButtons(prefs.viewMode || 'list');
@@ -429,6 +438,9 @@ function hostStateClass(status) {
   if (s === 'healthy') return 'healthy';
   if (s === 'down') return 'down';
   if (s === 'degraded' || s === 'drift') return 'degraded';
+  // Network-down is a path condition, not a host status. Map it to an existing
+  // CSS class so the four real host-status classes stay unchanged.
+  if (s === 'network_down') return 'degraded';
   return 'unknown';
 }
 
@@ -451,6 +463,12 @@ function getFilteredAndSortedHosts() {
   if (statusVal && statusVal !== 'all') {
     if (statusVal.toLowerCase() === 'stale') {
       list = list.filter(h => isHostStale(h));
+    } else if (statusVal === 'network_down') {
+      const netById = new Map((S.vpnNetworks || []).map(n => [Number(n.id), n]));
+      list = list.filter(h => {
+        const net = netById.get(Number(h.network_id));
+        return !!net && ((net.last_state && net.last_state !== 'up') || !!net.degraded);
+      });
     } else {
       list = list.filter(h => (h.status || '').toLowerCase() === statusVal.toLowerCase());
     }

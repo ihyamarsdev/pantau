@@ -1,17 +1,24 @@
 package inspector
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"pantau/internal/notify"
 	"pantau/internal/sshrunner"
 	"pantau/internal/store"
+	"pantau/internal/vpnnet"
 )
 
 func TestParseFree_ModernWithSwap(t *testing.T) {
@@ -161,45 +168,6 @@ func TestInspectHost_TimeoutAbortsRunner(t *testing.T) {
 	}
 	if h.Status != "degraded" {
 		t.Fatalf("a host that answered SSH must stay reachable on a blown budget, got status %q", h.Status)
-	}
-}
-
-func TestInspectHost_NetworkPathFailureKeepsLastState(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "pantau-ins-path-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-
-	hostID, err := db.CreateHost(&store.Host{Name: "Tunnel Host", Host: "100.100.20.7", Port: 22, User: "root"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// A tunnel that cannot reach the peer is a dead path, not a dead Host.
-	factory := func(sshrunner.Target) (sshrunner.Runner, error) {
-		return nil, fmt.Errorf("%w: no route to host", sshrunner.ErrNetworkUnavailable)
-	}
-
-	if err := New(db, factory, nil).InspectHost(hostID); err == nil {
-		t.Fatal("expected the inspection to fail")
-	}
-
-	h, err := db.GetHost(hostID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if h.Status != "down" {
-		t.Fatalf("expected status 'down' for a path failure, got %q", h.Status)
-	}
-	if !strings.Contains(h.LifecycleNotes, "Network path unavailable") {
-		t.Fatalf("expected the notes to name the path, got %q", h.LifecycleNotes)
 	}
 }
 
@@ -1063,5 +1031,221 @@ func TestParseNetworkMetricsListeningServiceNames(t *testing.T) {
 		if p.Process != want[p.Port] {
 			t.Errorf("port %s: expected service %q, got %q", p.Port, want[p.Port], p.Process)
 		}
+	}
+}
+
+// fakeResolver is the test double for the VPN path resolver. It records every Ensure call so tests
+// can assert the inspector does not re-resolve a downed network needlessly.
+type fakeResolver struct {
+	mu    sync.Mutex
+	err   error
+	path  *vpnnet.Path
+	calls int
+}
+
+func (f *fakeResolver) Ensure(_ context.Context, networkID int64) (*vpnnet.Path, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.path != nil {
+		return f.path, nil
+	}
+	return &vpnnet.Path{NetworkID: networkID, Name: "test-net"}, nil
+}
+
+func (f *fakeResolver) callCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
+}
+
+// TestInspectHost_NetworkDownRecordsMarkerNoAlerts asserts section 7's backend contract: a
+// resolver failure is classified with the exact "network down: <name>" marker, the Host stays
+// "down", and NO per-host alert or notification is emitted.
+func TestInspectHost_NetworkDownRecordsMarkerNoAlerts(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "pantau-ins-netdown-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	netID, err := db.CreateVPNNetwork(&store.VPNNetwork{
+		Name: "netbird-prod", Driver: "netbird", Enabled: true, AutoUp: true, Config: "{}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostID, err := db.CreateHost(&store.Host{
+		Name: "Tunneled Host", Host: "100.100.20.7", Port: 22, User: "root", NetworkID: netID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Configure every notification channel against a capture server. Any SendAlert/SendEvent on
+	// this path would show up as an HTTP request; there must be none.
+	var notified atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		notified.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	for _, key := range []string{"webhook_url", "ntfy_url", "slack_webhook_url", "discord_webhook_url"} {
+		if err := db.SetSetting(key, srv.URL+"/hook"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	resolver := &fakeResolver{err: errors.New("tunnel interface missing")}
+	factory := func(sshrunner.Target) (sshrunner.Runner, error) {
+		t.Fatal("runner factory must not be called when the network path is down")
+		return nil, nil
+	}
+	ins := New(db, factory, notify.New(db))
+	ins.SetPathResolver(resolver)
+
+	if err := ins.InspectHost(hostID); err == nil {
+		t.Fatal("expected the inspection to fail on a downed network")
+	}
+
+	const wantMarker = "network down: netbird-prod"
+
+	h, err := db.GetHost(hostID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.Status != "down" {
+		t.Fatalf("expected host status 'down' on a path failure, got %q", h.Status)
+	}
+	if !strings.Contains(h.LifecycleNotes, wantMarker) {
+		t.Fatalf("expected notes to contain %q, got %q", wantMarker, h.LifecycleNotes)
+	}
+
+	runs, err := db.ListInspectionRuns(hostID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("expected 1 inspection run, got %d", len(runs))
+	}
+	if !strings.Contains(runs[0].Summary, wantMarker) || !strings.Contains(runs[0].Details, wantMarker) {
+		t.Fatalf("expected run summary/details to contain %q, got summary=%q details=%q", wantMarker, runs[0].Summary, runs[0].Details)
+	}
+
+	alerts, err := db.ListActiveAlerts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(alerts) != 0 {
+		t.Fatalf("network-path failure must not create per-host alerts, got %d", len(alerts))
+	}
+	// Give any (erroneous) async notification a moment to arrive before asserting none fired.
+	time.Sleep(50 * time.Millisecond)
+	if got := notified.Load(); got != 0 {
+		t.Fatalf("network-path failure must not send notifications, got %d", got)
+	}
+}
+
+// TestInspectHost_ThreeHostsOneDownedNetwork asserts that one VPN drop does not fan out into
+// per-host alerts and that the inspector resolves each Host's path once (no redundant re-resolve).
+// There is intentionally no cross-host resolver cache in the inspector: singleflight/breaker
+// coalescing belongs to vpnnet.Manager (covered in its own package). Here we assert the current
+// one-Ensure-per-host behaviour and that all three runs carry the marker with zero alerts.
+func TestInspectHost_ThreeHostsOneDownedNetwork(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "pantau-ins-netdown-multi-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	netID, err := db.CreateVPNNetwork(&store.VPNNetwork{
+		Name: "wg-site-a", Driver: "wireguard", Enabled: true, AutoUp: true, Config: "{}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var notified atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		notified.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	for _, key := range []string{"webhook_url", "ntfy_url", "slack_webhook_url", "discord_webhook_url"} {
+		if err := db.SetSetting(key, srv.URL+"/hook"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	resolver := &fakeResolver{err: errors.New("peer unreachable")}
+	factory := func(sshrunner.Target) (sshrunner.Runner, error) {
+		t.Fatal("runner factory must not be called when the network path is down")
+		return nil, nil
+	}
+	ins := New(db, factory, notify.New(db))
+	ins.SetPathResolver(resolver)
+
+	hostIDs := make([]int64, 0, 3)
+	for i := range 3 {
+		id, err := db.CreateHost(&store.Host{
+			Name: fmt.Sprintf("Host %d", i+1), Host: fmt.Sprintf("10.9.0.%d", i+2),
+			Port: 22, User: "root", NetworkID: netID,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		hostIDs = append(hostIDs, id)
+	}
+
+	for _, id := range hostIDs {
+		if err := ins.InspectHost(id); err == nil {
+			t.Fatalf("expected inspection of host %d to fail on a downed network", id)
+		}
+	}
+
+	const wantMarker = "network down: wg-site-a"
+	for _, id := range hostIDs {
+		h, err := db.GetHost(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if h.Status != "down" {
+			t.Errorf("host %d: expected status 'down', got %q", id, h.Status)
+		}
+		if !strings.Contains(h.LifecycleNotes, wantMarker) {
+			t.Errorf("host %d: expected notes to contain %q, got %q", id, wantMarker, h.LifecycleNotes)
+		}
+	}
+
+	// One Ensure per Host (no cross-host cache in the inspector). Coalescing is the manager's job.
+	if got := resolver.callCount(); got != len(hostIDs) {
+		t.Fatalf("expected exactly one Ensure per host (%d), got %d", len(hostIDs), got)
+	}
+
+	alerts, err := db.ListActiveAlerts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(alerts) != 0 {
+		t.Fatalf("one VPN drop must not create 3 per-host alerts, got %d", len(alerts))
+	}
+	time.Sleep(50 * time.Millisecond)
+	if got := notified.Load(); got != 0 {
+		t.Fatalf("one VPN drop must not send per-host notifications, got %d", got)
 	}
 }

@@ -18,7 +18,7 @@ import (
 
 // TestAgentRecentToolsRegistered: every tool is registered with an object schema and a description.
 func TestAgentRecentToolsRegistered(t *testing.T) {
-	want := []string{"cf_dns_export", "cf_token_verify", "vpn_networks", "pkg_updates", "gateway_cli", "repo_branch"}
+	want := []string{"cf_dns_export", "cf_token_verify", "vpn_networks", "vpn_network_action", "pkg_updates", "gateway_cli", "repo_branch"}
 	have := map[string]agentTool{}
 	for _, tl := range agentTools {
 		if _, dup := have[tl.Name]; dup {
@@ -132,6 +132,52 @@ func TestAgentVPNNetworks(t *testing.T) {
 	}
 	if out, isErr := callTool(t, srv, "vpn_networks", `{"what":"nope"}`); !isErr || !strings.Contains(out, "what must be") {
 		t.Fatalf("bad what: %s", out)
+	}
+
+	if out, isErr := callTool(t, srv, "vpn_networks", `{"what":"telemetry"}`); isErr || !strings.Contains(out, "telemetry") || !strings.Contains(out, "office") {
+		t.Fatalf("telemetry: %s", out)
+	} else {
+		// The enriched runtime fields must be present, and the config secret must never leak.
+		for _, key := range []string{"virtual_ip", "probe_ms", "degraded", "breaker", "hosts_count", "last_error"} {
+			if !strings.Contains(out, `"`+key+`"`) {
+				t.Fatalf("telemetry is missing %s: %s", key, out)
+			}
+		}
+		if strings.Contains(out, "s3cret") {
+			t.Fatalf("telemetry must not leak the config secret: %s", out)
+		}
+	}
+}
+
+// TestAgentVPNNetworkAction: probe is a read that needs no manager (graceful when one is absent); the schema
+// refuses unknown actions and a missing id before any request. No real VPN is needed for these read paths.
+func TestAgentVPNNetworkAction(t *testing.T) {
+	srv, db, cleanup := setupTestServer(t)
+	defer cleanup()
+	_ = db.SetSetting("agent_enabled", "1")
+
+	// With no manager wired, probe reports the condition rather than panicking or hanging on a gate.
+	if out, isErr := callTool(t, srv, "vpn_network_action", `{"network_id":1,"action":"probe"}`); !isErr || !strings.Contains(out, "vpn manager unavailable") {
+		t.Fatalf("probe without manager: %s", out)
+	}
+	// Bad action is refused by the schema before any request (no approval, no manager needed).
+	if out, isErr := callTool(t, srv, "vpn_network_action", `{"network_id":1,"action":"destroy"}`); !isErr {
+		t.Fatalf("bad action must be refused: %s", out)
+	}
+	// Missing id is refused by the tool.
+	if out, isErr := callTool(t, srv, "vpn_network_action", `{"action":"probe"}`); !isErr || !strings.Contains(out, "network_id") {
+		t.Fatalf("missing network id: %s", out)
+	}
+	// The action tool is a controlled change and carries a gate (unlike the read tools).
+	have := map[string]agentTool{}
+	for _, tl := range agentTools {
+		have[tl.Name] = tl
+	}
+	if have["vpn_network_action"].gate != gateRoutine {
+		t.Fatalf("vpn_network_action must carry the routine gate")
+	}
+	if agentToolDomain("vpn_network_action") != domainNetwork {
+		t.Fatalf("vpn_network_action must be in the network domain")
 	}
 }
 

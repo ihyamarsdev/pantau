@@ -267,7 +267,7 @@ function renderGridView(grid, isManualSort) {
               <span class="status-dot ${hostStateClass(h.status)}" title="${h.status || 'unknown'}"></span>
               <span class="host-card-name">${escapeHtml(h.name)}</span>
               ${h.group_name ? `<span class="badge" style="font-size: var(--fs-xs); background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--card-border);">${escapeHtml(h.group_name)}</span>` : ''}
-              ${(() => { const net = (S.vpnNetworks || []).find(n => Number(n.id) === Number(h.network_id)); if (!net) return ''; const bad = net.last_state && net.last_state !== 'up'; return `<span class="badge" style="font-size: var(--fs-xs);${bad ? 'background: var(--danger-soft); color: var(--danger);' : ''}" title="${escapeHtml(t('host_network', 'Network (VPN / Tunnel)'))}">${svgIcon('shield', 'icon-xs')} ${escapeHtml(net.name)}</span>`; })()}
+              ${hostNetworkBadgeHtml(h)}
             </div>
             <div class="host-card-sub">${hostIpCopyHtml(h.host)}:${h.port} <span style="opacity: 0.7;">(${escapeHtml(h.user)})</span></div>
           </div>
@@ -545,6 +545,7 @@ function renderListView(listContainer, isManualSort) {
           <div style="display: flex; flex-direction: column; gap: 2px;">
             <b style="color: var(--text);">${escapeHtml(h.name)}</b>
             <span class="mono text-muted" style="font-size: var(--fs-xs);">${hostIpCopyHtml(h.host)}:${h.port}</span>
+            <span style="display: inline-flex; gap: 4px; align-items: center;">${hostNetworkBadgeHtml(h)}</span>
           </div>
         </td>
         <td>
@@ -968,6 +969,19 @@ function vpnBadge(state) {
   return `<span class="badge ${cls}">${escapeHtml(state || 'down')}</span>`;
 }
 
+// A network-path failure is not a dead host: show a distinct, non-red badge
+// that names the network instead of implying the server itself is down.
+function hostNetworkBadgeHtml(h) {
+  const net = (S.vpnNetworks || []).find(n => Number(n.id) === Number(h.network_id));
+  if (!net) return '';
+  const down = !!(net.last_state && net.last_state !== 'up');
+  if (down) {
+    const label = t('host_network_down', 'Network down');
+    return `<span class="badge badge-warning" style="font-size: var(--fs-xs);" title="${escapeHtml(label + ': ' + (net.name || ''))}">${svgIcon('shield', 'icon-xs')} ${escapeHtml(label)}: ${escapeHtml(net.name)}</span>`;
+  }
+  return `<span class="badge" style="font-size: var(--fs-xs);" title="${escapeHtml(t('host_network', 'Network (VPN / Tunnel)'))}">${svgIcon('shield', 'icon-xs')} ${escapeHtml(net.name)}</span>`;
+}
+
 async function loadVpnNetworks() {
   const box = document.getElementById('vpnNetworkList');
   if (!box) return;
@@ -995,24 +1009,40 @@ async function loadVpnNetworks() {
     box.innerHTML = `<div class="empty-state"><div class="empty-state-desc">${escapeHtml(t('vpn_no_networks', 'No networks yet. Add one per VPN or tunnel your private hosts live in.'))}</div></div>`;
     return;
   }
-  box.innerHTML = S.vpnNetworks.map(n => `
+  const breakerLabels = {
+    open: t('vpn_breaker_open', 'Circuit open'),
+    closed: t('vpn_breaker_closed', 'Closed'),
+    'half-open': t('vpn_breaker_half_open', 'Half-open'),
+  };
+  box.innerHTML = S.vpnNetworks.map(n => {
+    const latency = (n.probe_ms === -1 || n.probe_ms === undefined || n.probe_ms === null)
+      ? '—'
+      : `${n.probe_ms} ms`;
+    const breaker = breakerLabels[n.breaker] || escapeHtml(n.breaker || '');
+    return `
     <div class="card" style="flex-direction:row;align-items:center;justify-content:space-between;gap:12px;${n.enabled ? '' : 'opacity:.6;'}">
       <div style="min-width:0;">
         <b>${escapeHtml(n.name)}</b>
         <span class="badge mono">${escapeHtml(n.driver)}${n.driver === 'netbird' && n.config && n.config.mode === 'instance' ? ':instance' : ''}</span>
         ${vpnBadge(n.last_state)}
+        ${n.degraded ? `<span class="badge badge-degraded">${escapeHtml(t('vpn_degraded', 'Degraded'))}</span>` : ''}
         <span class="badge">${n.hosts_count} host${n.hosts_count === 1 ? '' : 's'}</span>
         ${n.iface ? `<span class="badge mono">${escapeHtml(n.iface)}</span>` : ''}
+        <span class="badge mono" title="${escapeHtml(t('vpn_virtual_ip', 'Virtual IP'))}">${escapeHtml(t('vpn_virtual_ip', 'Virtual IP'))}: ${n.virtual_ip ? escapeHtml(n.virtual_ip) : '—'}</span>
+        <span class="badge mono" title="${escapeHtml(t('vpn_latency', 'Latency'))}">${escapeHtml(t('vpn_latency', 'Latency'))}: ${latency}</span>
+        <span class="badge" title="${escapeHtml(t('vpn_breaker_closed', 'Breaker'))}">${svgIcon('shield', 'icon-xs')} ${breaker}</span>
         <div style="font-size:var(--fs-xs);color:var(--text-muted);">${escapeHtml(n.last_error || '')}</div>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0;">
-        <button type="button" class="btn btn-sm" onclick="vpnNetworkUp(${n.id})">${escapeHtml(t('vpn_up', 'Up'))}</button>
+        <button type="button" class="btn btn-sm" onclick="vpnNetworkProbe(${n.id})">${escapeHtml(t('vpn_probe', 'Probe'))}</button>
+        <button type="button" class="btn btn-sm" onclick="vpnNetworkUp(${n.id})">${escapeHtml(t('vpn_reconnect', 'Reconnect'))}</button>
         <button type="button" class="btn btn-sm" onclick="vpnNetworkDown(${n.id})">${escapeHtml(t('vpn_down', 'Down'))}</button>
         <button type="button" class="btn btn-sm" onclick="openVpnNetworkLog(${n.id})">${escapeHtml(t('vpn_log', 'Log'))}</button>
         <button type="button" class="btn btn-sm" onclick="openVpnNetworkModal(${n.id})">${svgIcon('pencil', 'icon-xs')} ${escapeHtml(t('edit', 'Edit'))}</button>
         <button type="button" class="btn btn-icon btn-sm" onclick="deleteVpnNetwork(${n.id})">${svgIcon('trash-2', 'icon-xs')}</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 async function saveVpnGate(on) {
@@ -1150,6 +1180,18 @@ async function vpnNetworkUp(id) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) { showToast(t('vpn_up_failed', 'Bring-up failed: ') + (data.error || res.status), 'error'); }
   else { showToast(t('vpn_up_ok', 'Tunnel up'), 'success'); }
+  loadVpnNetworks();
+}
+
+async function vpnNetworkProbe(id) {
+  const res = await fetch('/api/vpn/networks/' + id + '/probe', { method: 'POST' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    showToast(t('vpn_probe_failed', 'Probe failed: ') + (data.error || res.status), 'error');
+  } else {
+    const latency = (data.probe_ms === -1 || data.probe_ms === undefined || data.probe_ms === null) ? '—' : data.probe_ms + ' ms';
+    showToast(t('vpn_probe_ok', 'Probe complete') + ' · ' + latency, 'success');
+  }
   loadVpnNetworks();
 }
 
@@ -1939,6 +1981,11 @@ async function inspectHost(id, e, quietCooldown) {
       showToast(data.error || t('inspect_in_flight', 'Inspection is already in progress for this host'), 'warning');
     } else if (res.status === 429 || data.cooldown) {
       if (!quietCooldown) showToast(data.error || t('inspect_cooldown', 'Host was recently inspected. Please wait a moment.'), 'warning');
+    } else if (typeof data.error === 'string' && data.error.includes('network down:')) {
+      // A network-path failure is ONE infrastructure event shared by every Host
+      // behind the tunnel. Emit no per-host alert/notification: the Network-down
+      // badge and KPI already report it. Just refresh so they reflect the state.
+      loadHosts();
     } else {
       showToast(t('inspect_failed', 'Inspection failed: ') + (data.error || 'Unknown error'), 'error');
     }
@@ -2029,4 +2076,4 @@ function openTerminalForPath(targetPath) {
   openTerminalForHost(S.currentHost.id, null, true, customTitle, targetPath);
 }
 
-export { renderHosts, openHostGroupRename, saveHostGroupRename, groupHosts, getHostGroupsCollapsed, toggleHostGroupCollapsed, renderGridView, renderListView, fitHostList, setEngineStatus, updateFooterMetrics, loadVpnNetworkIndex, populateHostNetworkSelect, loadHosts, toggleAlertOverlay, closeAlertOverlay, renderAlertOverlayState, loadAlerts, loadAlertTriage, applyTriageRemediation, loadDailyBriefing, generateDailyBriefing, ackAlert, ackAllAlerts, openHostDetailFromAlert, populateHostKeySelect, vpnBadge, loadVpnNetworks, saveVpnGate, vpnDriverField, openVpnNetworkModal, loadVpnInterfaces, renderVpnDriverFields, collectVpnConfig, saveVpnNetwork, deleteVpnNetwork, vpnNetworkUp, vpnNetworkDown, openVpnNetworkLog, onHostKeySelectChange, openAddHostModal, openEditHostModal, updateGroupSuggestions, saveHost, openCommissionDateModal, importFill, importReasonText, openImportHostsModal, importLoadFile, importRequestPreview, importParse, importReadServer, populateImportKeySelect, importBulkNetworkChanged, populateImportNetworkSelect, importInspectCreated, renderImportPreview, importNetworkPicked, importableBoxes, updateImportCount, importToggleAll, importSubmit, showImportGroupsStep, refreshImportGroupSuggestions, importSaveGroups, submitQuickCommissionDate, clearCommissionDate, showToast, showBusyToast, toggleDropdown, closeAllDropdowns, openInjectKeyModal, submitInjectKey, deleteHost, toggleHostSelectMode, toggleHostSelected, selectAllShownHosts, renderHostSelectBar, openBulkGroupModal, submitBulkGroup, deleteSelectedHosts, testHostSSH, inspectHost, applyHostDetailMaximizeState, toggleHostDetailMaximize, getHostActiveTab, setHostActiveTab, getHostFilesPath, setHostFilesPath, openTerminalForPath };
+export { renderHosts, openHostGroupRename, saveHostGroupRename, groupHosts, getHostGroupsCollapsed, toggleHostGroupCollapsed, renderGridView, renderListView, fitHostList, setEngineStatus, updateFooterMetrics, loadVpnNetworkIndex, populateHostNetworkSelect, loadHosts, toggleAlertOverlay, closeAlertOverlay, renderAlertOverlayState, loadAlerts, loadAlertTriage, applyTriageRemediation, loadDailyBriefing, generateDailyBriefing, ackAlert, ackAllAlerts, openHostDetailFromAlert, populateHostKeySelect, vpnBadge, hostNetworkBadgeHtml, loadVpnNetworks, saveVpnGate, vpnDriverField, openVpnNetworkModal, loadVpnInterfaces, renderVpnDriverFields, collectVpnConfig, saveVpnNetwork, deleteVpnNetwork, vpnNetworkUp, vpnNetworkProbe, vpnNetworkDown, openVpnNetworkLog, onHostKeySelectChange, openAddHostModal, openEditHostModal, updateGroupSuggestions, saveHost, openCommissionDateModal, importFill, importReasonText, openImportHostsModal, importLoadFile, importRequestPreview, importParse, importReadServer, populateImportKeySelect, importBulkNetworkChanged, populateImportNetworkSelect, importInspectCreated, renderImportPreview, importNetworkPicked, importableBoxes, updateImportCount, importToggleAll, importSubmit, showImportGroupsStep, refreshImportGroupSuggestions, importSaveGroups, submitQuickCommissionDate, clearCommissionDate, showToast, showBusyToast, toggleDropdown, closeAllDropdowns, openInjectKeyModal, submitInjectKey, deleteHost, toggleHostSelectMode, toggleHostSelected, selectAllShownHosts, renderHostSelectBar, openBulkGroupModal, submitBulkGroup, deleteSelectedHosts, testHostSSH, inspectHost, applyHostDetailMaximizeState, toggleHostDetailMaximize, getHostActiveTab, setHostActiveTab, getHostFilesPath, setHostFilesPath, openTerminalForPath };
