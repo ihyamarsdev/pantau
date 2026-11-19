@@ -91,6 +91,7 @@ func (d *DB) migrate() error {
 		kube_mode TEXT NOT NULL DEFAULT 'full',
 		geo_lat REAL DEFAULT 0,
 		geo_lon REAL DEFAULT 0,
+		geo_region TEXT DEFAULT '',
 		geo_label TEXT DEFAULT ''
 	);
 
@@ -98,6 +99,7 @@ func (d *DB) migrate() error {
 	CREATE TABLE IF NOT EXISTS geoip_cache (
 		ip TEXT PRIMARY KEY,
 		lat REAL NOT NULL DEFAULT 0,
+		region TEXT NOT NULL DEFAULT '',
 		lon REAL NOT NULL DEFAULT 0,
 		city TEXT NOT NULL DEFAULT '',
 		country_code TEXT NOT NULL DEFAULT '',
@@ -734,6 +736,8 @@ func (d *DB) migrate() error {
 	_ = d.alterAddColumn("hosts", "geo_lat", "REAL DEFAULT 0")
 	_ = d.alterAddColumn("hosts", "geo_lon", "REAL DEFAULT 0")
 	_ = d.alterAddColumn("hosts", "geo_label", "TEXT DEFAULT ''")
+	_ = d.alterAddColumn("hosts", "geo_region", "TEXT DEFAULT ''")
+	_ = d.alterAddColumn("geoip_cache", "region", "TEXT NOT NULL DEFAULT ''")
 	_, _ = d.Exec(`CREATE INDEX IF NOT EXISTS idx_hosts_network ON hosts(network_id)`)
 	// A note may be scoped to a cluster or a functional domain as well as to a host (all optional, '' = none).
 	_ = d.alterAddColumn("agent_memory", "cluster_id", "INTEGER")

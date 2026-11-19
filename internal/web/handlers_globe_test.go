@@ -48,14 +48,14 @@ func TestGlobeRejectsPost(t *testing.T) {
 	}
 }
 
-func TestGlobeReturnsNodesAndFlows(t *testing.T) {
+func TestGlobeReturnsNodesAndLinks(t *testing.T) {
 	srv, cookie := globeTestServer(t)
 	db := srv.db
 	id, err := db.CreateHost(&store.Host{Name: "web", Host: "203.0.113.10", Status: "healthy"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = db.UpsertGeoIP(store.GeoIPEntry{IP: "203.0.113.10", Lat: 40, Lon: -74, City: "NYC", Source: "geoip"}, time.Now())
+	_ = db.UpsertGeoIP(store.GeoIPEntry{IP: "203.0.113.10", Lat: 40, Lon: -74, City: "NYC", Region: "New York", Source: "geoip"}, time.Now())
 	_ = db.UpsertProbeResult(store.ProbeResult{SourceHostID: 0, TargetHostID: id, LatencyMs: 15}, time.Now())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/network-radar/globe", nil)
@@ -74,15 +74,15 @@ func TestGlobeReturnsNodesAndFlows(t *testing.T) {
 	}
 	found := false
 	for _, n := range g.Nodes {
-		if n.Kind == "host" && n.Name == "web" && n.City == "NYC" && n.LatencyMs == 15 {
+		if n.Kind == "host" && n.Name == "web" && n.City == "NYC" && n.Region == "New York" && n.LatencyMs == 15 {
 			found = true
 		}
 	}
 	if !found {
 		t.Fatalf("host node with geo + latency missing: %+v", g.Nodes)
 	}
-	if len(g.Flows) == 0 {
-		t.Fatal("expected at least one gateway->host flow")
+	if len(g.Links) == 0 {
+		t.Fatal("expected at least one gateway->host link")
 	}
 }
 
@@ -92,7 +92,7 @@ func TestGlobeSetGeoOverride(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := `{"id":` + strconv.FormatInt(id, 10) + `,"lat":-7.25,"lon":112.75,"label":"Surabaya"}`
+	body := `{"id":` + strconv.FormatInt(id, 10) + `,"lat":-7.25,"lon":112.75,"region":"Jawa Timur","label":"Surabaya"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/network-radar/globe/geo", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(cookie)
@@ -102,7 +102,7 @@ func TestGlobeSetGeoOverride(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	h, _ := srv.db.GetHost(id)
-	if h.GeoLat != -7.25 || h.GeoLabel != "Surabaya" {
+	if h.GeoLat != -7.25 || h.GeoRegion != "Jawa Timur" || h.GeoLabel != "Surabaya" {
 		t.Fatalf("geo override not persisted: %+v", h)
 	}
 

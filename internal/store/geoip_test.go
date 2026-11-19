@@ -84,14 +84,14 @@ func TestHostGeoOverrideRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create host: %v", err)
 	}
-	if err := db.UpdateHostGeo(id, -7.25, 112.75, "Surabaya DC"); err != nil {
+	if err := db.UpdateHostGeo(id, -7.25, 112.75, "Jawa Timur", "Surabaya DC"); err != nil {
 		t.Fatalf("update geo: %v", err)
 	}
 	h, err := db.GetHost(id)
 	if err != nil {
 		t.Fatalf("get host: %v", err)
 	}
-	if h.GeoLat != -7.25 || h.GeoLon != 112.75 || h.GeoLabel != "Surabaya DC" {
+	if h.GeoLat != -7.25 || h.GeoLon != 112.75 || h.GeoRegion != "Jawa Timur" || h.GeoLabel != "Surabaya DC" {
 		t.Fatalf("geo override not persisted: %+v", h)
 	}
 }

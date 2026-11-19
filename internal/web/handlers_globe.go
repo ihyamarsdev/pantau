@@ -71,10 +71,11 @@ func (s *Server) handleGlobeSetGeo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		ID    int64   `json:"id"`
-		Lat   float64 `json:"lat"`
-		Lon   float64 `json:"lon"`
-		Label string  `json:"label"`
+		ID     int64   `json:"id"`
+		Lat    float64 `json:"lat"`
+		Lon    float64 `json:"lon"`
+		Region string  `json:"region"`
+		Label  string  `json:"label"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID <= 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -89,7 +90,7 @@ func (s *Server) handleGlobeSetGeo(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "host not found"})
 		return
 	}
-	if err := s.db.UpdateHostGeo(req.ID, req.Lat, req.Lon, req.Label); err != nil {
+	if err := s.db.UpdateHostGeo(req.ID, req.Lat, req.Lon, req.Region, req.Label); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}

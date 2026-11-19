@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,7 +59,7 @@ func TestResolverUsesCacheAndRefreshesStale(t *testing.T) {
 	calls := 0
 	r.lookup = func(ctx context.Context, ip string) (store.GeoIPEntry, error) {
 		calls++
-		return store.GeoIPEntry{IP: ip, Lat: 1.5, Lon: 2.5, City: "Fresh", Source: "geoip"}, nil
+		return store.GeoIPEntry{IP: ip, Lat: 1.5, Lon: 2.5, City: "Fresh", Region: "West", Source: "geoip"}, nil
 	}
 
 	// Fresh cache hit: no external call.
@@ -71,7 +72,7 @@ func TestResolverUsesCacheAndRefreshesStale(t *testing.T) {
 	// Stale entry: refresh happens.
 	_ = db.UpsertGeoIP(store.GeoIPEntry{IP: "9.9.9.9", Lat: 1, Lon: 2, City: "Old", Source: "geoip"}, time.Now().Add(-31*24*time.Hour))
 	got = r.ResolveIP(context.Background(), "9.9.9.9")
-	if got.City != "Fresh" || calls != 1 {
+	if got.City != "Fresh" || got.Region != "West" || calls != 1 {
 		t.Fatalf("stale cache should refresh: got=%+v calls=%d", got, calls)
 	}
 }
@@ -95,7 +96,7 @@ func TestResolverRunOnceSkipsPrivateIPs(t *testing.T) {
 	}
 }
 
-// --- Flow aggregator --------------------------------------------------------
+// --- Link aggregator --------------------------------------------------------
 
 type fakeStore struct {
 	hosts    []store.Host
@@ -123,17 +124,17 @@ func (f *fakeStore) GetGeoIP(ip string, now time.Time) (*store.GeoIPEntry, bool,
 	return f.geo[ip], true, nil
 }
 
-func TestBuildGatewayHostFlows(t *testing.T) {
+func TestBuildGatewayHostLinks(t *testing.T) {
 	fs := &fakeStore{
 		hosts: []store.Host{
 			{ID: 1, Name: "web", Host: "203.0.113.10", Status: "healthy"},
-			{ID: 2, Name: "db", Host: "10.0.0.5", Status: "degraded", GeoLat: -6, GeoLon: 106, GeoLabel: "DC", NetworkID: 3},
+			{ID: 2, Name: "db", Host: "10.0.0.5", Status: "degraded", GeoLat: -6, GeoLon: 106, GeoLabel: "DC", GeoRegion: "Jawa Timur", NetworkID: 3},
 		},
 		probes: map[[2]int64]*store.ProbeResult{
 			{0, 1}: {LatencyMs: 12},
 		},
 		geo: map[string]*store.GeoIPEntry{
-			"203.0.113.10": {Lat: 40, Lon: -74, City: "NYC", Source: "geoip"},
+			"203.0.113.10": {Lat: 40, Lon: -74, City: "NYC", Region: "New York", ASNOrg: "Example ISP", Source: "geoip"},
 		},
 	}
 	g, err := Build(fs, time.Now())
@@ -155,20 +156,20 @@ func TestBuildGatewayHostFlows(t *testing.T) {
 	if web == nil || db == nil {
 		t.Fatal("missing host nodes")
 	}
-	if web.Lat != 40 || web.City != "NYC" || web.GeoSource != "geoip" {
+	if web.Lat != 40 || web.City != "NYC" || web.Region != "New York" || web.ASNOrg != "Example ISP" || web.GeoSource != "geoip" {
 		t.Fatalf("geoip positioning failed: %+v", web)
 	}
-	if db.GeoSource != "manual" || db.City != "DC" {
+	if db.GeoSource != "manual" || db.City != "DC" || db.Region != "Jawa Timur" {
 		t.Fatalf("manual override failed: %+v", db)
 	}
 	if web.LatencyMs != 12 {
 		t.Fatalf("gateway latency not attached: %+v", web)
 	}
 
-	// Gateway->host flows: one ssh, one vpn.
+	// Gateway->host links: one ssh, one vpn.
 	var ssh, vpn int
-	for _, f := range g.Flows {
-		if f.Source != "gateway" {
+	for _, f := range g.Links {
+		if f.SourceID != "gateway" {
 			continue
 		}
 		if f.Type == "ssh" {
@@ -179,11 +180,11 @@ func TestBuildGatewayHostFlows(t *testing.T) {
 		}
 	}
 	if ssh != 1 || vpn != 1 {
-		t.Fatalf("expected 1 ssh + 1 vpn gateway flow, got ssh=%d vpn=%d (flows=%+v)", ssh, vpn, g.Flows)
+		t.Fatalf("expected 1 ssh + 1 vpn gateway link, got ssh=%d vpn=%d (links=%+v)", ssh, vpn, g.Links)
 	}
 }
 
-func TestBuildInterServerFlows(t *testing.T) {
+func TestBuildInterServerLinks(t *testing.T) {
 	fs := &fakeStore{
 		hosts: []store.Host{
 			{ID: 1, Name: "proxy", Host: "203.0.113.1", Status: "healthy"},
@@ -202,21 +203,57 @@ func TestBuildInterServerFlows(t *testing.T) {
 		t.Fatalf("build: %v", err)
 	}
 	counts := map[string]int{}
-	for _, f := range g.Flows {
+	for _, f := range g.Links {
 		counts[f.Type]++
+		// Only inter-server links (both endpoints are hosts) must be
+		// bidirectional and labeled; gateway->host control links are directed.
+		if !strings.HasPrefix(f.SourceID, "host:") || !strings.HasPrefix(f.TargetID, "host:") {
+			continue
+		}
+		if f.Type == "proxy" || f.Type == "k8s" || f.Type == "vpn" {
+			if !f.Bidirectional {
+				t.Errorf("inter-server link %s should be bidirectional", f.ID)
+			}
+			if f.Label == "" {
+				t.Errorf("inter-server link %s should carry a label", f.ID)
+			}
+		}
 	}
+
 	if counts["proxy"] != 1 {
-		t.Errorf("expected 1 proxy flow, got %d", counts["proxy"])
+		t.Errorf("expected 1 proxy link, got %d", counts["proxy"])
 	}
 	if counts["k8s"] != 1 {
-		t.Errorf("expected 1 k8s flow, got %d", counts["k8s"])
+		t.Errorf("expected 1 k8s link, got %d", counts["k8s"])
 	}
-	if counts["vpn"] < 3 { // 2 gateway vpn flows + 1 mesh flow
-		t.Errorf("expected >=3 vpn flows, got %d", counts["vpn"])
+	if counts["vpn"] < 3 { // 2 gateway vpn links + 1 mesh link
+		t.Errorf("expected >=3 vpn links, got %d", counts["vpn"])
 	}
 }
 
-func TestBuildCloudflareFlow(t *testing.T) {
+func TestBuildTCPPeerLink(t *testing.T) {
+	fs := &fakeStore{
+		hosts: []store.Host{
+			{ID: 1, Name: "api", Host: "203.0.113.1", Status: "healthy", TopConnections: `[{"remote_ip":"203.0.113.2","port":"5432","count":4}]`},
+			{ID: 2, Name: "db", Host: "203.0.113.2", Status: "healthy"},
+		},
+	}
+	g, err := Build(fs, time.Now())
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	found := false
+	for _, l := range g.Links {
+		if l.Type == "app" && l.Bidirectional && l.Label == "TCP peer" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected inferred TCP peer link, got %+v", g.Links)
+	}
+}
+
+func TestBuildCloudflareLink(t *testing.T) {
 	fs := &fakeStore{
 		hosts:    []store.Host{{ID: 1, Name: "origin", Host: "203.0.113.1", Status: "healthy"}},
 		accounts: []store.CloudflareAccount{{ID: 9, Name: "example.com", AccountID: "acct"}},
@@ -227,13 +264,38 @@ func TestBuildCloudflareFlow(t *testing.T) {
 		t.Fatalf("build: %v", err)
 	}
 	found := false
-	for _, f := range g.Flows {
-		if f.Type == "cloudflare" && f.Source == "cf:9" && f.Target == "host:1" {
+	for _, f := range g.Links {
+		if f.Type == "cloudflare" && f.SourceID == "cf:9" && f.TargetID == "host:1" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("expected cloudflare->origin flow, got %+v", g.Flows)
+		t.Fatalf("expected cloudflare->origin link, got %+v", g.Links)
+	}
+}
+
+func TestSpreadCoLocated(t *testing.T) {
+	nodes := []Node{
+		{ID: "gateway", Kind: "gateway", Lat: 0, Lon: 0},
+		{ID: "host:3", Kind: "host", Lat: 40, Lon: -74},
+		{ID: "host:1", Kind: "host", Lat: 40, Lon: -74},
+		{ID: "host:2", Kind: "host", Lat: 40, Lon: -74},
+	}
+	spreadCoLocated(nodes)
+	seen := map[[2]float64]bool{}
+	for _, n := range nodes {
+		if n.Kind == "gateway" {
+			continue
+		}
+		key := [2]float64{round4(n.Lat), round4(n.Lon)}
+		if seen[key] {
+			t.Fatalf("co-located pins still stack at %v: %+v", key, nodes)
+		}
+		seen[key] = true
+	}
+	// The lowest-ID host keeps the original coordinates.
+	if nodes[2].Lat != 40 || nodes[2].Lon != -74 {
+		t.Fatalf("first host should keep exact coordinates, got %+v", nodes[2])
 	}
 }
 

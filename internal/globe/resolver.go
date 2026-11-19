@@ -54,7 +54,7 @@ func NewResolver(db *store.DB) *Resolver {
 func (r *Resolver) httpLookup(ctx context.Context, ip string) (store.GeoIPEntry, error) {
 	ctx, cancel := context.WithTimeout(ctx, geoTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, geoLookupURL+ip+"?fields=status,message,countryCode,city,lat,lon,query,isp,org,as", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, geoLookupURL+ip+"?fields=status,message,countryCode,regionName,city,lat,lon,query,isp,org,as", nil)
 	if err != nil {
 		return store.GeoIPEntry{}, err
 	}
@@ -69,6 +69,7 @@ func (r *Resolver) httpLookup(ctx context.Context, ip string) (store.GeoIPEntry,
 	var body struct {
 		Status      string  `json:"status"`
 		CountryCode string  `json:"countryCode"`
+		RegionName  string  `json:"regionName"`
 		City        string  `json:"city"`
 		Lat         float64 `json:"lat"`
 		Lon         float64 `json:"lon"`
@@ -92,7 +93,7 @@ func (r *Resolver) httpLookup(ctx context.Context, ip string) (store.GeoIPEntry,
 	}
 	return store.GeoIPEntry{
 		IP: ip, Lat: body.Lat, Lon: body.Lon, City: body.City,
-		CountryCode: body.CountryCode, ASNOrg: org, Source: "geoip",
+		CountryCode: body.CountryCode, Region: body.RegionName, ASNOrg: org, Source: "geoip",
 	}, nil
 }
 

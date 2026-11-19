@@ -72,6 +72,7 @@ type Host struct {
 	NetworkID         int64   `json:"network_id"` // VPN Network (0 = direct)
 	GeoLat            float64 `json:"geo_lat"`
 	GeoLon            float64 `json:"geo_lon"`
+	GeoRegion         string  `json:"geo_region"`
 	GeoLabel          string  `json:"geo_label"`
 }
 
@@ -120,7 +121,7 @@ const hostSelectCols = `SELECT id, name, host, port, user, COALESCE(custom_key,'
 	COALESCE(last_duration_ms, 0), COALESCE(commission_date, ''), COALESCE(bios_date, ''), COALESCE(os_install_epoch, 0),
 	COALESCE(top_cpu_processes, ''), COALESCE(top_ram_processes, ''), COALESCE(top_swap_processes, ''),
 	COALESCE(kube_cluster_id, ''), COALESCE(kube_mode, 'full'), COALESCE(network_id, 0),
-	COALESCE(geo_lat, 0), COALESCE(geo_lon, 0), COALESCE(geo_label, '')
+	COALESCE(geo_lat, 0), COALESCE(geo_lon, 0), COALESCE(geo_region, ''), COALESCE(geo_label, '')
 	FROM hosts `
 
 func scanHost(s rowScanner) (*Host, error) {
@@ -137,7 +138,7 @@ func scanHost(s rowScanner) (*Host, error) {
 		&h.LastDurationMs, &h.CommissionDate, &h.BIOSDate, &h.OSInstallEpoch,
 		&h.TopCPUProcesses, &h.TopRAMProcesses, &h.TopSwapProcesses,
 		&h.KubeClusterID, &h.KubeMode, &h.NetworkID,
-		&h.GeoLat, &h.GeoLon, &h.GeoLabel)
+		&h.GeoLat, &h.GeoLon, &h.GeoRegion, &h.GeoLabel)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +207,7 @@ func (d *DB) CreateHost(h *Host) (int64, error) {
 	}
 	var maxOrder int
 	_ = tx.QueryRow(`SELECT COALESCE(MAX(sort_order), 0) FROM hosts`).Scan(&maxOrder)
-	res, err := tx.Exec(`INSERT INTO hosts (name, host, port, user, custom_key, key_id, status, notes, sort_order, group_name, commission_date, bios_date, kube_cluster_id, kube_mode, network_id, geo_lat, geo_lon, geo_label) VALUES (?, ?, ?, ?, ?, ?, 'unknown', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, maxOrder+1, h.GroupName, h.CommissionDate, h.BIOSDate, h.KubeClusterID, h.KubeMode, h.NetworkID, h.GeoLat, h.GeoLon, h.GeoLabel)
+	res, err := tx.Exec(`INSERT INTO hosts (name, host, port, user, custom_key, key_id, status, notes, sort_order, group_name, commission_date, bios_date, kube_cluster_id, kube_mode, network_id, geo_lat, geo_lon, geo_region, geo_label) VALUES (?, ?, ?, ?, ?, ?, 'unknown', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, maxOrder+1, h.GroupName, h.CommissionDate, h.BIOSDate, h.KubeClusterID, h.KubeMode, h.NetworkID, h.GeoLat, h.GeoLon, h.GeoRegion, h.GeoLabel)
 	if err != nil {
 		return 0, err
 	}
@@ -235,7 +236,7 @@ func (d *DB) UpdateHost(h *Host) error {
 	if h.GroupName, err = hostGroupSpelling(tx, h.GroupName, h.ID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`UPDATE hosts SET name=?, host=?, port=?, user=?, custom_key=?, key_id=?, notes=?, group_name=?, commission_date=?, kube_mode=?, network_id=?, geo_lat=?, geo_lon=?, geo_label=? WHERE id=?`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, h.GroupName, h.CommissionDate, h.KubeMode, h.NetworkID, h.GeoLat, h.GeoLon, h.GeoLabel, h.ID); err != nil {
+	if _, err := tx.Exec(`UPDATE hosts SET name=?, host=?, port=?, user=?, custom_key=?, key_id=?, notes=?, group_name=?, commission_date=?, kube_mode=?, network_id=?, geo_lat=?, geo_lon=?, geo_region=?, geo_label=? WHERE id=?`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, h.GroupName, h.CommissionDate, h.KubeMode, h.NetworkID, h.GeoLat, h.GeoLon, h.GeoRegion, h.GeoLabel, h.ID); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -248,8 +249,8 @@ func (d *DB) SetHostKubeClusterID(id int64, clusterID string) error {
 
 // UpdateHostGeo sets the manual geo-coordinate override for an air-gapped or
 // private-IP host. Zero lat/lon with an empty label clears the override.
-func (d *DB) UpdateHostGeo(id int64, lat, lon float64, label string) error {
-	_, err := d.Exec(`UPDATE hosts SET geo_lat=?, geo_lon=?, geo_label=? WHERE id=?`, lat, lon, label, id)
+func (d *DB) UpdateHostGeo(id int64, lat, lon float64, region, label string) error {
+	_, err := d.Exec(`UPDATE hosts SET geo_lat=?, geo_lon=?, geo_region=?, geo_label=? WHERE id=?`, lat, lon, region, label, id)
 	return err
 }
 

@@ -16,6 +16,7 @@ type GeoIPEntry struct {
 	Lat         float64   `json:"lat"`
 	Lon         float64   `json:"lon"`
 	City        string    `json:"city"`
+	Region      string    `json:"region"`
 	CountryCode string    `json:"country_code"`
 	ASNOrg      string    `json:"asn_org"`
 	Source      string    `json:"source"`
@@ -34,8 +35,8 @@ func (d *DB) GetGeoIP(ip string, now time.Time) (*GeoIPEntry, bool, error) {
 		return nil, false, nil
 	}
 	var e GeoIPEntry
-	err := d.QueryRow(`SELECT ip, lat, lon, city, country_code, asn_org, source, updated_at FROM geoip_cache WHERE ip = ?`, ip).
-		Scan(&e.IP, &e.Lat, &e.Lon, &e.City, &e.CountryCode, &e.ASNOrg, &e.Source, &e.UpdatedAt)
+	err := d.QueryRow(`SELECT ip, lat, lon, region, city, country_code, asn_org, source, updated_at FROM geoip_cache WHERE ip = ?`, ip).
+		Scan(&e.IP, &e.Lat, &e.Lon, &e.Region, &e.City, &e.CountryCode, &e.ASNOrg, &e.Source, &e.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, false, nil
 	}
@@ -46,17 +47,16 @@ func (d *DB) GetGeoIP(ip string, now time.Time) (*GeoIPEntry, bool, error) {
 }
 
 // UpsertGeoIP inserts or replaces a cached resolution. updated_at is set to now
-// so a successful lookup resets the 30-day TTL.
 func (d *DB) UpsertGeoIP(e GeoIPEntry, now time.Time) error {
 	e.IP = strings.TrimSpace(e.IP)
 	if e.IP == "" {
 		return nil
 	}
-	_, err := d.Exec(`INSERT INTO geoip_cache (ip, lat, lon, city, country_code, asn_org, source, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(ip) DO UPDATE SET lat=excluded.lat, lon=excluded.lon, city=excluded.city,
+	_, err := d.Exec(`INSERT INTO geoip_cache (ip, lat, lon, region, city, country_code, asn_org, source, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(ip) DO UPDATE SET lat=excluded.lat, lon=excluded.lon, region=excluded.region, city=excluded.city,
 		country_code=excluded.country_code, asn_org=excluded.asn_org, source=excluded.source, updated_at=excluded.updated_at`,
-		e.IP, e.Lat, e.Lon, e.City, e.CountryCode, e.ASNOrg, e.Source, now.UTC())
+		e.IP, e.Lat, e.Lon, e.Region, e.City, e.CountryCode, e.ASNOrg, e.Source, now.UTC())
 	return err
 }
 

@@ -1,5 +1,5 @@
-/* 3D Globe Network Radar (ADR 0090). ADR-0039 tokens only; all selectors
- * gl- prefixed. Canvas 2D orthographic projection, no external assets. */
+/* Globe Radar (ADR 0090). ADR-0039 tokens only; all selectors
+ * gl- prefixed. Native WebGL2 globe, no external assets. */
 #globeModal .gl-modal-content { display: flex; flex-direction: column; overflow: hidden; }
 
 .gl-header { gap: 12px; }
@@ -17,22 +17,35 @@
 .gl-live-pill.gl-offline { color: var(--text-muted); background: var(--hover); }
 
 .gl-toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--card-border); flex-shrink: 0; flex-wrap: wrap; }
-.gl-search { flex: 1; min-width: 140px; max-width: 260px; }
+/* The app styles every input and select at width:100% and 34px tall; the toolbar wants one compact row. */
+.gl-search { flex: 1; min-width: 140px; max-width: 260px; height: 30px; font-size: var(--fs-sm); }
 .gl-pills { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .gl-pill { background: var(--surface-2); border: 1px solid var(--card-border); border-radius: var(--radius-full); color: var(--text-muted); cursor: pointer; font-size: var(--fs-xs); padding: 4px 10px; }
 .gl-pill:hover { color: var(--text); border-color: var(--border-strong); }
 .gl-pill.active { background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent-ring); }
-.gl-select { background: var(--surface-2); border: 1px solid var(--card-border); border-radius: var(--radius-sm); color: var(--text); font-size: var(--fs-xs); padding: 4px 8px; }
+.gl-select { width: auto; min-width: 150px; height: 30px; font-size: var(--fs-xs); border-radius: var(--radius-sm); }
 .gl-spacer { flex: 1; }
 .gl-toggle { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-muted); cursor: pointer; }
 .gl-toggle input { accent-color: var(--primary); }
 
 .gl-body { display: flex; flex: 1; min-height: 0; position: relative; }
-.gl-stage { position: relative; flex: 1; min-width: 0; overflow: hidden; background: var(--bg); }
+/* The canvas is transparent; the faint accent glow behind the globe is plain CSS so it follows the theme tokens. */
+.gl-stage { position: relative; flex: 1; min-width: 0; overflow: hidden; background: radial-gradient(ellipse 55% 60% at 50% 50%, color-mix(in srgb, var(--primary) 9%, transparent), transparent 70%), var(--bg); }
 .gl-canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
 .gl-canvas:active { cursor: grabbing; }
+.gl-canvas.gl-hot { cursor: pointer; }
 
-.gl-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: var(--fs-sm); pointer-events: none; }
+/* A caption under the globe, so the hint never sits on top of the map; with no GL at all it takes the middle. */
+.gl-empty { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: block; max-width: 90%; padding: 6px 14px; border-radius: var(--radius-full); background: color-mix(in srgb, var(--card-bg) 82%, transparent); border: 1px solid var(--card-border); color: var(--text-muted); font-size: var(--fs-xs); text-align: center; pointer-events: none; }
+.gl-empty.gl-fail { top: 50%; bottom: auto; transform: translate(-50%, -50%); }
+.gl-empty[hidden] { display: none; } /* display:block above would otherwise beat the hidden attribute */
+
+/* Hover tooltip: a pin (details) or a country (name + host count). */
+.gl-tooltip { position: absolute; z-index: 3; pointer-events: none; background: var(--card-bg); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); padding: 8px 10px; font-size: var(--fs-xs); color: var(--text); min-width: 180px; max-width: 240px; }
+.gl-tooltip strong { display: block; margin-bottom: 3px; }
+.gl-tooltip .gl-tip-dim { color: var(--text-faint); font-size: 10px; }
+.gl-tooltip.gl-tip-country { min-width: 0; padding: 5px 9px; white-space: nowrap; }
+.gl-tooltip.gl-tip-country strong { margin-bottom: 0; }
 
 /* Sidebar host list (fly-to on select). */
 .gl-sidebar { width: 240px; flex-shrink: 0; border-left: 1px solid var(--card-border); background: var(--card-bg); overflow-y: auto; padding: 8px; }

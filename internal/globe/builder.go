@@ -1,11 +1,13 @@
 package globe
 
-// Geo-topology and inter-server flow aggregation. Everything here reads stored
+// Geo-topology and inter-server link aggregation. Everything here reads stored
 // inventory; no network call happens on this path. Latency comes from persisted
 // netdiag ping results (source_host_id 0 = Gateway).
 
 import (
+	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -62,9 +64,9 @@ func (c *Cache) Invalidate() {
 	c.mu.Unlock()
 }
 
-// Build projects stored inventory into geo-located nodes and directed flows.
+// Build projects stored inventory into geo-located nodes and directed links.
 func Build(s Store, now time.Time) (*Graph, error) {
-	g := &Graph{Nodes: []Node{}, Flows: []Flow{}, GeneratedAt: now}
+	g := &Graph{Nodes: []Node{}, Links: []Link{}, GeneratedAt: now}
 
 	hosts, err := s.ListHosts()
 	if err != nil {
@@ -115,20 +117,10 @@ func Build(s Store, now time.Time) (*Graph, error) {
 		g.Nodes = append(g.Nodes, hostNode(s, h, alertCounts[h.ID], now))
 	}
 
-	// 1. Gateway -> Host (control/SSH path), with persisted latency.
-	for _, h := range hosts {
-		status := flowStatus(h.Status)
-		lat := gatewayLatency(s, h.ID)
-		flowType := "ssh"
-		if h.NetworkID != 0 {
-			flowType = "vpn"
-		}
-		g.Flows = append(g.Flows, Flow{
-			ID:     "gw-host-" + strconv.FormatInt(h.ID, 10),
-			Source: "gateway", Target: "host:" + strconv.FormatInt(h.ID, 10),
-			Type: flowType, LatencyMs: lat, Status: status, Active: status != "down",
-		})
-	}
+	// Deterministic micro-spiral spreading: hosts sharing the exact same
+	// (lat,lon) are offset by a few hundredths of a degree so their 3D pins
+	// never stack invisibly. Sorting by ID makes the layout stable across builds.
+	spreadCoLocated(g.Nodes)
 
 	// Kubernetes cluster markers.
 	for _, c := range clusters {
@@ -138,10 +130,28 @@ func Build(s Store, now time.Time) (*Graph, error) {
 		})
 	}
 
-	// --- Flows --------------------------------------------------------------
+	// --- Links --------------------------------------------------------------
 
-	// 2a. Host -> Host proxy flows inferred from reverse-proxy upstream targets.
-	//     An upstream IP that matches a managed host's address creates a flow.
+	// 1. Gateway -> Host (control/SSH path), with persisted latency.
+	for _, h := range hosts {
+		status := flowStatus(h.Status)
+		lat := gatewayLatency(s, h.ID)
+		linkType := "ssh"
+		label := "SSH telemetry"
+		if h.NetworkID != 0 {
+			linkType = "vpn"
+			label = vpnLabel(netByID[h.NetworkID].Name)
+		}
+		g.Links = append(g.Links, Link{
+			ID:       "gw-host-" + strconv.FormatInt(h.ID, 10),
+			SourceID: "gateway", TargetID: "host:" + strconv.FormatInt(h.ID, 10),
+			Type: linkType, Label: label, LatencyMs: lat, Status: status, Active: status != "down",
+		})
+	}
+
+	seen := map[string]bool{}
+
+	// 2a. Host -> Host proxy links inferred from reverse-proxy upstream targets.
 	addrToHost := map[string]int64{}
 	for _, h := range hosts {
 		for _, addr := range []string{h.Host, h.PublicIP} {
@@ -151,7 +161,6 @@ func Build(s Store, now time.Time) (*Graph, error) {
 			}
 		}
 	}
-	seen := map[string]bool{}
 	for _, d := range domains {
 		for _, up := range d.Upstreams {
 			targetID, ok := resolveUpstream(up, addrToHost, hosts)
@@ -166,18 +175,22 @@ func Build(s Store, now time.Time) (*Graph, error) {
 			src := hostByID[d.HostID]
 			tgt := hostByID[targetID]
 			lat := hostLatency(s, d.HostID, targetID)
-			g.Flows = append(g.Flows, Flow{
-				ID: key, Source: "host:" + strconv.FormatInt(d.HostID, 10),
-				Target: "host:" + strconv.FormatInt(targetID, 10),
-				Type:   "proxy", LatencyMs: lat,
-				Status: combinedStatus(src.Status, tgt.Status), Active: true,
+			g.Links = append(g.Links, Link{
+				ID: key, SourceID: "host:" + strconv.FormatInt(d.HostID, 10),
+				TargetID: "host:" + strconv.FormatInt(targetID, 10),
+				Type:     "proxy", Label: "Reverse proxy", Bidirectional: true,
+				LatencyMs: lat, Status: combinedStatus(src.Status, tgt.Status), Active: true,
 			})
 		}
 	}
 
-	// 2b. Kubernetes control-plane -> worker flows. Hosts share a kube_cluster_id;
-	//     the host whose kube_mode is 'full' is treated as the control plane and
-	//     flows to the others (worker/read-only members).
+	// 2b. Host -> Host active TCP peer links from inspection telemetry
+	// (TopConnections.RemoteIP). An established socket whose remote address
+	// matches another managed host's public/private/VPN IP yields a link.
+	peerLinks(s, hosts, g, seen)
+
+	// 2c. Kubernetes control-plane -> worker links. Hosts share a
+	// kube_cluster_id; the lowest-ID host is treated as the control plane.
 	clusterHosts := map[string][]store.Host{}
 	for _, h := range hosts {
 		if h.KubeClusterID != "" {
@@ -192,37 +205,39 @@ func Build(s Store, now time.Time) (*Graph, error) {
 		control := members[0]
 		for _, w := range members[1:] {
 			key := "k8s-" + strconv.FormatInt(control.ID, 10) + "-" + strconv.FormatInt(w.ID, 10)
-			g.Flows = append(g.Flows, Flow{
-				ID: key, Source: "host:" + strconv.FormatInt(control.ID, 10),
-				Target: "host:" + strconv.FormatInt(w.ID, 10),
-				Type:   "k8s", Status: combinedStatus(control.Status, w.Status), Active: true,
+			g.Links = append(g.Links, Link{
+				ID: key, SourceID: "host:" + strconv.FormatInt(control.ID, 10),
+				TargetID: "host:" + strconv.FormatInt(w.ID, 10),
+				Type:     "k8s", Label: "Cluster mesh", Bidirectional: true,
+				Status: combinedStatus(control.Status, w.Status), Active: true,
 			})
 		}
 	}
 
-	// 2c. Shared VPN mesh peers: hosts on the same VPN Network form a mesh ring.
+	// 2d. Shared VPN mesh peers: hosts on the same VPN Network form a mesh ring.
 	hostsByNet := map[int64][]int64{}
 	for _, h := range hosts {
 		if h.NetworkID != 0 {
 			hostsByNet[h.NetworkID] = append(hostsByNet[h.NetworkID], h.ID)
 		}
 	}
-	for _, ids := range hostsByNet {
+	for netID, ids := range hostsByNet {
 		sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 		for i := 0; i+1 < len(ids); i++ {
 			key := "vpn-" + strconv.FormatInt(ids[i], 10) + "-" + strconv.FormatInt(ids[i+1], 10)
 			lat := hostLatency(s, ids[i], ids[i+1])
-			g.Flows = append(g.Flows, Flow{
-				ID: key, Source: "host:" + strconv.FormatInt(ids[i], 10),
-				Target: "host:" + strconv.FormatInt(ids[i+1], 10),
-				Type:   "vpn", LatencyMs: lat, Status: "healthy", Active: true,
+			g.Links = append(g.Links, Link{
+				ID: key, SourceID: "host:" + strconv.FormatInt(ids[i], 10),
+				TargetID: "host:" + strconv.FormatInt(ids[i+1], 10),
+				Type:     "vpn", Label: vpnLabel(netByID[netID].Name), Bidirectional: true,
+				LatencyMs: lat, Status: "healthy", Active: true,
 			})
 		}
 	}
 
 	// 3. Cloudflare -> Origin Host. Tunnels/zones are not persisted, so a
-	//    Cloudflare account links to hosts whose stored domains point at it by
-	//    name; otherwise no origin flow is invented.
+	// Cloudflare account links to hosts whose stored domains point at it by
+	// name; otherwise no origin link is invented.
 	for _, a := range accounts {
 		for _, d := range domains {
 			if strings.Contains(strings.ToLower(d.Domain), strings.ToLower(a.Name)) && a.Name != "" {
@@ -231,16 +246,116 @@ func Build(s Store, now time.Time) (*Graph, error) {
 					continue
 				}
 				seen[key] = true
-				g.Flows = append(g.Flows, Flow{
-					ID: key, Source: "cf:" + strconv.FormatInt(a.ID, 10),
-					Target: "host:" + strconv.FormatInt(d.HostID, 10),
-					Type:   "cloudflare", Status: flowStatus(hostByID[d.HostID].Status), Active: true,
+				g.Links = append(g.Links, Link{
+					ID: key, SourceID: "cf:" + strconv.FormatInt(a.ID, 10),
+					TargetID: "host:" + strconv.FormatInt(d.HostID, 10),
+					Type:     "cloudflare", Label: "Cloudflare edge", Bidirectional: true,
+					Status: flowStatus(hostByID[d.HostID].Status), Active: true,
 				})
 			}
 		}
 	}
 
 	return g, nil
+}
+
+// spreadCoLocated nudges nodes that share the exact same coordinates onto a
+// deterministic micro-spiral. The first node stays put; subsequent ones get
+// progressively larger angular offsets (~0.02° steps), keeping pins visually
+// distinct on a globe without moving them off their datacenter region.
+func spreadCoLocated(nodes []Node) {
+	// Group by exact coordinate, excluding the gateway marker.
+	groups := map[[2]float64][]int{}
+	for i := range nodes {
+		n := &nodes[i]
+		if n.Kind == "gateway" {
+			continue
+		}
+		key := [2]float64{round4(n.Lat), round4(n.Lon)}
+		groups[key] = append(groups[key], i)
+	}
+	for _, idxs := range groups {
+		if len(idxs) < 2 {
+			continue
+		}
+		// Stable order by node ID regardless of map iteration order.
+		sort.Slice(idxs, func(a, b int) bool { return nodes[idxs[a]].ID < nodes[idxs[b]].ID })
+		for rank, idx := range idxs {
+			if rank == 0 {
+				continue
+			}
+			angle := float64(rank) * 2.399963 // golden angle
+			radius := 0.02 * math.Sqrt(float64(rank))
+			nodes[idx].Lat += radius * math.Sin(angle)
+			nodes[idx].Lon += radius * math.Cos(angle)
+		}
+	}
+}
+
+func round4(v float64) float64 { return math.Round(v*10000) / 10000 }
+func vpnLabel(name string) string {
+	if strings.TrimSpace(name) == "" {
+		return "VPN mesh"
+	}
+	return name
+}
+
+// peerLinks infers inter-server links from stored established-socket telemetry.
+func peerLinks(s Store, hosts []store.Host, g *Graph, seen map[string]bool) {
+	// Build a map from every known host address to host ID (public, SSH, private,
+	// and VPN interface addresses all count as valid peer endpoints).
+	addrToHost := map[string]int64{}
+	for _, h := range hosts {
+		for _, addr := range []string{h.Host, h.PublicIP} {
+			addr = strings.TrimSpace(addr)
+			if addr != "" {
+				addrToHost[addr] = h.ID
+			}
+		}
+		for _, addr := range h.PrivateIPList() {
+			addr = strings.TrimSpace(addr)
+			if addr != "" {
+				addrToHost[addr] = h.ID
+			}
+		}
+	}
+	for _, src := range hosts {
+		var conns []store.TopConn
+		_ = json.Unmarshal([]byte(src.TopConnections), &conns)
+		for _, c := range conns {
+			remote := strings.TrimSpace(c.RemoteIP)
+			targetID, ok := addrToHost[remote]
+			if !ok || targetID == src.ID {
+				continue
+			}
+			// Canonical key so A->B and B->A collapse into one link.
+			lo, hi := src.ID, targetID
+			if lo > hi {
+				lo, hi = hi, lo
+			}
+			key := "tcp-" + strconv.FormatInt(lo, 10) + "-" + strconv.FormatInt(hi, 10)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			lat := hostLatency(s, lo, hi)
+			g.Links = append(g.Links, Link{
+				ID: key, SourceID: "host:" + strconv.FormatInt(lo, 10),
+				TargetID: "host:" + strconv.FormatInt(hi, 10),
+				Type:     "app", Label: "TCP peer", Bidirectional: true,
+				LatencyMs: lat, Status: combinedStatus(src.Status, hostByIDStatus(hosts, targetID)), Active: true,
+			})
+		}
+	}
+}
+
+func hostByIDStatus(hosts []store.Host, id int64) string {
+	for _, h := range hosts {
+		if h.ID == id {
+			return h.Status
+		}
+	}
+	return "unknown"
 }
 
 func hostNode(s Store, h store.Host, alerts int, now time.Time) Node {
@@ -257,10 +372,11 @@ func hostNode(s Store, h store.Host, alerts int, now time.Time) Node {
 		CPUPct:    cpuPercent(h), MemPct: memPercent(h),
 	}
 	switch {
-	case h.GeoLat != 0 || h.GeoLon != 0 || h.GeoLabel != "":
+	case h.GeoLat != 0 || h.GeoLon != 0 || h.GeoLabel != "" || h.GeoRegion != "":
 		// Manual override wins for air-gapped and private-IP hosts (ADR 0077).
 		n.Lat, n.Lon = h.GeoLat, h.GeoLon
 		n.City = h.GeoLabel
+		n.Region = h.GeoRegion
 		n.GeoSource = "manual"
 	default:
 		// Read the cached resolution; a stale entry still positions the pin.
@@ -268,6 +384,8 @@ func hostNode(s Store, h store.Host, alerts int, now time.Time) Node {
 			n.Lat, n.Lon = entry.Lat, entry.Lon
 			n.City = entry.City
 			n.CountryCode = entry.CountryCode
+			n.ASNOrg = entry.ASNOrg
+			n.Region = entry.Region
 			n.GeoSource = entry.Source
 		} else {
 			// Gateway fallback: private IP, air-gapped, or offline with no cache.
