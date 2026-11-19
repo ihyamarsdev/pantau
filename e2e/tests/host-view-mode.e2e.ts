@@ -5,7 +5,7 @@ import { deleteHosts, initApp, uniqueHostName } from './helpers.js';
 // The page's own loader, so the dashboard shows the hosts this test added.
 type PageGlobals = { loadHosts(): Promise<void> };
 
-test('grid view renders host cards for grouped hosts, and the mode toggle switches both ways', async ({ app, screen, browser }) => {
+test('list view is the default, and the mode toggle switches both ways', async ({ app, screen, browser }) => {
   await app.open('/');
   await initApp(screen, browser);
 
@@ -23,25 +23,28 @@ test('grid view renders host cards for grouped hosts, and the mode toggle switch
       return null;
     }, { alpha: names[0], beta: names[1] });
 
+    const row = (name: string) => browser.locator(`#hostList [data-host-id]:has-text("${name}")`);
     const card = (name: string) => browser.locator(`#hostGrid [data-host-id]:has-text("${name}")`);
 
-    // Grid is the default mode. The cards must render even with group dividers present.
-    await expect(browser.locator('#hostGrid')).toBeVisible();
-    await expect(card(names[0])).toHaveCount(1);
-    await expect(card(names[1])).toHaveCount(1);
-
-    // Switch to list: grid hides, list shows the same hosts.
-    await browser.locator('#viewListBtn').click();
-    await expect(browser.locator('#hostGrid')).toBeHidden();
+    // List is the default mode. The rows must render even with group dividers present.
     await expect(browser.locator('#hostList')).toBeVisible();
-    await expect(browser.locator(`#hostList [data-host-id]:has-text("${names[0]}")`)).toHaveCount(1);
+    await expect(row(names[0])).toHaveCount(1);
+    await expect(row(names[1])).toHaveCount(1);
+    await expect(browser.locator('#hostGrid')).toBeHidden();
 
-    // Switch back to grid: cards render again.
+    // Switch to grid: list hides, grid shows the same hosts as cards.
     await browser.locator('#viewGridBtn').click();
+    await expect(browser.locator('#hostList')).toBeHidden();
     await expect(browser.locator('#hostGrid')).toBeVisible();
     await expect(card(names[0])).toHaveCount(1);
     await expect(card(names[1])).toHaveCount(1);
-    await expect(browser.locator('#hostList')).toBeHidden();
+
+    // Switch back to list: rows render again.
+    await browser.locator('#viewListBtn').click();
+    await expect(browser.locator('#hostList')).toBeVisible();
+    await expect(row(names[0])).toHaveCount(1);
+    await expect(row(names[1])).toHaveCount(1);
+    await expect(browser.locator('#hostGrid')).toBeHidden();
   } finally {
     await deleteHosts(browser, names);
   }

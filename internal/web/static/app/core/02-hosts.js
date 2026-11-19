@@ -18,7 +18,7 @@ function renderHosts() {
     if (!S.allRawHosts.some(h => h.id === id)) S.selectedHostIds.delete(id);
   }
   const prefs = getUIPrefs();
-  const viewMode = prefs.viewMode || 'grid';
+  const viewMode = prefs.viewMode || 'list';
   const sortVal = document.getElementById('sortSelect')?.value || 'manual';
   const hasSearch = !!(document.getElementById('hostSearchInput')?.value.trim());
   const hasStatusFilter = (document.getElementById('statusFilterSelect')?.value || 'all') !== 'all';

@@ -9,6 +9,6 @@ pantau_pid=0
 cleanup() { kill "$pantau_pid" 2>/dev/null; wait "$pantau_pid" 2>/dev/null; rm -rf "$tmp"; }
 trap cleanup EXIT
 trap 'kill -TERM "$pantau_pid" 2>/dev/null' TERM INT
-./.tmp/pantau -db "$tmp/e2e.db" -port 18199 -q -disable-update-check &
+./.tmp/pantau -db "$tmp/e2e.db" -port 18199 -quiet -disable-update-check &
 pantau_pid=$!
 wait "$pantau_pid"

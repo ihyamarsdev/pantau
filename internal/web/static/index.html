@@ -3955,15 +3955,15 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         </select>
         <button class="btn btn-sm" id="hostSelectBtn" onclick="toggleHostSelectMode()" title="Select hosts" data-i18n-title="host_select_title" style="height: 36px; display: inline-flex; align-items: center; gap: 4px;"><svg class="icon icon-sm"><use href="#i-list-checks"/></svg> <span data-i18n="host_select_btn">Select</span></button>
         <div class="view-mode-toggle">
-          <button class="btn btn-sm view-btn active" id="viewGridBtn" onclick="setViewMode('grid')" title="Grid View"><svg class="icon icon-sm"><use href="#i-layout-grid"/></svg></button>
-          <button class="btn btn-sm view-btn" id="viewListBtn" onclick="setViewMode('list')" title="List View"><svg class="icon icon-sm"><use href="#i-list"/></svg></button>
+          <button class="btn btn-sm view-btn" id="viewGridBtn" onclick="setViewMode('grid')" title="Grid View"><svg class="icon icon-sm"><use href="#i-layout-grid"/></svg></button>
+          <button class="btn btn-sm view-btn active" id="viewListBtn" onclick="setViewMode('list')" title="List View"><svg class="icon icon-sm"><use href="#i-list"/></svg></button>
         </div>
       </div>
     </div>
     <div id="hostSelectBar" class="host-select-bar" style="display: none;" role="region" aria-live="polite"></div>
 
-    <div id="hostGrid" class="grid"></div>
-    <div id="hostList" class="host-list-view" style="display: none;"></div>
+    <div id="hostGrid" class="grid" style="display: none;"></div>
+    <div id="hostList" class="host-list-view" style="display: block;"></div>
     </div>
     <div id="sectionDocker" class="app-section" style="display:none;">
       <div class="section-header" style="margin-bottom:20px;">

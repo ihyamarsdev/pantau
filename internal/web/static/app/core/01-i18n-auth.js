@@ -376,7 +376,7 @@ function initDashboardToolbar() {
 
   if (statusSelect && prefs.statusFilter) statusSelect.value = prefs.statusFilter;
   if (sortSelect && prefs.sortBy) sortSelect.value = prefs.sortBy;
-  updateViewModeButtons(prefs.viewMode || 'grid');
+  updateViewModeButtons(prefs.viewMode || 'list');
 }
 
 function setViewMode(mode) {
