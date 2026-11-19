@@ -97,15 +97,30 @@ const (
 	domainRepo       toolDomain = "repo"
 )
 
-var agentDomainNames = []string{"host", "infra", "network", "automation", "security", "repo"}
+var agentDomainNames = []string{
+	"host", "infra", "network", "automation", "security", "repo", // short names kept for existing callers
+	"compute_systemd", "docker_kubernetes", "network_vpn_cloudflare", "automation_git_iac", "security_audit",
+}
 
-var agentDomains = func() map[string]bool {
-	m := make(map[string]bool, len(agentDomainNames))
-	for _, d := range agentDomainNames {
-		m[d] = true
+// canonicalDomain maps a requested domain name (short or descriptive) to the internal domain. The
+// descriptive names are the ADR 0082 domain modules; the short names are kept for existing callers.
+func canonicalDomain(name string) toolDomain {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "compute_systemd", "host":
+		return domainHost
+	case "docker_kubernetes", "infra":
+		return domainInfra
+	case "network_vpn_cloudflare", "network":
+		return domainNetwork
+	case "automation_git_iac", "automation":
+		return domainAutomation
+	case "security_audit", "security":
+		return domainSecurity
+	case "repo":
+		return domainRepo
 	}
-	return m
-}()
+	return ""
+}
 
 // agentToolDomain classifies a tool by name. Kept in one place so a new tool gets a domain without
 // touching the ten registration files; unclassified tools fall into core and stay always available.
@@ -126,10 +141,10 @@ func agentToolDomain(name string) toolDomain {
 		return domainSecurity
 	case strings.HasPrefix(name, "docker_"), strings.HasPrefix(name, "kube_"), name == "dockerhub_search":
 		return domainInfra
-	case strings.HasPrefix(name, "cf_"), name == "vpn_networks", name == "vpn_network_action", name == "net_diag",
+	case strings.HasPrefix(name, "cf_"), name == "vpn_networks", name == "vpn_network_action", name == "vpn_host_status", name == "net_diag",
 		name == "firewall_action", name == "domain_config_remove", name == "fleet_forwards":
 		return domainNetwork
-	case strings.HasPrefix(name, "ansible_"), strings.HasPrefix(name, "tf_"), name == "gateway_cli",
+	case strings.HasPrefix(name, "ansible_"), strings.HasPrefix(name, "tf_"), name == "gateway_cli", name == "gateway_cli_install",
 		name == "list_vault_keys", name == "trigger_env_sync":
 		return domainAutomation
 	case strings.HasPrefix(name, "repo_"):
@@ -206,19 +221,20 @@ type agentDomainKey struct{}
 
 func toolSetDomain(s *Server, r *http.Request, args map[string]interface{}) (string, error) {
 	d, _ := args["domain"].(string)
-	if !agentDomains[d] {
+	td := canonicalDomain(d)
+	if td == "" {
 		return "", fmt.Errorf("unknown domain %q", d)
 	}
 	if p, ok := r.Context().Value(agentDomainKey{}).(*toolDomain); ok && p != nil {
-		*p = toolDomain(d)
+		*p = td
 	}
 	names := make([]string, 0, len(agentTools))
 	for _, t := range agentTools {
-		if td := agentToolDomain(t.Name); td == domainCore || td == toolDomain(d) {
+		if tdomain := agentToolDomain(t.Name); tdomain == domainCore || tdomain == td {
 			names = append(names, t.Name)
 		}
 	}
-	return "active domain: " + d + "\navailable tools: " + strings.Join(names, ", "), nil
+	return "active domain: " + string(td) + "\navailable tools: " + strings.Join(names, ", "), nil
 }
 
 // callAgentTool runs one tool and returns its result text. A failure is reported as an error result.
@@ -232,7 +248,10 @@ func (s *Server) callAgentTool(r *http.Request, name string, args map[string]int
 	raw, _ := json.Marshal(args)
 	params := clipTo(string(raw), 300)
 	started := time.Now()
-	logger.Info("agent", name, "tool call started", "tool", name, "event", "start", "params", params, "domain", string(agentToolDomain(name)))
+	tier := riskTierOfTool(name, args)
+	gate := tool.gate
+	logger.Info("agent", name, "tool call started", "tool", name, "event", "start", "params", params,
+		"domain", string(agentToolDomain(name)), "risk_tier", string(tier), "gate", gate)
 	// The gate mark lets loopback refuse a change that skipped agentGate. Every call is audited, reads included.
 	ctx := context.WithValue(r.Context(), gateKey{}, new(bool))
 	if p, ok := r.Context().Value(agentDomainKey{}).(*toolDomain); ok && p != nil {
@@ -242,7 +261,8 @@ func (s *Server) callAgentTool(r *http.Request, name string, args map[string]int
 	if err == nil {
 		out, err = tool.run(s, r.WithContext(ctx), args)
 	}
-	attrs := []any{"tool", name, "params", params, "duration_ms", time.Since(started).Milliseconds(), "domain", string(agentToolDomain(name))}
+	attrs := []any{"tool", name, "params", params, "duration_ms", time.Since(started).Milliseconds(),
+		"domain", string(agentToolDomain(name)), "risk_tier", string(tier), "gate", gate}
 	if err == nil {
 		attrs = append(attrs, "status", "success")
 		logger.Info("agent", name, "tool call finished", attrs...)
@@ -730,15 +750,23 @@ func toolExec(s *Server, r *http.Request, args map[string]interface{}) (string, 
 	if cmd == "" || len(cmd) > 8192 {
 		return "", fmt.Errorf("command is required (max 8192 bytes)")
 	}
+	// The operator card is the human-in-the-loop decision. A destructive command cannot reach the
+	// inspector without the approval token that this gate grants.
 	if err := s.agentGate(r, id, "exec_command", cmd, 2); err != nil {
 		return "", err
 	}
-	stdout, stderr, code, err := s.inspector.ExecShell(id, cmd, agentExecTimeout)
+	ctx, cancel := contextTimeout(r, agentExecTimeout)
+	defer cancel()
+	if inspector.ClassifyAgentCommand(cmd) == riskDestructive {
+		ctx = withDestructiveApproval(ctx, cmd)
+	}
+	stdout, stderr, code, err := s.inspector.ExecShellContext(ctx, id, cmd, agentExecTimeout, inspector.DefaultAgentExecLimits())
 	if err != nil {
 		return "", err
 	}
-	half := agentMaxResultBytes/2 - 64 // both streams keep their end: that is where the failure is
-	out := fmt.Sprintf("exit code: %d\n--- stdout ---\n%s\n--- stderr ---\n%s", code, tailOf(stdout, half), tailOf(stderr, half))
+	// The inspector already redacts and caps both streams at ~3000 chars (head+tail); keep its output
+	// whole here so the announced truncation marker survives.
+	out := fmt.Sprintf("exit code: %d\n--- stdout ---\n%s\n--- stderr ---\n%s", code, stdout, stderr)
 	if code != 0 {
 		return out, fmt.Errorf("command exited %d", code)
 	}

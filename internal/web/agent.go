@@ -89,6 +89,7 @@ type agentCfg struct {
 	TriageModel   string
 	TriageBudget  int
 	BriefingTime  string
+	CompactTokens int // conversation compaction threshold in prompt tokens
 }
 
 func (s *Server) agentConfig() agentCfg {
@@ -116,6 +117,12 @@ func (s *Server) agentConfig() agentCfg {
 		c.TriageBudget = v
 	}
 	c.BriefingTime = get("agent_briefing_time")
+	// Compaction threshold is configurable but clamped to a safe range: too small and the agent loses
+	// context mid-task, too large and the token cost grows without bound.
+	c.CompactTokens = agentCompactTokens
+	if v, err := strconv.Atoi(get("agent_compact_tokens")); err == nil && v >= 20000 && v <= 200000 {
+		c.CompactTokens = v
+	}
 	return c
 }
 
@@ -156,7 +163,7 @@ func (s *Server) handleAgentSettings(w http.ResponseWriter, r *http.Request) {
 			"enabled": c.Enabled, "provider": c.Provider, "base_url": c.BaseURL, "api_key_set": c.Key != "",
 			"model": c.Model, "approval": c.Approval, "soul": c.Soul, "soul_is_default": c.Soul == defaultAgentSoul,
 			"triage_enabled": c.TriageEnabled, "triage_model": c.TriageModel,
-			"triage_daily_budget": c.TriageBudget, "briefing_time": c.BriefingTime,
+			"triage_daily_budget": c.TriageBudget, "briefing_time": c.BriefingTime, "compact_tokens": c.CompactTokens,
 		})
 	case http.MethodPost:
 		var req struct {
@@ -171,6 +178,7 @@ func (s *Server) handleAgentSettings(w http.ResponseWriter, r *http.Request) {
 			TriageModel       *string `json:"triage_model"`
 			TriageDailyBudget *int    `json:"triage_daily_budget"`
 			BriefingTime      *string `json:"briefing_time"`
+			CompactTokens     *int    `json:"compact_tokens"`
 		}
 		if err := json.NewDecoder(io.LimitReader(r.Body, 256<<10)).Decode(&req); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
@@ -236,6 +244,15 @@ func (s *Server) handleAgentSettings(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			set["agent_briefing_time"] = tm
+		}
+		if req.CompactTokens != nil {
+			v := *req.CompactTokens
+			if v < 20000 {
+				v = 20000
+			} else if v > 200000 {
+				v = 200000
+			}
+			set["agent_compact_tokens"] = strconv.Itoa(v)
 		}
 		for k, v := range set {
 			_ = s.db.SetSetting(k, v)

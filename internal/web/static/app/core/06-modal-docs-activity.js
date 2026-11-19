@@ -1129,6 +1129,7 @@ function getActivityMetaString(item) {
   const parts = [];
   if (item.attrs.tool !== undefined) parts.push(item.attrs.tool);
   if (item.attrs.domain !== undefined) parts.push(item.attrs.domain);
+  if (item.attrs.risk_tier !== undefined) parts.push(item.attrs.risk_tier);
   if (item.attrs.status !== undefined) parts.push(item.attrs.status);
   if (item.attrs.duration_ms !== undefined) parts.push(`${item.attrs.duration_ms}ms`);
   if (item.attrs.prompt_size !== undefined) parts.push(`in ${item.attrs.prompt_size}`);

@@ -28,6 +28,7 @@
 .ag-tool { align-self: flex-start; display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-muted); font-family: var(--font-mono); }
 .ag-tool-done { color: var(--success); }
 .ag-tool-error { color: var(--danger); }
+.ag-tool-danger { border-left: 2px solid var(--warning); padding-left: 6px; }
 .ag-err { align-self: stretch; color: var(--danger); font-size: var(--fs-sm); background: var(--danger-soft); border: 1px solid var(--danger-border); border-radius: var(--radius); padding: 8px 10px; }
 .ag-form { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--card-border); align-items: flex-end; }
 .ag-form textarea { flex: 1; resize: none; min-height: 38px; max-height: 120px; }

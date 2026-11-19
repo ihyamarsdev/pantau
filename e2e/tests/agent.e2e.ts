@@ -526,3 +526,51 @@ test('agent: an OOM alert shows a zero-token fast-path diagnosis with a gated re
   await browser.locator('#confirmModal').getByRole('button', 'Cancel').click();
   await expect(browser.locator('#confirmModal')).toBeHidden();
 });
+
+// --- Execution safety guardrails (ADR 0082 guardrails) ----------------------
+
+test('agent: a destructive shell command carries the destructive risk tier and waits for approval', async ({ app, screen, browser }) => {
+  // A destructive command (rm -rf) is classified as destructive; the chat tool line shows the tier and
+  // the command blocks on an approval card. Denying it must not claim the command ran.
+  const llm = await startFakeLLM(1, [
+    { name: 'exec_command', args: (f) => ({ host_id: f.hostId, command: 'rm -rf /tmp/pantau-e2e-logs' }) }
+  ]);
+  try {
+    await app.open('/');
+    await initApp(screen, browser);
+
+    llm.hostId = (await browser.evaluate(async () => {
+      const h = await (await fetch('/api/hosts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'e2e-guard', host: '127.0.0.1', port: 1, user: 'x' }) })).json();
+      return h.id as number;
+    })) as number;
+
+    await browser.evaluate(async (base) => {
+      await fetch('/api/agent/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true, provider: 'openai', base_url: base, api_key: 'k-test', model: 'gpt-4o', approval: 'ask' }) });
+      const g = window as unknown as PageGlobals;
+      g.AG.init();
+      g.AG.newChat();
+      return null;
+    }, llm.url);
+
+    await browser.locator('#agentFab').click();
+    await browser.locator('#agentInput').fill('clean up the old logs');
+    await browser.locator('#agentSend').click();
+
+    // The tool line shows the destructive risk tier before the operator decides.
+    await expect(browser.locator('#agentLog .ag-tool').first()).toContainText('destructive', { timeout: 60000 });
+    await expect(browser.locator('#agentLog .ag-tool-danger').first()).toBeVisible();
+    // The exact destructive command is on the approval card.
+    await expect(browser.locator('#agentApprovals .ag-appr-exec pre')).toContainText('rm -rf', { timeout: 60000 });
+    // Deny: the model must be told the command did not run.
+    await browser.locator('#agentApprovals .ag-appr-btns button').first().click();
+    await expect(browser.locator('#agentLog .ag-bot').last()).toContainText('denied');
+
+    // The Activity Console carries the structured risk tier on the tool invocation.
+    await browser.evaluate(() => { (window as unknown as PageGlobals).toggleActivityConsole(true); return null; });
+    await expect(browser.locator('#activityTableBody')).toContainText('tool call started', { timeout: 15000 });
+    await expect(browser.locator('#activityTableBody')).toContainText('destructive', { timeout: 15000 });
+  } finally {
+    await llm.close();
+    await deleteHosts(browser, ['e2e-guard']);
+  }
+});
