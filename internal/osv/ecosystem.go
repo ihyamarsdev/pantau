@@ -11,6 +11,25 @@ const (
 	SourceArch = "arch" // Arch Linux Security Tracker (security.archlinux.org)
 )
 
+// Application ecosystems served by OSV in addition to OS packages (ADR 0088).
+const (
+	EcoPackagist = "Packagist" // PHP composer.lock
+	EcoNPM       = "npm"       // Node.js package-lock.json / pnpm-lock.yaml / yarn.lock
+)
+
+// AppEcosystem returns the OSV ecosystem for an application lockfile kind.
+// kind is one of "composer", "npm", "pnpm", "yarn". ok=false for anything else.
+func AppEcosystem(kind string) (Ecosystem, bool) {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "composer":
+		return Ecosystem{Source: SourceOSV, Name: EcoPackagist}, true
+	case "npm", "pnpm", "yarn":
+		return Ecosystem{Source: SourceOSV, Name: EcoNPM}, true
+	default:
+		return Ecosystem{}, false
+	}
+}
+
 // Ecosystem is the OSV ecosystem string Pantau queries for a host, plus the feed that serves it.
 type Ecosystem struct {
 	Source string // SourceOSV or SourceArch

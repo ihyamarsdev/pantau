@@ -25,8 +25,9 @@ const (
 
 // FIM preset targets.
 const (
-	FIMPresetAuth = "preset:auth"
-	FIMTargetSUID = "suid"
+	FIMPresetAuth     = "preset:auth"
+	FIMTargetSUID     = "suid"
+	FIMPresetWebshell = "preset:webshell" // nginx roots + /tmp + /dev/shm, ADR 0088
 )
 
 // FIMFile is one tracked file and its sha256 digest.
@@ -85,8 +86,8 @@ func ValidateFIMTarget(target string) error {
 		return nil
 	}
 	if strings.HasPrefix(t, "preset:") {
-		if t != FIMPresetAuth {
-			return fmt.Errorf("unknown preset %q (supported: %s)", t, FIMPresetAuth)
+		if t != FIMPresetAuth && t != FIMPresetWebshell {
+			return fmt.Errorf("unknown preset %q (supported: %s, %s)", t, FIMPresetAuth, FIMPresetWebshell)
 		}
 		return nil
 	}

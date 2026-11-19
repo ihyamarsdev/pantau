@@ -948,7 +948,7 @@ function updatePkgCooldownUI(seconds, lastScannedIso) {
   let rem = Number(seconds) || 0;
   if (rem > 0) {
     btn.disabled = true;
-    btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('loader-circle', 'icon-sm')} <span>${t('cooldown_wait', 'Wait')} (${rem}s)</span></span>`;
+    btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('clock', 'icon-sm')} <span>${t('cooldown_wait', 'Wait')} (${rem}s)</span></span>`;
     S.pkgCooldownTimer = setInterval(() => {
       rem--;
       if (rem <= 0) {
@@ -957,7 +957,7 @@ function updatePkgCooldownUI(seconds, lastScannedIso) {
         btn.disabled = false;
         btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('refresh-cw', 'icon-sm')} <span>${t('rescan_packages', 'Rescan Packages')}</span></span>`;
       } else {
-        btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('loader-circle', 'icon-sm')} <span>${t('cooldown_wait', 'Wait')} (${rem}s)</span></span>`;
+        btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('clock', 'icon-sm')} <span>${t('cooldown_wait', 'Wait')} (${rem}s)</span></span>`;
       }
     }, 1000);
   } else {
@@ -1103,7 +1103,7 @@ function pkgUpdateCooldownPaint(rem) {
   if (!btn) return;
   if (rem > 0) {
     btn.disabled = true;
-    btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('loader-circle', 'icon-sm')} <span>${t('cooldown_wait', 'Wait')} (${rem}s)</span></span>`;
+    btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('clock', 'icon-sm')} <span>${t('cooldown_wait', 'Wait')} (${rem}s)</span></span>`;
   } else {
     btn.disabled = false;
     btn.innerHTML = `${svgIcon('download', 'icon-sm')} <span>${t('pkg_check_updates_btn', 'Check for updates')}</span>`;
@@ -1358,7 +1358,7 @@ function secCooldownPaint(rem) {
   if (!btn) return;
   if (rem > 0) {
     btn.disabled = true;
-    btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('loader-circle', 'icon-sm')} <span>${t('cooldown_wait', 'Wait')} (${rem}s)</span></span>`;
+    btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('clock', 'icon-sm')} <span>${t('cooldown_wait', 'Wait')} (${rem}s)</span></span>`;
   } else {
     btn.disabled = false;
     btn.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px;">${svgIcon('refresh-cw', 'icon-sm')} <span>${t('sec_scan_now', 'Scan Now')}</span></span>`;
@@ -1661,7 +1661,7 @@ function renderSecurityData(scan, hostID, intel) {
     <div style="overflow-y: auto; flex: 1;">
       ${bannerHtml}
       ${cardsHtml}
-      ${findingsHtml}${window.VI ? VI.cardHtml(scan, S.currentSecurityIntel) : ''}${window.OV ? OV.html() : ''}
+      ${findingsHtml}${window.VI ? VI.cardHtml(scan, S.currentSecurityIntel) : ''}${window.OV ? OV.html() : ''}${window.EC ? EC.html() : ''}
       ${hardeningHtml}
       ${securityExposureHtml()}${window.Fw ? Fw.html() : ''}${window.AC ? AC.html() : ''}
       ${notesHtml}
@@ -1671,16 +1671,18 @@ function renderSecurityData(scan, hostID, intel) {
   filterSecurityFindings();
   if (window.Fw) Fw.render();
   if (window.OV) OV.render(hostID);
+  if (window.EC) EC.render(hostID);
   if (window.AC) { AC.render(); AC.load(); }
   // The re-render above replaced the scan button, so the cooldown is re-applied here.
   if (S.secCooldownRem > 0) secCooldownPaint(S.secCooldownRem);
 }
 
 function appendSecurityFooter(content) {
-  content.insertAdjacentHTML('beforeend', securityExposureHtml() + (window.Fw ? Fw.html() : '') + (window.AC ? AC.html() : '') + (window.VI ? VI.cardHtml(null, undefined) : '') + (window.OV ? OV.html() : ''));
+  content.insertAdjacentHTML('beforeend', securityExposureHtml() + (window.Fw ? Fw.html() : '') + (window.AC ? AC.html() : '') + (window.VI ? VI.cardHtml(null, undefined) : '') + (window.OV ? OV.html() : '') + (window.EC ? EC.html() : ''));
   if (window.Fw) Fw.render();
   if (window.AC) { AC.render(); AC.load(); }
   if (window.OV) OV.render(S.currentHost ? S.currentHost.id : null);
+  if (window.EC) EC.render(S.currentHost ? S.currentHost.id : null);
 }
 
 function listenProcessName(p) {

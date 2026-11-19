@@ -621,6 +621,19 @@ func (d *DB) migrate() error {
 	);
 	CREATE INDEX IF NOT EXISTS idx_vault_versions_secret ON vault_versions(secret_id);
 	CREATE INDEX IF NOT EXISTS idx_vault_targets_kind ON vault_targets(kind);
+
+	-- CVE Exposure Radar: derived telemetry, re-derivable by a fresh scan; not in System Snapshot (ADR 0088).
+	CREATE TABLE IF NOT EXISTS exposure_scans (
+		host_id INTEGER PRIMARY KEY REFERENCES hosts(id) ON DELETE CASCADE,
+		scanned_at DATETIME NOT NULL,
+		status TEXT NOT NULL DEFAULT 'ok',
+		enabled INTEGER NOT NULL DEFAULT 0,
+		findings_json TEXT NOT NULL DEFAULT '[]',
+		kernel_json TEXT NOT NULL DEFAULT '',
+		critical_exposed INTEGER NOT NULL DEFAULT 0,
+		notes_json TEXT NOT NULL DEFAULT '[]',
+		error TEXT NOT NULL DEFAULT ''
+	);
 	`
 	_, err := d.Exec(schema)
 	if err != nil {

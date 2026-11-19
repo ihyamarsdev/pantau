@@ -25,6 +25,8 @@ var (
 )
 
 var securityTools = []agentTool{
+	{Name: "get_exposed_cves", Description: "Read-only CVE Exposure Radar for a host (or the whole fleet when host_id is omitted): internet-facing (CRITICAL_EXPOSED) vulnerabilities from OSV, application lockfiles, runtime probes, running-kernel drift, Nginx hardening and post-exploitation anomalies, with CISA KEV / EPSS badges when exploit intelligence is enabled. Use it to prioritise fleet-wide remediation. Answers enabled:false when OSV lookup is off.",
+		InputSchema: schema(nil, map[string]interface{}{"host_id": pHost}), run: toolGetExposedCVEs},
 	{Name: "vuln_status", Description: "Known vulnerabilities (OSV, or Arch Security Tracker) of the packages installed on a host, from the stored package inventory. Answers enabled:false when the operator has not turned the feature on; run inventory_scan first when the inventory is empty. Only fixable ones unless unfixed is true; unfixed_count says how many more exist.",
 		InputSchema: schema([]string{"host_id"}, map[string]interface{}{"host_id": pHost, "unfixed": map[string]interface{}{"type": "boolean", "description": "include vulnerabilities without a fixed version"}}), run: toolVulnStatus},
 	{Name: "docker_security", Description: "Stored Docker security results of a host (no SSH): the container misconfiguration audit (findings with remediation) and every scanned image (vulnerabilities per severity). assessed:false means the audit never ran: use docker_security_scan.",
@@ -43,6 +45,28 @@ var securityTools = []agentTool{
 		InputSchema: schema(nil, map[string]interface{}{"kind": pSecKind, "id": pSecID}), run: toolIacFindings},
 	{Name: "iac_scan", Description: "Scan a repository, Terraform workspace or Ansible playbook for misconfigurations and committed secrets now and store the result; nothing is changed in the source. Read it with iac_findings. May wait for operator approval.", gate: gateRoutine,
 		InputSchema: schema([]string{"kind", "id"}, map[string]interface{}{"kind": pSecKind, "id": pSecID}), run: toolIacScan},
+}
+
+// toolGetExposedCVEs reads the stored exposure radar for one host, or the fleet digest when no
+// host_id is given. Read-only: no gate, no SSH, no scan trigger (ADR 0073/0088).
+func toolGetExposedCVEs(s *Server, r *http.Request, args map[string]interface{}) (string, error) {
+	path := "/api/security/exposure"
+	if id, ok := args["host_id"]; ok && id != nil {
+		hostID, err := argHost(args)
+		if err != nil {
+			return "", err
+		}
+		path = fmt.Sprintf("/api/hosts/%d/exposure", hostID)
+	}
+	m, err := s.loopJSON(r.Context(), http.MethodGet, path, nil)
+	if err != nil {
+		return "", err
+	}
+	if scan, ok := m["scan"].(map[string]interface{}); ok {
+		capList(scan, "findings", secCap)
+	}
+	capList(m, "hosts", secCap)
+	return jsonText(m)
 }
 
 // capList keeps the first n entries of m[key] and records the full count under key+"_total" when it cut.

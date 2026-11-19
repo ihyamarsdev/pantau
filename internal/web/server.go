@@ -99,8 +99,8 @@ type Server struct {
 	htmlETag          string
 	docsFS            fs.FS
 	docsCache         map[string][]byte // preloaded embedded docs, keyed by "name_lang"; immutable after SetDocsFS
-	tunnelRunners     sync.Map // hostID -> *tunnelRunnerEntry
-	tunnelPort        int      // dedicated loopback port for the tunnel origin (0 = disabled)
+	tunnelRunners     sync.Map          // hostID -> *tunnelRunnerEntry
+	tunnelPort        int               // dedicated loopback port for the tunnel origin (0 = disabled)
 	portFwd           *portForwardManager
 	inspectAllMu      sync.Mutex
 	loginScanMu       sync.Mutex
@@ -309,6 +309,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/app/vulnintel.css", serveAppBundle("vulnintel", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/osvvulns.js", serveAppBundle("osvvulns", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/osvvulns.css", serveAppBundle("osvvulns", ".css", "text/css; charset=utf-8"))
+	s.mux.HandleFunc("/app/exposedcves.js", serveAppBundle("exposedcves", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/exposedcves.css", serveAppBundle("exposedcves", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/dockersec.js", serveAppBundle("dockersec", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/dockersec.css", serveAppBundle("dockersec", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/accounts.js", serveAppBundle("accounts", ".js", "text/javascript; charset=utf-8"))
@@ -431,6 +433,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/cloudflare/accounts/", s.authMiddleware(s.handleCloudflareAccountRoute))
 	s.mux.HandleFunc("/api/dockerhub/", s.authMiddleware(s.handleDockerHub))
 	s.mux.HandleFunc("/api/security/vuln-databases", s.authMiddleware(s.handleVulnDatabases))
+	s.mux.HandleFunc("/api/security/exposure", s.authMiddleware(s.handleFleetExposure))
 	s.mux.HandleFunc("/api/security/keys", s.authMiddleware(s.handleFleetKeys))
 	// Ansible Playbooks & Runs
 	s.mux.HandleFunc("/api/ansible/status", s.authMiddleware(s.handleAnsibleStatus))
@@ -1466,6 +1469,10 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		writeJSON(w, http.StatusOK, pkgs)
+		return
+
+	case "exposure":
+		s.handleHostExposure(w, r, hostID, parts[2:])
 		return
 
 	case "security":

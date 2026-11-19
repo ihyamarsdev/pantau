@@ -138,7 +138,7 @@ func agentToolDomain(name string) toolDomain {
 		strings.HasPrefix(name, "file_"), strings.HasPrefix(name, "transfer_"), name == "ssh_keys":
 		return domainHost
 	case strings.HasPrefix(name, "docker_security"), strings.HasPrefix(name, "security_"),
-		name == "vuln_status", strings.HasPrefix(name, "account_audit"), name == "fleet_keys",
+		name == "vuln_status", name == "get_exposed_cves", strings.HasPrefix(name, "account_audit"), name == "fleet_keys",
 		strings.HasPrefix(name, "iac_"), name == "fim_diff":
 		return domainSecurity
 	case strings.HasPrefix(name, "docker_"), strings.HasPrefix(name, "kube_"), name == "dockerhub_search":
