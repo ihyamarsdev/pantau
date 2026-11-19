@@ -8,9 +8,8 @@ import (
 // into the system prompt, one question is turned into a few relevant notes plus a short summary of the stored
 // inventory it mentions. Everything here is a database read; nothing talks to a host.
 
-// RecallFact is one line of inventory knowledge that answers part of a question.
 type RecallFact struct {
-	Kind  string `json:"kind"`  // package | container | domain
+	Kind  string `json:"kind"`  // host | package | container | domain
 	Name  string `json:"name"`  // the matched item
 	Hosts string `json:"hosts"` // the hosts that have it, comma separated, capped
 	Count int    `json:"count"` // how many hosts have it (Hosts may be shorter)
@@ -42,9 +41,6 @@ func (d *DB) RecallContext(scope AgentMemoryScope, query string, limit int) (*Ag
 
 	// Only words that look like an inventory item are worth a fleet query: a stopword never matches one.
 	tokens := recallTokens(query)
-	if len(tokens) == 0 {
-		return out, nil
-	}
 	// One query per word, not one for the whole question: SearchFleet requires every token to match, so
 	// "nginx on web-1" would match nothing while "nginx" alone names the inventory Pantau holds.
 	seen := map[string]bool{}
@@ -72,6 +68,17 @@ func (d *DB) RecallContext(scope AgentMemoryScope, query string, limit int) (*Ag
 		}
 		if res.Truncated {
 			out.Truncated = true
+		}
+	}
+	// Host names are not part of FleetSearch (which indexes packages/containers/domains), so a question
+	// like "adakah host macmini 4" would otherwise return no fact at all. Match host names loosely and
+	// surface them as facts, so the model sees the canonical spelling even before it calls list_hosts.
+	// Added after inventory facts so the existing "first fact is the inventory match" contract holds.
+	if hosts, err := d.ListHosts(); err == nil {
+		for _, h := range hosts {
+			if HostNameMatches(query, h.Name) {
+				out.Facts = append(out.Facts, RecallFact{Kind: "host", Name: h.Name, Hosts: h.Name, Count: 1})
+			}
 		}
 	}
 	return out, nil

@@ -159,3 +159,27 @@ func TestCallAgentToolDoesNotCutBeforeTruncation(t *testing.T) {
 		t.Errorf("the notice must count the real bytes: %s", got[:300])
 	}
 }
+
+// A host list is foundational: trimming an old list_hosts result to 2 KB would silently drop the hosts at
+// the end, so a later turn could not see that a host like "macmini-4" exists. Keep these results whole.
+func TestShrinkOldToolResultsKeepsHostLists(t *testing.T) {
+	big := strings.Repeat("H", agentStaleBytes+500)
+	msgs := []llmMessage{{Role: llmRoleUser, Text: "go"}}
+	for i := range agentStaleKeep + 2 {
+		name := "docker_logs"
+		if i == 0 {
+			name = "list_hosts"
+		}
+		msgs = append(msgs,
+			llmMessage{Role: llmRoleAssistant, ToolCalls: []llmToolCall{{ID: "c" + itoa(int64(i)), Name: name}}},
+			llmMessage{Role: llmRoleTool, ToolCallID: "c" + itoa(int64(i)), ToolName: name, Text: big},
+		)
+	}
+	out := shrinkOldToolResults(msgs)
+	if out[2].Text != big {
+		t.Error("an old list_hosts result must not be trimmed")
+	}
+	if !strings.Contains(out[4].Text, "older tool result trimmed") {
+		t.Error("an old non-host tool result must still be trimmed")
+	}
+}

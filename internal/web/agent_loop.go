@@ -42,6 +42,7 @@ type agentToolEvent struct {
 	Status     string `json:"status"`
 	ToolCallID string `json:"toolCallId"`
 	Domain     string `json:"domain,omitempty"`
+	RiskTier   string `json:"risk_tier,omitempty"`
 	DurationMS int64  `json:"duration_ms,omitempty"`
 }
 
@@ -193,7 +194,7 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 	system := c.Soul + "\n\n" + s.agentMemoryPrompt(message)
 
 	// A long text-only exchange never reaches a tool batch, so the history is compacted here too.
-	if lastTokens > 0 && lastTokens+len(message)/3 > agentCompactTokens {
+	if lastTokens > 0 && lastTokens+len(message)/3 > c.CompactTokens {
 		history = s.compactHistory(r.Context(), client, c, history)
 	}
 	for step := range agentMaxSteps {
@@ -242,7 +243,8 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 			args, argErr := agentToolArgs(tc.Args)
 			label := agentToolLabel(args)
 			toolDomainName := string(agentToolDomain(tc.Name))
-			sse.toolEvent(agentToolEvent{Tool: tc.Name, Label: label, Status: "running", ToolCallID: tc.ID, Domain: toolDomainName})
+			riskTierName := string(riskTierOfTool(tc.Name, args))
+			sse.toolEvent(agentToolEvent{Tool: tc.Name, Label: label, Status: "running", ToolCallID: tc.ID, Domain: toolDomainName, RiskTier: riskTierName})
 			callStart := time.Now()
 			text, isErr := "", true
 			if argErr != nil {
@@ -254,12 +256,12 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 			if isErr {
 				status = "error"
 			}
-			sse.toolEvent(agentToolEvent{Tool: tc.Name, Label: label, Status: status, ToolCallID: tc.ID, Domain: toolDomainName, DurationMS: time.Since(callStart).Milliseconds()})
-			history = append(history, llmMessage{Role: llmRoleTool, ToolCallID: tc.ID, Text: truncateToolResult(tc.Name, text), IsError: isErr})
+			sse.toolEvent(agentToolEvent{Tool: tc.Name, Label: label, Status: status, ToolCallID: tc.ID, Domain: toolDomainName, RiskTier: riskTierName, DurationMS: time.Since(callStart).Milliseconds()})
+			history = append(history, llmMessage{Role: llmRoleTool, ToolCallID: tc.ID, ToolName: tc.Name, Text: truncateToolResult(tc.Name, text), IsError: isErr})
 		}
 		// The batch is complete: it is kept even if the turn fails later.
 		saved = append([]llmMessage{}, history...)
-		if tokens > agentCompactTokens {
+		if tokens > c.CompactTokens {
 			history = s.compactHistory(r.Context(), client, c, history)
 			saved = append([]llmMessage{}, history...)
 		}
@@ -329,9 +331,9 @@ var toolResultHints = map[string]string{
 	"docker_security":   "read one section: the audit findings or one image, not both",
 	"iac_findings":      "read one source: call iac_findings with kind and id",
 	"fleet_search":      "narrow the query, or raise limit",
-	"host_info":          "ask for one part: host_info with what=resources, updates, firewall, domains or databases",
-	"list_vault_keys":    "narrow it: call list_vault_keys with a scope filter",
-	"trigger_env_sync":   "sync one target at a time: call trigger_env_sync with a single target_id",
+	"host_info":         "ask for one part: host_info with what=resources, updates, firewall, domains or databases",
+	"list_vault_keys":   "narrow it: call list_vault_keys with a scope filter",
+	"trigger_env_sync":  "sync one target at a time: call trigger_env_sync with a single target_id",
 }
 
 // truncateToolResult cuts an oversized tool result to a head and a tail joined by a structured notice, so the
@@ -370,6 +372,11 @@ func shrinkOldToolResults(msgs []llmMessage) []llmMessage {
 		return msgs
 	}
 	for _, i := range tools[:len(tools)-agentStaleKeep] {
+		// A host list is small and foundational: trimming it to 2 KB silently drops the hosts at the
+		// end, so a later turn can no longer see that "macmini-4" exists. Keep these whole.
+		if msgs[i].ToolName == "list_hosts" || msgs[i].ToolName == "fleet_hosts" {
+			continue
+		}
 		if len(msgs[i].Text) > agentStaleBytes {
 			msgs[i].Text = fmt.Sprintf("%s\n[older tool result trimmed: %d of %d bytes kept; ask again for the rest]",
 				msgs[i].Text[:agentStaleBytes], agentStaleBytes, len(msgs[i].Text))

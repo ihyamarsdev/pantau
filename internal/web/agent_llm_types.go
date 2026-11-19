@@ -25,6 +25,7 @@ type llmMessage struct {
 	Text       string        // user text, assistant text, or tool result text
 	ToolCalls  []llmToolCall // assistant only
 	ToolCallID string        // tool only: the llmToolCall.ID this answers
+	ToolName   string        // tool only: which tool produced this result (used by compaction)
 	IsError    bool          // tool only: the call failed
 }
 

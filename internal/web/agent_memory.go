@@ -236,13 +236,20 @@ func (s *Server) memoryScopeOf(question string) store.AgentMemoryScope {
 	q := strings.ToLower(question)
 	var scope store.AgentMemoryScope
 	if hosts, err := s.db.ListHosts(); err == nil {
-		for _, h := range hosts {
-			name := strings.ToLower(strings.TrimSpace(h.Name))
-			if name != "" && strings.Contains(q, name) {
-				id := h.ID
-				scope.HostID = &id
-				break
+		// Match loosely: "macmini 4" must find the host stored as "macmini-4". Prefer the longest
+		// matching name so a host whose name is a prefix of another is not shadowed.
+		var best *store.Host
+		for i := range hosts {
+			if !store.HostNameMatches(q, hosts[i].Name) {
+				continue
 			}
+			if best == nil || len(hosts[i].Name) > len(best.Name) {
+				best = &hosts[i]
+			}
+		}
+		if best != nil {
+			id := best.ID
+			scope.HostID = &id
 		}
 	}
 	for _, d := range store.AgentMemoryDomains {
