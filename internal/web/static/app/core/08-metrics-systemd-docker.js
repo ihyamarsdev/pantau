@@ -1325,7 +1325,7 @@ function switchSideNav(section) {
   if (secSecrets) secSecrets.style.display = section === 'secrets' ? 'block' : 'none';
   toggleSidePanelMobile(false);
   if (section !== 'kube') stopKubeAutorefresh();
-  if (section === 'docker') renderDockerSection();
+  if (section === 'docker') { renderDockerSection(); loadDockerFleetOverview(); }
   else if (section === 'kube') { loadKubeClusters(); populateKubeHostSelect(); }
   else if (section === 'cloudflare') { loadCfAccounts(); }
   else if (section === 'ansible') { refreshAnsibleSection(); }
@@ -1336,7 +1336,7 @@ function switchSideNav(section) {
 }
 
 function updateSideNavData() {
-  if (S.currentSideNav === 'docker') renderDockerSection();
+  if (S.currentSideNav === 'docker') { renderDockerSection(); loadDockerFleetOverview(); }
   if (S.currentSideNav === 'kube') { loadKubeClusters(); populateKubeHostSelect(); }
   if (S.currentSideNav === 'cloudflare') { loadCfAccounts(); }
   if (S.currentSideNav === 'ansible') { refreshAnsibleSection(); }
@@ -1346,6 +1346,25 @@ async function openHostDocker(hostId) {
   setHostActiveTab(hostId, 'docker');
   await openHostDetail(hostId);
   switchTab('docker');
+}
+
+async function loadDockerFleetOverview() {
+  const strip = document.getElementById('dockerFleetStrip');
+  if (!strip) return;
+  try {
+    const res = await fetch('/api/docker/overview');
+    if (!res.ok) throw new Error(String(res.status));
+    const d = await res.json();
+    const stat = (label, value, cls) => `<div class="dk-fleet-stat"><div class="dk-fleet-num ${cls || ''}">${value}</div><div class="dk-fleet-label">${escapeHtml(label)}</div></div>`;
+    strip.innerHTML = stat(t('dk_fleet_hosts', 'Hosts with Docker'), d.hosts_with_docker + ' / ' + d.host_count) +
+      stat(t('dk_fleet_containers', 'Containers'), d.total_containers) +
+      stat(t('dk_fleet_running', 'Running'), d.running_containers, 'ok') +
+      stat(t('dk_fleet_stopped', 'Stopped'), d.stopped_containers) +
+      stat(t('dk_fleet_stacks', 'Stacks'), d.total_stacks) +
+      stat(t('dk_fleet_issues', 'Security issues'), d.total_security_issues, d.total_security_issues > 0 ? 'bad' : '');
+  } catch (e) {
+    strip.innerHTML = `<div class="dk-fleet-empty">${escapeHtml(t('dk_fleet_nodocker', 'No Docker data recorded yet'))}</div>`;
+  }
 }
 
 function renderDockerSection() {

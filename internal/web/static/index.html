@@ -16,6 +16,7 @@
 <link rel="stylesheet" href="/app/vulnintel.css" />
 <link rel="stylesheet" href="/app/osvvulns.css" />
 <link rel="stylesheet" href="/app/exposedcves.css" />
+<link rel="stylesheet" href="/app/security-center.css" />
 <link rel="stylesheet" href="/app/palette.css" />
 <link rel="stylesheet" href="/app/portfwd.css" />
 <link rel="stylesheet" href="/app/fleetsearch.css" />
@@ -2864,6 +2865,14 @@ header {
 .sd-footer { justify-content: space-between; align-items: center; flex-wrap: wrap; }
 .sd-footer-group { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 /* Docker management (Portainer-style) */
+/* Fleet Docker overview strip (ADR 0090) */
+.dk-fleet-strip { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.dk-fleet-stat { flex: 1 1 130px; min-width: 120px; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: var(--radius-lg); padding: 10px 14px; }
+.dk-fleet-num { font-size: var(--fs-xl); font-weight: 700; font-family: var(--font-mono); color: var(--text); }
+.dk-fleet-num.ok { color: var(--success); }
+.dk-fleet-num.bad { color: var(--danger); }
+.dk-fleet-label { font-size: var(--fs-xs); color: var(--text-muted); margin-top: 2px; }
+.dk-fleet-empty { width: 100%; padding: 14px; text-align: center; color: var(--text-muted); font-size: var(--fs-sm); background: var(--card-bg); border: 1px solid var(--card-border); border-radius: var(--radius-lg); }
 .dk-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .dk-form-grid .dk-full { grid-column: 1 / -1; }
 .dk-field label { display: block; font-size: var(--fs-xs); font-weight: 600; color: var(--text-muted); margin-bottom: 4px; }
@@ -3774,6 +3783,11 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 <symbol id="i-menu" viewBox="0 0 24 24"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></symbol>
 <symbol id="i-ansible" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m14.5 17-2.3-6.5a.6.6 0 0 0-1.1 0L8.8 17"/><path d="M9.8 14.2h3.8"/><circle cx="14.8" cy="17.2" r="1" fill="currentColor"/></symbol>
 <symbol id="i-terraform" viewBox="0 0 24 24"><path d="m1.5 5.5 6.5-3.8v7.5L1.5 13z"/><path d="m8.5 16.8 6.5-3.8v7.5l-6.5 3.8z"/><path d="m8.5 1.7 6.5 3.8v7.5l-6.5-3.8z"/><path d="m15.5 5.5 6.5-3.8v7.5l-6.5 3.8z"/></symbol>
+<symbol id="i-layout-dashboard" viewBox="0 0 24 24"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></symbol>
+<symbol id="i-file-warning" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M12 13v4"/><path d="M12 21h.01"/></symbol>
+<symbol id="i-panel-left-close" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m14 9-2 3 2 3"/></symbol>
+<symbol id="i-file-check" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="m9 15 2 2 4-4"/></symbol>
+<symbol id="i-sparkles" viewBox="0 0 24 24"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3z"/><path d="M19 3v4"/><path d="M17 5h4"/></symbol>
 </svg>
 
 <div id="loginView" class="login-view-wrapper" style="display: none;">
@@ -3970,7 +3984,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
       <div class="section-header" style="margin-bottom:20px;">
         <h2 style="margin:0 0 4px 0;font-size:var(--fs-xl);font-weight:600;" data-i18n="docker_section_title">Docker Management</h2>
         <p style="margin:0;color:var(--text-muted);font-size:var(--fs-sm);" data-i18n="docker_section_desc">Select a host to manage containers, images, volumes, networks, and stacks.</p>
-      </div>
+      <div id="dockerFleetStrip" class="dk-fleet-strip" aria-live="polite"></div>
       <div class="dashboard-toolbar">
         <div class="search-box">
           <svg class="icon icon-sm text-muted"><use href="#i-search"/></svg>
@@ -7072,6 +7086,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 <script src="/vendor/mode/diff.min.js"></script>
 
 <script type="module" src="/app/core/main.js"></script>
+<script type="module" src="/app/security-center.js"></script>
 <script type="module" src="/app/terraform.js"></script>
 <script type="module" src="/app/repos.js"></script>
 <script type="module" src="/app/ansible.js"></script>

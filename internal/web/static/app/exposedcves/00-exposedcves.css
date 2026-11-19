@@ -28,7 +28,7 @@
 
 /* Compact table */
 .ec-table { border: 1px solid var(--card-border); border-radius: var(--radius-md); overflow: hidden; max-height: 60vh; overflow-y: auto; }
-.ec-table-head, .ec-row { display: grid; grid-template-columns: 18px 96px minmax(0, 1fr) 90px 190px 210px; gap: 8px; align-items: center; padding: 8px 10px; }
+.ec-table-head, .ec-row { display: grid; grid-template-columns: 18px 132px minmax(0, 1fr) 90px 190px 210px; gap: 8px; align-items: center; padding: 8px 10px; }
 .ec-table-head { position: sticky; top: 0; z-index: 1; background: var(--surface-3); border-bottom: 1px solid var(--border-strong); color: var(--text-faint); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .04em; }
 .ec-finding { border-bottom: 1px solid var(--card-border); background: var(--surface-2); }
 .ec-finding:last-child { border-bottom: none; }
@@ -41,7 +41,7 @@
 .ec-chevron .icon { width: 14px; height: 14px; }
 
 /* Severity + main cell */
-.ec-sev { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding: 2px 6px; border-radius: var(--radius-full); border: 1px solid var(--card-border); color: var(--text-muted); text-align: center; white-space: nowrap; }
+.ec-sev { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding: 2px 6px; border-radius: var(--radius-full); border: 1px solid var(--card-border); color: var(--text-muted); text-align: center; white-space: nowrap; width: max-content; max-width: 100%; justify-self: start; }
 .ec-sev.critical, .ec-sev.critical-exposed { color: var(--danger); border-color: var(--danger-border); background: var(--danger-soft); }
 .ec-sev.high { color: var(--warning); border-color: var(--warning-border); background: var(--warning-soft); }
 .ec-sev.medium { color: var(--info); border-color: var(--info-border); }

@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"pantau/internal/inspector"
@@ -36,6 +37,32 @@ func (s *Server) scanIntel(ctx context.Context, scan *store.SecurityScan) securi
 	defer cancel()
 	res := s.vuln.Lookup(ctx, cves)
 	return securityIntel{Enabled: true, Result: &res}
+}
+
+// handleSecurityOverview serves GET /api/security/overview: the aggregated, single-pass
+// Security Center digest (ADR 0089). Optional ?host_id= and ?group_id= limit the scope.
+// group_id is the Host Group name; both filters may be combined.
+func (s *Server) handleSecurityOverview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var hostID int64
+	if raw := r.URL.Query().Get("host_id"); raw != "" {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || id <= 0 {
+			http.Error(w, "invalid host_id", http.StatusBadRequest)
+			return
+		}
+		hostID = id
+	}
+	groupName := strings.TrimSpace(r.URL.Query().Get("group_id"))
+	ov, err := s.db.GetSecurityOverview(hostID, groupName)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, ov)
 }
 
 // handleVulnDatabases serves GET /api/security/vuln-databases: the embedded list of vulnerability databases with

@@ -1386,6 +1386,11 @@ function updateSecCooldownUI(seconds) {
   }
 }
 
+function mountSecurityCenterHost(content, hostID, legacyHtml) {
+  if (window.SC) { SC.mountHost(content, hostID, { legacyHtml: legacyHtml || '' }); return true; }
+  return false;
+}
+
 async function loadSecurityTab() {
   const host = S.currentHost;
   const content = document.getElementById('tabContent');
@@ -1409,6 +1414,7 @@ async function loadSecurityTab() {
         <div style="font-size: 0.82rem; font-family: var(--font-mono);">${escapeHtml(e.message)}</div>
       </div>`;
     appendSecurityFooter(content);
+    mountSecurityCenterHost(content, host.id, content.innerHTML);
     return;
   }
 
@@ -1429,6 +1435,7 @@ async function loadSecurityTab() {
       </div>`;
     appendSecurityFooter(content);
     if (cooldownRem > 0) updateSecCooldownUI(cooldownRem);
+    mountSecurityCenterHost(content, host.id, content.innerHTML);
     return;
   }
 
@@ -1450,6 +1457,7 @@ async function loadSecurityTab() {
       </div>`;
     appendSecurityFooter(content);
     if (cooldownRem > 0) updateSecCooldownUI(cooldownRem);
+    mountSecurityCenterHost(content, host.id, content.innerHTML);
     return;
   }
 
@@ -1569,7 +1577,7 @@ function renderSecurityData(scan, hostID, intel) {
 
   const findings = scan.findings || [];
   const findingsHtml = `
-    <div class="card" style="padding: 16px;">
+    <div class="card" id="secFindingsCard" style="padding: 16px;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
         <h4 style="margin: 0; display: flex; align-items: center; gap: 6px;">${svgIcon('search', 'icon-sm')} <span>${t('sec_findings_title', 'Security Findings')}</span> (<span id="secFindingsCount">${findings.length}</span>)</h4>
         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
@@ -1668,6 +1676,12 @@ function renderSecurityData(scan, hostID, intel) {
     </div>
   `;
 
+  // ADR 0089: render the legacy host-security cards into a detached holder, then let the
+  // unified Security Center component mount them into its Overview pillar.
+  if (window.SC) {
+    SC.mountHost(content, hostID, { legacyHtml: content.innerHTML, scan: scan, intel: S.currentSecurityIntel });
+    return;
+  }
   filterSecurityFindings();
   if (window.Fw) Fw.render();
   if (window.OV) OV.render(hostID);
