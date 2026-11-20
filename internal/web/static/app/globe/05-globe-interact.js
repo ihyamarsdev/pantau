@@ -7,8 +7,8 @@
   var G = window.WebGlobe;
   var S = GL.state;
   var RAD = Math.PI / 180;
-  var MIN_ZOOM = 0.75, MAX_ZOOM = 200, MAX_LAT = 85 * RAD;
-  var AUTO_MAX_ZOOM = 2, DETAIL_ZOOM = 2.5, STACK_PX = 8, SPREAD_PX = 18;
+  var MIN_ZOOM = 0.75, MAX_ZOOM = 600, MAX_LAT = 85 * RAD;
+  var AUTO_MAX_ZOOM = 2, DETAIL_ZOOM = 1.3, FINE_ZOOM = 3, PROV_ZOOM = 2.5, KAB_ZOOM = 12, STACK_PX = 8, SPREAD_PX = 18;
   var AUTO_SPEED = 0.00005;   // rad/ms, about 3 degrees a second
   var HOME = { lon: 100 * RAD, lat: 15 * RAD, zoom: 1 };
   var esc = function (s) { return escapeHtml(String(s === null || s === undefined ? '' : s)); };
@@ -21,33 +21,138 @@
   }
 
   function wrapDeg(a) { return ((a + 540) % 360) - 180; }
+  GL.clampZoom = function (z) { return clamp(z, MIN_ZOOM, MAX_ZOOM); };
+  GL.maxZoom = function () { return MAX_ZOOM; };
 
-  // Refresh the close-zoom detail texture once the camera has settled. The first call to G.admin1()
-  // starts the lazy province-line import; later calls return the cached array (or null while loading).
+  // Refresh the detail texture so the visible globe area always has >= 1 texel per device pixel at the view
+  // centre. The raster is a viewport-tight geographic rectangle: at higher zoom the rectangle shrinks with the
+  // view, so texel density stays constant and the whole visible area is covered. Modes:
+  //  - adminMode: an Indonesian province/kabupaten is selected -- raster the focused bbox with its real polygons;
+  //  - countryMode: a country is selected -- raster its full bbox (Indonesia uses official admin-2 data);
+  //  - general: raster the visible viewport rectangle.
+  // Decoded arrays are cached; the texture object and canvas are reused. Repaints happen only when the camera
+  // has settled (never while dragging/flying/inertial), throttled to 200 ms, and skipped when the view has not
+  // changed enough to matter -- zero work when static.
   function syncDetail(r, ts) {
-    if (S.zoom < DETAIL_ZOOM) { if (r.detail) r.setDetail(null); return; }
+    var adminMode = !!(S.selectedProvince && S.adminFit && G.admin2Ready() && GL.adminView);
+    var countryMode = !adminMode && S.selectedCountry >= 0 && !!S.countryFit;
+    if (!adminMode && !countryMode && S.zoom < DETAIL_ZOOM) { if (r.detail) r.setDetail(null); return; }
+
     var ppr = r.pxPerRad(S.zoom);
     var moving = S.dragging || S.fly || (Math.abs(S.velLon) + Math.abs(S.velLat)) * ppr > 0.05;
-    if (moving) return;
-    var d = r.detail;
-    if (d && ts - d.at < 200) return;
-    var lines = G.admin1();
     var lat = S.lat / RAD, lon = S.lon / RAD;
     var cw = S.canvas.clientWidth, ch = S.canvas.clientHeight;
-    if (d && S.zoom / d.zoom > 0.8 && S.zoom / d.zoom < 1.4 &&
-        Math.abs(lat - d.lat) < 0.25 * d.halfLat &&
-        Math.abs(wrapDeg(lon - d.lon)) < 0.25 * d.halfLon &&
-        !!lines === !!d.lines && cw === d.cw && ch === d.ch) return;
-    var degPerPx = 1 / (ppr * RAD);
-    var halfLat = Math.min(90, 0.8 * Math.max(cw, ch) * degPerPx);
-    var halfLon = Math.min(180, halfLat / Math.max(0.2, Math.cos(S.lat)));
+    var d = r.detail;
+
+    // The raster ALWAYS covers the visible viewport. The selection bbox drives fly-to framing and the
+    // highlight only; it never clips the raster (clipping it uncovered the stage edges at high zoom).
+    // Longitude uses cw, latitude uses ch, both in CSS px, with a 1.25x margin for pan tolerance.
+    var degPerPx = 180 / (Math.PI * ppr);
+    var halfLat = Math.min(90, 0.625 * ch * degPerPx);
+    var halfLon = Math.min(180, 0.625 * cw * degPerPx / Math.max(0.2, Math.cos(S.lat)));
     var south = Math.max(-90, lat - halfLat), north = Math.min(90, lat + halfLat);
+    var west = lon - halfLon, east = lon + halfLon;
+
+    // Change detection against the LAST PAINTED view: even in admin/country mode we now repaint when the
+    // camera has zoomed enough that the frozen raster would be magnified beyond 1 texel/device px.
+    var adminKey = adminMode ? (S.selectedProvince + '/' + S.selectedKab) : '';
+    var selectedIso = countryMode ? ((G.countries()[S.selectedCountry] || {}).iso || '') : '';
+    // Determine whether the view is over Indonesia from the actual camera centre (not only the picker),
+    // so automatic LOD works without a selection. A bbox prefilter is enough at these zooms.
+    var viewIso = '';
+    var geo = S.renderer.unproject(S.canvas.clientWidth / 2, S.canvas.clientHeight / 2);
+    if (geo) viewIso = G.isoAt(geo.lat, geo.lon);
+    var idMode = selectedIso === 'ID' || adminMode || viewIso === 'ID';
+    var lodKey = idMode ? (S.zoom >= KAB_ZOOM ? 2 : S.zoom >= PROV_ZOOM ? 1 : 0) : 0;
+    if (d && !moving) {
+      var sameMode = d.country === S.selectedCountry && d.adminKey === adminKey && d.lod === lodKey &&
+        d.idMode === idMode && d.cw === cw && d.ch === ch && d.mode === (adminMode ? 2 : countryMode ? 1 : 0) &&
+        d.adminReady === !!G.admin2Ready() && d.fineReady === !!G.admin0fineReady() &&
+        d.hiresCount === G.hiresCount() &&
+        d.hiresProv === (S.selectedProvince || '');
+      // Coverage in CSS px: degPerCssPx uses pxPerRad (CSS px), and the longitude extent uses cw (stage width),
+      // not ch. The painted rect must contain the current view at 1 texel/device px.
+      var degPerCssPx = 180 / (Math.PI * ppr);
+      var needHalfLat = 0.5 * ch * degPerCssPx;
+      var needHalfLon = 0.5 * cw * degPerCssPx / Math.max(0.2, Math.cos(S.lat));
+      var covers = lat - needHalfLat >= d.south && lat + needHalfLat <= d.north &&
+        Math.abs(wrapDeg(lon - d.lon)) <= d.halfLon - needHalfLon;
+      // Density: texels per degree of the painted raster vs the texels per degree needed at this zoom.
+      var densityOK = !d.texPerDeg || d.texPerDeg >= (1 / degPerCssPx) * r.dpr * 0.98;
+      // Repaint if the view centre has drifted more than a quarter of the painted rect: a big jump (pan to
+      // another region) needs a fresh raster; small auto-rotate drift stays covered and needs no repaint.
+      var centreOK = Math.abs(lat - d.lat) < 0.25 * d.halfLat &&
+        Math.abs(wrapDeg(lon - d.lon)) < 0.25 * d.halfLon;
+      if (sameMode && covers && densityOK && centreOK) return;
+    }
+
+    // While moving, paint a cheaper pass at most every 300 ms so magnification stays brief; the full pass
+    // runs on settle. The 200 ms debounce after the last paint also bounds work during continuous wheel zoom.
+    if (moving) { if (d && ts - d.at < 300) return; }
+    else if (d && ts - d.at < 200) return;
+
+    // Pick geometry for this view. Fine land/coastline is lazy; request it as soon as the coarse 1:50m
+    // map would be magnified (FINE_ZOOM), not only at the old 2.5x threshold.
+    var fine = G.admin0fineReady() ? G.admin0fine() : null;
+    if (S.zoom >= FINE_ZOOM && !G.admin0fineReady()) G.admin0fineLoad();
+    var lines, land = null, borders = null, admin = null;
+    if (idMode) {
+      // Load every hi-res chunk whose province bbox intersects the painted raster rect. Until a chunk is
+      // ready, fill/stroke that province from the complete fallback polygons so land is never drawn as sea.
+      var landFeatures = [];
+      var pendingHires = false;
+      if (G.admin2Ready()) {
+        var a2 = G.admin2();
+        G.provinceBoxes().forEach(function (pb) {
+          var b = pb.bbox;
+          if (b[2] < west || b[0] > east || b[3] < south || b[1] > north) return;
+          var hi = G.hiresFor(pb.code);
+          if (hi) landFeatures = landFeatures.concat(hi);
+          else {
+            landFeatures = landFeatures.concat(G.admin2Fallback(pb.code));
+            if (!G.hiresReady(pb.code)) { G.hiresLoad(pb.code); pendingHires = true; }
+          }
+        });
+      } else {
+        G.admin2Load();
+      }
+      // Land/coast from the union of intersecting provinces (hires where loaded, fallback elsewhere).
+      land = landFeatures.length ? landFeatures : (G.admin2() ? G.admin2().k : null);
+      borders = [];
+      lines = null;
+      // Highlight geometry: prefer the loaded hi-res features of the selected province. The province
+      // selection outline is the union of its kabupaten rings (hi-res), not the coarse cahyadsn polygon.
+      var hp = S.selectedProvince ? G.hiresFor(S.selectedProvince) : null;
+      var selectedProv = (a2 && a2.p.find(function (p) { return p.code === S.selectedProvince; })) || null;
+      var selectedKab = S.selectedKab ? (hp || (a2 ? a2.k : [])).find(function (k) { return k.code === S.selectedKab; }) : null;
+      var provOutline = null;
+      if (hp && hp.length) {
+        provOutline = { rings: [], bbox: [180, 90, -180, -90] };
+        hp.forEach(function (k) {
+          k.rings.forEach(function (r) { provOutline.rings.push(r); });
+          var b = k.bbox;
+          provOutline.bbox[0] = Math.min(provOutline.bbox[0], b[0]); provOutline.bbox[1] = Math.min(provOutline.bbox[1], b[1]);
+          provOutline.bbox[2] = Math.max(provOutline.bbox[2], b[2]); provOutline.bbox[3] = Math.max(provOutline.bbox[3], b[3]);
+        });
+      }
+      admin = {
+        provinces: lodKey >= 1 ? (a2 ? a2.p : []) : [],
+        kabs: lodKey >= 2 ? (hp || (S.selectedProvince ? G.admin2Kab(S.selectedProvince) : landFeatures)) : [],
+        province: selectedProv, provinceOutline: provOutline, kab: selectedKab, hiresActive: !!hp
+      };
+      if (pendingHires && d) d.pendingHires = true;
+    } else {
+      lines = (selectedIso && countryMode) ? G.admin1Country(selectedIso) : G.admin1OutsideIndonesia();
+    }
+
+    var lineZoom = (adminMode || countryMode) ? 63 : Math.log2(ppr * RAD / 0.711) + 1;
     r.setDetail({
-      lat: lat, lon: lon, zoom: S.zoom, halfLat: halfLat, halfLon: halfLon, cw: cw, ch: ch, at: ts,
-      west: lon - halfLon, east: lon + halfLon, south: south, north: north,
-      cssPx: (north - south) / degPerPx,
-      lineZoom: Math.log2(ppr * RAD / 0.711) + 1,
-      lines: lines
+      country: S.selectedCountry, lineCount: lines ? lines.length : 0, adminKey: adminKey, admin: admin,
+      lod: lodKey, idMode: idMode, mode: adminMode ? 2 : countryMode ? 1 : 0,
+      lat: lat, lon: lon, zoom: S.zoom, viewKey: lat.toFixed(4) + '/' + lon.toFixed(4) + '/' + S.zoom, adminReady: !!G.admin2Ready(), fineReady: !!G.admin0fineReady(), hiresCount: G.hiresCount(), hiresProv: S.selectedProvince || '', halfLat: (north - south) / 2, halfLon: (east - west) / 2,
+      cw: cw, ch: ch, at: ts, west: west, east: east, south: south, north: north,
+      lineZoom: lineZoom, lines: lines, land: land, borders: borders, fine: fine,
+      moving: moving
     });
   }
 
@@ -70,6 +175,25 @@
     }
   }
 
+  // Auto-load the official Indonesian boundaries when the view is over Indonesia at province zoom, without
+  // requiring the picker. Checked at most every 500 ms (one point-in-polygon on the view centre), so it adds
+  // no per-frame allocation and the import starts exactly once.
+  var lastAdminCheck = 0;
+  function autoLoadAdmin2(ts) {
+    if (G.admin2Ready() || S.zoom < PROV_ZOOM || ts - lastAdminCheck < 500) return;
+    lastAdminCheck = ts;
+    var geo = S.renderer.unproject(S.canvas.clientWidth / 2, S.canvas.clientHeight / 2);
+    if (!geo) return;
+    var cs = G.countries();
+    for (var i = 0; i < cs.length; i++) {
+      if (cs[i].iso === 'ID') {
+        var b = cs[i].bbox;
+        if (geo.lon >= b[0] - 2 && geo.lon <= b[2] + 2 && geo.lat >= b[1] - 2 && geo.lat <= b[3] + 2) G.admin2Load();
+        return;
+      }
+    }
+  }
+
   // ---- Frame loop ----------------------------------------------------------
   var lastHover = 0;
 
@@ -82,10 +206,11 @@
       var k = 1 - Math.exp(-dt / 160), dLon = wrap(S.fly.lon - S.lon);
       S.lon += dLon * k;
       S.lat += (S.fly.lat - S.lat) * k;
-      S.zoom *= Math.pow(S.fly.zoom / S.zoom, k);
+      var flyZoom = clamp(S.fly.zoom, MIN_ZOOM, MAX_ZOOM);
+      S.zoom *= Math.pow(flyZoom / S.zoom, k);
       var eps = 0.002 / S.zoom;
-      if (Math.abs(dLon) < eps && Math.abs(S.fly.lat - S.lat) < eps && Math.abs(Math.log(S.fly.zoom / S.zoom)) < 0.005) {
-        S.lon = S.fly.lon; S.lat = S.fly.lat; S.zoom = S.fly.zoom;
+      if (Math.abs(dLon) < eps && Math.abs(S.fly.lat - S.lat) < eps && Math.abs(Math.log(flyZoom / S.zoom)) < 0.005) {
+        S.lon = S.fly.lon; S.lat = S.fly.lat; S.zoom = flyZoom;
         S.fly = null;
       }
     } else if (!S.dragging) {
@@ -106,6 +231,7 @@
       if (S.hoverPos && !S.dragging && ts - lastHover > 100) { lastHover = ts; updateHover(); } // the globe turns under a still cursor
       r.resize();
       r.setCamera({ lon: S.lon, lat: S.lat, zoom: S.zoom });
+      autoLoadAdmin2(ts);
       syncDetail(r, ts);
       r.draw(ts, clamp((S.burst - ts) / 1200, 0, 1));
     }
@@ -128,9 +254,19 @@
   function zoomBy(f) {
     S.fly = { lon: S.lon, lat: S.lat, zoom: clamp(S.zoom * f, MIN_ZOOM, MAX_ZOOM) };
   }
-  function goHome() {
+  // Fly back to the whole-world home view. Zero the inertia first so a residual fling cannot fight the fly;
+  // auto-rotate resumes on its own once the fly settles and the zoom is back under AUTO_MAX_ZOOM. This is the
+  // single low-level primitive used by the reset button and by GL.selectCountry(-1); it never calls back into
+  // selection, so there is no recursive reset path.
+  GL.flyHome = function () {
     S.velLon = S.velLat = 0;
     S.fly = { lon: HOME.lon, lat: HOME.lat, zoom: HOME.zoom };
+  };
+  function goHome() {
+    // Clearing the country also flies home (GL.selectCountry(-1) calls flyHome); when nothing is selected,
+    // fly directly. Either way the picker label and the actual camera end up agreeing on the whole world.
+    if (S.selectedCountry >= 0) GL.selectCountry(-1);
+    else GL.flyHome();
   }
 
   // ---- Picking and hover ---------------------------------------------------
@@ -242,6 +378,24 @@
   }
 
   // A pin wins over the country under it; over open sea there is nothing to show.
+  // Hover over Indonesia at province/kabupaten zoom names the area. Uses the shared bbox-prefiltered
+  // point-in-polygon result (no per-move allocation). A pin always wins; this is only called when no pin hit.
+  function showAreaTip(geo, clientX, clientY) {
+    var hit = G.areaAt(geo.lat, geo.lon);
+    var kab = hit.kab, prov = hit.province;
+    if (!kab && !prov) return false;
+    var el = document.getElementById('glTooltip');
+    if (!el || !document.getElementById('glStage')) return false;
+    el.className = 'gl-tooltip gl-tip-country';
+    var parts = [];
+    if (kab) parts.push(esc(kab.name));
+    if (prov) parts.push(esc(prov.name));
+    el.innerHTML = '<strong>' + parts.join('</strong><div class="gl-tip-dim">') + '</div>';
+    el.hidden = false;
+    placeTip(el, clientX, clientY);
+    return true;
+  }
+
   function updateHover() {
     var h = S.hoverPos;
     if (!h || !S.renderer || !S.renderer.ok) return;
@@ -252,6 +406,8 @@
     var geo = S.renderer.unproject(h.x, h.y);
     var idx = geo ? G.countryAt(geo.lat, geo.lon) : -1;
     setHoverCountry(idx);
+    // At province/kabupaten zoom over Indonesia, name the area; otherwise the country hover is unchanged.
+    if (S.zoom >= PROV_ZOOM && G.admin2Ready() && geo && showAreaTip(geo, h.clientX, h.clientY)) return;
     if (idx >= 0) showCountryTip(idx, h.clientX, h.clientY); else hideTooltip();
   }
 
@@ -310,7 +466,15 @@
       if (performance.now() - S.lastMove > 90) S.velLon = S.velLat = 0; // held still before letting go: no fling
       if (!S.pointerMoved && !cancelled) {
         var hit = pickNodes(e.clientX, e.clientY);
-        if (hit.length === 0) GL.closeHud();
+        if (hit.length === 0) {
+          // No pin under the click: select the country under the cursor (or clear when over open sea), so clicking
+          // a region is a second, discoverable way to reveal its provinces besides the toolbar selector.
+          var rect = canvas.getBoundingClientRect();
+          var geo = S.renderer.unproject(e.clientX - rect.left, e.clientY - rect.top);
+          var idx = geo ? G.countryAt(geo.lat, geo.lon) : -1;
+          if (idx >= 0) GL.selectCountry(idx);
+          else GL.closeHud();
+        }
         else if (hit.length === 1 || !zoomIntoStack(hit)) GL.openHud(hit[0].n.id, false);
       }
     }
@@ -351,6 +515,17 @@
     if (!e.target || !document.getElementById('globeModal')) return;
     if (e.target.id === 'glGroup') { S.group = e.target.value; GL.renderUI(); }
     if (e.target.id === 'glAutoRotate') { S.autoRotate = e.target.checked; }
+    if (e.target.id === 'glCountry') {
+      var iso = e.target.value;
+      var idx = -1;
+      if (iso) {
+        var cs = G.countries();
+        for (var i = 0; i < cs.length; i++) if (cs[i].iso === iso) { idx = i; break; }
+      }
+      GL.selectCountry(idx);
+    }
+    if (e.target.id === 'glProvince') GL.selectProvince(e.target.value);
+    if (e.target.id === 'glKab') GL.selectKab(e.target.value);
   });
 
   document.addEventListener('visibilitychange', function () {

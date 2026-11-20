@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"pantau/internal/store"
@@ -38,6 +39,7 @@ type Resolver struct {
 	lookup    LookupFn
 	http      *http.Client
 	minSpace  time.Duration
+	mu        sync.Mutex // serialises the rate-limit clock across concurrent ResolveHost/RunOnce calls
 	lastCall  time.Time
 	egressURL string
 }
@@ -84,6 +86,12 @@ func (r *Resolver) httpLookup(ctx context.Context, ip string) (store.GeoIPEntry,
 	if !strings.EqualFold(body.Status, "success") {
 		return store.GeoIPEntry{}, fmt.Errorf("geoip status %q", body.Status)
 	}
+	// Validate provider coordinates: a malformed or partial response must never place a pin off-globe or at the
+	// Gateway with a "geoip" source. Latitude/longitude are required and must be in range.
+	if body.Lat < -90 || body.Lat > 90 || body.Lon < -180 || body.Lon > 180 ||
+		(body.Lat == 0 && body.Lon == 0) {
+		return store.GeoIPEntry{}, fmt.Errorf("geoip invalid coordinates (%v,%v)", body.Lat, body.Lon)
+	}
 	org := body.Org
 	if org == "" {
 		org = body.ISP
@@ -97,17 +105,22 @@ func (r *Resolver) httpLookup(ctx context.Context, ip string) (store.GeoIPEntry,
 	}, nil
 }
 
-// ResolveIP returns the cached location for an IP, refreshing it in the
-// background only when stale. It never fails on an offline lookup: a stale
-// cached entry is returned as-is, and an unknown IP falls back to the Gateway.
+// ResolveIP returns the cached location for an IP, refreshing it only when stale. It never fails on an offline
+// lookup: a stale cached entry is returned as-is, and an unknown IP falls back to the Gateway. Private / CGNAT /
+// loopback / link-local addresses are NEVER sent to an external provider, even when called directly: they get the
+// Gateway fallback immediately. GeoIP is IP-based and inherently approximate; no physical precision is implied.
 func (r *Resolver) ResolveIP(ctx context.Context, ip string) store.GeoIPEntry {
 	ip = strings.TrimSpace(ip)
+	parsed := net.ParseIP(ip)
+	if ip == "" || parsed == nil || isPrivateIP(parsed) {
+		return gatewayLocation(ip)
+	}
 	now := time.Now()
 	if entry, fresh, err := r.db.GetGeoIP(ip, now); err == nil && entry != nil {
 		if fresh {
 			return *entry
 		}
-		// Stale: try a refresh, but keep the old value if it fails.
+		// Stale: try a refresh, but keep the old value if it fails (offline-safe).
 		if refreshed, err := r.lookupRateLimited(ctx, ip); err == nil {
 			_ = r.db.UpsertGeoIP(refreshed, now)
 			return refreshed
@@ -121,30 +134,50 @@ func (r *Resolver) ResolveIP(ctx context.Context, ip string) store.GeoIPEntry {
 	return gatewayLocation(ip)
 }
 
-// lookupRateLimited spaces external calls so a fleet of hosts cannot burst the
-// provider. The spacing wait is interruptible via ctx.
+// ResolveHost resolves a host's current public IP into the cache so a newly added or relocated host gets a fresh
+// position. Manual geo overrides win and are never looked up. The cache is keyed by IP, so a changed IP gets its own
+// resolution and an old cached IP can never override the new one; a private IP is never sent externally. Intended to
+// be called in a background goroutine from the host write handlers, never on the HTTP read path.
+func (r *Resolver) ResolveHost(ctx context.Context, h store.Host) store.GeoIPEntry {
+	if h.GeoLat != 0 || h.GeoLon != 0 || h.GeoLabel != "" || h.GeoRegion != "" {
+		return store.GeoIPEntry{} // manual override: no lookup, node-level precedence already handles it
+	}
+	ip := publicIPForHost(h)
+	parsed := net.ParseIP(ip)
+	if parsed == nil || isPrivateIP(parsed) {
+		return gatewayLocation(ip) // private / air-gapped: never leaves the machine
+	}
+	return r.ResolveIP(ctx, ip)
+}
+
+// lookupRateLimited spaces external calls so a fleet of hosts cannot burst the provider. The spacing wait is
+// interruptible via ctx. The mutex serialises the clock so concurrent ResolveHost calls (host writes) and the
+// background RunOnce cannot collapse into a burst; the external lookup itself runs outside the lock.
 func (r *Resolver) lookupRateLimited(ctx context.Context, ip string) (store.GeoIPEntry, error) {
 	space := r.minSpace
 	if space <= 0 {
 		space = geoRateLimit
 	}
+	r.mu.Lock()
 	wait := time.Until(r.lastCall.Add(space))
 	if wait > 0 {
 		t := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
 			t.Stop()
+			r.mu.Unlock()
 			return store.GeoIPEntry{}, ctx.Err()
 		case <-t.C:
 		}
 	}
 	r.lastCall = time.Now()
+	r.mu.Unlock()
 	return r.lookup(ctx, ip)
 }
 
-// RunOnce resolves every host's public IP into the cache. It is non-blocking
-// with respect to the globe read path and respects ctx cancellation. Intended
-// to be called from a background goroutine at startup and on a slow ticker.
+// RunOnce resolves every host's current public IP into the cache. It is non-blocking with respect to the globe read
+// path and respects ctx cancellation. Intended to run from a background goroutine at startup and on a slow ticker.
+// Stale cache rows are deliberately kept: an offline deployment must never lose a pin it already knew.
 func (r *Resolver) RunOnce(ctx context.Context) error {
 	hosts, err := r.db.ListHosts()
 	if err != nil {
@@ -154,17 +187,8 @@ func (r *Resolver) RunOnce(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		// A manual override means no external lookup is needed.
-		if h.GeoLat != 0 || h.GeoLon != 0 || h.GeoLabel != "" {
-			continue
-		}
-		ip := publicIPForHost(h)
-		if ip == "" || net.ParseIP(ip) == nil || isPrivateIP(net.ParseIP(ip)) {
-			continue // private/air-gapped hosts use the manual override or Gateway fallback
-		}
-		_ = r.ResolveIP(ctx, ip)
+		_ = r.ResolveHost(ctx, h) // skips manual overrides and private IPs; keyed by the host's current IP
 	}
-	_ = r.db.DeleteStaleGeoIP(time.Now())
 	return nil
 }
 

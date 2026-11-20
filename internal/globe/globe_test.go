@@ -96,6 +96,87 @@ func TestResolverRunOnceSkipsPrivateIPs(t *testing.T) {
 	}
 }
 
+// A relocated host (new public IP) must be resolved at its new IP; the old cached IP must never position it.
+func TestResolveHostRelocationUsesCurrentIP(t *testing.T) {
+	db := geoTestDB(t)
+	r := NewResolver(db)
+	r.minSpace = 0
+	// Old IP is cached in Singapore; the new IP resolves in Jakarta.
+	_ = db.UpsertGeoIP(store.GeoIPEntry{IP: "203.0.113.10", Lat: 1.35, Lon: 103.8, City: "Singapore", Source: "geoip"}, time.Now())
+	resolved := map[string]store.GeoIPEntry{
+		"198.51.100.20": {IP: "198.51.100.20", Lat: -6.2, Lon: 106.8, City: "Jakarta", Source: "geoip"},
+	}
+	r.lookup = func(ctx context.Context, ip string) (store.GeoIPEntry, error) {
+		if e, ok := resolved[ip]; ok {
+			return e, nil
+		}
+		return store.GeoIPEntry{}, errors.New("unexpected IP " + ip)
+	}
+	h := store.Host{Name: "relocated", Host: "198.51.100.20", PublicIP: "198.51.100.20"}
+	got := r.ResolveHost(context.Background(), h)
+	if got.City != "Jakarta" || got.Lat != -6.2 || got.Lon != 106.8 {
+		t.Fatalf("relocated host should use new IP resolution, got %+v", got)
+	}
+	if e, _, _ := db.GetGeoIP("198.51.100.20", time.Now()); e == nil || e.City != "Jakarta" {
+		t.Fatalf("new IP should be cached, got %+v", e)
+	}
+}
+
+// ResolveIP must never send a private / CGNAT / loopback address to the external provider, even when called directly.
+func TestResolveIPNeverLooksUpPrivateIPs(t *testing.T) {
+	db := geoTestDB(t)
+	r := NewResolver(db)
+	r.minSpace = 0
+	calls := 0
+	r.lookup = func(ctx context.Context, ip string) (store.GeoIPEntry, error) {
+		calls++
+		return store.GeoIPEntry{IP: ip, Source: "geoip"}, nil
+	}
+	for _, ip := range []string{"10.0.0.5", "100.64.0.1", "127.0.0.1", "169.254.1.1", "192.168.1.1", "not-an-ip"} {
+		got := r.ResolveIP(context.Background(), ip)
+		if got.Source != "gateway" {
+			t.Errorf("private/invalid IP %s should fall back to gateway, got %+v", ip, got)
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("no external lookup allowed for private/invalid IPs, got %d calls", calls)
+	}
+}
+
+// A manual override (including a region-only override) must be skipped by ResolveHost without any external call.
+func TestResolveHostSkipsManualOverride(t *testing.T) {
+	db := geoTestDB(t)
+	r := NewResolver(db)
+	r.minSpace = 0
+	calls := 0
+	r.lookup = func(ctx context.Context, ip string) (store.GeoIPEntry, error) {
+		calls++
+		return store.GeoIPEntry{IP: ip, Source: "geoip"}, nil
+	}
+	got := r.ResolveHost(context.Background(), store.Host{Name: "manual", Host: "8.8.8.8", GeoRegion: "Jawa Barat"})
+	if got.IP != "" || calls != 0 {
+		t.Fatalf("manual override should skip lookup (calls=%d, got=%+v)", calls, got)
+	}
+}
+
+// RunOnce must preserve stale cache rows so an offline deployment never loses a known pin.
+func TestRunOncePreservesStaleCache(t *testing.T) {
+	db := geoTestDB(t)
+	_, _ = db.CreateHost(&store.Host{Name: "offline", Host: "10.0.0.5"})
+	_ = db.UpsertGeoIP(store.GeoIPEntry{IP: "8.8.8.8", Lat: 1, Lon: 2, City: "Known", Source: "geoip"}, time.Now().Add(-40*24*time.Hour))
+	r := NewResolver(db)
+	r.minSpace = 0
+	r.lookup = func(ctx context.Context, ip string) (store.GeoIPEntry, error) {
+		return store.GeoIPEntry{}, errors.New("offline")
+	}
+	if err := r.RunOnce(context.Background()); err != nil {
+		t.Fatalf("run once: %v", err)
+	}
+	if e, _, _ := db.GetGeoIP("8.8.8.8", time.Now()); e == nil {
+		t.Fatal("stale cache entry must be preserved when offline")
+	}
+}
+
 // --- Link aggregator --------------------------------------------------------
 
 type fakeStore struct {

@@ -12,7 +12,8 @@
   var DIST = 3.6, FOV_TAN = 0.3615;  // camera distance in globe radii; at zoom 1 the globe fills ~80% of the stage
   var ARC_SEGS = 48;
   var MAP_W = 4096;                  // base map width; the highlight layer is half that
-  var DETAIL_MAX = 3072;             // texels per side of the close-zoom detail layer (~50 MB of GPU memory with mipmaps)
+  var DETAIL_MAX = 3840;             // longest side of the detail raster; aspect-matched so texel density holds
+  var DETAIL_BUDGET_MB = 96;         // hard GPU-memory ceiling for the detail texture (RGBA8 + mipmaps)
 
   // Land/ocean palette: blue slate that sits on the neutral dark UI (ADR 0039). Pins, arcs and highlights take the
   // theme's own status and accent tokens at runtime.
@@ -21,9 +22,15 @@
     land: ['#1f2d54', '#263663', '#2d4075', '#233160', '#2a3b6c'],
     border: 'rgba(165, 185, 245, 0.34)',
     line: 1.7,
-    detailLine: 1.4,
-    admin1: 'rgba(165, 185, 245, 0.26)',
-    admin1Line: 0.9,
+    detailLine: 1.2,                          // coast / country border (~1.2 CSS px)
+    admin1: 'rgba(165, 185, 245, 0.32)',
+    admin1Line: 1.0,                          // province outline (~1 CSS px)
+    adminSel: 'rgba(140, 200, 255, 0.95)',    // selected province outline
+    adminSelLine: 2.4,
+    kabFill: 'rgba(94, 106, 210, 0.30)',      // selected kabupaten/kota fill
+    kabSel: 'rgba(180, 215, 255, 0.98)',      // selected kabupaten/kota outline
+    kabOutline: 'rgba(150, 170, 235, 0.55)',  // automatic kabupaten/kota LOD outline
+    kabOutlineLine: 0.85,                     // kabupaten LOD outline (~0.85 CSS px)
   };
 
   // ---- Matrices (column-major, as GLSL) ---------------------------------------
@@ -471,6 +478,7 @@
   // cam: {lon, lat, zoom}, radians; the globe turns, the camera stays on +Z. Zoom narrows the lens
   // instead of moving closer, so perspective distortion never changes.
   Renderer.prototype.setCamera = function (cam) {
+    this.zoom = cam.zoom;
     var w = this.canvas.width || 1, h = this.canvas.height || 1, aspect = w / h;
     var fy = cam.zoom / FOV_TAN * Math.min(1, aspect), fx = fy / aspect;
     var model = mul(rotX(cam.lat), rotY(-cam.lon));
@@ -484,6 +492,16 @@
     var cw = this.canvas.clientWidth || 1, ch = this.canvas.clientHeight || 1;
     return zoom / FOV_TAN * Math.min(1, cw / ch) * ch / (2 * (DIST - 1));
   };
+  // Zoom that fits a geographic region (half-extents in degrees, centre latitude in degrees) inside the stage
+  // with a little margin. Inverts pxPerRad using the same lens maths; longitude is scaled by cos(lat) as in drag.
+  Renderer.prototype.zoomForRegion = function (latDeg, halfLatDeg, halfLonDeg) {
+    var cw = this.canvas.clientWidth || 1, ch = this.canvas.clientHeight || 1;
+    var cosLat = Math.max(0.2, Math.cos(latDeg * DEG));
+    var rLat = (ch * 0.42) / Math.max(0.0005, halfLatDeg * DEG);
+    var rLon = (cw * 0.42) / Math.max(0.0005, halfLonDeg * DEG * cosLat);
+    var radius = Math.min(rLat, rLon);
+    return radius * FOV_TAN * 2 * (DIST - 1) / (Math.min(1, cw / ch) * ch);
+  };
 
   // Detail layer: view = {west, east, south, north, cssPx, lineZoom, lines, ...} or null to switch it off.
   Renderer.prototype.setDetail = function (view) {
@@ -492,12 +510,29 @@
     if (view) this._paintDetail();
   };
 
+  // Detail raster sized so the view centre has >= 1 texel per device pixel. The rect is viewport-tight
+  // (see 05-globe-interact.js), so even at max zoom the geographic span is small enough to stay under the cap.
+  // Aspect-matched (W x H) rather than square: a square raster wastes texels on wide/narrow rects and forces an
+  // early cap. Total texels are bounded by DETAIL_BUDGET_MB, each side by MAX_TEXTURE_SIZE. The texture object
+  // and canvas are reused; only their dimensions change, and only when a repaint is actually requested.
   Renderer.prototype._paintDetail = function () {
     var v = this.detail;
-    var side = Math.max(512, Math.min(DETAIL_MAX, this.maxTex, Math.ceil(v.cssPx * this.dpr)));
-    if (this.detailCv.width !== side) this.detailCv.width = this.detailCv.height = side;
-    v.px = side / v.cssPx;
+    var degPerDevPx = 180 / (Math.PI * this.pxPerRad(this.zoom || 1) * this.dpr);
+    var w = Math.ceil((v.east - v.west) / degPerDevPx);
+    var h = Math.ceil((v.north - v.south) / degPerDevPx);
+    var maxTexels = Math.floor(DETAIL_BUDGET_MB * 1024 * 1024 / 4 / (4 / 3)); // RGBA8 x 4/3 for mipmaps
+    var scale = Math.min(1, Math.sqrt(maxTexels / Math.max(1, w * h)));
+    w = Math.max(256, Math.min(this.maxTex, Math.floor(w * scale)));
+    h = Math.max(256, Math.min(this.maxTex, Math.floor(h * scale)));
+    if (this.detailCv.width !== w) this.detailCv.width = w;
+    if (this.detailCv.height !== h) this.detailCv.height = h;
+    // v.texPerDeg is texels per degree (used by the density check); v.px is texels per CSS pixel at the
+    // view centre (used by the painters for lineWidth / setLineDash). They were conflated, making strokes
+    // thousands of times too thick at close zoom.
+    v.texPerDeg = w / (v.east - v.west);
+    v.px = v.texPerDeg / (this.pxPerRad(this.zoom || 1) * DEG);
     this.detailLines = G.paintDetail(this.detailCv, v, PALETTE, this.tints, v.lines);
+    this.coarseTraced = G.paintDetail.coarseTraced || 0;
     this._texture(this.detailCv, this.detailTex);
   };
 

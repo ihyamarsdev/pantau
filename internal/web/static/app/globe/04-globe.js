@@ -7,6 +7,7 @@
   'use strict';
 
   var GL = (window.GlobeRadar = {});
+  var G = window.WebGlobe;
   var MODAL_ID = 'globeModal';
   var RAD = Math.PI / 180;
 
@@ -18,7 +19,10 @@
     group: '',
     query: '',
     selected: null,       // node id whose HUD is open
-    hoverCountry: -1,     // index into WebGlobe.countries()
+    selectedCountry: -1,  // index into WebGlobe.countries() whose full province set is shown
+    selectedProvince: '', // Indonesia province code (e.g. '31' for DKI Jakarta); '' = none
+    selectedKab: '',      // kabupaten/kota code (e.g. '31.01'); '' = none
+    adminFit: null,       // {west,east,south,north} of the focused province/kabupaten
     hoverPos: null,       // last pointer position over the canvas, to refresh the hover while the globe turns
     autoRotate: true,
     lon: 100 * RAD,       // camera centre, radians (the view opens over Asia)
@@ -62,6 +66,10 @@
       gl_geo_source: 'Geo source', gl_peer_count: 'Peers', gl_bidirectional: 'Bi-directional',
       gl_host_one: '{n} host', gl_host_many: '{n} hosts',
       gl_stack_title: '{n} nodes here', gl_stack_more: '+{n} more', gl_stack_hint: 'Click to zoom in',
+      gl_region_sel: 'Country', gl_region_all: 'Whole world', gl_region_hint: 'Select a country to show all its provinces',
+      gl_region_clear: 'Clear country',
+      gl_prov_sel: 'Province', gl_prov_all: 'All provinces', gl_kab_sel: 'Kabupaten/Kota', gl_kab_all: 'All kabupaten/kota',
+      gl_admin_hint: 'Choose a province, then a kabupaten/kota to focus the map',
     },
     id: {
       gl_title: 'Radar Jaringan 3D', gl_subtitle: 'Armada ber-geolokasi & aliran lalu lintas 3D langsung',
@@ -81,6 +89,10 @@
       gl_geo_source: 'Sumber geo', gl_peer_count: 'Peer', gl_bidirectional: 'Dua arah',
       gl_host_one: '{n} host', gl_host_many: '{n} host',
       gl_stack_title: '{n} node di sini', gl_stack_more: '+{n} lainnya', gl_stack_hint: 'Klik untuk memperbesar',
+      gl_region_sel: 'Negara', gl_region_all: 'Seluruh dunia', gl_region_hint: 'Pilih negara untuk menampilkan semua provinsinya',
+      gl_region_clear: 'Hapus negara',
+      gl_prov_sel: 'Provinsi', gl_prov_all: 'Semua provinsi', gl_kab_sel: 'Kabupaten/Kota', gl_kab_all: 'Semua kabupaten/kota',
+      gl_admin_hint: 'Pilih provinsi, lalu kabupaten/kota untuk memfokuskan peta',
     },
   };
   ['en', 'id'].forEach(function (l) { I18N[l] = Object.assign(I18N[l] || {}, I[l]); });
@@ -106,6 +118,9 @@
         '</div>' +
         '<div class="gl-toolbar">' +
           '<input type="text" id="glSearch" class="gl-search" placeholder="' + esc(t('gl_search_ph')) + '" autocomplete="off" spellcheck="false" />' +
+          '<select id="glCountry" class="gl-select" title="' + esc(t('gl_region_hint')) + '" aria-label="' + esc(t('gl_region_sel')) + '"><option value="">' + esc(t('gl_region_all')) + '</option></select>' +
+          '<select id="glProvince" class="gl-select" title="' + esc(t('gl_admin_hint')) + '" aria-label="' + esc(t('gl_prov_sel')) + '" disabled><option value="">' + esc(t('gl_prov_all')) + '</option></select>' +
+          '<select id="glKab" class="gl-select" title="' + esc(t('gl_admin_hint')) + '" aria-label="' + esc(t('gl_kab_sel')) + '" disabled><option value="">' + esc(t('gl_kab_all')) + '</option></select>' +
           '<div id="glFlowPills" class="gl-pills" role="group" aria-label="link type"></div>' +
           '<select id="glGroup" class="gl-select"><option value="">' + esc(t('gl_all_groups')) + '</option></select>' +
           '<label class="gl-toggle"><input type="checkbox" id="glAutoRotate" checked /> ' + esc(t('gl_autorotate')) + '</label>' +
@@ -157,6 +172,10 @@
     if (auto) auto.checked = S.autoRotate;
     var group = document.getElementById('glGroup');
     if (group) group.value = S.group;
+    var country = document.getElementById('glCountry');
+    if (country) country.value = S.selectedCountry >= 0 ? (G.countries()[S.selectedCountry] || {}).iso || '' : '';
+    if (GL.renderProvinces) GL.renderProvinces();
+    if (GL.renderKab) GL.renderKab();
   }
 
   // ---- Filtering -----------------------------------------------------------

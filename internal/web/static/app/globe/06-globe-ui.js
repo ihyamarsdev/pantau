@@ -12,7 +12,9 @@
   // ---- UI rendering --------------------------------------------------------
   GL.renderUI = function () {
     GL.renderPills();
-    GL.renderGroups();
+    GL.renderCountries();
+    GL.renderProvinces();
+    GL.renderKab();
     GL.renderSidebar();
     GL.renderCount();
     if (S.selected) GL.renderHud();
@@ -58,6 +60,7 @@
     if (S.hoverCountry >= 0) items.push({ idx: S.hoverCountry, fill: 'rgba(255,255,255,0.08)', stroke: edge, width: 1.4 });
     var sel = GL.nodeById(S.selected);
     if (sel && sel._ci >= 0) items.push({ idx: sel._ci, fill: GL.rgba('--primary', '#5e6ad2', 0.36), stroke: edge, width: 2 });
+    if (S.selectedCountry >= 0) items.push({ idx: S.selectedCountry, fill: GL.rgba('--primary', '#5e6ad2', 0.16), stroke: edge, width: 2.4 });
     S.renderer.setTints(items);
   };
 
@@ -83,6 +86,165 @@
     box.innerHTML = defs.map(function (d) {
       return '<button type="button" class="gl-pill' + (S.flowFilter === d[0] ? ' active' : '') + '" data-flow="' + d[0] + '">' + esc(t(d[1])) + '</button>';
     }).join('');
+  };
+  // Populate the country selector from the embedded country dataset (localised names), preserving the current
+  // selection. Listed countries are those that actually have admin-1 province data, so choosing one always reveals
+  // a complete province set; countries without data are not offered.
+  GL.renderCountries = function () {
+    var sel = document.getElementById('glCountry');
+    if (!sel) return;
+    var lang = document.documentElement.lang || 'en';
+    var cs = G.countries();
+    var rows = cs.map(function (c, i) { return { c: c, i: i }; })
+      .filter(function (r) { return !!r.c.iso; })
+      .sort(function (a, b) {
+        return G.countryName(a.c, lang).localeCompare(G.countryName(b.c, lang));
+      });
+    sel.innerHTML = '<option value="">' + esc(t('gl_region_all')) + '</option>' + rows.map(function (r) {
+      return '<option value="' + esc(r.c.iso) + '">' + esc(G.countryName(r.c, lang)) + '</option>';
+    }).join('');
+    sel.value = S.selectedCountry >= 0 ? (cs[S.selectedCountry] || {}).iso || '' : '';
+  };
+
+  // Select a country by its index in WebGlobe.countries() (-1 clears). Fits the camera over the country's full
+  // bounds and marks the detail layer for a full-country province redraw. Host pins/HUD are untouched.
+  // Clearing (-1) is the "Whole world" option: besides emptying the hierarchy it flies the camera back to the
+  // home world view, so the picker label and the actual camera agree. Only an explicit selection triggers this;
+  // ordinary wheel/drag zoom with no selection is left alone (see the wheel/drag handlers in 05-globe-interact).
+  GL.selectCountry = function (idx) {
+    S.selectedCountry = idx;
+    S.countryFit = null;
+    S.selectedProvince = '';
+    S.selectedKab = '';
+    S.adminFit = null;
+    var sel = document.getElementById('glCountry');
+    if (sel) sel.value = idx >= 0 ? (G.countries()[idx] || {}).iso || '' : '';
+    if (idx >= 0) {
+      var c = G.countries()[idx];
+      var b = c.bbox;
+      var latDeg = (b[1] + b[3]) / 2, lonDeg = (b[0] + b[2]) / 2;
+      var halfLat = Math.max(1.5, (b[3] - b[1]) / 2);
+      var halfLon = Math.max(1.5, (b[2] - b[0]) / 2);
+      S.countryFit = { west: b[0], east: b[2], south: b[1], north: b[3] };
+      if (S.renderer && S.renderer.ok) {
+        var zoom = S.renderer.zoomForRegion(latDeg, halfLat, halfLon);
+        S.velLon = S.velLat = 0;
+        S.fly = { lon: lonDeg * Math.PI / 180, lat: latDeg * Math.PI / 180, zoom: zoom };
+      }
+    } else {
+      // "Whole world" was chosen explicitly: reset the camera to the home world view. flyHome lives in
+      // 05-globe-interact.js and only touches camera state, so it cannot recurse back into selection.
+      GL.flyHome();
+    }
+    // Indonesia has named admin-2 data: start the lazy import and fill the province selector once decoded.
+    // Other countries keep the selectors disabled; their existing Natural Earth admin-1 experience is unchanged.
+    if (adminCountry()) {
+      G.admin2Load().then(function () {
+        if (S.selectedCountry === idx) { GL.renderProvinces(); GL.renderKab(); }
+      });
+    } else {
+      GL.renderProvinces();
+      GL.renderKab();
+    }
+    S.tintsDirty = true;
+  };
+
+  // ---- Indonesia administrative hierarchy (Country -> Province -> Kabupaten/Kota) ---------------------
+  // The province and kabupaten/kota selectors are populated from the embedded, named 110 m polygons
+  // (cahyadsn/wilayah_boundaries, MIT). They stay disabled until a country with data (Indonesia, ISO ID) is
+  // selected, and are never shown empty: a country without admin-2 data never enables them.
+  function adminCountry() {
+    var c = S.selectedCountry >= 0 ? G.countries()[S.selectedCountry] : null;
+    return c && c.iso === 'ID' ? c : null;
+  }
+
+  GL.renderProvinces = function () {
+    var sel = document.getElementById('glProvince');
+    if (!sel) return;
+    var ready = !!adminCountry() && G.admin2Ready();
+    sel.disabled = !ready;
+    var opts = '<option value="">' + esc(t('gl_prov_all')) + '</option>';
+    if (ready) {
+      var rows = G.admin2().p.slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
+      opts += rows.map(function (p) {
+        return '<option value="' + esc(p.code) + '">' + esc(p.name) + '</option>';
+      }).join('');
+    }
+    sel.innerHTML = opts;
+    sel.value = ready ? S.selectedProvince : '';
+  };
+
+  GL.renderKab = function () {
+    var sel = document.getElementById('glKab');
+    if (!sel) return;
+    var ready = !!adminCountry() && !!S.selectedProvince && G.admin2Ready();
+    sel.disabled = !ready;
+    var opts = '<option value="">' + esc(t('gl_kab_all')) + '</option>';
+    if (ready) {
+      var rows = G.admin2Kab(S.selectedProvince).slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
+      opts += rows.map(function (k) {
+        return '<option value="' + esc(k.code) + '">' + esc(k.name) + '</option>';
+      }).join('');
+    }
+    sel.innerHTML = opts;
+    sel.value = ready ? S.selectedKab : '';
+  };
+
+  function bboxOf(feature) {
+    var b = feature.bbox;
+    return { west: b[0], east: b[2], south: b[1], north: b[3] };
+  }
+
+  function flyToBbox(b) {
+    if (!S.renderer || !S.renderer.ok) return;
+    var latDeg = (b.south + b.north) / 2, lonDeg = (b.west + b.east) / 2;
+    // Use the real half-extents (no 0.25-deg floor): a selected kota must fill the stage. The renderer's
+    // zoomForRegion already has a tiny 0.01-deg guard, and the frame loop clamps the result to MAX_ZOOM.
+    var halfLat = Math.max(0.005, (b.north - b.south) / 2);
+    var halfLon = Math.max(0.005, (b.east - b.west) / 2);
+    var zoom = S.renderer.zoomForRegion(latDeg, halfLat, halfLon);
+    S.velLon = S.velLat = 0;
+    S.fly = { lon: lonDeg * Math.PI / 180, lat: latDeg * Math.PI / 180, zoom: zoom };
+  }
+
+  // The detail layer's admin payload: all kabupaten/kota outlines of the province for orientation, plus the
+  // selected province/kabupaten highlighted. `focus` lets the renderer raise its texture cap for a sharp close-up.
+  function adminView() {
+    if (!G.admin2Ready() || !S.selectedProvince) return null;
+    var province = G.admin2().p.find(function (p) { return p.code === S.selectedProvince; }) || null;
+    var kab = S.selectedKab ? G.admin2().k.find(function (k) { return k.code === S.selectedKab; }) : null;
+    return {
+      lines: G.admin2Kab(S.selectedProvince),
+      province: province, kab: kab,
+      focus: S.selectedCountry >= 0 && !!S.adminFit
+    };
+  }
+  GL.adminView = adminView;
+
+  GL.selectProvince = function (code) {
+    S.selectedProvince = code || '';
+    S.selectedKab = '';
+    S.adminFit = null;
+    var sel = document.getElementById('glProvince');
+    if (sel) sel.value = S.selectedProvince;
+    GL.renderKab();
+    if (S.selectedProvince && G.admin2Ready()) {
+      var p = G.admin2().p.find(function (x) { return x.code === S.selectedProvince; });
+      if (p) { S.adminFit = bboxOf(p); flyToBbox(S.adminFit); }
+    }
+    S.tintsDirty = true;
+  };
+
+  GL.selectKab = function (code) {
+    S.selectedKab = code || '';
+    S.adminFit = null;
+    var sel = document.getElementById('glKab');
+    if (sel) sel.value = S.selectedKab;
+    if (S.selectedKab && G.admin2Ready()) {
+      var k = G.admin2().k.find(function (x) { return x.code === S.selectedKab; });
+      if (k) { S.adminFit = bboxOf(k); flyToBbox(S.adminFit); }
+    }
+    S.tintsDirty = true;
   };
 
   GL.renderGroups = function () {

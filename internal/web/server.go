@@ -343,6 +343,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/app/globe.js", serveAppBundle("globe", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/globe.css", serveAppBundle("globe", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/globe-admin1.js", serveAppBundle("globe-admin1", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/globe-admin2.js", serveAppBundle("globe-admin2", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/globe-admin0fine.js", serveAppBundle("globe-admin0fine", ".js", "text/javascript; charset=utf-8"))
+	s.mux.HandleFunc("/app/globe-admin2-hires/", serveGlobeHiresChunk())
 	s.mux.HandleFunc("/app/vault.js", serveAppBundle("vault", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/vault.css", serveAppBundle("vault", ".css", "text/css; charset=utf-8"))
 
@@ -1141,6 +1144,7 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 		}
 		h.ID = id
 		s.invalidateGlobe()
+		s.resolveHostGeo(h)
 		redactHost(&h)
 		writeJSON(w, http.StatusCreated, h)
 	default:
@@ -1374,6 +1378,7 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.invalidateGlobe()
+			s.resolveHostGeo(h)
 			if s.inspector != nil {
 				_ = s.inspector.RecalculateHostLifecycle(hostID)
 			}

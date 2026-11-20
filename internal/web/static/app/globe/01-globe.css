@@ -24,6 +24,9 @@
 .gl-pill:hover { color: var(--text); border-color: var(--border-strong); }
 .gl-pill.active { background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent-ring); }
 .gl-select { width: auto; min-width: 150px; height: 30px; font-size: var(--fs-xs); border-radius: var(--radius-sm); }
+.gl-select#glCountry { min-width: 130px; max-width: 180px; }
+.gl-select#glProvince, .gl-select#glKab { min-width: 120px; max-width: 200px; }
+.gl-select:disabled { opacity: 0.5; cursor: not-allowed; }
 .gl-spacer { flex: 1; }
 .gl-toggle { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-muted); cursor: pointer; }
 .gl-toggle input { accent-color: var(--primary); }

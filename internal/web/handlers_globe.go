@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"pantau/internal/logger"
+	"pantau/internal/store"
 )
 
 const globeCacheTTL = 20 * time.Second
@@ -61,6 +62,22 @@ func (s *Server) invalidateGlobe() {
 	if s.globeCache != nil {
 		s.globeCache.Invalidate()
 	}
+}
+
+// resolveHostGeo kicks off a background GeoIP resolution for a newly added or relocated host so its pin reflects
+// the current public IP promptly instead of waiting for the next 6-hourly tick. It never blocks the write response
+// and never calls an external provider for private IPs or manual overrides (the resolver enforces both). The globe
+// cache is invalidated when the lookup finishes so the next GET shows the fresh pin.
+func (s *Server) resolveHostGeo(h store.Host) {
+	if s.geoResolver == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_ = s.geoResolver.ResolveHost(ctx, h)
+		s.invalidateGlobe()
+	}()
 }
 
 // POST /api/network-radar/globe/geo sets the manual geo override for a host.
