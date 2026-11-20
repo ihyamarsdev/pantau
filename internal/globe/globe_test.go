@@ -277,6 +277,7 @@ func TestBuildCloudflareLink(t *testing.T) {
 func TestSpreadCoLocated(t *testing.T) {
 	nodes := []Node{
 		{ID: "gateway", Kind: "gateway", Lat: 0, Lon: 0},
+		{ID: "host:9", Kind: "host", Lat: 0, Lon: 0},
 		{ID: "host:3", Kind: "host", Lat: 40, Lon: -74},
 		{ID: "host:1", Kind: "host", Lat: 40, Lon: -74},
 		{ID: "host:2", Kind: "host", Lat: 40, Lon: -74},
@@ -284,18 +285,19 @@ func TestSpreadCoLocated(t *testing.T) {
 	spreadCoLocated(nodes)
 	seen := map[[2]float64]bool{}
 	for _, n := range nodes {
-		if n.Kind == "gateway" {
-			continue
-		}
 		key := [2]float64{round4(n.Lat), round4(n.Lon)}
 		if seen[key] {
 			t.Fatalf("co-located pins still stack at %v: %+v", key, nodes)
 		}
 		seen[key] = true
 	}
+	// The gateway keeps the fallback coordinates even when a host shares them.
+	if nodes[0].Lat != 0 || nodes[0].Lon != 0 {
+		t.Fatalf("gateway should keep exact (0,0), got %+v", nodes[0])
+	}
 	// The lowest-ID host keeps the original coordinates.
-	if nodes[2].Lat != 40 || nodes[2].Lon != -74 {
-		t.Fatalf("first host should keep exact coordinates, got %+v", nodes[2])
+	if nodes[3].Lat != 40 || nodes[3].Lon != -74 {
+		t.Fatalf("first host should keep exact coordinates, got %+v", nodes[3])
 	}
 }
 

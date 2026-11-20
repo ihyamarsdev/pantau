@@ -21,8 +21,9 @@
   var countries = null;
 
   // One ring: zigzag varints (5 payload bits per char, bit 5 = more follows) of (lon,lat) deltas in 1/q degree.
-  function decodeRing(s, q) {
-    var pts = [], x = 0, y = 0, p = 0;
+  // start skips a leading prefix character (admin-1 lines carry their web-map zoom there).
+  function decodeRing(s, q, start) {
+    var pts = [], x = 0, y = 0, p = start || 0;
     function next() {
       var v = 0, shift = 0, c;
       do { c = LUT[s.charCodeAt(p++)]; v |= (c & 31) << shift; shift += 5; } while (c & 32);
@@ -30,6 +31,14 @@
     }
     while (p < s.length) { x += next(); y += next(); pts.push(x / q, y / q); }
     return new Float32Array(pts);
+  }
+
+  // Expand bbox to include every point of a decoded ring/line (lon,lat pairs).
+  function grow(bbox, r) {
+    for (var k = 0; k < r.length; k += 2) {
+      bbox[0] = Math.min(bbox[0], r[k]); bbox[2] = Math.max(bbox[2], r[k]);
+      bbox[1] = Math.min(bbox[1], r[k + 1]); bbox[3] = Math.max(bbox[3], r[k + 1]);
+    }
   }
 
   // Decoded once on first use: [{iso, name, rings: [Float32Array lon,lat,...], bbox: [w,s,e,n]}].
@@ -40,15 +49,34 @@
       var bbox = [180, 90, -180, -90];
       var rings = row[2].split('.').map(function (s) {
         var r = decodeRing(s, src.q);
-        for (var k = 0; k < r.length; k += 2) {
-          bbox[0] = Math.min(bbox[0], r[k]); bbox[2] = Math.max(bbox[2], r[k]);
-          bbox[1] = Math.min(bbox[1], r[k + 1]); bbox[3] = Math.max(bbox[3], r[k + 1]);
-        }
+        grow(bbox, r);
         return r;
       });
       return { iso: row[0], name: row[1], rings: rings, bbox: bbox };
     });
     return countries;
+  };
+
+  // Natural Earth 1:10m admin-1 province/state lines, lazy-loaded from a same-origin bundle the first time we
+  // zoom in. [{z, pts:Float32Array, bbox:[w,s,e,n]}] or null until the import resolves.
+  var admin1 = null, admin1Req = null;
+  G.admin1 = function () {
+    if (!admin1Req) {
+      admin1Req = import('/app/globe-admin1.js').then(function () {
+        var src = window.GLOBE_ADMIN1;
+        admin1 = src.c.map(function (row) {
+          return row.split('.').map(function (s) {
+            var pts = decodeRing(s, src.q, 1), bbox = [180, 90, -180, -90];
+            grow(bbox, pts);
+            return { z: LUT[s.charCodeAt(0)], pts: pts, bbox: bbox };
+          });
+        }).reduce(function (all, rows) { return all.concat(rows); }, []);
+        delete window.GLOBE_ADMIN1;
+      }).catch(function (err) {
+        console.error('globe: province lines failed to load', err);
+      });
+    }
+    return admin1;
   };
 
   // Even-odd point-in-polygon over every ring of the country, so holes (Lesotho in South Africa) work.
@@ -115,19 +143,28 @@
   };
 
   // ---- Painters (equirectangular canvas: x = lon, y = lat) -------------------
-  // open=true leaves gaps on the antimeridian cut and the poles, which are map edges, not borders.
-  function trace(g, c, W, H, open) {
-    c.rings.forEach(function (r) {
+  // t = {lon0, lat0, sx, sy}: x = (lon - lon0) * sx, y = (lat0 - lat) * sy. The open/cut test stays on raw
+  // lon/lat so map edges (antimeridian, poles) stay clean at any zoom.
+  function trace(g, rings, t, open) {
+    rings.forEach(function (r) {
       var n = r.length / 2, pLon = 0, pLat = 0;
       for (var k = 0; k <= n; k++) {
         var j = k % n, lon = r[2 * j], lat = r[2 * j + 1];
-        var x = (lon + 180) / 360 * W, y = (90 - lat) / 180 * H;
+        var x = (lon - t.lon0) * t.sx, y = (t.lat0 - lat) * t.sy;
         var cut = open && ((lon === pLon && Math.abs(lon) === 180) || (lat === pLat && Math.abs(lat) === 90));
         if (!k || cut) g.moveTo(x, y); else g.lineTo(x, y);
         pLon = lon; pLat = lat;
       }
       if (!open) g.closePath();
     });
+  }
+
+  // Open polyline through a decoded admin-1 line's points (no closePath).
+  function traceLine(g, pts, t) {
+    for (var k = 0; k < pts.length; k += 2) {
+      var x = (pts[k] - t.lon0) * t.sx, y = (t.lat0 - pts[k + 1]) * t.sy;
+      if (!k) g.moveTo(x, y); else g.lineTo(x, y);
+    }
   }
 
   // Stable pseudo-random land tone per country, so neighbours differ a little.
@@ -141,19 +178,20 @@
   // border is painted once and has the same weight as a coastline.
   G.paintMap = function (cv, pal) {
     var W = cv.width, H = cv.height, g = cv.getContext('2d'), cs = G.countries();
+    var ident = { lon0: -180, lat0: 90, sx: W / 360, sy: H / 180 };
     g.fillStyle = pal.ocean;
     g.fillRect(0, 0, W, H);
     g.lineJoin = 'round';
     cs.forEach(function (c) {
       g.beginPath();
-      trace(g, c, W, H, false);
+      trace(g, c.rings, ident, false);
       g.fillStyle = g.strokeStyle = pal.land[tone(c, pal.land.length)];
       g.lineWidth = W / 4096; // a half-texel of overlap hides the sliver where two simplified neighbours disagree, without fattening coasts
       g.fill('evenodd');
       g.stroke();
     });
     g.beginPath();
-    cs.forEach(function (c) { trace(g, c, W, H, true); });
+    cs.forEach(function (c) { trace(g, c.rings, ident, true); });
     g.strokeStyle = pal.border;
     g.lineWidth = pal.line * W / 4096;
     g.stroke();
@@ -162,22 +200,107 @@
   // Highlight layer: items = [{idx, fill, stroke?, width?}] drawn over a transparent canvas.
   G.paintOverlay = function (cv, items) {
     var W = cv.width, H = cv.height, g = cv.getContext('2d'), cs = G.countries();
+    var ident = { lon0: -180, lat0: 90, sx: W / 360, sy: H / 180 };
     g.clearRect(0, 0, W, H);
     g.lineJoin = 'round';
     items.forEach(function (it) {
       var c = cs[it.idx];
       if (!c) return;
       g.beginPath();
-      trace(g, c, W, H, false);
+      trace(g, c.rings, ident, false);
       g.fillStyle = it.fill;
       g.fill('evenodd');
       if (it.stroke) {
         g.beginPath();
-        trace(g, c, W, H, true);
+        trace(g, c.rings, ident, true);
         g.strokeStyle = it.stroke;
         g.lineWidth = (it.width || 1.5) * W / 2048;
         g.stroke();
       }
     });
+  };
+
+  // Close-zoom detail texture: country borders plus Natural Earth admin-1 province lines, sampled at the exact
+  // lat/lon of each fragment. Returns the number of province lines actually traced. v = {west, east, south,
+  // north, px, lineZoom}; px is texels per CSS pixel.
+  G.paintDetail = function (cv, v, pal, items, lines) {
+    var W = cv.width, H = cv.height, g = cv.getContext('2d'), cs = G.countries();
+    var sx = W / (v.east - v.west), sy = H / (v.north - v.south), traced = 0;
+    g.fillStyle = pal.ocean;
+    g.fillRect(0, 0, W, H);
+    g.lineJoin = 'round';
+
+    // A feature near the antimeridian may need drawing at -360/0/+360 to cover a window that crosses the cut.
+    function each(bbox, fn) {
+      for (var oi = -1; oi <= 1; oi++) {
+        var off = oi * 360;
+        if (bbox[2] + off < v.west || bbox[0] + off > v.east || bbox[3] < v.south || bbox[1] > v.north) continue;
+        fn({ lon0: v.west - off, lat0: v.north, sx: sx, sy: sy });
+      }
+    }
+
+    // Countries: fill evenodd and stroke in the tone colour, the base map's half-texel seam trick.
+    cs.forEach(function (c) {
+      each(c.bbox, function (t) {
+        g.beginPath();
+        trace(g, c.rings, t, false);
+        g.fillStyle = g.strokeStyle = pal.land[tone(c, pal.land.length)];
+        g.lineWidth = 1;
+        g.fill('evenodd');
+        g.stroke();
+      });
+    });
+
+    // Highlight items (hover/selection) over the base fill.
+    items.forEach(function (it) {
+      var c = cs[it.idx];
+      if (!c) return;
+      each(c.bbox, function (t) {
+        g.beginPath();
+        trace(g, c.rings, t, false);
+        g.fillStyle = it.fill;
+        g.fill('evenodd');
+      });
+    });
+
+    // Province lines: one dashed path, filtered by Natural Earth web-map zoom (+1 head start in lineZoom).
+    if (lines) {
+      g.beginPath();
+      lines.forEach(function (l) {
+        if (l.z > v.lineZoom) return;
+        var hit = false;
+        each(l.bbox, function (t) { traceLine(g, l.pts, t); hit = true; });
+        if (hit) traced++;
+      });
+      g.setLineDash([4 * v.px, 3 * v.px]);
+      g.strokeStyle = pal.admin1;
+      g.lineWidth = pal.admin1Line * v.px;
+      g.stroke();
+      g.setLineDash([]);
+    }
+
+    // Country borders on top, open-traced so map edges stay clean.
+    g.beginPath();
+    cs.forEach(function (c) {
+      each(c.bbox, function (t) { trace(g, c.rings, t, true); });
+    });
+    g.strokeStyle = pal.border;
+    g.lineWidth = pal.detailLine * v.px;
+    g.stroke();
+
+    // Item strokes last so highlights stay visible over the borders.
+    items.forEach(function (it) {
+      var c = cs[it.idx];
+      if (!c || !it.stroke) return;
+      each(c.bbox, function (t) {
+        g.beginPath();
+        trace(g, c.rings, t, true);
+        g.strokeStyle = it.stroke;
+        g.lineWidth = (it.width || 1.5) * v.px;
+        g.stroke();
+      });
+    });
+
+    return traced;
   };
 })();

@@ -342,6 +342,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/app/dockerprogress.css", serveAppBundle("dockerprogress", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/globe.js", serveAppBundle("globe", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/globe.css", serveAppBundle("globe", ".css", "text/css; charset=utf-8"))
+	s.mux.HandleFunc("/app/globe-admin1.js", serveAppBundle("globe-admin1", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/vault.js", serveAppBundle("vault", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/vault.css", serveAppBundle("vault", ".css", "text/css; charset=utf-8"))
 

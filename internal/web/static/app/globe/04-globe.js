@@ -61,6 +61,7 @@
       gl_zoom_in: 'Zoom in', gl_zoom_out: 'Zoom out', gl_zoom_reset: 'Reset view',
       gl_geo_source: 'Geo source', gl_peer_count: 'Peers', gl_bidirectional: 'Bi-directional',
       gl_host_one: '{n} host', gl_host_many: '{n} hosts',
+      gl_stack_title: '{n} nodes here', gl_stack_more: '+{n} more', gl_stack_hint: 'Click to zoom in',
     },
     id: {
       gl_title: 'Radar Jaringan 3D', gl_subtitle: 'Armada ber-geolokasi & aliran lalu lintas 3D langsung',
@@ -79,6 +80,7 @@
       gl_zoom_in: 'Perbesar', gl_zoom_out: 'Perkecil', gl_zoom_reset: 'Atur ulang',
       gl_geo_source: 'Sumber geo', gl_peer_count: 'Peer', gl_bidirectional: 'Dua arah',
       gl_host_one: '{n} host', gl_host_many: '{n} host',
+      gl_stack_title: '{n} node di sini', gl_stack_more: '+{n} lainnya', gl_stack_hint: 'Klik untuk memperbesar',
     },
   };
   ['en', 'id'].forEach(function (l) { I18N[l] = Object.assign(I18N[l] || {}, I[l]); });

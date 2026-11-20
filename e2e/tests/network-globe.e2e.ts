@@ -7,7 +7,10 @@ type Renderer = {
   gl: WebGL2RenderingContext;
   canvas: HTMLCanvasElement;
   arcCount: number;
+  detail: { lines: unknown[] | null } | null;
+  detailLines: number;
   project(n: { lat: number; lon: number }): { x: number; y: number; visible: boolean };
+  unproject(x: number, y: number): { lat: number; lon: number } | null;
   setCamera(cam: { lon: number; lat: number; zoom: number }): void;
   draw(ts: number, burst: number): void;
 };
@@ -17,7 +20,14 @@ type PageGlobals = {
     onClose(): void;
     state: {
       lastFrame: number;
-      graph: { nodes: Array<{ id: string; lat: number; lon: number }> };
+      lon: number;
+      lat: number;
+      zoom: number;
+      fly: { lon: number; lat: number; zoom: number } | null;
+      velLon: number;
+      velLat: number;
+      autoRotate: boolean;
+      graph: { nodes: Array<{ id: string; name: string; lat: number; lon: number }> };
       renderer: Renderer;
     };
   };
@@ -25,6 +35,7 @@ type PageGlobals = {
     countries(): Array<{ iso: string; name: string }>;
     countryAt(lat: number, lon: number): number;
     countryNear(lat: number, lon: number, maxDeg: number): number;
+    latLonToVec(lat: number, lon: number, radius: number): number[];
   };
   closeModal(id: string): void;
 };
@@ -169,6 +180,169 @@ test('network globe: draws countries, nodes and links, filters link types, and s
   await expect(browser.locator('#glHudWorkspace')).toBeEnabled();
 
   // Closing stops the render loop and detaches the view.
+  await browser.evaluate(() => {
+    (window as unknown as PageGlobals).closeModal('globeModal');
+    return null;
+  });
+  await expect(browser.locator('#globeModal')).toBeHidden();
+});
+
+// Deep zoom: a stack of same-city hosts is listed on hover, a click flies in until the pins separate,
+// province lines are lazy-loaded and drawn, the wheel keeps its geo point still, and zoom caps at 200.
+test('network globe: zooms to province level, splits a host stack and loads province lines', async ({ app, screen, browser }) => {
+  await app.open('/');
+  await initApp(screen, browser);
+
+  // Three hosts in Jakarta on the backend's micro-spiral (0.02° steps), plus a gateway far away at (0,0).
+  const spiral = (r: number) => ({
+    lat: -6.2 + 0.02 * Math.sqrt(r) * Math.sin(r * 2.399963),
+    lon: 106.8 + 0.02 * Math.sqrt(r) * Math.cos(r * 2.399963),
+  });
+  const host = (id: string, name: string, r: number) => ({
+    id, name, kind: 'host', ip: '10.0.0.' + (10 + r), status: 'healthy',
+    ...spiral(r), city: 'Jakarta', region: 'Jakarta', country_code: 'ID',
+    latency_ms: 12, active_alerts: 0, geo_source: 'manual', links: [],
+  });
+  const payload = {
+    nodes: [
+      { id: 'gateway', name: 'Pantau Gateway', kind: 'gateway', ip: '', status: 'healthy', lat: 0, lon: 0, city: 'Gateway', active_alerts: 0, geo_source: 'default' },
+      host('host:11', 'jkt-a', 0),
+      host('host:12', 'jkt-b', 1),
+      host('host:13', 'jkt-c', 2),
+    ],
+    links: [],
+    generated_at: new Date().toISOString(),
+  };
+
+  await browser.route('**/api/network-radar/globe', async (route) => {
+    await route.fulfill({ json: payload });
+  });
+  await browser.route('**/api/logs/stream*', async (route) => {
+    await route.fulfill({ status: 200, headers: { 'Content-Type': 'text/event-stream' }, body: '' });
+  });
+
+  await browser.locator('#btnHeaderGlobe').click();
+  await expect(browser.locator('#globeModal')).toBeVisible();
+  await expect(browser.locator('#glCanvas')).toBeVisible();
+  await expect(browser.locator('#glCount')).toContainText('4 nodes');
+
+  // The province bundle is lazy: nothing requested it at page load.
+  const loadedAtStart = await browser.evaluate(() =>
+    performance.getEntriesByType('resource').some((e) => e.name.includes('/app/globe-admin1.js')));
+  expect(loadedAtStart).toBe(false);
+
+  // Stop auto-rotation and aim the camera at Jakarta, then find jkt-a's screen point.
+  await browser.locator('#glAutoRotate').uncheck();
+  const jktA = await browser.evaluate(() => {
+    const g = (window as unknown as PageGlobals).GlobeRadar;
+    const r = g.state.renderer;
+    const rad = Math.PI / 180;
+    g.state.fly = null;
+    g.state.velLon = g.state.velLat = 0;
+    g.state.zoom = 1;
+    g.state.lon = 106.8 * rad;
+    g.state.lat = -6.2 * rad;
+    r.setCamera({ lon: g.state.lon, lat: g.state.lat, zoom: g.state.zoom });
+    const a = g.state.graph.nodes.find((n) => n.id === 'host:11')!;
+    const p = r.project(a);
+    const box = r.canvas.getBoundingClientRect();
+    return { x: box.left + p.x, y: box.top + p.y, visible: p.visible };
+  });
+  expect(jktA.visible).toBe(true);
+
+  // At 1x the three pins are a fraction of a pixel apart: the hover lists the whole stack.
+  await browser.mouse.move(jktA.x, jktA.y);
+  await expect(browser.locator('#glTooltip')).toContainText('3 nodes here');
+  await expect(browser.locator('#glTooltip')).toContainText('jkt-a');
+  await expect(browser.locator('#glTooltip')).toContainText('jkt-b');
+  await expect(browser.locator('#glTooltip')).toContainText('jkt-c');
+
+  // A click flies in until the pins separate (or max zoom is reached).
+  await browser.mouse.down();
+  await browser.mouse.up();
+  await expect.poll(() => browser.evaluate(() => {
+    const s = (window as unknown as PageGlobals).GlobeRadar.state;
+    return s.fly === null && s.zoom > 50;
+  }), { timeout: 15000 }).toBe(true);
+  const spread = await browser.evaluate(() => {
+    const g = (window as unknown as PageGlobals).GlobeRadar;
+    const r = g.state.renderer;
+    const pts = ['host:11', 'host:12', 'host:13'].map((id) =>
+      r.project(g.state.graph.nodes.find((n) => n.id === id)!));
+    let dmin = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      for (let j = i + 1; j < pts.length; j++) {
+        dmin = Math.min(dmin, Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y));
+      }
+    }
+    return { dmin, zoom: g.state.zoom };
+  });
+  expect(spread.dmin).toBeGreaterThanOrEqual(10);
+  expect(spread.zoom).toBeLessThanOrEqual(200);
+
+  // Once the camera settles past 2.5x, province lines load and get drawn.
+  await expect.poll(() => browser.evaluate(() =>
+    (window as unknown as PageGlobals).GlobeRadar.state.renderer.detailLines), { timeout: 15000 }).toBeGreaterThan(0);
+  await expect.poll(() => browser.evaluate(() =>
+    performance.getEntriesByType('resource').some((e) => e.name.includes('/app/globe-admin1.js')))).toBe(true);
+
+  // Now separated, hovering one host shows only it; clicking opens its HUD.
+  const jktB = await browser.evaluate(() => {
+    const g = (window as unknown as PageGlobals).GlobeRadar;
+    const r = g.state.renderer;
+    const b = g.state.graph.nodes.find((n) => n.id === 'host:12')!;
+    const p = r.project(b);
+    const box = r.canvas.getBoundingClientRect();
+    return { x: box.left + p.x, y: box.top + p.y };
+  });
+  await browser.mouse.move(jktB.x, jktB.y);
+  await expect(browser.locator('#glTooltip')).toContainText('jkt-b');
+  await expect(browser.locator('#glTooltip')).not.toContainText('nodes here');
+  await browser.mouse.down();
+  await browser.mouse.up();
+  await expect(browser.locator('#glHud')).toContainText('jkt-b');
+
+  // Wheel zoom keeps the geo point under the cursor still.
+  const anchored = await browser.evaluate(() => {
+    const g = (window as unknown as PageGlobals).GlobeRadar;
+    const r = g.state.renderer;
+    const rad = Math.PI / 180;
+    g.state.fly = null;
+    g.state.velLon = g.state.velLat = 0;
+    g.state.zoom = 3;
+    g.state.lon = 106.8 * rad;
+    g.state.lat = -6.2 * rad;
+    r.setCamera({ lon: g.state.lon, lat: g.state.lat, zoom: g.state.zoom });
+    const box = r.canvas.getBoundingClientRect();
+    const x = box.left + r.canvas.clientWidth / 2 + 120;
+    const y = box.top + r.canvas.clientHeight / 2 + 70;
+    const before = r.unproject(x - box.left, y - box.top);
+    r.canvas.dispatchEvent(new WheelEvent('wheel', { clientX: x, clientY: y, deltaY: -200, bubbles: true, cancelable: true }));
+    r.setCamera({ lon: g.state.lon, lat: g.state.lat, zoom: g.state.zoom });
+    const after = r.unproject(x - box.left, y - box.top);
+    return {
+      zoom: g.state.zoom,
+      dLat: before && after ? Math.abs(after.lat - before.lat) : Infinity,
+      dLon: before && after ? Math.abs(after.lon - before.lon) : Infinity,
+    };
+  });
+  expect(anchored.zoom).toBeCloseTo(3 * Math.exp(0.4), 2);
+  expect(anchored.dLat).toBeLessThan(0.1);
+  expect(anchored.dLon).toBeLessThan(0.1);
+
+  // A huge wheel delta clamps at 200x.
+  await browser.evaluate(() => {
+    const r = (window as unknown as PageGlobals).GlobeRadar.state.renderer;
+    const box = r.canvas.getBoundingClientRect();
+    r.canvas.dispatchEvent(new WheelEvent('wheel', {
+      clientX: box.left + r.canvas.clientWidth / 2,
+      clientY: box.top + r.canvas.clientHeight / 2,
+      deltaY: -100000, bubbles: true, cancelable: true,
+    }));
+  });
+  await expect.poll(() => browser.evaluate(() =>
+    (window as unknown as PageGlobals).GlobeRadar.state.zoom)).toBe(200);
+
   await browser.evaluate(() => {
     (window as unknown as PageGlobals).closeModal('globeModal');
     return null;

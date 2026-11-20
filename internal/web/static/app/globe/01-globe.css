@@ -44,6 +44,7 @@
 .gl-tooltip { position: absolute; z-index: 3; pointer-events: none; background: var(--card-bg); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); padding: 8px 10px; font-size: var(--fs-xs); color: var(--text); min-width: 180px; max-width: 240px; }
 .gl-tooltip strong { display: block; margin-bottom: 3px; }
 .gl-tooltip .gl-tip-dim { color: var(--text-faint); font-size: 10px; }
+.gl-tooltip .gl-tip-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .gl-tooltip.gl-tip-country { min-width: 0; padding: 5px 9px; white-space: nowrap; }
 .gl-tooltip.gl-tip-country strong { margin-bottom: 0; }
 

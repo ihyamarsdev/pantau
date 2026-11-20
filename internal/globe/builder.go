@@ -117,11 +117,6 @@ func Build(s Store, now time.Time) (*Graph, error) {
 		g.Nodes = append(g.Nodes, hostNode(s, h, alertCounts[h.ID], now))
 	}
 
-	// Deterministic micro-spiral spreading: hosts sharing the exact same
-	// (lat,lon) are offset by a few hundredths of a degree so their 3D pins
-	// never stack invisibly. Sorting by ID makes the layout stable across builds.
-	spreadCoLocated(g.Nodes)
-
 	// Kubernetes cluster markers.
 	for _, c := range clusters {
 		g.Nodes = append(g.Nodes, Node{
@@ -129,6 +124,11 @@ func Build(s Store, now time.Time) (*Graph, error) {
 			Status: "unknown", GeoSource: "gateway", IP: c.Server,
 		})
 	}
+
+	// Deterministic micro-spiral spreading: hosts sharing the exact same
+	// (lat,lon) are offset by a few hundredths of a degree so their 3D pins
+	// never stack invisibly. Sorting by ID makes the layout stable across builds.
+	spreadCoLocated(g.Nodes)
 
 	// --- Links --------------------------------------------------------------
 
@@ -259,18 +259,16 @@ func Build(s Store, now time.Time) (*Graph, error) {
 	return g, nil
 }
 
-// spreadCoLocated nudges nodes that share the exact same coordinates onto a
-// deterministic micro-spiral. The first node stays put; subsequent ones get
-// progressively larger angular offsets (~0.02° steps), keeping pins visually
-// distinct on a globe without moving them off their datacenter region.
+// spreadCoLocated nudges nodes that share exact coordinates onto a
+// deterministic micro-spiral. This includes hosts and kube markers sitting on
+// the gateway fallback at (0,0). The lowest-ID node stays put; subsequent ones
+// get progressively larger angular offsets (~0.02° steps), keeping pins
+// visually distinct on a globe without moving them off their datacenter region.
 func spreadCoLocated(nodes []Node) {
-	// Group by exact coordinate, excluding the gateway marker.
+	// Group by exact coordinate.
 	groups := map[[2]float64][]int{}
 	for i := range nodes {
 		n := &nodes[i]
-		if n.Kind == "gateway" {
-			continue
-		}
 		key := [2]float64{round4(n.Lat), round4(n.Lon)}
 		groups[key] = append(groups[key], i)
 	}

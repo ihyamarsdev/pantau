@@ -60,10 +60,11 @@ dan [ADR 0018](0018-in-memory-gzip-compression-and-etag-caching.md).
 - Setiap node memuat `id`, `name`, `ip`, `public_ip`, `lat`, `lon`, `region`,
   `city`, `country_code`, `asn_org`, `status`, `cpu_pct`, `mem_pct`,
   `active_alerts`, `group_id`, `network_id`, `kind`, `geo_source`.
-- **Micro-spiral deterministik**: Host yang berbagi koordinat `(lat,lon)` persis
-  (satu datacenter) di-offset pada spiral sudut emas ~0,02° per peringkat,
-  diurutkan berdasarkan ID, sehingga pin 3D tidak saling menutupi dan layout
-  stabil antar-build.
+- **Micro-spiral deterministik**: node yang berbagi koordinat `(lat,lon)` persis
+  — Host satu datacenter, Host privat/fallback di Gateway `(0,0)`, dan marker
+  K8s — di-offset pada spiral sudut emas ~0,02° per peringkat, diurutkan
+  berdasarkan ID (ID terendah tetap di tempat), sehingga pin 3D tidak saling
+  menutupi dan layout stabil antar-build.
 - Link disusun dari data tersimpan, tanpa panggilan jaringan baru:
   1. **Gateway ↔ Host** (`ssh`, atau `vpn` bila `network_id != 0`), latensi dari
      `probe_results` (`source_host_id = 0` = Gateway).
@@ -87,10 +88,15 @@ dan [ADR 0018](0018-in-memory-gzip-compression-and-etag-caching.md).
     `tools/globe-countries/gen.py` (hanya library standar Python); jangan
     disunting tangan. Ring dari satu negara digambar dengan aturan even-odd,
     sehingga lubang (Lesotho di Afrika Selatan) tidak butuh data arah putaran.
+  - `globe-admin1.js` — bundel same-origin terpisah (~234 KB gzip) berisi garis
+    admin-1 provinsi/negara Natural Earth 1:10m (domain publik), dibangkitkan
+    oleh `tools/globe-countries/admin1.py`; dimuat malas lewat *dynamic import*
+    hanya saat zoom melewati 2,5x, jadi tidak menambah ukuran bundel awal.
   - `02-globe-geo.js` — lat/lon → bola, dekode dataset, `countryAt(lat, lon)`
     (point-in-polygon even-odd per negara, bbox lebih dulu), `countryName`
     (nama terlokalisasi dari `Intl.DisplayNames`, nama Inggris dataset sebagai
-    cadangan), dan dua pelukis Canvas 2D (peta dasar dan lapisan sorot).
+    cadangan), dan pelukis Canvas 2D (peta dasar, lapisan sorot, dan tekstur
+    detail close-zoom).
   - `03-globe-render.js` — `WebGlobe.Renderer`: bola 128×64 dengan UV per verteks
     (turunan tekstur tetap kontinu di antimeridian), halo atmosfer, pin, busur.
   - `04-globe.js`–`06-globe-ui.js` — modal Workspace
@@ -104,6 +110,12 @@ dan [ADR 0018](0018-in-memory-gzip-compression-and-etag-caching.md).
   garis pantai sama tebal; sekitar 10 ms), diunggah ber-mipmap dengan
   anisotropik, dan kanvasnya dibebaskan. Segmen yang berada di potongan
   antimeridian dan di kutub tidak digoresi.
+- **Tekstur detail close-zoom**: saat zoom melewati 2,5x, garis admin-1
+  provinsi/negara Natural Earth 1:10m dilukis ke tekstur Canvas 2D lalu
+  dicampur di shader di atas peta dasar, dengan sampling per-fragmen memakai
+  lat/lon eksak dari arah sinar (bukan UV mesh yang meleset ~2 km di dekat
+  permukaan). Garis pantai tetap Natural Earth 1:50m. Tanpa dependensi baru;
+  sifat airgapped terjaga.
 - **Lapisan sorot**: tekstur premultiplied 2048×1024 terpisah, dilukis ulang
   hanya saat himpunan sorotan berubah: negara yang memuat Host (warna aksen
   lembut), negara di bawah kursor, dan negara Host terpilih (lebih kuat +
@@ -120,15 +132,20 @@ dan [ADR 0018](0018-in-memory-gzip-compression-and-etag-caching.md).
   statis dan hanya dibangun ulang saat graf, filter, atau seleksi berubah —
   tidak ada alokasi buffer per frame.
 - **Kamera**: kamera tetap di +Z; bola diputar `Rx(lat)·Ry(−lon)`. Zoom
-  menyempitkan lensa (tanpa dolly), jadi perspektif tidak berubah. Konversi
-  posisi: `x = r·cos(lat)·sin(lon)`, `y = r·sin(lat)`, `z = r·cos(lat)·cos(lon)`
+  menyempitkan lensa (tanpa dolly), jadi perspektif tidak berubah, sampai 200x
+  (≈95 km pada panggung 960 px). Konversi posisi: `x = r·cos(lat)·sin(lon)`,
+  `y = r·sin(lat)`, `z = r·cos(lat)·cos(lon)`
   (timur di kanan). `project` memproyeksikan pin ke layar dan `unproject`
   memotong sinar kursor dengan bola untuk hover negara.
-- **Interaksi**: drag dengan inersia berbasis waktu, roda untuk zoom,
-  *fly-to* halus saat Host dipilih (dari sidebar atau pin), putar-otomatis yang
-  berhenti selama sebuah Host dipilih agar pinnya tidak hanyut dari HUD. Filter
-  tipe link, grup, dan pencarian memengaruhi apa yang digambar, bukan hanya
-  hitungan.
+- **Interaksi**: drag dengan inersia berbasis waktu (1:1 di bawah kursor pada
+  setiap zoom), roda untuk zoom yang berjangkar pada kursor (titik di bawah
+  kursor tetap diam), *fly-to* halus saat Host dipilih (dari sidebar atau pin),
+  putar-otomatis yang berhenti selama sebuah Host dipilih agar pinnya tidak
+  hanyut dari HUD dan saat zoom di atas 2x. Pin yang bertumpukan di satu titik
+  menampilkan daftar semua Host saat di-hover; mengkliknya melakukan zoom-in
+  sampai pin-pin terpisah, dan HUD baru dibuka bila sudah tidak bisa dipisah
+  lagi (di zoom maksimum). Filter tipe link, grup, dan pencarian memengaruhi
+  apa yang digambar, bukan hanya hitungan.
 - **Siklus hidup & performa**: loop `requestAnimationFrame` dihentikan saat
   modal ditutup (`closeModal` → `GlobeRadar.onClose`) atau `document.hidden`;
   DPR dibatasi `Math.min(devicePixelRatio, 2)`; seluruh objek GL dan kanvas
@@ -152,10 +169,14 @@ di sidebar tetap berfungsi.
   yang diperlukan karena renderer ditulis langsung dengan WebGL2 + GLSL.
 - Data peta menambah ~39 KB (gzip) pada bundel globe, dimuat hanya bersama
   bundel itu. Pembaruan data = menjalankan `tools/globe-countries/gen.py`.
+- Bundel admin-1 menambah ~234 KB (gzip), dimuat malas lewat *dynamic import*
+  hanya saat zoom melewati 2,5x; tidak ada permintaan ke luar, sifat airgapped
+  tetap terjaga.
 - Batas negara mengikuti Natural Earth (termasuk wilayah sengketa sebagaimana
   digambarnya); Pantau tidak menetapkan posisi politik.
 - Memori GPU ±55 MB saat modal terbuka (peta 4096×2048 ber-mipmap + lapisan
-  sorot), dibebaskan saat ditutup.
+  sorot); lapisan detail menambah sampai ±50 MB saat zoom di atas 2,5x (total
+  sampai ~105 MB), keduanya dibebaskan saat modal ditutup.
 - Backend baca tetap murah — satu cache TTL, tanpa SSH/API call — sementara
   biaya GeoIP dibayar sekali per IP per 30 hari di latar.
 - Host privat tanpa override tampil di titik Gateway dengan penanda
@@ -200,3 +221,8 @@ di sidebar tetap berfungsi.
   daratan lebih terang daripada samudra pada kanvas GL; hover menyebut nama
   negara; filter tipe link mengubah jumlah busur yang digambar; HUD Host
   menampilkan detail, nama negara, dan pintasan.
+- E2E lanjutan pada berkas yang sama: hover tumpukan pin mencantumkan semua
+  Host di titik itu; klik memisahkan pin sampai jarak pasangan terdekat ≥10 px;
+  garis provinsi admin-1 dimuat malas dan tergambar (`detailLines > 0`); zoom
+  roda berjangkar menjaga titik geografis di bawah kursor tetap dalam 0,1°;
+  zoom maksimum 200x.

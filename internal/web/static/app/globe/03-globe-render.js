@@ -12,6 +12,7 @@
   var DIST = 3.6, FOV_TAN = 0.3615;  // camera distance in globe radii; at zoom 1 the globe fills ~80% of the stage
   var ARC_SEGS = 48;
   var MAP_W = 4096;                  // base map width; the highlight layer is half that
+  var DETAIL_MAX = 3072;             // texels per side of the close-zoom detail layer (~50 MB of GPU memory with mipmaps)
 
   // Land/ocean palette: blue slate that sits on the neutral dark UI (ADR 0039). Pins, arcs and highlights take the
   // theme's own status and accent tokens at runtime.
@@ -20,6 +21,9 @@
     land: ['#1f2d54', '#263663', '#2d4075', '#233160', '#2a3b6c'],
     border: 'rgba(165, 185, 245, 0.34)',
     line: 1.7,
+    detailLine: 1.4,
+    admin1: 'rgba(165, 185, 245, 0.26)',
+    admin1Line: 0.9,
   };
 
   // ---- Matrices (column-major, as GLSL) ---------------------------------------
@@ -79,26 +83,42 @@
       out vec2 vUV;
       out vec3 vN;
       out vec3 vP;
+      out vec3 vO;
       void main() {
         vec4 p = uMV * vec4(aPos, 1.0);
         vP = p.xyz;
         vN = mat3(uMV) * aPos;
         vUV = aUV;
+        vO = aPos;
         gl_Position = uProj * p;
       }`,
     globeFS: `#version 300 es
       precision highp float;
       uniform sampler2D uMap, uOver;
+      uniform sampler2D uDetail;
+      uniform vec4 uDetailRect;
+      uniform float uDetailOn;
       uniform vec3 uLight, uRim;
       in vec2 vUV;
       in vec3 vN;
       in vec3 vP;
+      in vec3 vO;
       out vec4 o;
       void main() {
         vec3 n = normalize(vN);
         vec3 c = texture(uMap, vUV).rgb;
         vec4 h = texture(uOver, vUV);
         c = c * (1.0 - h.a) + h.rgb;
+        if (uDetailOn > 0.5) {
+          // Exact lat/lon of this fragment: the mesh's linear UV drifts up to ~2 km inside a 2.8° face, visible up close.
+          vec3 s = normalize(vO);
+          float lon = degrees(atan(s.x, s.z)), lat = degrees(atan(s.y, length(s.xz)));
+          vec2 d = vec2(mod(lon - uDetailRect.x, 360.0) / uDetailRect.z, (uDetailRect.y - lat) / uDetailRect.w);
+          float e = min(min(d.x, 1.0 - d.x), min(d.y, 1.0 - d.y));
+          vec2 k = vec2(360.0 / uDetailRect.z, 180.0 / uDetailRect.w);
+          vec3 dc = textureGrad(uDetail, clamp(d, 0.0, 1.0), dFdx(vUV) * k, dFdy(vUV) * k).rgb;
+          c = mix(c, dc, smoothstep(0.0, 0.02, e));
+        }
         float l = max(dot(n, uLight), 0.0);
         c *= 0.68 + 0.5 * l;
         vec3 v = normalize(-vP);
@@ -218,7 +238,7 @@
     var gl = this.gl;
     this.prog = {
       halo: this._program(SHADERS.haloVS, SHADERS.haloFS, ['uFocal', 'uDist', 'uGlow']),
-      globe: this._program(SHADERS.globeVS, SHADERS.globeFS, ['uProj', 'uMV', 'uMap', 'uOver', 'uLight', 'uRim']),
+      globe: this._program(SHADERS.globeVS, SHADERS.globeFS, ['uProj', 'uMV', 'uMap', 'uOver', 'uLight', 'uRim', 'uDetail', 'uDetailRect', 'uDetailOn']),
       arc: this._program(SHADERS.arcVS, SHADERS.arcFS, ['uMVP', 'uView', 'uWidth', 'uTime', 'uBurst']),
       pin: this._program(SHADERS.pinVS, SHADERS.pinFS, ['uMVP', 'uScale', 'uMaxPoint', 'uTime']),
     };
@@ -226,6 +246,7 @@
     this.glow = this._rgb('--primary', '#5e6ad2');
     this.rim = this._rgb('--accent-text', '#9aa3f8');
     this.rimDim = this.rim.map(function (c) { return c * 0.45; });
+    this.maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
     this.maxPoint = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE)[1];
     this._buildSphere();
     this.haloVao = this._own(gl.createVertexArray(), 'vao');
@@ -234,6 +255,13 @@
     this.overCv.width = Math.min(MAP_W / 2, gl.getParameter(gl.MAX_TEXTURE_SIZE));
     this.overCv.height = this.overCv.width / 2;
     this.overTex = this._texture(this.overCv, null);
+    // Detail layer: a 1x1 placeholder keeps sampler unit 2 complete until the first close zoom paints it.
+    this.detailCv = document.createElement('canvas');
+    this.detailCv.width = this.detailCv.height = 1;
+    this.detailTex = this._texture(this.detailCv, null);
+    this.detail = null;
+    this.tints = [];
+    this.detailLines = 0;
     this.pins = this._dynamic(10, [[0, 3, 0], [1, 3, 3], [2, 4, 6]]);
     this.arcs = this._dynamic(18, [[0, 3, 0], [1, 3, 3], [2, 3, 6], [3, 2, 9], [4, 4, 11], [5, 3, 15]]);
     this.arcs.ibo = this._own(gl.createBuffer(), 'buffer');
@@ -396,8 +424,8 @@
       var u = G.latLonToVec(a.lat, a.lon, 1), v = G.latLonToVec(b.lat, b.lon, 1);
       var cos = Math.max(-1, Math.min(1, u[0] * v[0] + u[1] * v[1] + u[2] * v[2]));
       var theta = Math.acos(cos), sinT = Math.sin(theta);
-      if (theta < 1e-3 || sinT < 1e-4) return; // same place (or antipodal, where no single great circle exists)
-      var chord = 2 * Math.sin(theta / 2), lift = Math.max(0.01, 0.12 * chord);
+      if (theta < 1e-5 || sinT < 1e-4) return; // same place (or antipodal, where no single great circle exists)
+      var chord = 2 * Math.sin(theta / 2), lift = Math.max(Math.min(0.01, chord), 0.12 * chord);
       var rgb = self._rgb(l.status === 'down' ? '--danger' : (LINK[l.type] || '--info'), '#5eb0ef');
       var speed = (l.type === 'vpn' ? 0.12 : l.type === 'k8s' ? 0.1 : 0.16) * (l.latency_ms > 80 ? 0.7 : 1);
       var pts = [];
@@ -433,8 +461,10 @@
   // items: [{idx, fill, stroke?, width?}] from the controller; repainted and re-uploaded only when called.
   Renderer.prototype.setTints = function (items) {
     if (!this.ok) return;
+    this.tints = items;
     G.paintOverlay(this.overCv, items);
     this._texture(this.overCv, this.overTex);
+    if (this.detail) this._paintDetail();
   };
 
   // ---- Camera -----------------------------------------------------------------
@@ -447,6 +477,28 @@
     var mv = mul(translateZ(-DIST), model);
     var proj = perspective(fx, fy, 0.5, 20);
     this.m = { model: model, mv: mv, proj: proj, mvp: mul(proj, mv), fx: fx, fy: fy };
+  };
+
+  // CSS px per radian at the view centre, from the same lens maths setCamera uses.
+  Renderer.prototype.pxPerRad = function (zoom) {
+    var cw = this.canvas.clientWidth || 1, ch = this.canvas.clientHeight || 1;
+    return zoom / FOV_TAN * Math.min(1, cw / ch) * ch / (2 * (DIST - 1));
+  };
+
+  // Detail layer: view = {west, east, south, north, cssPx, lineZoom, lines, ...} or null to switch it off.
+  Renderer.prototype.setDetail = function (view) {
+    if (!this.ok) return;
+    this.detail = view;
+    if (view) this._paintDetail();
+  };
+
+  Renderer.prototype._paintDetail = function () {
+    var v = this.detail;
+    var side = Math.max(512, Math.min(DETAIL_MAX, this.maxTex, Math.ceil(v.cssPx * this.dpr)));
+    if (this.detailCv.width !== side) this.detailCv.width = this.detailCv.height = side;
+    v.px = side / v.cssPx;
+    this.detailLines = G.paintDetail(this.detailCv, v, PALETTE, this.tints, v.lines);
+    this._texture(this.detailCv, this.detailTex);
   };
 
   Renderer.prototype.resize = function () {
@@ -492,6 +544,14 @@
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.overTex);
     gl.uniform1i(gp.u.uOver, 1);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, this.detailTex);
+    gl.uniform1i(gp.u.uDetail, 2);
+    gl.uniform1f(gp.u.uDetailOn, this.detail ? 1 : 0);
+    if (this.detail) {
+      var d = this.detail;
+      gl.uniform4f(gp.u.uDetailRect, d.west, d.north, d.east - d.west, d.north - d.south);
+    }
     gl.bindVertexArray(this.sphereVao);
     gl.drawElements(gl.TRIANGLES, this.sphereCount, gl.UNSIGNED_SHORT, 0);
 
@@ -576,6 +636,7 @@
     });
     this.tmp = [];
     if (this.overCv) this.overCv.width = this.overCv.height = 0;
+    if (this.detailCv) this.detailCv.width = this.detailCv.height = 0;
     var lose = releaseContext && gl.getExtension('WEBGL_lose_context');
     if (lose) lose.loseContext();
     this.ok = false;
