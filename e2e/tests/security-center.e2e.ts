@@ -77,9 +77,8 @@ test('security center (host tab): posture strip, pillars, collapsible sections a
   await app.open('/');
   await initApp(screen, browser);
 
-  // The side panel no longer has a Security item; the Topology tooltip still resolves at boot.
+  // The side panel no longer has a Security item.
   await expect(browser.locator('#navItemSecurity')).toHaveCount(0);
-  await expect(browser.locator('#btnHeaderTopology')).toHaveAttribute('title', 'Network Radar');
 
   const hostID = (await browser.evaluate(async (name) => {
     const res = await fetch('/api/hosts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, host: '10.9.9.7', port: 22, user: 'root' }) });

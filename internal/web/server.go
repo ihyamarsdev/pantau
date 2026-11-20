@@ -43,7 +43,6 @@ import (
 	"pantau/internal/snapshot"
 	"pantau/internal/sshrunner"
 	"pantau/internal/store"
-	"pantau/internal/topology"
 	"pantau/internal/transfer"
 	"pantau/internal/updater"
 	"pantau/internal/vpnnet"
@@ -132,7 +131,6 @@ type Server struct {
 	gitProtocols      string // GIT_ALLOW_PROTOCOL for repository fetch/push; "" = https:ssh (tests: file)
 	repoClone         func(ctx context.Context, g ansible.GitSource, dir string, log io.Writer) (branch, sha string, err error)
 	repoJobs          repoJobSet
-	topologyCache     *topology.Cache
 	globeCache        *globe.Cache
 	geoResolver       *globe.Resolver
 }
@@ -173,7 +171,6 @@ func NewServer(db *store.DB, ins *inspector.Inspector, disp *notify.Dispatcher) 
 		gitEditCommit:  ansible.CommitAndPush,
 	}
 	if db != nil {
-		s.topologyCache = topology.NewCache(db, topologyCacheTTL)
 		s.globeCache = globe.NewCache(db, globeCacheTTL)
 		s.geoResolver = globe.NewResolver(db)
 		_, _ = db.MarkAnsibleRunsInterrupted()
@@ -343,8 +340,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/app/scanprogress.css", serveAppBundle("scanprogress", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/dockerprogress.js", serveAppBundle("dockerprogress", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/dockerprogress.css", serveAppBundle("dockerprogress", ".css", "text/css; charset=utf-8"))
-	s.mux.HandleFunc("/app/topology.js", serveAppBundle("topology", ".js", "text/javascript; charset=utf-8"))
-	s.mux.HandleFunc("/app/topology.css", serveAppBundle("topology", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/globe.js", serveAppBundle("globe", ".js", "text/javascript; charset=utf-8"))
 	s.mux.HandleFunc("/app/globe.css", serveAppBundle("globe", ".css", "text/css; charset=utf-8"))
 	s.mux.HandleFunc("/app/vault.js", serveAppBundle("vault", ".js", "text/javascript; charset=utf-8"))
@@ -516,9 +511,6 @@ func (s *Server) routes() {
 
 	// Live Event Stream (Activity Console)
 	s.mux.HandleFunc("/api/logs/stream", s.authMiddleware(s.handleLogsStream))
-	// Live Fleet Topology graph (read-only projection of stored inventory)
-	s.mux.HandleFunc("/api/topology", s.authMiddleware(s.handleTopology))
-	s.mux.HandleFunc("/api/topology/host", s.authMiddleware(s.handleTopologyHost))
 	// 3D Globe Network Radar (ADR 0090)
 	s.mux.HandleFunc("/api/network-radar/globe", s.authMiddleware(s.handleGlobe))
 	s.mux.HandleFunc("/api/network-radar/globe/geo", s.authMiddleware(s.handleGlobeSetGeo))
@@ -1147,7 +1139,7 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.ID = id
-		s.invalidateTopology()
+		s.invalidateGlobe()
 		redactHost(&h)
 		writeJSON(w, http.StatusCreated, h)
 	default:
@@ -1380,7 +1372,7 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			s.invalidateTopology()
+			s.invalidateGlobe()
 			if s.inspector != nil {
 				_ = s.inspector.RecalculateHostLifecycle(hostID)
 			}
@@ -1392,7 +1384,7 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			s.invalidateTopology()
+			s.invalidateGlobe()
 			writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

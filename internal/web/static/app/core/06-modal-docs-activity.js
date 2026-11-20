@@ -41,9 +41,6 @@ function closeModal(id) {
     try { S.currentNetDiagSSE.close(); } catch (e) {}
     S.currentNetDiagSSE = null;
   }
-  if (id === 'topologyModal' && window.Topology && window.Topology.onClose) {
-    window.Topology.onClose();
-  }
   if (id === 'globeModal' && window.GlobeRadar && window.GlobeRadar.onClose) {
     window.GlobeRadar.onClose();
   }

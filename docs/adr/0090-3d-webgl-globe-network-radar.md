@@ -10,9 +10,9 @@ dan [ADR 0018](0018-in-memory-gzip-compression-and-etag-caching.md).
 
 ## Konteks dan Masalah
 
-1. Radar konsentris (`internal/topology`) menampilkan topologi makro dalam
-   koordinat polar buatan; ia tidak menjawab "di mana server saya secara
-   geografis" maupun "bagaimana lalu lintas mengalir antar-benua".
+1. Radar konsentris pendahulu menampilkan topologi makro dalam koordinat polar
+   buatan; ia tidak menjawab "di mana server saya secara geografis" maupun
+   "bagaimana lalu lintas mengalir antar-benua", sehingga kini dihapus.
 2. Renderer ortografik Canvas 2D pendahulu memproyeksikan bola ke 2D: tidak ada
    pencahayaan 3D, atmosfer Fresnel, kedalaman nyata, maupun bus yang melengkung
    di atas permukaan bola — batasan mendasar proyeksi datar.

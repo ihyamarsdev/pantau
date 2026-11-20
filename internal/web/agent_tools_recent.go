@@ -118,7 +118,7 @@ func toolVPNNetworkAction(s *Server, r *http.Request, args map[string]interface{
 		if err != nil {
 			return "", err
 		}
-		s.invalidateTopology()
+		s.invalidateGlobe()
 		return jsonText(st)
 	default:
 		return "", fmt.Errorf("action must be probe or restart")
