@@ -41,7 +41,9 @@ func (s *Server) StartGeoResolver(ctx context.Context) {
 		return
 	}
 	go func() {
+		_ = s.geoResolver.ResolveGateway(ctx)
 		_ = s.geoResolver.RunOnce(ctx)
+		s.invalidateGlobe()
 		ticker := time.NewTicker(6 * time.Hour)
 		defer ticker.Stop()
 		for {
@@ -49,6 +51,7 @@ func (s *Server) StartGeoResolver(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				_ = s.geoResolver.ResolveGateway(ctx)
 				if err := s.geoResolver.RunOnce(ctx); err != nil {
 					logger.Warn("globe", "", "GeoIP refresh failed: "+err.Error())
 				}
@@ -80,8 +83,8 @@ func (s *Server) resolveHostGeo(h store.Host) {
 	}()
 }
 
-// POST /api/network-radar/globe/geo sets the manual geo override for a host.
-// Body: {id, lat, lon, label}. Used for air-gapped/private-IP hosts (ADR 0077).
+// POST /api/network-radar/globe/geo sets the manual geo override for a host or the gateway.
+// Body: {id, lat, lon, label, region}. ID 0 sets the Pantau Gateway override.
 func (s *Server) handleGlobeSetGeo(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -94,12 +97,26 @@ func (s *Server) handleGlobeSetGeo(w http.ResponseWriter, r *http.Request) {
 		Region string  `json:"region"`
 		Label  string  `json:"label"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID <= 0 {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID < 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
 	if req.Lat < -90 || req.Lat > 90 || req.Lon < -180 || req.Lon > 180 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid coordinates"})
+		return
+	}
+	// ID 0 overrides the Pantau Gateway itself.
+	if req.ID == 0 {
+		entry := store.GeoIPEntry{
+			IP: "gateway", Lat: req.Lat, Lon: req.Lon,
+			Region: req.Region, City: req.Label, Source: "manual",
+		}
+		if err := s.db.UpsertGeoIP(entry, time.Now()); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		s.invalidateGlobe()
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 		return
 	}
 	host, err := s.db.GetHost(req.ID)

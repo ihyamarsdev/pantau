@@ -15,22 +15,26 @@
   var DETAIL_MAX = 3840;             // longest side of the detail raster; aspect-matched so texel density holds
   var DETAIL_BUDGET_MB = 96;         // hard GPU-memory ceiling for the detail texture (RGBA8 + mipmaps)
 
-  // Land/ocean palette: blue slate that sits on the neutral dark UI (ADR 0039). Pins, arcs and highlights take the
-  // theme's own status and accent tokens at runtime.
+  // Land/ocean palette: realistic Earth-like tones (deep marine ocean, natural terrestrial vegetation/greens).
+  // ponytail: Earth color mapping uses natural vegetation tones with dedicated area hover highlights.
   var PALETTE = {
-    ocean: '#0d1730',
-    land: ['#1f2d54', '#263663', '#2d4075', '#233160', '#2a3b6c'],
-    border: 'rgba(165, 185, 245, 0.34)',
+    ocean: '#091b3e',
+    land: ['#1f4e38', '#265b3f', '#2f6747', '#22523a', '#2a5e42'],
+    border: 'rgba(180, 215, 195, 0.32)',
     line: 1.7,
     detailLine: 1.2,                          // coast / country border (~1.2 CSS px)
-    admin1: 'rgba(165, 185, 245, 0.32)',
+    admin1: 'rgba(175, 215, 195, 0.30)',
     admin1Line: 1.0,                          // province outline (~1 CSS px)
-    adminSel: 'rgba(140, 200, 255, 0.95)',    // selected province outline
+    adminSel: 'rgba(120, 225, 255, 0.95)',    // selected province outline
     adminSelLine: 2.4,
     kabFill: 'rgba(94, 106, 210, 0.30)',      // selected kabupaten/kota fill
     kabSel: 'rgba(180, 215, 255, 0.98)',      // selected kabupaten/kota outline
-    kabOutline: 'rgba(150, 170, 235, 0.55)',  // automatic kabupaten/kota LOD outline
+    kabOutline: 'rgba(140, 205, 175, 0.50)',  // automatic kabupaten/kota LOD outline
     kabOutlineLine: 0.85,                     // kabupaten LOD outline (~0.85 CSS px)
+    kabHoverFill: 'rgba(56, 189, 248, 0.24)', // hovered kabupaten/kota fill
+    kabHoverSel: 'rgba(125, 211, 252, 0.90)', // hovered kabupaten/kota outline
+    provHoverFill: 'rgba(56, 189, 248, 0.16)',// hovered province fill
+    provHoverSel: 'rgba(125, 211, 252, 0.80)',// hovered province outline
   };
 
   // ---- Matrices (column-major, as GLSL) ---------------------------------------
@@ -250,8 +254,8 @@
       pin: this._program(SHADERS.pinVS, SHADERS.pinFS, ['uMVP', 'uScale', 'uMaxPoint', 'uTime']),
     };
     if (!this.prog.halo || !this.prog.globe || !this.prog.arc || !this.prog.pin) { this.ok = false; return; }
-    this.glow = this._rgb('--primary', '#5e6ad2');
-    this.rim = this._rgb('--accent-text', '#9aa3f8');
+    this.glow = this._rgb('--globe-atmosphere', '#38bdf8');
+    this.rim = this._rgb('--globe-rim', '#7dd3fc');
     this.rimDim = this.rim.map(function (c) { return c * 0.45; });
     this.maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
     this.maxPoint = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE)[1];

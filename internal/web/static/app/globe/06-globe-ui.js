@@ -45,22 +45,18 @@
     S.renderer.setScene(f.nodes, f.links, S.selected);
   };
 
-  // Countries that hold a managed Host get a soft accent wash; the hovered and the selected host's country
-  // get stronger fills with an outline.
+  // Countries that hold a managed Host are identified by their 3D pins and traffic streams;
+  // country land remains natural Earth green without a heavy permanent wash.
+  // Hover and explicit dropdown selection retain their accents.
   GL.syncTints = function () {
     S.tintsDirty = false;
     if (!S.renderer || !S.renderer.ok || !S.graph) return;
-    var seen = {}, items = [];
-    S.graph.nodes.forEach(function (n) {
-      if (n.kind !== 'host' || n._ci < 0 || seen[n._ci] || !GL.visible(n)) return;
-      seen[n._ci] = true;
-      items.push({ idx: n._ci, fill: GL.rgba('--primary', '#5e6ad2', 0.28) });
-    });
+    var items = [];
     var edge = GL.rgba('--accent-text', '#9aa3f8', 0.95);
     if (S.hoverCountry >= 0) items.push({ idx: S.hoverCountry, fill: 'rgba(255,255,255,0.08)', stroke: edge, width: 1.4 });
     var sel = GL.nodeById(S.selected);
-    if (sel && sel._ci >= 0) items.push({ idx: sel._ci, fill: GL.rgba('--primary', '#5e6ad2', 0.36), stroke: edge, width: 2 });
-    if (S.selectedCountry >= 0) items.push({ idx: S.selectedCountry, fill: GL.rgba('--primary', '#5e6ad2', 0.16), stroke: edge, width: 2.4 });
+    if (sel && sel._ci >= 0) items.push({ idx: sel._ci, fill: GL.rgba('--primary', '#5e6ad2', 0.25), stroke: edge, width: 2 });
+    if (S.selectedCountry >= 0) items.push({ idx: S.selectedCountry, fill: GL.rgba('--primary', '#5e6ad2', 0.25), stroke: edge, width: 2.4 });
     S.renderer.setTints(items);
   };
 
@@ -259,15 +255,33 @@
     sel.value = cur;
   };
 
+  // ponytail: Quick city presets for private / NAT hosts lacking direct public IP (e.g. Yogyakarta, Jakarta, Surabaya).
+  var CITY_PRESETS = [
+    { name: 'Yogyakarta', lat: -7.7956, lon: 110.3695, region: 'DI Yogyakarta' },
+    { name: 'Jakarta', lat: -6.2088, lon: 106.8456, region: 'DKI Jakarta' },
+    { name: 'Surabaya', lat: -7.2575, lon: 112.7521, region: 'Jawa Timur' },
+    { name: 'Bandung', lat: -6.9175, lon: 107.6191, region: 'Jawa Barat' },
+    { name: 'Semarang', lat: -6.9667, lon: 110.4167, region: 'Jawa Tengah' },
+    { name: 'Medan', lat: 3.5952, lon: 98.6722, region: 'Sumatera Utara' },
+    { name: 'Makassar', lat: -5.1477, lon: 119.4327, region: 'Sulawesi Selatan' },
+    { name: 'Denpasar (Bali)', lat: -8.6705, lon: 115.2126, region: 'Bali' },
+    { name: 'Palembang', lat: -2.9761, lon: 104.7754, region: 'Sumatera Selatan' },
+    { name: 'Batam', lat: 1.1301, lon: 104.0529, region: 'Kepulauan Riau' },
+    { name: 'Balikpapan', lat: -1.2379, lon: 116.8529, region: 'Kalimantan Timur' },
+    { name: 'Singapore', lat: 1.3521, lon: 103.8198, region: 'Singapore' },
+  ];
+
   GL.renderSidebar = function () {
     var box = document.getElementById('glSideList');
     if (!box || !S.graph) return;
     var hosts = S.graph.nodes.filter(function (n) { return n.kind === 'host' && GL.visible(n); });
     box.innerHTML = hosts.map(function (n) {
+      var isUnset = n.geo_source === 'gateway' || (!n.lat && !n.lon);
+      var meta = isUnset ? ('⚠️ ' + esc(t('gl_needs_geo'))) : esc(n.city || n.region || n.group_id || '');
       return '<button type="button" class="gl-side-item' + (S.selected === n.id ? ' active' : '') + '" data-node="' + esc(n.id) + '">' +
         '<span class="gl-side-dot ' + esc(n.status) + '"></span>' +
         '<span class="gl-side-name">' + esc(n.name) + '</span>' +
-        '<span class="gl-side-meta">' + esc(n.city || n.region || n.group_id || '') + '</span>' +
+        '<span class="gl-side-meta">' + meta + '</span>' +
       '</button>';
     }).join('');
   };
@@ -303,17 +317,24 @@
     if (!hud || !n) return;
     hud.hidden = false;
     var isHost = n.kind === 'host';
+    var isGateway = n.kind === 'gateway';
+    var canSetGeo = isHost || isGateway;
+    var isUnset = (isHost && (n.geo_source === 'gateway' || (!n.lat && !n.lon))) || (isGateway && (!n.lat && !n.lon));
     var lat = n.lat ? n.lat.toFixed(2) : '0.00';
     var lon = n.lon ? n.lon.toFixed(2) : '0.00';
     var country = n._ci >= 0 ? G.countryName(G.countries()[n._ci], document.documentElement.lang || 'en') : (n.country_code || '');
+    var presetsHtml = CITY_PRESETS.map(function (p, idx) {
+      return '<option value="' + idx + '">' + esc(p.name) + '</option>';
+    }).join('');
     hud.innerHTML = '' +
       '<div class="gl-hud-head">' +
         '<div class="gl-hud-title"><span class="gl-hud-dot ' + esc(n.status) + '"></span><strong>' + esc(n.name) + '</strong></div>' +
         '<button class="btn btn-icon btn-sm btn-ghost" id="glHudClose" title="' + esc(t('gl_close')) + '">' + icon('x') + '</button>' +
       '</div>' +
       '<div class="gl-hud-body">' +
+        (isUnset ? '<div class="gl-hud-warn">' + esc(t('gl_geo_prompt')) + '</div>' : '') +
         '<div class="gl-hud-stats">' +
-          '<span><b>' + esc(t('gl_geo')) + '</b> ' + esc(n.city || '—') + (country ? ', ' + esc(country) : '') + '</span>' +
+          '<span><b>' + esc(t('gl_geo')) + '</b> ' + (isUnset ? '⚠️ ' + esc(t('gl_geo_unknown')) : esc(n.city || '—') + (country ? ', ' + esc(country) : '')) + '</span>' +
           '<span><b>' + esc(t('gl_region')) + '</b> ' + esc(n.region || '—') + '</span>' +
           '<span><b>' + esc(t('gl_latency')) + '</b> ' + (n.latency_ms ? esc(n.latency_ms) + ' ms' : '—') + '</span>' +
           '<span><b>' + esc(t('gl_peer_count')) + '</b> ' + GL.peerCount(n.id) + '</span>' +
@@ -327,8 +348,9 @@
           '<button class="btn btn-sm" id="glHudDiag" ' + (isHost ? '' : 'disabled') + '>' + icon('activity') + ' ' + esc(t('gl_diag')) + '</button>' +
           '<button class="btn btn-sm btn-primary" id="glHudWorkspace" ' + (isHost ? '' : 'disabled') + '>' + icon('server') + ' ' + esc(t('gl_workspace')) + '</button>' +
         '</div>' +
-        (isHost ? '' : '<div class="gl-hud-note">' + esc(t('gl_no_host')) + '</div>') +
-        (isHost ? '<div class="gl-geo-form">' +
+        (canSetGeo ? '' : '<div class="gl-hud-note">' + esc(t('gl_no_host')) + '</div>') +
+        (canSetGeo ? '<div class="gl-geo-form">' +
+          '<label class="gl-geo-wide">' + esc(t('gl_preset_city')) + '<select id="glGeoPreset"><option value="">' + esc(t('gl_preset_city')) + '</option>' + presetsHtml + '</select></label>' +
           '<label>' + esc(t('gl_lat')) + '<input id="glGeoLat" type="number" step="any" value="' + lat + '" /></label>' +
           '<label>' + esc(t('gl_lon')) + '<input id="glGeoLon" type="number" step="any" value="' + lon + '" /></label>' +
           '<label class="gl-geo-wide">' + esc(t('gl_region')) + '<input id="glGeoRegion" type="text" value="' + esc(n.region || '') + '" /></label>' +
@@ -344,8 +366,20 @@
     if (diag && isHost) diag.onclick = function () { if (typeof openNetDiagModal === 'function') openNetDiagModal(n.host_id); };
     var ws = document.getElementById('glHudWorkspace');
     if (ws && isHost) ws.onclick = function () { if (typeof openHostDetail === 'function') openHostDetail(n.host_id); };
+    var preset = document.getElementById('glGeoPreset');
+    if (preset && canSetGeo) {
+      preset.onchange = function () {
+        var idx = parseInt(preset.value, 10);
+        if (isNaN(idx) || !CITY_PRESETS[idx]) return;
+        var p = CITY_PRESETS[idx];
+        document.getElementById('glGeoLat').value = p.lat;
+        document.getElementById('glGeoLon').value = p.lon;
+        document.getElementById('glGeoRegion').value = p.region;
+        document.getElementById('glGeoLabel').value = p.name;
+      };
+    }
     var save = document.getElementById('glGeoSave');
-    if (save && isHost) save.onclick = function () { GL.saveGeo(n); };
+    if (save && canSetGeo) save.onclick = function () { GL.saveGeo(n); };
   };
 
   GL.saveGeo = function (n) {
@@ -354,9 +388,10 @@
     var region = document.getElementById('glGeoRegion').value || '';
     var label = document.getElementById('glGeoLabel').value || '';
     if (isNaN(lat) || isNaN(lon)) return;
+    var hostID = n.host_id || 0;
     fetch('/api/network-radar/globe/geo', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: n.host_id, lat: lat, lon: lon, region: region, label: label }),
+      body: JSON.stringify({ id: hostID, lat: lat, lon: lon, region: region, label: label }),
     }).then(function (res) {
       if (!res.ok) return;
       n.lat = lat; n.lon = lon; n.region = region; n.city = label; n.geo_source = 'manual';

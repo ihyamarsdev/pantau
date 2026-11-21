@@ -104,11 +104,20 @@ func Build(s Store, now time.Time) (*Graph, error) {
 		netByID[n.ID] = n
 	}
 
-	// Gateway node at (0,0).
-	g.Nodes = append(g.Nodes, Node{
+	// Gateway node positioned at detected egress location or fallback (0,0).
+	gwNode := Node{
 		ID: "gateway", Name: "Pantau Gateway", Kind: "gateway",
 		Status: "healthy", GeoSource: "default",
-	})
+	}
+	if entry, _, err := s.GetGeoIP("gateway", now); err == nil && entry != nil && (entry.Lat != 0 || entry.Lon != 0) {
+		gwNode.Lat, gwNode.Lon = entry.Lat, entry.Lon
+		gwNode.City = entry.City
+		gwNode.Region = entry.Region
+		gwNode.CountryCode = entry.CountryCode
+		gwNode.ASNOrg = entry.ASNOrg
+		gwNode.GeoSource = entry.Source
+	}
+	g.Nodes = append(g.Nodes, gwNode)
 
 	// Host nodes, positioned by manual override or cached GeoIP.
 	hostByID := map[int64]store.Host{}

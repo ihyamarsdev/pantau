@@ -466,7 +466,7 @@
     // Highlight items (hover/selection) over the base fill. At close zoom fill from the FINE land geometry
     // (official Indonesian polygons or the 1:10m tier), never the coarse 1:50m rings: a coarse tint leaks a
     // straight-edged light band over the sea north of e.g. Java. At world zoom (no fine tier) the coarse
-    // country polygons are still the only source.
+    // country polygons are still the only source. Tone down purple wash on uniform land to preserve green richness.
     var tintLand = v.land || v.fine || null;
     items.forEach(function (it) {
       var c = cs[it.idx];
@@ -529,7 +529,7 @@
       if (a.kabs && a.kabs.length) {
         g.beginPath();
         a.kabs.forEach(function (f) { each(f.bbox, function (t) { trace(g, f.rings, t, true); }); });
-        g.strokeStyle = pal.kabOutline || 'rgba(150, 170, 235, 0.5)';
+        g.strokeStyle = pal.kabOutline || 'rgba(140, 205, 175, 0.5)';
         g.lineWidth = (pal.kabOutlineLine || 0.85) * v.px;
         g.stroke();
       }
@@ -550,6 +550,30 @@
           trace(g, a.kab.rings, t, true);
           g.strokeStyle = pal.kabSel;
           g.lineWidth = pal.kabSelLine * v.px;
+          g.stroke();
+        });
+      }
+      // Hover area highlight: hovered kabupaten (or province if at province zoom)
+      if (a.hoverKab && (!a.kab || a.hoverKab.code !== a.kab.code)) {
+        each(a.hoverKab.bbox, function (t) {
+          g.beginPath();
+          trace(g, a.hoverKab.rings, t, false);
+          g.fillStyle = pal.kabHoverFill || 'rgba(56, 189, 248, 0.24)';
+          g.fill('evenodd');
+          trace(g, a.hoverKab.rings, t, true);
+          g.strokeStyle = pal.kabHoverSel || 'rgba(125, 211, 252, 0.90)';
+          g.lineWidth = (pal.kabSelLine || 2.0) * v.px;
+          g.stroke();
+        });
+      } else if (a.hoverProv && (!pOut || a.hoverProv.code !== pOut.code) && !a.hoverKab) {
+        each(a.hoverProv.bbox, function (t) {
+          g.beginPath();
+          trace(g, a.hoverProv.rings, t, false);
+          g.fillStyle = pal.provHoverFill || 'rgba(56, 189, 248, 0.16)';
+          g.fill('evenodd');
+          trace(g, a.hoverProv.rings, t, true);
+          g.strokeStyle = pal.provHoverSel || 'rgba(125, 211, 252, 0.80)';
+          g.lineWidth = (pal.adminSelLine || 2.4) * v.px;
           g.stroke();
         });
       }

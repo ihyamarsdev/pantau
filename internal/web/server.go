@@ -1683,7 +1683,11 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]interface{}{"ok": false, "error": err.Error()})
 			return
 		}
-		host, _ = s.db.GetHost(hostID)
+		// ponytail: Trigger geo resolution if public IP was discovered by inspection, then invalidate globe cache.
+		if host, _ = s.db.GetHost(hostID); host != nil {
+			s.resolveHostGeo(*host)
+		}
+		s.invalidateGlobe()
 		redactHost(host)
 		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "host": host})
 		return

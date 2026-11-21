@@ -138,7 +138,8 @@
       admin = {
         provinces: lodKey >= 1 ? (a2 ? a2.p : []) : [],
         kabs: lodKey >= 2 ? (hp || (S.selectedProvince ? G.admin2Kab(S.selectedProvince) : landFeatures)) : [],
-        province: selectedProv, provinceOutline: provOutline, kab: selectedKab, hiresActive: !!hp
+        province: selectedProv, provinceOutline: provOutline, kab: selectedKab, hiresActive: !!hp,
+        hoverKab: S.hoverKab || null, hoverProv: S.hoverProvince || null
       };
       if (pendingHires && d) d.pendingHires = true;
     } else {
@@ -307,9 +308,11 @@
     var el = document.getElementById('glTooltip');
     if (!el || !document.getElementById('glStage')) return;
     el.className = 'gl-tooltip';
+    var isUnset = node.kind === 'host' && (node.geo_source === 'gateway' || (!node.lat && !node.lon));
+    var loc = isUnset ? ('⚠️ ' + esc(t('gl_geo_unknown'))) : esc([node.city, node.region, node.country_code].filter(Boolean).join(', ') || '—');
     el.innerHTML = '<strong>' + esc(node.name) + '</strong>' +
       '<div>' + esc(node.public_ip || node.ip || '—') + '</div>' +
-      '<div>' + esc([node.city, node.region, node.country_code].filter(Boolean).join(', ') || '—') + '</div>' +
+      '<div>' + loc + '</div>' +
       (node.asn_org ? '<div class="gl-tip-dim">' + esc(node.asn_org) + '</div>' : '') +
       '<div class="gl-tip-dim">' + esc(t('gl_peer_count')) + ': ' + GL.peerCount(node.id) + '</div>';
     el.hidden = false;
@@ -377,6 +380,23 @@
     S.tintsDirty = true;
   }
 
+  function setHoverArea(kab, prov) {
+    var kCode = kab ? kab.code : '';
+    var pCode = prov ? prov.code : '';
+    var oldK = S.hoverKab ? S.hoverKab.code : '';
+    var oldP = S.hoverProvince ? S.hoverProvince.code : '';
+    if (kCode === oldK && pCode === oldP) return;
+    S.hoverKab = kab;
+    S.hoverProvince = prov;
+    S.sceneDirty = true;
+    if (S.renderer && S.renderer.detail) {
+      S.renderer.detail.admin = S.renderer.detail.admin || {};
+      S.renderer.detail.admin.hoverKab = kab;
+      S.renderer.detail.admin.hoverProv = prov;
+      S.renderer._paintDetail();
+    }
+  }
+
   // A pin wins over the country under it; over open sea there is nothing to show.
   // Hover over Indonesia at province/kabupaten zoom names the area. Uses the shared bbox-prefiltered
   // point-in-polygon result (no per-move allocation). A pin always wins; this is only called when no pin hit.
@@ -401,18 +421,25 @@
     if (!h || !S.renderer || !S.renderer.ok) return;
     var hit = pickNodes(h.clientX, h.clientY);
     S.canvas.classList.toggle('gl-hot', hit.length > 0);
-    if (hit.length === 1) { setHoverCountry(-1); showNodeTip(hit[0].n, h.clientX, h.clientY); return; }
-    if (hit.length > 1) { setHoverCountry(-1); showStackTip(hit, h.clientX, h.clientY); return; }
+    if (hit.length === 1) { setHoverArea(null, null); setHoverCountry(-1); showNodeTip(hit[0].n, h.clientX, h.clientY); return; }
+    if (hit.length > 1) { setHoverArea(null, null); setHoverCountry(-1); showStackTip(hit, h.clientX, h.clientY); return; }
     var geo = S.renderer.unproject(h.x, h.y);
     var idx = geo ? G.countryAt(geo.lat, geo.lon) : -1;
     setHoverCountry(idx);
-    // At province/kabupaten zoom over Indonesia, name the area; otherwise the country hover is unchanged.
-    if (S.zoom >= PROV_ZOOM && G.admin2Ready() && geo && showAreaTip(geo, h.clientX, h.clientY)) return;
+    // At province/kabupaten zoom over Indonesia, name & highlight the area; otherwise the country hover is unchanged.
+    if (S.zoom >= PROV_ZOOM && G.admin2Ready() && geo) {
+      var aHit = G.areaAt(geo.lat, geo.lon);
+      setHoverArea(aHit.kab, aHit.province);
+      if (showAreaTip(geo, h.clientX, h.clientY)) return;
+    } else {
+      setHoverArea(null, null);
+    }
     if (idx >= 0) showCountryTip(idx, h.clientX, h.clientY); else hideTooltip();
   }
 
   function clearHover() {
     S.hoverPos = null;
+    setHoverArea(null, null);
     setHoverCountry(-1);
     if (S.canvas) S.canvas.classList.remove('gl-hot');
     hideTooltip();

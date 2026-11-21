@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -19,7 +20,8 @@ import (
 )
 
 const (
-	geoLookupURL   = "http://ip-api.com/json/"
+	geoLookupURL   = "https://api.ip2location.io/?ip="
+	geoBackupURL   = "http://ip-api.com/json/"
 	geoTimeout     = 3 * time.Second
 	geoRateLimit   = 2 * time.Second // minimum spacing between external lookups
 	egressTimeout  = 2 * time.Second
@@ -53,10 +55,79 @@ func NewResolver(db *store.DB) *Resolver {
 }
 
 // httpLookup calls a public GeoIP API with a strict context deadline.
+// Uses api.ip2location.io as the primary provider for high-accuracy regional geolocation,
+// falling back to ip-api.com if unreachable or failed.
 func (r *Resolver) httpLookup(ctx context.Context, ip string) (store.GeoIPEntry, error) {
+	entry, err := r.httpLookupIP2Location(ctx, ip)
+	if err == nil {
+		return entry, nil
+	}
+	return r.httpLookupIPAPI(ctx, ip)
+}
+
+func (r *Resolver) httpLookupIP2Location(ctx context.Context, ip string) (store.GeoIPEntry, error) {
 	ctx, cancel := context.WithTimeout(ctx, geoTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, geoLookupURL+ip+"?fields=status,message,countryCode,regionName,city,lat,lon,query,isp,org,as", nil)
+	url := geoLookupURL + ip
+	if key := os.Getenv("IP2LOCATION_API_KEY"); key != "" {
+		url += "&key=" + key
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return store.GeoIPEntry{}, err
+	}
+	resp, err := r.http.Do(req)
+	if err != nil {
+		return store.GeoIPEntry{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return store.GeoIPEntry{}, fmt.Errorf("ip2location http %d", resp.StatusCode)
+	}
+	var body struct {
+		IP          string  `json:"ip"`
+		CountryCode string  `json:"country_code"`
+		RegionName  string  `json:"region_name"`
+		CityName    string  `json:"city_name"`
+		Latitude    float64 `json:"latitude"`
+		Longitude   float64 `json:"longitude"`
+		AS          string  `json:"as"`
+		ASN         string  `json:"asn"`
+		Error       *struct {
+			ErrorCode    int    `json:"error_code"`
+			ErrorMessage string `json:"error_message"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return store.GeoIPEntry{}, err
+	}
+	if body.Error != nil && body.Error.ErrorMessage != "" {
+		return store.GeoIPEntry{}, fmt.Errorf("ip2location error: %s", body.Error.ErrorMessage)
+	}
+	if body.Latitude < -90 || body.Latitude > 90 || body.Longitude < -180 || body.Longitude > 180 ||
+		(body.Latitude == 0 && body.Longitude == 0) {
+		return store.GeoIPEntry{}, fmt.Errorf("ip2location invalid coordinates (%v,%v)", body.Latitude, body.Longitude)
+	}
+	org := body.AS
+	if org == "" {
+		org = body.ASN
+	}
+	return store.GeoIPEntry{
+		IP:          ip,
+		Lat:         body.Latitude,
+		Lon:         body.Longitude,
+		City:        body.CityName,
+		CountryCode: body.CountryCode,
+		Region:      body.RegionName,
+		ASNOrg:      org,
+		Source:      "geoip",
+	}, nil
+}
+
+func (r *Resolver) httpLookupIPAPI(ctx context.Context, ip string) (store.GeoIPEntry, error) {
+	ctx, cancel := context.WithTimeout(ctx, geoTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, geoBackupURL+ip+"?fields=status,message,countryCode,regionName,city,lat,lon,query,isp,org,as", nil)
 	if err != nil {
 		return store.GeoIPEntry{}, err
 	}
@@ -86,8 +157,6 @@ func (r *Resolver) httpLookup(ctx context.Context, ip string) (store.GeoIPEntry,
 	if !strings.EqualFold(body.Status, "success") {
 		return store.GeoIPEntry{}, fmt.Errorf("geoip status %q", body.Status)
 	}
-	// Validate provider coordinates: a malformed or partial response must never place a pin off-globe or at the
-	// Gateway with a "geoip" source. Latitude/longitude are required and must be in range.
 	if body.Lat < -90 || body.Lat > 90 || body.Lon < -180 || body.Lon > 180 ||
 		(body.Lat == 0 && body.Lon == 0) {
 		return store.GeoIPEntry{}, fmt.Errorf("geoip invalid coordinates (%v,%v)", body.Lat, body.Lon)
@@ -192,6 +261,42 @@ func (r *Resolver) RunOnce(ctx context.Context) error {
 	return nil
 }
 
+// ResolveGateway detects this machine's egress public IP and resolves its location into the cache under "gateway".
+// If already cached and fresh, it returns the cached entry. If offline or detection fails, it falls back to gatewayLocation.
+func (r *Resolver) ResolveGateway(ctx context.Context) store.GeoIPEntry {
+	now := time.Now()
+	if entry, fresh, err := r.db.GetGeoIP("gateway", now); err == nil && entry != nil {
+		if fresh || entry.Source == "manual" {
+			return *entry
+		}
+		// Stale non-manual: try a refresh
+		if ip := r.detectEgressIP(ctx); ip != "" {
+			if refreshed, err := r.lookupRateLimited(ctx, ip); err == nil {
+				refreshed.IP = "gateway"
+				refreshed.Source = "egress"
+				_ = r.db.UpsertGeoIP(refreshed, now)
+				return refreshed
+			}
+		}
+		return *entry
+	}
+	ip := r.detectEgressIP(ctx)
+	if ip == "" {
+		return gatewayLocation("gateway")
+	}
+	parsed := net.ParseIP(ip)
+	if parsed == nil || isPrivateIP(parsed) {
+		return gatewayLocation("gateway")
+	}
+	if entry, err := r.lookupRateLimited(ctx, ip); err == nil {
+		entry.IP = "gateway"
+		entry.Source = "egress"
+		_ = r.db.UpsertGeoIP(entry, now)
+		return entry
+	}
+	return gatewayLocation("gateway")
+}
+
 // publicIPForHost picks the configured public IP, then the egress-detected one
 // stored by inspection. Manual geo override takes precedence at the node level.
 func publicIPForHost(h store.Host) string {
@@ -224,13 +329,25 @@ func isPrivateIP(ip net.IP) bool {
 // Used only as a last resort when a host has no configured public IP; failures
 // return empty so the caller falls back to the Gateway location.
 func (r *Resolver) detectEgressIP(ctx context.Context) string {
-	url := r.egressURL
-	if url == "" {
-		url = "https://api.ipify.org"
+	urls := []string{r.egressURL}
+	if r.egressURL == "" {
+		urls = []string{"https://api.ipify.org", "https://icanhazip.com"}
 	}
+	for _, u := range urls {
+		if u == "" {
+			continue
+		}
+		if ip := r.queryEgressURL(ctx, u); ip != "" {
+			return ip
+		}
+	}
+	return ""
+}
+
+func (r *Resolver) queryEgressURL(ctx context.Context, u string) string {
 	ctx, cancel := context.WithTimeout(ctx, egressTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return ""
 	}

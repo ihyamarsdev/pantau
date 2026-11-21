@@ -79,8 +79,9 @@
 .gl-hud-summary { color: var(--text-faint); margin-bottom: 8px; }
 .gl-hud-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .gl-hud-note { color: var(--warning); font-size: 10px; margin-top: 8px; }
+.gl-hud-warn { background: rgba(234, 179, 8, 0.12); border: 1px solid rgba(234, 179, 8, 0.3); color: var(--warning); border-radius: var(--radius-sm); padding: 6px 8px; font-size: 11px; margin-top: 8px; line-height: 1.35; }
 .gl-geo-form { margin-top: 10px; border-top: 1px solid var(--card-border); padding-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.gl-geo-form input { width: 100%; background: var(--surface-2); border: 1px solid var(--card-border); border-radius: var(--radius-sm); color: var(--text); padding: 4px 6px; font-size: var(--fs-xs); }
+.gl-geo-form input, .gl-geo-form select { width: 100%; background: var(--surface-2); border: 1px solid var(--card-border); border-radius: var(--radius-sm); color: var(--text); padding: 4px 6px; font-size: var(--fs-xs); }
 .gl-geo-form label { font-size: 10px; color: var(--text-faint); display: block; }
 .gl-geo-form .gl-geo-wide { grid-column: 1 / -1; }
 

@@ -3,7 +3,9 @@ package globe
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -175,6 +177,49 @@ func TestRunOncePreservesStaleCache(t *testing.T) {
 	if e, _, _ := db.GetGeoIP("8.8.8.8", time.Now()); e == nil {
 		t.Fatal("stale cache entry must be preserved when offline")
 	}
+}
+
+func TestResolveGatewayEgress(t *testing.T) {
+	db := geoTestDB(t)
+	r := NewResolver(db)
+	r.minSpace = 0
+	r.egressURL = "http://fake-egress"
+	// Mock egress query
+	r.http = &http.Client{
+		Transport: &roundTripFn{fn: func(req *http.Request) (*http.Response, error) {
+			if strings.Contains(req.URL.String(), "fake-egress") {
+				return &http.Response{
+					StatusCode: 200,
+					Body:       io.NopCloser(strings.NewReader("198.51.100.50")),
+				}, nil
+			}
+			return &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader(""))}, nil
+		}},
+	}
+	r.lookup = func(ctx context.Context, ip string) (store.GeoIPEntry, error) {
+		if ip == "198.51.100.50" {
+			return store.GeoIPEntry{IP: ip, Lat: -7.79, Lon: 110.36, City: "Yogyakarta", Region: "DI Yogyakarta", Source: "geoip"}, nil
+		}
+		return store.GeoIPEntry{}, errors.New("unexpected IP")
+	}
+
+	got := r.ResolveGateway(context.Background())
+	if got.City != "Yogyakarta" || got.Lat != -7.79 || got.Source != "egress" {
+		t.Fatalf("ResolveGateway expected Yogyakarta egress, got %+v", got)
+	}
+	// Check cached under "gateway"
+	e, _, err := db.GetGeoIP("gateway", time.Now())
+	if err != nil || e == nil || e.City != "Yogyakarta" {
+		t.Fatalf("gateway should be cached in SQLite: %+v", e)
+	}
+}
+
+type roundTripFn struct {
+	fn func(req *http.Request) (*http.Response, error)
+}
+
+func (f *roundTripFn) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f.fn(req)
 }
 
 // --- Link aggregator --------------------------------------------------------
@@ -397,5 +442,50 @@ func TestCacheInvalidation(t *testing.T) {
 	g3, err := c.Get(time.Now())
 	if err != nil || g3 == g1 {
 		t.Fatal("cache should rebuild after invalidation")
+	}
+}
+
+func TestHTTPLookupIP2LocationSuccess(t *testing.T) {
+	db := geoTestDB(t)
+	r := NewResolver(db)
+	r.http = &http.Client{
+		Transport: &roundTripFn{fn: func(req *http.Request) (*http.Response, error) {
+			if strings.Contains(req.URL.String(), "api.ip2location.io") {
+				body := `{"ip":"157.85.212.174","country_code":"ID","country_name":"Indonesia","region_name":"Yogyakarta","city_name":"Yogyakarta","latitude":-7.78278,"longitude":110.36083,"as":"PT XL Axiata Tbk"}`
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body))}, nil
+			}
+			return &http.Response{StatusCode: 500, Body: io.NopCloser(strings.NewReader("fail"))}, nil
+		}},
+	}
+	entry, err := r.httpLookup(context.Background(), "157.85.212.174")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entry.City != "Yogyakarta" || entry.Region != "Yogyakarta" || entry.Lat != -7.78278 || entry.Lon != 110.36083 {
+		t.Fatalf("unexpected entry: %+v", entry)
+	}
+}
+
+func TestHTTPLookupFallbackToIPAPI(t *testing.T) {
+	db := geoTestDB(t)
+	r := NewResolver(db)
+	r.http = &http.Client{
+		Transport: &roundTripFn{fn: func(req *http.Request) (*http.Response, error) {
+			if strings.Contains(req.URL.String(), "api.ip2location.io") {
+				return &http.Response{StatusCode: 429, Body: io.NopCloser(strings.NewReader("rate limited"))}, nil
+			}
+			if strings.Contains(req.URL.String(), "ip-api.com") {
+				body := `{"status":"success","countryCode":"ID","regionName":"Jakarta","city":"Jakarta","lat":-6.2,"lon":106.8,"as":"AS139994"}`
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body))}, nil
+			}
+			return &http.Response{StatusCode: 500, Body: io.NopCloser(strings.NewReader("fail"))}, nil
+		}},
+	}
+	entry, err := r.httpLookup(context.Background(), "157.85.212.174")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entry.City != "Jakarta" || entry.Lat != -6.2 {
+		t.Fatalf("expected fallback to ip-api, got: %+v", entry)
 	}
 }
