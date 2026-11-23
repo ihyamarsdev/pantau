@@ -450,7 +450,7 @@
     var canvas = document.getElementById('glCanvas');
     if (!canvas) return;
     S.canvas = canvas;
-    if (canvas.dataset.glBound) return; // the canvas outlives a close; listeners must not stack up on every open
+    if (canvas.dataset.glBound) return; // the canvas outlives an unmount; listeners must not stack up on every mount
     canvas.dataset.glBound = '1';
 
     canvas.addEventListener('pointerdown', function (e) {
@@ -520,7 +520,7 @@
 
   // ---- Document-level UI events -------------------------------------------
   document.addEventListener('click', function (e) {
-    if (!document.getElementById('globeModal')) return;
+    if (!S.mounted) return;
     var el = e.target;
     if (!el || !el.closest) return;
     var pill = el.closest('.gl-pill');
@@ -533,14 +533,8 @@
     if (el.closest('#glZoomReset')) { goHome(); return; }
   });
 
-  document.addEventListener('input', function (e) {
-    if (!e.target || !document.getElementById('globeModal')) return;
-    if (e.target.id === 'glSearch') { S.query = e.target.value.trim(); GL.renderUI(); }
-  });
-
   document.addEventListener('change', function (e) {
-    if (!e.target || !document.getElementById('globeModal')) return;
-    if (e.target.id === 'glGroup') { S.group = e.target.value; GL.renderUI(); }
+    if (!e.target || !S.mounted) return;
     if (e.target.id === 'glAutoRotate') { S.autoRotate = e.target.checked; }
     if (e.target.id === 'glCountry') {
       var iso = e.target.value;

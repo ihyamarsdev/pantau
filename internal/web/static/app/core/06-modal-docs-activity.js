@@ -41,9 +41,6 @@ function closeModal(id) {
     try { S.currentNetDiagSSE.close(); } catch (e) {}
     S.currentNetDiagSSE = null;
   }
-  if (id === 'globeModal' && window.GlobeRadar && window.GlobeRadar.onClose) {
-    window.GlobeRadar.onClose();
-  }
   if (id === 'terminalDockModal') {
     minimizeTerminalDock();
     return;

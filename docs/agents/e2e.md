@@ -24,7 +24,7 @@ e2e/
 │   ├── docker-security.e2e.ts # Docker Security: summary strip, grouped findings, image table, chunked CVE detail (security API stubbed with browser.route)
 │   ├── agent.e2e.ts    # AI Agent: Settings panel, chat tool line, exec_command approval/deny, session grant, read tools, memory note; multi-step troubleshooting checks domain-filtered tools, Activity Console telemetry and the approval gate (LLM stubbed with a fake OpenAI-compatible server)
 │   ├── gateway-update-check.e2e.ts # Gateway CLI Update Check + Update: installed/latest version, failure state, the install streaming its steps
-│   ├── network-globe.e2e.ts # Network Radar Globe: embedded country data, land drawn on the WebGL canvas, hover names a country, link filter changes the drawn arcs, host HUD (globe API stubbed with browser.route)
+│   ├── network-globe.e2e.ts # Network Radar Globe on the Hosts dashboard (default view): embedded country data, land drawn on the WebGL canvas, hover names a country, link filter changes the drawn arcs, host detail panel, country/province/kab picker (globe API stubbed with browser.route)
 │   └── terraform-helpers.ts  # shared Terraform workspace/runner helpers
 └── package.json
 ```

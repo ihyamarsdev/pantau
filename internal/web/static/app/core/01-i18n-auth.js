@@ -385,7 +385,7 @@ function initDashboardToolbar() {
   }
   if (statusSelect && prefs.statusFilter) statusSelect.value = prefs.statusFilter;
   if (sortSelect && prefs.sortBy) sortSelect.value = prefs.sortBy;
-  updateViewModeButtons(prefs.viewMode || 'list');
+  updateViewModeButtons(prefs.viewMode || 'globe');
 }
 
 function setViewMode(mode) {
@@ -395,17 +395,10 @@ function setViewMode(mode) {
 }
 
 function updateViewModeButtons(mode) {
-  const gridBtn = document.getElementById('viewGridBtn');
-  const listBtn = document.getElementById('viewListBtn');
-  if (gridBtn && listBtn) {
-    if (mode === 'list') {
-      gridBtn.classList.remove('active');
-      listBtn.classList.add('active');
-    } else {
-      gridBtn.classList.add('active');
-      listBtn.classList.remove('active');
-    }
-  }
+  ['globe', 'grid', 'list'].forEach(m => {
+    const btn = document.getElementById('view' + m.charAt(0).toUpperCase() + m.slice(1) + 'Btn');
+    if (btn) btn.classList.toggle('active', m === mode);
+  });
 }
 
 function onSearchFilterChange() {

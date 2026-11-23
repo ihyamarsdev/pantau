@@ -5,7 +5,7 @@
 import { S } from './00-state.js';
 import { svgIcon } from './00-foundation.js';
 import { t, showConfirm, onSearchFilterChange, formatRelativeTime } from './01-i18n-auth.js';
-import { showToast, showBusyToast, toggleDropdown, closeAllDropdowns, testHostSSH, setHostActiveTab } from './02-hosts.js';
+import { showToast, showBusyToast, toggleDropdown, closeAllDropdowns, testHostSSH, setHostActiveTab, renderHosts } from './02-hosts.js';
 import { openHostDetail, switchTab, dockerEmptyHtml, dockerTableHtml, dockerChips, loadDockerTab, closeDockerMenu, stopDockerLogs, openDockerLogs, dockerAction } from './03-workspace-files-editor.js';
 import { copyTextToClipboard, sendTabCommand, openTerminalForHost } from './04-terminal.js';
 import { formatBytes } from './05-settings-transfer.js';
@@ -1325,6 +1325,8 @@ function switchSideNav(section) {
   if (secSecrets) secSecrets.style.display = section === 'secrets' ? 'block' : 'none';
   toggleSidePanelMobile(false);
   if (section !== 'kube') stopKubeAutorefresh();
+  if (section === 'hosts') renderHosts();
+  else if (window.GlobeRadar) window.GlobeRadar.unmount();
   if (section === 'docker') { renderDockerSection(); loadDockerFleetOverview(); }
   else if (section === 'kube') { loadKubeClusters(); populateKubeHostSelect(); }
   else if (section === 'cloudflare') { loadCfAccounts(); }

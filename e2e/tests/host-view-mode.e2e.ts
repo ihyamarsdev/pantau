@@ -5,9 +5,15 @@ import { deleteHosts, initApp, uniqueHostName } from './helpers.js';
 // The page's own loader, so the dashboard shows the hosts this test added.
 type PageGlobals = { loadHosts(): Promise<void> };
 
-test('list view is the default, and the mode toggle switches both ways', async ({ app, screen, browser }) => {
+test('globe is the default Hosts view, and the view toggle switches between globe, grid and list', async ({ app, screen, browser }) => {
   await app.open('/');
   await initApp(screen, browser);
+
+  // A fresh dashboard opens on the 3D globe, with the grid and list hidden.
+  await expect(browser.locator('#viewGlobeBtn')).toHaveAttribute('class', /\bactive\b/);
+  await expect(browser.locator('#hostGlobe')).toBeVisible();
+  await expect(browser.locator('#hostList')).toBeHidden();
+  await expect(browser.locator('#hostGrid')).toBeHidden();
 
   // Grid rendering only reads the collapsed-groups set when group dividers are shown, so seed
   // named groups to exercise that path. Use names unique to this test (shared DB) and clean up.
@@ -26,7 +32,8 @@ test('list view is the default, and the mode toggle switches both ways', async (
     const row = (name: string) => browser.locator(`#hostList [data-host-id]:has-text("${name}")`);
     const card = (name: string) => browser.locator(`#hostGrid [data-host-id]:has-text("${name}")`);
 
-    // List is the default mode. The rows must render even with group dividers present.
+    // Switch to list: rows render even with group dividers present.
+    await browser.locator('#viewListBtn').click();
     await expect(browser.locator('#hostList')).toBeVisible();
     await expect(row(names[0])).toHaveCount(1);
     await expect(row(names[1])).toHaveCount(1);
@@ -35,6 +42,7 @@ test('list view is the default, and the mode toggle switches both ways', async (
     // Switch to grid: list hides, grid shows the same hosts as cards.
     await browser.locator('#viewGridBtn').click();
     await expect(browser.locator('#hostList')).toBeHidden();
+    await expect(browser.locator('#hostGlobe')).toBeHidden();
     await expect(browser.locator('#hostGrid')).toBeVisible();
     await expect(card(names[0])).toHaveCount(1);
     await expect(card(names[1])).toHaveCount(1);
@@ -45,6 +53,7 @@ test('list view is the default, and the mode toggle switches both ways', async (
     await expect(row(names[0])).toHaveCount(1);
     await expect(row(names[1])).toHaveCount(1);
     await expect(browser.locator('#hostGrid')).toBeHidden();
+    await expect(browser.locator('#hostGlobe')).toBeHidden();
   } finally {
     await deleteHosts(browser, names);
   }

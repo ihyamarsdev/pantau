@@ -11,13 +11,13 @@
 
   // ---- UI rendering --------------------------------------------------------
   GL.renderUI = function () {
+    GL.refreshHostFilter();
     GL.renderPills();
     GL.renderCountries();
     GL.renderProvinces();
     GL.renderKab();
-    GL.renderSidebar();
     GL.renderCount();
-    if (S.selected) GL.renderHud();
+    GL.renderDetail();
     var empty = document.getElementById('glEmpty');
     if (empty) {
       var failed = !!(S.renderer && !S.renderer.ok);
@@ -28,8 +28,20 @@
     S.sceneDirty = S.tintsDirty = true;
   };
 
-  // What the filters let through: nodes by search/group, links by type and both ends being shown. The header
-  // count and the renderer share this one answer.
+  // The dashboard filter (search, group, status) decides which hosts the globe shows. It is active only when a
+  // filter control holds a value, and is computed once per refresh rather than per node.
+  GL.refreshHostFilter = function () {
+    var q = document.getElementById('hostSearchInput');
+    var g = document.getElementById('groupFilterSelect');
+    var s = document.getElementById('statusFilterSelect');
+    var active = (q && q.value.trim() !== '') || (g && g.value !== 'all') || (s && s.value !== 'all');
+    S.hostFilter = active && typeof window.getFilteredAndSortedHosts === 'function'
+      ? new Set(window.getFilteredAndSortedHosts().map(function (h) { return h.id; }))
+      : null;
+  };
+
+  // What the filters let through: nodes by the dashboard host filter, links by type and both ends being shown.
+  // The header count and the renderer share this one answer.
   GL.filtered = function () {
     var nodes = S.graph.nodes.filter(GL.visible), shown = {};
     nodes.forEach(function (n) { shown[n.id] = true; });
@@ -243,18 +255,6 @@
     S.tintsDirty = true;
   };
 
-  GL.renderGroups = function () {
-    var sel = document.getElementById('glGroup');
-    if (!sel || !S.graph) return;
-    var groups = [];
-    S.graph.nodes.forEach(function (n) { if (n.group_id && groups.indexOf(n.group_id) < 0) groups.push(n.group_id); });
-    groups.sort();
-    var cur = S.group;
-    sel.innerHTML = '<option value="">' + esc(t('gl_all_groups')) + '</option>' +
-      groups.map(function (g) { return '<option value="' + esc(g) + '">' + esc(g) + '</option>'; }).join('');
-    sel.value = cur;
-  };
-
   // ponytail: Quick city presets for private / NAT hosts lacking direct public IP (e.g. Yogyakarta, Jakarta, Surabaya).
   var CITY_PRESETS = [
     { name: 'Yogyakarta', lat: -7.7956, lon: 110.3695, region: 'DI Yogyakarta' },
@@ -284,6 +284,8 @@
         '<span class="gl-side-meta">' + meta + '</span>' +
       '</button>';
     }).join('');
+    var count = document.getElementById('glSideCount');
+    if (count) count.textContent = hosts.length;
   };
 
   GL.renderCount = function () {
@@ -293,29 +295,43 @@
     c.textContent = f.nodes.length + ' ' + t('gl_nodes') + ' · ' + f.links.length + ' ' + t('gl_links');
   };
 
-  // ---- HUD -----------------------------------------------------------------
+  // ---- HUD (right-panel detail of the selected node) -----------------------
   GL.openHud = function (id, doFly) {
     S.selected = id;
     var n = GL.nodeById(id);
     if (n && doFly) GL.flyTo(n);
-    GL.renderHud();
-    GL.renderSidebar();
+    GL.renderDetail();
     S.sceneDirty = S.tintsDirty = true;
   };
 
   GL.closeHud = function () {
     S.selected = null;
-    var hud = document.getElementById('glHud');
-    if (hud) hud.hidden = true;
-    GL.renderSidebar();
+    GL.renderDetail();
     S.sceneDirty = S.tintsDirty = true;
   };
+
+  // The right panel shows either the host list or the selected node's detail, never both.
+  GL.renderDetail = function () {
+    var n = S.selected ? GL.nodeById(S.selected) : null;
+    if (S.selected && !n) S.selected = null;
+    var list = document.getElementById('glListView'), hud = document.getElementById('glHud');
+    if (!list || !hud) return;
+    list.hidden = !!n;
+    hud.hidden = !n;
+    if (n) GL.renderHud(); else GL.renderSidebar();
+  };
+
+  // The Grid view's own host card for a dashboard host, so the detail matches the Hosts list.
+  function hostCardFor(n) {
+    if (n.kind !== 'host' || typeof window.buildHostCard !== 'function') return null;
+    var h = (window.allRawHosts || []).find(function (x) { return x.id === n.host_id; });
+    return h ? window.buildHostCard(h, false) : null;
+  }
 
   GL.renderHud = function () {
     var hud = document.getElementById('glHud');
     var n = GL.nodeById(S.selected);
     if (!hud || !n) return;
-    hud.hidden = false;
     var isHost = n.kind === 'host';
     var isGateway = n.kind === 'gateway';
     var canSetGeo = isHost || isGateway;
@@ -329,9 +345,10 @@
     hud.innerHTML = '' +
       '<div class="gl-hud-head">' +
         '<div class="gl-hud-title"><span class="gl-hud-dot ' + esc(n.status) + '"></span><strong>' + esc(n.name) + '</strong></div>' +
-        '<button class="btn btn-icon btn-sm btn-ghost" id="glHudClose" title="' + esc(t('gl_close')) + '">' + icon('x') + '</button>' +
+        '<button class="btn btn-sm btn-ghost" id="glHudClose">' + icon('chevron-left') + ' ' + esc(t('gl_back_hosts')) + '</button>' +
       '</div>' +
       '<div class="gl-hud-body">' +
+        '<div class="gl-hud-section">' + esc(t('gl_section_geo')) + '</div>' +
         (isUnset ? '<div class="gl-hud-warn">' + esc(t('gl_geo_prompt')) + '</div>' : '') +
         '<div class="gl-hud-stats">' +
           '<span><b>' + esc(t('gl_geo')) + '</b> ' + (isUnset ? '⚠️ ' + esc(t('gl_geo_unknown')) : esc(n.city || '—') + (country ? ', ' + esc(country) : '')) + '</span>' +
@@ -359,6 +376,8 @@
           '<div class="gl-geo-wide gl-side-meta">' + esc(t('gl_geo_hint')) + '</div>' +
         '</div>' : '') +
       '</div>';
+    var card = hostCardFor(n);
+    if (card) hud.querySelector('.gl-hud-body').prepend(card);
     document.getElementById('glHudClose').onclick = GL.closeHud;
     var term = document.getElementById('glHudTerminal');
     if (term && isHost) term.onclick = function () { if (typeof openHostTerminal === 'function') openHostTerminal(n.host_id); };
@@ -458,7 +477,9 @@
     } catch (_) { setLive('offline'); }
   }
 
-  function disconnectSSE() {
+  // ---- Mount lifecycle (the Hosts view shows the globe; renderHosts drives it) ----
+  GL.unmount = function () {
+    if (!S.mounted) return;
     if (S.source) { S.source.close(); S.source = null; }
     setLive('offline');
     S.mounted = false;
@@ -466,21 +487,17 @@
     S.hoverCountry = -1;
     GL.stopLoop();
     if (S.renderer) { S.renderer.dispose(); S.renderer = null; }
-  }
-  GL.onClose = disconnectSSE;
+  };
 
-  // ---- Open lifecycle ------------------------------------------------------
-  GL.open = function () {
-    GL.ensureModal();
-    GL.restoreControls();
-    openModal(GL.modalId);
+  // First mount builds the renderer, stream and loop, then loads the graph. Later mounts only re-render the
+  // panels from the dashboard's current host data: no fetch.
+  GL.mount = function () {
+    if (S.mounted) { GL.renderUI(); return; }
+    if (!GL.ensurePanel()) return;
     S.mounted = true;
-    var canvas = document.getElementById('glCanvas');
-    if (canvas && !S.renderer) {
-      S.renderer = new window.WebGlobe.Renderer(canvas);
-      if (!S.renderer.ok) GL.renderUI(); // shows the WebGL2 message in the stage
-    }
+    if (!S.renderer) S.renderer = new window.WebGlobe.Renderer(document.getElementById('glCanvas'));
     GL.bindCanvas();
+    GL.renderUI();
     connectSSE();
     GL.load();
     GL.startLoop();

@@ -101,6 +101,8 @@ test('a host behind a VPN network dials through its tunnel, and a dead tunnel is
 test('network telemetry is exposed, the probe endpoint is gate-independent, and a downed path fails fast', async ({ app, screen, browser }) => {
   await app.open('/');
   await initApp(screen, browser);
+  // Hosts open in the globe view; the telemetry rows are read from the list.
+  await browser.locator('#viewListBtn').click();
 
   const name = uniqueNetworkName('e2e-telemetry');
   const hostName = uniqueHostName('e2e-breaker-host');

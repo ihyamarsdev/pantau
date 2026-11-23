@@ -18,7 +18,7 @@ function renderHosts() {
     if (!S.allRawHosts.some(h => h.id === id)) S.selectedHostIds.delete(id);
   }
   const prefs = getUIPrefs();
-  const viewMode = prefs.viewMode || 'list';
+  const viewMode = prefs.viewMode || 'globe';
   const sortVal = document.getElementById('sortSelect')?.value || 'manual';
   const hasSearch = !!(document.getElementById('hostSearchInput')?.value.trim());
   const hasStatusFilter = (document.getElementById('statusFilterSelect')?.value || 'all') !== 'all';
@@ -26,15 +26,28 @@ function renderHosts() {
 
   const grid = document.getElementById('hostGrid');
   const listContainer = document.getElementById('hostList');
+  const globe = document.getElementById('hostGlobe');
 
-  if (viewMode === 'list') {
+  if (viewMode === 'globe') {
+    // Hidden grid/list cards would duplicate the detail card's element ids (dropdown-N, inspectBtn-N).
     grid.style.display = 'none';
-    listContainer.style.display = 'block';
-    renderListView(listContainer, isManualSort);
-  } else {
     listContainer.style.display = 'none';
-    grid.style.display = 'grid';
-    renderGridView(grid, isManualSort);
+    grid.innerHTML = '';
+    listContainer.innerHTML = '';
+    globe.style.display = ''; // .host-globe-view CSS sets the grid layout
+    if (window.GlobeRadar && S.currentSideNav === 'hosts') window.GlobeRadar.mount();
+  } else {
+    globe.style.display = 'none';
+    if (window.GlobeRadar) window.GlobeRadar.unmount();
+    if (viewMode === 'list') {
+      grid.style.display = 'none';
+      listContainer.style.display = 'block';
+      renderListView(listContainer, isManualSort);
+    } else {
+      listContainer.style.display = 'none';
+      grid.style.display = 'grid';
+      renderGridView(grid, isManualSort);
+    }
   }
   renderHostSelectBar();
 }
@@ -181,206 +194,209 @@ function renderGridView(grid, isManualSort) {
     }
     if (isCol) return;
 
-    grp.hosts.forEach(h => {
-      const card = document.createElement('div');
-      card.dataset.hostId = h.id;
-
-      const hist = getHostTrafficHistory(h);
-      const sparklineSvg = renderSparklineSVG(hist, 80, 24);
-      const isStale = isHostStale(h);
-      const recency = formatRelativeTime(h.last_inspected);
-      const issues = getHostTopIssues(h);
-      const hasIssues = issues.length > 0;
-
-      const ramPct = h.ram_total_bytes > 0 ? Math.round((h.ram_used_bytes / h.ram_total_bytes) * 100) : 0;
-      const ramUsedStr = formatBytes(h.ram_used_bytes || 0);
-      const ramTotStr = formatBytes(h.ram_total_bytes || 0);
-      const ramClass = ramPct > 90 ? 'crit' : (ramPct > 80 ? 'warn' : 'normal');
-
-      const diskPct = h.disk_total_bytes > 0 ? Math.round((h.disk_used_bytes / h.disk_total_bytes) * 100) : 0;
-      const diskUsedStr = formatBytes(h.disk_used_bytes || 0);
-      const diskTotStr = formatBytes(h.disk_total_bytes || 0);
-      const diskClass = diskPct > 85 ? 'crit' : (diskPct > 80 ? 'warn' : 'normal');
-
-      let load1m = 0;
-      if (h.cpu_load) {
-        const parts = h.cpu_load.split(',');
-        if (parts.length > 0) load1m = parseFloat(parts[0].trim()) || 0;
-      }
-      const cores = h.cpu_cores > 0 ? h.cpu_cores : 1;
-      const cpuClass = load1m > cores * 1.5 ? 'crit' : (load1m > cores ? 'warn' : 'normal');
-      const cpuBarPct = Math.min(100, Math.round((load1m / cores) * 100));
-
-      let scoreColor = 'var(--success)';
-      if (h.lifecycle_score < 50) scoreColor = 'var(--danger)';
-      else if (h.lifecycle_score < 80) scoreColor = 'var(--warning)';
-
-      let problemClass = '';
-      if (h.status === 'degraded' || h.drift) problemClass = 'problem-degraded';
-      else if (h.status === 'down') problemClass = 'problem-down';
-      else if (h.status === 'healthy' && (ramPct > 90 || diskPct > 85)) problemClass = 'problem-critical';
-      else if (isStale) problemClass = 'problem-stale';
-
-      card.className = `card host-card ${problemClass}${S.hostSelectMode && S.selectedHostIds.has(h.id) ? ' host-selected' : ''}`;
-
-      if (isManualSort) {
-        card.draggable = true;
-        card.addEventListener('dragstart', (e) => {
-          S.draggedHostId = h.id;
-          card.classList.add('dragging');
-          e.dataTransfer.effectAllowed = 'move';
-          e.dataTransfer.setData('text/plain', String(h.id));
-        });
-        card.addEventListener('dragend', () => {
-          card.classList.remove('dragging');
-          document.querySelectorAll('.card.drag-target').forEach(el => el.classList.remove('drag-target'));
-        });
-        card.addEventListener('dragover', (e) => {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = 'move';
-          if (S.draggedHostId && S.draggedHostId !== h.id) {
-            card.classList.add('drag-target');
-          }
-        });
-        card.addEventListener('dragleave', () => {
-          card.classList.remove('drag-target');
-        });
-        card.addEventListener('drop', (e) => {
-          e.preventDefault();
-          card.classList.remove('drag-target');
-          const srcId = parseInt(e.dataTransfer.getData('text/plain')) || S.draggedHostId;
-          if (srcId && srcId !== h.id) {
-            handleDropReorder(srcId, h.id);
-          }
-        });
-      }
-
-      const noteSnippet = (h.notes || '').trim();
-      const noteHtml = noteSnippet ? `
-        <div class="host-card-note" onclick="openEditNoteModal(${h.id}, ${jsArg(h.notes || '')}, ${jsArg(h.name || '')})" title="${t('edit_host_note_title')}">
-          <svg class="icon icon-sm text-muted"><use href="#i-pencil"/></svg>
-          <span class="host-card-note-text">${escapeHtml(noteSnippet)}</span>
-        </div>
-      ` : '';
-
-      const hostTabsCount = S.terminalTabs.filter(t => t.hostID === h.id).length;
-      const hasActiveSession = S.workspaceSessions.some(s => s.hostId === h.id);
-
-      card.innerHTML = `
-        <div class="host-card-header">
-          <div class="host-card-identity">
-            <div class="host-card-title-row">
-              ${S.hostSelectMode ? `<input type="checkbox" class="host-select-cb" data-host-id="${h.id}" ${S.selectedHostIds.has(h.id) ? 'checked' : ''} aria-label="${escapeHtml(h.name)}" />` : ''}
-              ${isManualSort ? `<span class="drag-handle" title="${t('drag_handle_title')}">${svgIcon('grip-vertical', 'icon-sm')}</span>` : ''}
-              <span class="status-dot ${hostStateClass(h.status)}" title="${h.status || 'unknown'}"></span>
-              <span class="host-card-name">${escapeHtml(h.name)}</span>
-              ${h.group_name ? `<span class="badge" style="font-size: var(--fs-xs); background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--card-border);">${escapeHtml(h.group_name)}</span>` : ''}
-              ${hostNetworkBadgeHtml(h)}
-            </div>
-            <div class="host-card-sub">${hostIpCopyHtml(h.host)}:${h.port} <span style="opacity: 0.7;">(${escapeHtml(h.user)})</span></div>
-          </div>
-          <div class="host-card-header-actions">
-            <span class="badge badge-${h.status}">${h.status}</span>
-            <button class="btn-inspect-quick" id="inspectBtn-${h.id}" onclick="inspectHost(${h.id}, event)" title="${t('btn_inspect_title', 'Run Inspection (Refresh)')}">
-              <svg class="icon icon-sm"><use href="#i-rotate-ccw"/></svg>
-            </button>
-          </div>
-        </div>
-
-        ${hasIssues ? `
-          <div class="card-issue-box">
-            ${issues.map(iss => `
-              <div class="card-issue-row">
-                <span class="card-issue-badge ${iss.level}">${iss.badge}</span>
-                <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(iss.text)}</span>
-              </div>
-            `).join('')}
-          </div>
-        ` : ''}
-
-        <div class="host-gauge-grid">
-          <div class="host-gauge-item">
-            <div class="host-gauge-label">
-              <span>CPU</span>
-              <span class="host-gauge-val num">${load1m.toFixed(2)}</span>
-            </div>
-            <div class="host-gauge-bar"><div class="host-gauge-fill ${cpuClass}" style="width: ${cpuBarPct}%"></div></div>
-          </div>
-          <div class="host-gauge-item">
-            <div class="host-gauge-label">
-              <span>RAM</span>
-              <span class="host-gauge-val num">${ramPct}%</span>
-            </div>
-            <div class="host-gauge-bar"><div class="host-gauge-fill ${ramClass}" style="width: ${ramPct}%"></div></div>
-          </div>
-          <div class="host-gauge-item">
-            <div class="host-gauge-label">
-              <span>Disk</span>
-              <span class="host-gauge-val num">${diskPct}%</span>
-            </div>
-            <div class="host-gauge-bar"><div class="host-gauge-fill ${diskClass}" style="width: ${diskPct}%"></div></div>
-          </div>
-        </div>
-
-        <div class="host-traffic-strip">
-          ${sparklineSvg}
-          <div class="host-traffic-rates">
-            <div class="host-traffic-rate-row rate-in">
-              <span>↓</span> <span class="num">${formatBytes(h.net_rx_speed_bps)}/s</span>
-            </div>
-            <div class="host-traffic-rate-row rate-out">
-              <span>↑</span> <span class="num">${formatBytes(h.net_tx_speed_bps)}/s</span>
-            </div>
-          </div>
-        </div>
-
-        ${noteHtml}
-
-        <div class="host-meta-row">
-          <div class="host-meta-left">
-            <span>${escapeHtml(h.os_info || 'Unknown')}</span>
-            <span>•</span>
-            <span>${escapeHtml(h.uptime || '-')}</span>
-            <span>•</span>
-            <span title="${recency.title}" style="${recency.isStale ? 'color: var(--warning);' : ''}">${recency.relative}</span>
-          </div>
-          <span style="display: inline-flex; gap: 4px;">
-            ${hostSecurityChip(h)}
-            <span class="host-score-chip" onclick="openHostDetail(${h.id}, 'overview')" title="${t('lifecycle_score')}" style="color: ${scoreColor};">
-              <svg class="icon icon-sm"><use href="#i-gauge"/></svg>
-              <span class="num">${h.lifecycle_score}</span>
-            </span>
-          </span>
-        </div>
-
-        <div class="host-actions-row">
-          <button class="btn btn-primary btn-sm btn-host-view" data-host-id="${h.id}" onclick="openHostDetail(${h.id})" style="display: inline-flex; align-items: center; gap: 6px;">
-            <svg class="icon icon-sm"><use href="#i-eye"/></svg>
-            <span>${t('btn_view')}</span>
-            <span class="badge host-session-badge" style="${hasActiveSession ? '' : 'display: none;'} font-size: 0.68rem; padding: 1px 4px; background: var(--accent-soft); color: var(--accent-text); border: 1px solid var(--accent-ring);" title="${t('active_session_badge')}"><svg class="icon icon-sm"><use href="#i-layers"/></svg></span>
-          </button>
-          <button class="btn btn-sm btn-ghost btn-host-terminal" data-host-id="${h.id}" onclick="openHostTerminal(${h.id})" title="${t('btn_terminal')}" style="display: inline-flex; align-items: center; gap: 4px;">
-            <svg class="icon icon-sm"><use href="#i-terminal"/></svg>
-            <span class="badge badge-healthy host-terminal-badge" style="${hostTabsCount > 0 ? '' : 'display: none;'} margin-left: 2px; font-size: 0.72rem; padding: 1px 5px;">${hostTabsCount}</span>
-          </button>
-          <div class="dropdown" style="margin-left: auto;">
-            <button class="btn btn-sm btn-icon btn-ghost" onclick="toggleDropdown(event, ${h.id})" title="${t('more_actions', 'More Actions')}"><svg class="icon icon-sm"><use href="#i-ellipsis-vertical"/></svg></button>
-            <div class="dropdown-menu" id="dropdown-${h.id}">
-              <button class="dropdown-item" onclick="openEditHostModal(${h.id})"><svg class="icon icon-sm"><use href="#i-pencil"/></svg> <span>${t('edit_host', 'Edit Host')}</span></button>
-              <button class="dropdown-item" onclick="testHostSSH(${h.id})"><svg class="icon icon-sm"><use href="#i-zap"/></svg> <span>${t('test_connection', 'Test Connection')}</span></button>
-              <button class="dropdown-item" onclick="openInjectKeyModal(${h.id}, ${jsArg(h.name)})"><svg class="icon icon-sm"><use href="#i-key-round"/></svg> <span>${t('btn_inject_key', 'Inject Key')}</span></button>
-              <button class="dropdown-item" onclick="window.PortFwd && PortFwd.open(${h.id})"><svg class="icon icon-sm"><use href="#i-plug"/></svg> <span>${t('pf_menu', 'Port Forward')}</span></button>
-              ${!h.notes ? `<button class="dropdown-item" onclick="openEditNoteModal(${h.id}, '', ${jsArg(h.name || '')})"><svg class="icon icon-sm"><use href="#i-sticky-note"/></svg> <span>${t('add_note', 'Add Note')}</span></button>` : ''}
-              <div class="dropdown-divider"></div>
-              <button class="dropdown-item danger" onclick="deleteHost(${h.id})"><svg class="icon icon-sm"><use href="#i-trash-2"/></svg> <span>${t('delete_host', 'Delete Host')}</span></button>
-            </div>
-          </div>
-        </div>
-      `;
-      nodes.push(card);
-    });
+    grp.hosts.forEach(h => nodes.push(buildHostCard(h, isManualSort)));
   });
   batchAppend(grid, nodes);
+}
+
+// One Grid-view host card; also the host detail beside the globe view.
+function buildHostCard(h, isManualSort) {
+  const card = document.createElement('div');
+  card.dataset.hostId = h.id;
+
+  const hist = getHostTrafficHistory(h);
+  const sparklineSvg = renderSparklineSVG(hist, 80, 24);
+  const isStale = isHostStale(h);
+  const recency = formatRelativeTime(h.last_inspected);
+  const issues = getHostTopIssues(h);
+  const hasIssues = issues.length > 0;
+
+  const ramPct = h.ram_total_bytes > 0 ? Math.round((h.ram_used_bytes / h.ram_total_bytes) * 100) : 0;
+  const ramUsedStr = formatBytes(h.ram_used_bytes || 0);
+  const ramTotStr = formatBytes(h.ram_total_bytes || 0);
+  const ramClass = ramPct > 90 ? 'crit' : (ramPct > 80 ? 'warn' : 'normal');
+
+  const diskPct = h.disk_total_bytes > 0 ? Math.round((h.disk_used_bytes / h.disk_total_bytes) * 100) : 0;
+  const diskUsedStr = formatBytes(h.disk_used_bytes || 0);
+  const diskTotStr = formatBytes(h.disk_total_bytes || 0);
+  const diskClass = diskPct > 85 ? 'crit' : (diskPct > 80 ? 'warn' : 'normal');
+
+  let load1m = 0;
+  if (h.cpu_load) {
+    const parts = h.cpu_load.split(',');
+    if (parts.length > 0) load1m = parseFloat(parts[0].trim()) || 0;
+  }
+  const cores = h.cpu_cores > 0 ? h.cpu_cores : 1;
+  const cpuClass = load1m > cores * 1.5 ? 'crit' : (load1m > cores ? 'warn' : 'normal');
+  const cpuBarPct = Math.min(100, Math.round((load1m / cores) * 100));
+
+  let scoreColor = 'var(--success)';
+  if (h.lifecycle_score < 50) scoreColor = 'var(--danger)';
+  else if (h.lifecycle_score < 80) scoreColor = 'var(--warning)';
+
+  let problemClass = '';
+  if (h.status === 'degraded' || h.drift) problemClass = 'problem-degraded';
+  else if (h.status === 'down') problemClass = 'problem-down';
+  else if (h.status === 'healthy' && (ramPct > 90 || diskPct > 85)) problemClass = 'problem-critical';
+  else if (isStale) problemClass = 'problem-stale';
+
+  card.className = `card host-card ${problemClass}${S.hostSelectMode && S.selectedHostIds.has(h.id) ? ' host-selected' : ''}`;
+
+  if (isManualSort) {
+    card.draggable = true;
+    card.addEventListener('dragstart', (e) => {
+      S.draggedHostId = h.id;
+      card.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', String(h.id));
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      document.querySelectorAll('.card.drag-target').forEach(el => el.classList.remove('drag-target'));
+    });
+    card.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (S.draggedHostId && S.draggedHostId !== h.id) {
+        card.classList.add('drag-target');
+      }
+    });
+    card.addEventListener('dragleave', () => {
+      card.classList.remove('drag-target');
+    });
+    card.addEventListener('drop', (e) => {
+      e.preventDefault();
+      card.classList.remove('drag-target');
+      const srcId = parseInt(e.dataTransfer.getData('text/plain')) || S.draggedHostId;
+      if (srcId && srcId !== h.id) {
+        handleDropReorder(srcId, h.id);
+      }
+    });
+  }
+
+  const noteSnippet = (h.notes || '').trim();
+  const noteHtml = noteSnippet ? `
+    <div class="host-card-note" onclick="openEditNoteModal(${h.id}, ${jsArg(h.notes || '')}, ${jsArg(h.name || '')})" title="${t('edit_host_note_title')}">
+      <svg class="icon icon-sm text-muted"><use href="#i-pencil"/></svg>
+      <span class="host-card-note-text">${escapeHtml(noteSnippet)}</span>
+    </div>
+  ` : '';
+
+  const hostTabsCount = S.terminalTabs.filter(t => t.hostID === h.id).length;
+  const hasActiveSession = S.workspaceSessions.some(s => s.hostId === h.id);
+
+  card.innerHTML = `
+    <div class="host-card-header">
+      <div class="host-card-identity">
+        <div class="host-card-title-row">
+          ${S.hostSelectMode ? `<input type="checkbox" class="host-select-cb" data-host-id="${h.id}" ${S.selectedHostIds.has(h.id) ? 'checked' : ''} aria-label="${escapeHtml(h.name)}" />` : ''}
+          ${isManualSort ? `<span class="drag-handle" title="${t('drag_handle_title')}">${svgIcon('grip-vertical', 'icon-sm')}</span>` : ''}
+          <span class="status-dot ${hostStateClass(h.status)}" title="${h.status || 'unknown'}"></span>
+          <span class="host-card-name">${escapeHtml(h.name)}</span>
+          ${h.group_name ? `<span class="badge" style="font-size: var(--fs-xs); background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--card-border);">${escapeHtml(h.group_name)}</span>` : ''}
+          ${hostNetworkBadgeHtml(h)}
+        </div>
+        <div class="host-card-sub">${hostIpCopyHtml(h.host)}:${h.port} <span style="opacity: 0.7;">(${escapeHtml(h.user)})</span></div>
+      </div>
+      <div class="host-card-header-actions">
+        <span class="badge badge-${h.status}">${h.status}</span>
+        <button class="btn-inspect-quick" id="inspectBtn-${h.id}" onclick="inspectHost(${h.id}, event)" title="${t('btn_inspect_title', 'Run Inspection (Refresh)')}">
+          <svg class="icon icon-sm"><use href="#i-rotate-ccw"/></svg>
+        </button>
+      </div>
+    </div>
+
+    ${hasIssues ? `
+      <div class="card-issue-box">
+        ${issues.map(iss => `
+          <div class="card-issue-row">
+            <span class="card-issue-badge ${iss.level}">${iss.badge}</span>
+            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(iss.text)}</span>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
+
+    <div class="host-gauge-grid">
+      <div class="host-gauge-item">
+        <div class="host-gauge-label">
+          <span>CPU</span>
+          <span class="host-gauge-val num">${load1m.toFixed(2)}</span>
+        </div>
+        <div class="host-gauge-bar"><div class="host-gauge-fill ${cpuClass}" style="width: ${cpuBarPct}%"></div></div>
+      </div>
+      <div class="host-gauge-item">
+        <div class="host-gauge-label">
+          <span>RAM</span>
+          <span class="host-gauge-val num">${ramPct}%</span>
+        </div>
+        <div class="host-gauge-bar"><div class="host-gauge-fill ${ramClass}" style="width: ${ramPct}%"></div></div>
+      </div>
+      <div class="host-gauge-item">
+        <div class="host-gauge-label">
+          <span>Disk</span>
+          <span class="host-gauge-val num">${diskPct}%</span>
+        </div>
+        <div class="host-gauge-bar"><div class="host-gauge-fill ${diskClass}" style="width: ${diskPct}%"></div></div>
+      </div>
+    </div>
+
+    <div class="host-traffic-strip">
+      ${sparklineSvg}
+      <div class="host-traffic-rates">
+        <div class="host-traffic-rate-row rate-in">
+          <span>↓</span> <span class="num">${formatBytes(h.net_rx_speed_bps)}/s</span>
+        </div>
+        <div class="host-traffic-rate-row rate-out">
+          <span>↑</span> <span class="num">${formatBytes(h.net_tx_speed_bps)}/s</span>
+        </div>
+      </div>
+    </div>
+
+    ${noteHtml}
+
+    <div class="host-meta-row">
+      <div class="host-meta-left">
+        <span>${escapeHtml(h.os_info || 'Unknown')}</span>
+        <span>•</span>
+        <span>${escapeHtml(h.uptime || '-')}</span>
+        <span>•</span>
+        <span title="${recency.title}" style="${recency.isStale ? 'color: var(--warning);' : ''}">${recency.relative}</span>
+      </div>
+      <span style="display: inline-flex; gap: 4px;">
+        ${hostSecurityChip(h)}
+        <span class="host-score-chip" onclick="openHostDetail(${h.id}, 'overview')" title="${t('lifecycle_score')}" style="color: ${scoreColor};">
+          <svg class="icon icon-sm"><use href="#i-gauge"/></svg>
+          <span class="num">${h.lifecycle_score}</span>
+        </span>
+      </span>
+    </div>
+
+    <div class="host-actions-row">
+      <button class="btn btn-primary btn-sm btn-host-view" data-host-id="${h.id}" onclick="openHostDetail(${h.id})" style="display: inline-flex; align-items: center; gap: 6px;">
+        <svg class="icon icon-sm"><use href="#i-eye"/></svg>
+        <span>${t('btn_view')}</span>
+        <span class="badge host-session-badge" style="${hasActiveSession ? '' : 'display: none;'} font-size: 0.68rem; padding: 1px 4px; background: var(--accent-soft); color: var(--accent-text); border: 1px solid var(--accent-ring);" title="${t('active_session_badge')}"><svg class="icon icon-sm"><use href="#i-layers"/></svg></span>
+      </button>
+      <button class="btn btn-sm btn-ghost btn-host-terminal" data-host-id="${h.id}" onclick="openHostTerminal(${h.id})" title="${t('btn_terminal')}" style="display: inline-flex; align-items: center; gap: 4px;">
+        <svg class="icon icon-sm"><use href="#i-terminal"/></svg>
+        <span class="badge badge-healthy host-terminal-badge" style="${hostTabsCount > 0 ? '' : 'display: none;'} margin-left: 2px; font-size: 0.72rem; padding: 1px 5px;">${hostTabsCount}</span>
+      </button>
+      <div class="dropdown" style="margin-left: auto;">
+        <button class="btn btn-sm btn-icon btn-ghost" onclick="toggleDropdown(event, ${h.id})" title="${t('more_actions', 'More Actions')}"><svg class="icon icon-sm"><use href="#i-ellipsis-vertical"/></svg></button>
+        <div class="dropdown-menu" id="dropdown-${h.id}">
+          <button class="dropdown-item" onclick="openEditHostModal(${h.id})"><svg class="icon icon-sm"><use href="#i-pencil"/></svg> <span>${t('edit_host', 'Edit Host')}</span></button>
+          <button class="dropdown-item" onclick="testHostSSH(${h.id})"><svg class="icon icon-sm"><use href="#i-zap"/></svg> <span>${t('test_connection', 'Test Connection')}</span></button>
+          <button class="dropdown-item" onclick="openInjectKeyModal(${h.id}, ${jsArg(h.name)})"><svg class="icon icon-sm"><use href="#i-key-round"/></svg> <span>${t('btn_inject_key', 'Inject Key')}</span></button>
+          <button class="dropdown-item" onclick="window.PortFwd && PortFwd.open(${h.id})"><svg class="icon icon-sm"><use href="#i-plug"/></svg> <span>${t('pf_menu', 'Port Forward')}</span></button>
+          ${!h.notes ? `<button class="dropdown-item" onclick="openEditNoteModal(${h.id}, '', ${jsArg(h.name || '')})"><svg class="icon icon-sm"><use href="#i-sticky-note"/></svg> <span>${t('add_note', 'Add Note')}</span></button>` : ''}
+          <div class="dropdown-divider"></div>
+          <button class="dropdown-item danger" onclick="deleteHost(${h.id})"><svg class="icon icon-sm"><use href="#i-trash-2"/></svg> <span>${t('delete_host', 'Delete Host')}</span></button>
+        </div>
+      </div>
+    </div>
+  `;
+  return card;
 }
 
 function renderListView(listContainer, isManualSort) {
@@ -2084,4 +2100,4 @@ function openTerminalForPath(targetPath) {
   openTerminalForHost(S.currentHost.id, null, true, customTitle, targetPath);
 }
 
-export { renderHosts, openHostGroupRename, saveHostGroupRename, deleteHostGroup, groupHosts, getHostGroupsCollapsed, toggleHostGroupCollapsed, renderGridView, renderListView, fitHostList, setEngineStatus, updateFooterMetrics, loadVpnNetworkIndex, populateHostNetworkSelect, loadHosts, toggleAlertOverlay, closeAlertOverlay, renderAlertOverlayState, loadAlerts, loadAlertTriage, applyTriageRemediation, loadDailyBriefing, generateDailyBriefing, ackAlert, ackAllAlerts, openHostDetailFromAlert, populateHostKeySelect, vpnBadge, hostNetworkBadgeHtml, loadVpnNetworks, saveVpnGate, vpnDriverField, openVpnNetworkModal, loadVpnInterfaces, renderVpnDriverFields, collectVpnConfig, saveVpnNetwork, deleteVpnNetwork, vpnNetworkUp, vpnNetworkProbe, vpnNetworkDown, openVpnNetworkLog, onHostKeySelectChange, openAddHostModal, openEditHostModal, updateGroupSuggestions, saveHost, openCommissionDateModal, importFill, importReasonText, openImportHostsModal, importLoadFile, importRequestPreview, importParse, importReadServer, populateImportKeySelect, importBulkNetworkChanged, populateImportNetworkSelect, importInspectCreated, renderImportPreview, importNetworkPicked, importableBoxes, updateImportCount, importToggleAll, importSubmit, showImportGroupsStep, refreshImportGroupSuggestions, importSaveGroups, submitQuickCommissionDate, clearCommissionDate, showToast, showBusyToast, toggleDropdown, closeAllDropdowns, openInjectKeyModal, submitInjectKey, deleteHost, toggleHostSelectMode, toggleHostSelected, selectAllShownHosts, renderHostSelectBar, openBulkGroupModal, submitBulkGroup, deleteSelectedHosts, testHostSSH, inspectHost, applyHostDetailMaximizeState, toggleHostDetailMaximize, getHostActiveTab, setHostActiveTab, getHostFilesPath, setHostFilesPath, openTerminalForPath };
+export { renderHosts, openHostGroupRename, saveHostGroupRename, deleteHostGroup, groupHosts, getHostGroupsCollapsed, toggleHostGroupCollapsed, renderGridView, buildHostCard, renderListView, fitHostList, setEngineStatus, updateFooterMetrics, loadVpnNetworkIndex, populateHostNetworkSelect, loadHosts, toggleAlertOverlay, closeAlertOverlay, renderAlertOverlayState, loadAlerts, loadAlertTriage, applyTriageRemediation, loadDailyBriefing, generateDailyBriefing, ackAlert, ackAllAlerts, openHostDetailFromAlert, populateHostKeySelect, vpnBadge, hostNetworkBadgeHtml, loadVpnNetworks, saveVpnGate, vpnDriverField, openVpnNetworkModal, loadVpnInterfaces, renderVpnDriverFields, collectVpnConfig, saveVpnNetwork, deleteVpnNetwork, vpnNetworkUp, vpnNetworkProbe, vpnNetworkDown, openVpnNetworkLog, onHostKeySelectChange, openAddHostModal, openEditHostModal, updateGroupSuggestions, saveHost, openCommissionDateModal, importFill, importReasonText, openImportHostsModal, importLoadFile, importRequestPreview, importParse, importReadServer, populateImportKeySelect, importBulkNetworkChanged, populateImportNetworkSelect, importInspectCreated, renderImportPreview, importNetworkPicked, importableBoxes, updateImportCount, importToggleAll, importSubmit, showImportGroupsStep, refreshImportGroupSuggestions, importSaveGroups, submitQuickCommissionDate, clearCommissionDate, showToast, showBusyToast, toggleDropdown, closeAllDropdowns, openInjectKeyModal, submitInjectKey, deleteHost, toggleHostSelectMode, toggleHostSelected, selectAllShownHosts, renderHostSelectBar, openBulkGroupModal, submitBulkGroup, deleteSelectedHosts, testHostSSH, inspectHost, applyHostDetailMaximizeState, toggleHostDetailMaximize, getHostActiveTab, setHostActiveTab, getHostFilesPath, setHostFilesPath, openTerminalForPath };

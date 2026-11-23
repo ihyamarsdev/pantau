@@ -1,14 +1,14 @@
-/* Globe Radar — controller: state, i18n, modal shell and filters (ADR 0090).
+/* Globe Radar — controller: state, i18n, panel shell and filters (ADR 0090).
  * Rendering is delegated to WebGlobe.Renderer (WebGL2); 05-globe-interact.js owns the frame loop,
  * camera and pointer input, 06-globe-ui.js the panels, data and live updates.
- * Relies on globals: svgIcon, escapeHtml, t, I18N, openModal, closeModal,
- * openHostDetail, openHostTerminal, openNetDiagModal, langRerenderHooks. */
+ * Relies on globals: svgIcon, escapeHtml, t, I18N, openHostDetail, openHostTerminal, openNetDiagModal,
+ * buildHostCard, allRawHosts, langRerenderHooks. */
 (function () {
   'use strict';
 
   var GL = (window.GlobeRadar = {});
   var G = window.WebGlobe;
-  var MODAL_ID = 'globeModal';
+  var HOST_ID = 'hostGlobe';
   var RAD = Math.PI / 180;
 
   var S = {
@@ -16,9 +16,8 @@
     renderer: null,
     canvas: null,
     flowFilter: 'all',
-    group: '',
-    query: '',
-    selected: null,       // node id whose HUD is open
+    hostFilter: null,     // Set of dashboard host ids the dashboard filter lets through; null = every node shown
+    selected: null,       // node id whose detail is shown in the right panel
     selectedCountry: -1,  // index into WebGlobe.countries() whose full province set is shown
     selectedProvince: '', // Indonesia province code (e.g. '31' for DKI Jakarta); '' = none
     selectedKab: '',      // kabupaten/kota code (e.g. '31.01'); '' = none
@@ -40,7 +39,7 @@
     raf: 0,
     lastFrame: 0,
     source: null,
-    mounted: false,
+    mounted: false,       // the Hosts view is showing the globe (SSE, loop and renderer live)
     burst: 0,             // performance.now() deadline of the live-traffic pulse boost
   };
 
@@ -49,10 +48,10 @@
 
   var I = {
     en: {
-      gl_title: '3D Globe Network Radar', gl_subtitle: 'Geo-located fleet & live 3D traffic streams',
+      gl_title: '3D Globe Network Radar',
       gl_all: 'All', gl_proxy: 'Proxy/App', gl_vpn: 'VPN', gl_k8s: 'K8s', gl_gateway: 'Gateway',
-      gl_all_groups: 'All groups', gl_search_ph: 'Find a host…', gl_autorotate: 'Auto-rotate',
-      gl_refresh: 'Refresh', gl_close: 'Close', gl_nodes: 'nodes', gl_links: 'links',
+      gl_autorotate: 'Auto-rotate',
+      gl_refresh: 'Refresh', gl_nodes: 'nodes', gl_links: 'links',
       gl_empty: 'No infrastructure yet. Add a Host to see it on the globe.',
       gl_loading: 'Loading globe…', gl_failed: 'Could not load globe',
       gl_webgl_failed: 'WebGL2 is unavailable in this browser.',
@@ -73,12 +72,13 @@
       gl_region_clear: 'Clear country',
       gl_prov_sel: 'Province', gl_prov_all: 'All provinces', gl_kab_sel: 'Kabupaten/Kota', gl_kab_all: 'All kabupaten/kota',
       gl_admin_hint: 'Choose a province, then a kabupaten/kota to focus the map',
+      gl_hosts: 'Hosts', gl_back_hosts: 'Back to hosts', gl_section_geo: 'Location & network',
     },
     id: {
-      gl_title: 'Radar Jaringan 3D', gl_subtitle: 'Armada ber-geolokasi & aliran lalu lintas 3D langsung',
+      gl_title: 'Radar Jaringan 3D',
       gl_all: 'Semua', gl_proxy: 'Proxy/Aplikasi', gl_vpn: 'VPN', gl_k8s: 'K8s', gl_gateway: 'Gateway',
-      gl_all_groups: 'Semua grup', gl_search_ph: 'Cari host…', gl_autorotate: 'Putar otomatis',
-      gl_refresh: 'Muat ulang', gl_close: 'Tutup', gl_nodes: 'node', gl_links: 'alur',
+      gl_autorotate: 'Putar otomatis',
+      gl_refresh: 'Muat ulang', gl_nodes: 'node', gl_links: 'alur',
       gl_empty: 'Belum ada infrastruktur. Tambahkan Host untuk melihatnya di globe.',
       gl_loading: 'Memuat globe…', gl_failed: 'Gagal memuat globe',
       gl_webgl_failed: 'WebGL2 tidak tersedia di browser ini.',
@@ -99,68 +99,63 @@
       gl_region_clear: 'Hapus negara',
       gl_prov_sel: 'Provinsi', gl_prov_all: 'Semua provinsi', gl_kab_sel: 'Kabupaten/Kota', gl_kab_all: 'Semua kabupaten/kota',
       gl_admin_hint: 'Pilih provinsi, lalu kabupaten/kota untuk memfokuskan peta',
+      gl_hosts: 'Host', gl_back_hosts: 'Kembali ke host', gl_section_geo: 'Lokasi & jaringan',
     },
   };
   ['en', 'id'].forEach(function (l) { I18N[l] = Object.assign(I18N[l] || {}, I[l]); });
 
-  // ---- Modal shell (ADR 0007 Workspace Modal) -----------------------------
-  function modalHtml() {
+  // ---- Panel shell (rendered inline into #hostGlobe) -----------------------
+  // Left: toolbar + globe stage. Right: host list, or the selected node's detail (06-globe-ui.js).
+  function panelHtml() {
     return '' +
-      '<div class="modal-content modal-workspace gl-modal-content">' +
-        '<div class="modal-header gl-header">' +
-          '<div class="gl-title-group">' + icon('globe') +
-            '<h3 class="gl-title">' + esc(t('gl_title')) + '</h3>' +
-            '<span class="gl-subtitle">' + esc(t('gl_subtitle')) + '</span>' +
-            '<span id="glLivePill" class="gl-live-pill gl-offline"><span class="gl-live-dot"></span><span>' + esc(t('gl_offline')) + '</span></span>' +
-            '<span id="glCount" class="gl-count"></span>' +
-          '</div>' +
-          '<div class="gl-header-actions">' +
-            '<button class="btn btn-icon btn-sm btn-ghost" id="glZoomIn" title="' + esc(t('gl_zoom_in')) + '">' + icon('plus') + '</button>' +
-            '<button class="btn btn-icon btn-sm btn-ghost" id="glZoomOut" title="' + esc(t('gl_zoom_out')) + '">' + icon('minus') + '</button>' +
-            '<button class="btn btn-icon btn-sm btn-ghost" id="glZoomReset" title="' + esc(t('gl_zoom_reset')) + '">' + icon('rotate-ccw') + '</button>' +
-            '<button class="btn btn-icon btn-sm btn-ghost" id="glRefreshBtn" title="' + esc(t('gl_refresh')) + '">' + icon('refresh-cw') + '</button>' +
-            '<button class="btn btn-icon btn-sm btn-ghost" onclick="closeModal(\'' + MODAL_ID + '\')" title="' + esc(t('gl_close')) + '">' + icon('x') + '</button>' +
-          '</div>' +
-        '</div>' +
+      '<div class="gl-globe-col">' +
         '<div class="gl-toolbar">' +
-          '<input type="text" id="glSearch" class="gl-search" placeholder="' + esc(t('gl_search_ph')) + '" autocomplete="off" spellcheck="false" />' +
+          '<span id="glLivePill" class="gl-live-pill gl-offline"><span class="gl-live-dot"></span><span>' + esc(t('gl_offline')) + '</span></span>' +
+          '<span id="glCount" class="gl-count"></span>' +
           '<select id="glCountry" class="gl-select" title="' + esc(t('gl_region_hint')) + '" aria-label="' + esc(t('gl_region_sel')) + '"><option value="">' + esc(t('gl_region_all')) + '</option></select>' +
           '<select id="glProvince" class="gl-select" title="' + esc(t('gl_admin_hint')) + '" aria-label="' + esc(t('gl_prov_sel')) + '" disabled><option value="">' + esc(t('gl_prov_all')) + '</option></select>' +
           '<select id="glKab" class="gl-select" title="' + esc(t('gl_admin_hint')) + '" aria-label="' + esc(t('gl_kab_sel')) + '" disabled><option value="">' + esc(t('gl_kab_all')) + '</option></select>' +
           '<div id="glFlowPills" class="gl-pills" role="group" aria-label="link type"></div>' +
-          '<select id="glGroup" class="gl-select"><option value="">' + esc(t('gl_all_groups')) + '</option></select>' +
           '<label class="gl-toggle"><input type="checkbox" id="glAutoRotate" checked /> ' + esc(t('gl_autorotate')) + '</label>' +
-        '</div>' +
-        '<div class="gl-body">' +
-          '<div class="gl-stage" id="glStage">' +
-            '<canvas id="glCanvas" class="gl-canvas" role="img" aria-label="' + esc(t('gl_title')) + '"></canvas>' +
-            '<div id="glEmpty" class="gl-empty" hidden>' + esc(t('gl_empty')) + '</div>' +
-            '<div id="glTooltip" class="gl-tooltip" hidden></div>' +
-            '<aside id="glHud" class="gl-hud" hidden></aside>' +
+          '<div class="gl-actions">' +
+            '<button class="btn btn-icon btn-sm btn-ghost" id="glZoomIn" title="' + esc(t('gl_zoom_in')) + '">' + icon('plus') + '</button>' +
+            '<button class="btn btn-icon btn-sm btn-ghost" id="glZoomOut" title="' + esc(t('gl_zoom_out')) + '">' + icon('minus') + '</button>' +
+            '<button class="btn btn-icon btn-sm btn-ghost" id="glZoomReset" title="' + esc(t('gl_zoom_reset')) + '">' + icon('rotate-ccw') + '</button>' +
+            '<button class="btn btn-icon btn-sm btn-ghost" id="glRefreshBtn" title="' + esc(t('gl_refresh')) + '">' + icon('refresh-cw') + '</button>' +
           '</div>' +
-          '<aside id="glSidebar" class="gl-sidebar"><div class="gl-side-title">Hosts</div><div id="glSideList"></div></aside>' +
         '</div>' +
-      '</div>';
+        '<div class="gl-stage" id="glStage">' +
+          '<canvas id="glCanvas" class="gl-canvas" role="img" aria-label="' + esc(t('gl_title')) + '"></canvas>' +
+          '<div id="glEmpty" class="gl-empty" hidden>' + esc(t('gl_empty')) + '</div>' +
+          '<div id="glTooltip" class="gl-tooltip" hidden></div>' +
+        '</div>' +
+      '</div>' +
+      '<aside class="gl-detail">' +
+        '<div id="glListView" class="gl-list-view">' +
+          '<div class="gl-side-head"><span class="gl-side-title">' + esc(t('gl_hosts')) + '</span><span id="glSideCount" class="gl-side-meta"></span></div>' +
+          '<div id="glSideList"></div>' +
+        '</div>' +
+        '<div id="glHud" class="gl-hud" hidden></div>' +
+      '</aside>';
   }
 
-  function ensureModal() {
-    if (document.getElementById(MODAL_ID)) return;
-    var el = document.createElement('div');
-    el.id = MODAL_ID;
-    el.className = 'modal';
-    el.innerHTML = modalHtml();
-    document.body.appendChild(el);
-  }
+  // Builds the panel once; later mounts keep the DOM and the selection.
+  GL.ensurePanel = function () {
+    var host = document.getElementById(HOST_ID);
+    if (host && !host.children.length) {
+      host.innerHTML = panelHtml();
+      restoreControls();
+    }
+    return !!host;
+  };
 
-  // A language switch re-renders the modal HTML, which replaces the canvas: drop the old GL context's
-  // resources and build a renderer on the new canvas.
-  function rebuildModal() {
-    var m = document.getElementById(MODAL_ID);
-    if (!m) return;
-    var search = document.getElementById('glSearch');
-    if (search) S.query = search.value;
-    m.innerHTML = modalHtml();
+  // A language switch re-renders the panel HTML, which replaces the canvas: drop the old GL context's
+  // resources and build a renderer on the new canvas (only while mounted).
+  function rebuildPanel() {
+    var host = document.getElementById(HOST_ID);
+    if (!host || !host.children.length) return;
     if (S.renderer) { S.renderer.dispose(true); S.renderer = null; }
+    host.innerHTML = panelHtml();
     if (S.mounted && window.WebGlobe && window.WebGlobe.Renderer) {
       var cvs = document.getElementById('glCanvas');
       if (cvs) S.renderer = new window.WebGlobe.Renderer(cvs);
@@ -169,15 +164,11 @@
     GL.bindCanvas();
     GL.renderUI();
   }
-  if (typeof langRerenderHooks !== 'undefined') langRerenderHooks.push(rebuildModal);
+  if (typeof langRerenderHooks !== 'undefined') langRerenderHooks.push(rebuildPanel);
 
   function restoreControls() {
-    var search = document.getElementById('glSearch');
-    if (search) search.value = S.query;
     var auto = document.getElementById('glAutoRotate');
     if (auto) auto.checked = S.autoRotate;
-    var group = document.getElementById('glGroup');
-    if (group) group.value = S.group;
     var country = document.getElementById('glCountry');
     if (country) country.value = S.selectedCountry >= 0 ? (G.countries()[S.selectedCountry] || {}).iso || '' : '';
     if (GL.renderProvinces) GL.renderProvinces();
@@ -185,17 +176,9 @@
   }
 
   // ---- Filtering -----------------------------------------------------------
+  // Host nodes pass only when the dashboard filter (GL.refreshHostFilter in 06) admits their host.
   function visible(node) {
-    if (S.group && (node.group_id || '') !== S.group) return false;
-    if (S.query) {
-      var q = S.query.toLowerCase();
-      if (!((node.name || '').toLowerCase().indexOf(q) >= 0 ||
-            (node.ip || '').toLowerCase().indexOf(q) >= 0 ||
-            (node.public_ip || '').toLowerCase().indexOf(q) >= 0 ||
-            (node.city || '').toLowerCase().indexOf(q) >= 0 ||
-            (node.region || '').toLowerCase().indexOf(q) >= 0)) return false;
-    }
-    return true;
+    return !S.hostFilter || node.kind !== 'host' || S.hostFilter.has(node.host_id);
   }
 
   function linkVisible(flow) {
@@ -231,7 +214,4 @@
   GL.nodeById = nodeById;
   GL.peerCount = peerCount;
   GL.rgba = rgba;
-  GL.ensureModal = ensureModal;
-  GL.restoreControls = restoreControls;
-  GL.modalId = MODAL_ID;
 })();

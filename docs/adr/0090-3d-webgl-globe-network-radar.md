@@ -432,3 +432,22 @@ Jakarta Pusat (zoom dalam), memilih "Whole world" mengosongkan ketiga pemilih, m
 ke ~1 dan pusat ke HOME, serta kanvas kembali menampilkan bola bulat (disc buram di tengah, sudut
 transparan) — dibuktikan dengan pembacaan piksel WebGL nyata dan screenshot. Tombol reset, zoom manual,
 dan fly-to negara tetap diverifikasi.
+
+### 7. Globe menjadi tampilan utama dashboard Hosts (2026-11-23)
+
+**Masalah.** Globe hanya bisa dibuka lewat tombol header sebagai Workspace Modal, terpisah dari
+dashboard Hosts; detail Host di HUD menutupi peta dan filter dashboard tidak berlaku untuk pin.
+
+**Keputusan.** Modal `#globeModal` dan tombol header `#btnHeaderGlobe` dihapus. Globe dirender inline
+ke `#hostGlobe` di `#sectionHosts` dan menjadi mode tampilan default (`viewMode: 'globe'`, tombol
+`#viewGlobeBtn`; Grid dan List tetap ada). Tata letak dua kolom: globe (toolbar ringkas + kanvas) di
+kiri, panel detail ±380px di kanan yang berisi daftar Host atau — saat sebuah node dipilih — kartu Host
+yang sama dengan tampilan Grid (`buildHostCard`) ditambah bagian lokasi & jaringan (geo, latensi, peer,
+override koordinat). Di bawah ±1100px panel turun ke bawah globe. Siklus hidup: `renderHosts()` memanggil
+`GlobeRadar.mount()` (idempoten; fetch hanya saat pertama dipasang) dan `GlobeRadar.unmount()` saat
+beralih ke Grid/List atau ke seksi lain, yang menghentikan loop, SSE, dan membebaskan konteks GL —
+menggantikan `closeModal` → `onClose`. Pencarian/grup/status dashboard kini menyaring pin Host;
+kontrol cari & grup milik globe dihapus.
+
+**Verifikasi** di `e2e/tests/network-globe.e2e.ts` dan `e2e/tests/host-view-mode.e2e.ts`: dashboard
+baru terbuka di globe, Grid/List menyembunyikan `#hostGlobe`, dan seluruh skenario globe berjalan inline.

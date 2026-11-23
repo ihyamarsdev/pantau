@@ -22,8 +22,6 @@ type Renderer = {
 };
 type PageGlobals = {
   GlobeRadar: {
-    open(): void;
-    onClose(): void;
     maxZoom(): number;
     state: {
       lastFrame: number;
@@ -57,7 +55,6 @@ type PageGlobals = {
     hiresReady(code: string): boolean;
     hiresFor(code: string): Array<{ code: string; name: string; rings: number[][]; bbox: number[] }> | null;
   };
-  closeModal(id: string): void;
 };
 
 // The globe payload is answered in the browser so the test is deterministic and
@@ -91,9 +88,10 @@ test('network globe: draws countries, nodes and links, filters link types, and s
     await route.fulfill({ status: 200, headers: { 'Content-Type': 'text/event-stream' }, body: '' });
   });
 
-  // Open the globe from the header launcher.
-  await browser.locator('#btnHeaderGlobe').click();
-  await expect(browser.locator('#globeModal')).toBeVisible();
+  // The globe is the default Hosts view and may have fetched before this stub existed; refresh re-fetches through it.
+  await browser.locator('#viewGlobeBtn').click();
+  await browser.locator('#glRefreshBtn').click();
+  await expect(browser.locator('#hostGlobe')).toBeVisible();
   await expect(browser.locator('#glCanvas')).toBeVisible();
   await expect(browser.locator('#glCount')).toContainText('3 nodes');
   // Regression: `.gl-empty { display: flex }` once beat the hidden attribute, so "No infrastructure yet" sat on
@@ -199,12 +197,9 @@ test('network globe: draws countries, nodes and links, filters link types, and s
   await expect(browser.locator('#glHudTerminal')).toBeEnabled();
   await expect(browser.locator('#glHudWorkspace')).toBeEnabled();
 
-  // Closing stops the render loop and detaches the view.
-  await browser.evaluate(() => {
-    (window as unknown as PageGlobals).closeModal('globeModal');
-    return null;
-  });
-  await expect(browser.locator('#globeModal')).toBeHidden();
+  // Leaving the view for List unmounts the globe: the render loop stops, SSE closes, the renderer is disposed.
+  await browser.locator('#viewListBtn').click();
+  await expect(browser.locator('#hostGlobe')).toBeHidden();
 });
 
 // Deep zoom: a stack of same-city hosts is listed on hover, a click flies in until the pins separate,
@@ -241,8 +236,10 @@ test('network globe: zooms to province level, splits a host stack and loads prov
     await route.fulfill({ status: 200, headers: { 'Content-Type': 'text/event-stream' }, body: '' });
   });
 
-  await browser.locator('#btnHeaderGlobe').click();
-  await expect(browser.locator('#globeModal')).toBeVisible();
+  // The globe is the default Hosts view and may have fetched before this stub existed; refresh re-fetches through it.
+  await browser.locator('#viewGlobeBtn').click();
+  await browser.locator('#glRefreshBtn').click();
+  await expect(browser.locator('#hostGlobe')).toBeVisible();
   await expect(browser.locator('#glCanvas')).toBeVisible();
   await expect(browser.locator('#glCount')).toContainText('4 nodes');
 
@@ -265,6 +262,8 @@ test('network globe: zooms to province level, splits a host stack and loads prov
     r.setCamera({ lon: g.state.lon, lat: g.state.lat, zoom: g.state.zoom });
     const a = g.state.graph.nodes.find((n) => n.id === 'host:11')!;
     const p = r.project(a);
+    // The globe sits below the KPI strip on the dashboard: bring the pin's point into the viewport before hovering.
+    r.canvas.scrollIntoView({ block: 'center' });
     const box = r.canvas.getBoundingClientRect();
     return { x: box.left + p.x, y: box.top + p.y, visible: p.visible };
   });
@@ -365,11 +364,9 @@ test('network globe: zooms to province level, splits a host stack and loads prov
   await expect.poll(() => browser.evaluate(() =>
     (window as unknown as PageGlobals).GlobeRadar.state.zoom)).toBe(maxZoom);
 
-  await browser.evaluate(() => {
-    (window as unknown as PageGlobals).closeModal('globeModal');
-    return null;
-  });
-  await expect(browser.locator('#globeModal')).toBeHidden();
+  // Leaving the view for List unmounts the globe: the render loop stops, SSE closes, the renderer is disposed.
+  await browser.locator('#viewListBtn').click();
+  await expect(browser.locator('#hostGlobe')).toBeHidden();
 });
 
 // Selecting a country reveals its COMPLETE Natural Earth admin-1 province set, not just the lines currently inside
@@ -393,8 +390,10 @@ test('network globe: selecting a country shows its full province set (Indonesia)
     await route.fulfill({ status: 200, headers: { 'Content-Type': 'text/event-stream' }, body: '' });
   });
 
-  await browser.locator('#btnHeaderGlobe').click();
-  await expect(browser.locator('#globeModal')).toBeVisible();
+  // The globe is the default Hosts view and may have fetched before this stub existed; refresh re-fetches through it.
+  await browser.locator('#viewGlobeBtn').click();
+  await browser.locator('#glRefreshBtn').click();
+  await expect(browser.locator('#hostGlobe')).toBeVisible();
   await expect(browser.locator('#glCanvas')).toBeVisible();
 
   // The country selector is populated and offers Indonesia.
@@ -460,11 +459,9 @@ test('network globe: selecting a country shows its full province set (Indonesia)
   await expect(browser.locator('#glHud')).toBeVisible();
   await expect(browser.locator('#glHud')).toContainText('jakarta-app');
 
-  await browser.evaluate(() => {
-    (window as unknown as PageGlobals).closeModal('globeModal');
-    return null;
-  });
-  await expect(browser.locator('#globeModal')).toBeHidden();
+  // Leaving the view for List unmounts the globe: the render loop stops, SSE closes, the renderer is disposed.
+  await browser.locator('#viewListBtn').click();
+  await expect(browser.locator('#hostGlobe')).toBeHidden();
 });
 
 // Country -> Province -> Kabupaten/Kota: the embedded, named 110 m boundary set must offer every official
@@ -487,8 +484,10 @@ test('network globe: cascading country -> province -> kabupaten/kota with sharp 
     await route.fulfill({ status: 200, headers: { 'Content-Type': 'text/event-stream' }, body: '' });
   });
 
-  await browser.locator('#btnHeaderGlobe').click();
-  await expect(browser.locator('#globeModal')).toBeVisible();
+  // The globe is the default Hosts view and may have fetched before this stub existed; refresh re-fetches through it.
+  await browser.locator('#viewGlobeBtn').click();
+  await browser.locator('#glRefreshBtn').click();
+  await expect(browser.locator('#hostGlobe')).toBeVisible();
   await expect(browser.locator('#glCanvas')).toBeVisible();
 
   // The two downstream selectors start disabled and empty: no country is chosen yet.
@@ -620,11 +619,9 @@ test('network globe: cascading country -> province -> kabupaten/kota with sharp 
   expect(cleared.kab).toBe('');
   expect(cleared.fit).toBeNull();
 
-  await browser.evaluate(() => {
-    (window as unknown as PageGlobals).closeModal('globeModal');
-    return null;
-  });
-  await expect(browser.locator('#globeModal')).toBeHidden();
+  // Leaving the view for List unmounts the globe: the render loop stops, SSE closes, the renderer is disposed.
+  await browser.locator('#viewListBtn').click();
+  await expect(browser.locator('#hostGlobe')).toBeHidden();
 });
 
 // Crisp detail at every zoom, automatic province/kabupaten LOD, area hover, consistent zoom cap,
@@ -644,8 +641,10 @@ test('network globe: crisp detail at all zooms, automatic admin LOD, area hover 
   await browser.route('**/api/logs/stream*', async (route) => {
     await route.fulfill({ status: 200, headers: { 'Content-Type': 'text/event-stream' }, body: '' });
   });
-  await browser.locator('#btnHeaderGlobe').click();
-  await expect(browser.locator('#globeModal')).toBeVisible();
+  // The globe is the default Hosts view and may have fetched before this stub existed; refresh re-fetches through it.
+  await browser.locator('#viewGlobeBtn').click();
+  await browser.locator('#glRefreshBtn').click();
+  await expect(browser.locator('#hostGlobe')).toBeVisible();
   await expect(browser.locator('#glCanvas')).toBeVisible();
   await browser.locator('#glAutoRotate').uncheck();
   const maxZoom = await browser.evaluate(() => (window as unknown as PageGlobals).GlobeRadar.maxZoom());
@@ -1024,8 +1023,9 @@ test('network globe: crisp detail at all zooms, automatic admin LOD, area hover 
     .map((e) => e.name).filter((u) => /^https?:/.test(u) && !u.startsWith(location.origin)));
   expect(external).toEqual([]);
 
-  await browser.evaluate(() => { (window as unknown as PageGlobals).closeModal('globeModal'); return null; });
-  await expect(browser.locator('#globeModal')).toBeHidden();
+  // Leaving the view for List unmounts the globe: the render loop stops, SSE closes, the renderer is disposed.
+  await browser.locator('#viewListBtn').click();
+  await expect(browser.locator('#hostGlobe')).toBeHidden();
 });
 
 // Regression: the "Whole world" picker option must actually return to the whole-world view. It was once a
@@ -1048,8 +1048,10 @@ test('network globe: selecting Whole world clears the hierarchy and flies back t
   await browser.route('**/api/logs/stream*', async (route) => {
     await route.fulfill({ status: 200, headers: { 'Content-Type': 'text/event-stream' }, body: '' });
   });
-  await browser.locator('#btnHeaderGlobe').click();
-  await expect(browser.locator('#globeModal')).toBeVisible();
+  // The globe is the default Hosts view and may have fetched before this stub existed; refresh re-fetches through it.
+  await browser.locator('#viewGlobeBtn').click();
+  await browser.locator('#glRefreshBtn').click();
+  await expect(browser.locator('#hostGlobe')).toBeVisible();
   await expect(browser.locator('#glCanvas')).toBeVisible();
   await browser.locator('#glAutoRotate').uncheck();
 
@@ -1171,6 +1173,7 @@ test('network globe: selecting Whole world clears the hierarchy and flies back t
     return s.fly === null && s.selectedCountry >= 0 && s.zoom > 1.5;
   }), { timeout: 15000 }).toBe(true);
 
-  await browser.evaluate(() => { (window as unknown as PageGlobals).closeModal('globeModal'); return null; });
-  await expect(browser.locator('#globeModal')).toBeHidden();
+  // Leaving the view for List unmounts the globe: the render loop stops, SSE closes, the renderer is disposed.
+  await browser.locator('#viewListBtn').click();
+  await expect(browser.locator('#hostGlobe')).toBeHidden();
 });

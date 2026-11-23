@@ -7,6 +7,8 @@ type PageGlobals = { loadHosts(): Promise<void> };
 test('a host group is renamed from its header and all of its hosts follow', async ({ app, screen, browser }) => {
   await app.open('/');
   await initApp(screen, browser);
+  // Hosts open in the globe view; the group dividers these steps read are Grid view's.
+  await browser.locator('#viewGridBtn').click();
 
   // The whole run shares one database, so the hosts this test adds are removed again: a host left
   // behind would add a group to the dashboard and break the count below (and the next test's).
@@ -48,6 +50,8 @@ test('a host group is renamed from its header and all of its hosts follow', asyn
 test('a host group collapses from its header, and stays collapsed after a reload', async ({ app, screen, browser }) => {
   await app.open('/');
   await initApp(screen, browser);
+  // Hosts open in the globe view; the group dividers these steps read are Grid view's.
+  await browser.locator('#viewGridBtn').click();
   // The whole run shares one database, so the hosts this test adds are removed again.
   const names = ['delta', 'epsilon', 'zeta'];
   try {
@@ -91,6 +95,8 @@ test('a host group collapses from its header, and stays collapsed after a reload
 test('deleting a host group from its header removes every host in it and leaves other groups', async ({ app, screen, browser }) => {
   await app.open('/');
   await initApp(screen, browser);
+  // Hosts open in the globe view; the group dividers these steps read are Grid view's.
+  await browser.locator('#viewGridBtn').click();
   // The whole run shares one database, so any host the test leaves behind is removed again.
   const names = ['eta', 'theta', 'iota'];
   try {
@@ -107,7 +113,7 @@ test('deleting a host group from its header removes every host in it and leaves 
 
     const doomed = browser.locator('.host-group-divider:has-text("Doomed")');
     await expect(doomed).toContainText('2');
-    await doomed.locator('.host-group-delete').click();
+    await browser.locator('.host-group-divider:has-text("Doomed") .host-group-delete').click();
     await expect(browser.locator('#confirmModal')).toContainText('Doomed');
     await browser.locator('#confirmModalBtn').click();
 

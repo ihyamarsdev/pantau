@@ -3843,7 +3843,6 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
     <div style="display: flex; gap: 8px; align-items: center;">
       <div class="header-cluster">
         <button class="btn btn-icon header-btn" id="btnHeaderNetDiag" onclick="openNetDiagModal()" title="Network Diagnostics" data-i18n-title="netdiag_title"><svg class="icon"><use href="#i-router"/></svg></button>
-        <button class="btn btn-icon header-btn" id="btnHeaderGlobe" onclick="window.GlobeRadar && GlobeRadar.open()" title="3D Globe Network Radar" data-i18n-title="gl_title" aria-label="3D Globe Network Radar"><svg class="icon"><use href="#i-globe"/></svg></button>
         <button class="btn btn-icon header-btn" onclick="openTransfersModal()" title="Cross-Host Transfers" data-i18n-title="transfers_title"><svg class="icon"><use href="#i-arrow-left-right"/></svg><span id="activeTransferBadge" class="badge badge-healthy" style="display: none; margin-left: 2px;">0</span></button>
         <button class="btn btn-icon header-btn" onclick="openGlobalNotesModal()" title="Global Notes" data-i18n-title="global_notes_title"><svg class="icon"><use href="#i-file-text"/></svg></button>
         <button class="btn btn-icon header-btn" id="btnHeaderBookmarks" onclick="openGlobalPinsModal()" title="Global Bookmarks" data-i18n-title="global_pins_title"><svg class="icon"><use href="#i-bookmark"/></svg></button>
@@ -3971,15 +3970,17 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         </select>
         <button class="btn btn-sm" id="hostSelectBtn" onclick="toggleHostSelectMode()" title="Select hosts" data-i18n-title="host_select_title" style="height: 36px; display: inline-flex; align-items: center; gap: 4px;"><svg class="icon icon-sm"><use href="#i-list-checks"/></svg> <span data-i18n="host_select_btn">Select</span></button>
         <div class="view-mode-toggle">
+          <button class="btn btn-sm view-btn active" id="viewGlobeBtn" onclick="setViewMode('globe')" title="Globe View" data-i18n-title="gl_title"><svg class="icon icon-sm"><use href="#i-globe"/></svg></button>
           <button class="btn btn-sm view-btn" id="viewGridBtn" onclick="setViewMode('grid')" title="Grid View"><svg class="icon icon-sm"><use href="#i-layout-grid"/></svg></button>
-          <button class="btn btn-sm view-btn active" id="viewListBtn" onclick="setViewMode('list')" title="List View"><svg class="icon icon-sm"><use href="#i-list"/></svg></button>
+          <button class="btn btn-sm view-btn" id="viewListBtn" onclick="setViewMode('list')" title="List View"><svg class="icon icon-sm"><use href="#i-list"/></svg></button>
         </div>
       </div>
     </div>
     <div id="hostSelectBar" class="host-select-bar" style="display: none;" role="region" aria-live="polite"></div>
 
     <div id="hostGrid" class="grid" style="display: none;"></div>
-    <div id="hostList" class="host-list-view" style="display: block;"></div>
+    <div id="hostList" class="host-list-view" style="display: none;"></div>
+    <div id="hostGlobe" class="host-globe-view" style="display: none;"></div>
     </div>
     <div id="sectionDocker" class="app-section" style="display:none;">
       <div class="section-header" style="margin-bottom:20px;">
