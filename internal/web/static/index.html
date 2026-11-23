@@ -1761,9 +1761,10 @@ header {
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
-.host-group-edit { opacity: 0; transition: opacity .12s; }
-.host-group-divider:hover .host-group-edit, .host-list-group-row:hover .host-group-edit, .host-group-edit:focus-visible { opacity: 1; }
-@media (hover: none) { .host-group-edit { opacity: 1; } }
+.host-group-edit, .host-group-delete { opacity: 0; transition: opacity .12s; }
+.host-group-divider:hover :is(.host-group-edit, .host-group-delete), .host-list-group-row:hover :is(.host-group-edit, .host-group-delete), .host-group-edit:focus-visible, .host-group-delete:focus-visible { opacity: 1; }
+.host-group-delete:hover { color: var(--danger); }
+@media (hover: none) { .host-group-edit, .host-group-delete { opacity: 1; } }
 .host-group-divider.collapsible {
   cursor: pointer;
   user-select: none;

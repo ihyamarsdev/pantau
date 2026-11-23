@@ -78,6 +78,13 @@ async function saveHostGroupRename() {
   }
 }
 
+function deleteHostGroup(name, ev) {
+  if (ev) ev.stopPropagation();
+  // Every host in the group, not only the ones the current filter shows.
+  const hosts = S.allRawHosts.filter(h => (h.group_name || '').trim() === name);
+  deleteSelectedHosts(hosts, t('confirm_delete_group_title', 'Delete group "{name}" and its {n} hosts?').replace('{name}', name).replace('{n}', hosts.length));
+}
+
 function groupHosts(hosts) {
   const groupsMap = new Map();
   const ungrouped = [];
@@ -166,7 +173,8 @@ function renderGridView(grid, isManualSort) {
         </span>
         <span style="display: inline-flex; align-items: center; gap: 6px;">
           <span class="badge" style="font-size: var(--fs-xs); background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--card-border);">${grp.hosts.length}</span>
-          ${grp.isUngrouped ? '' : `<button type="button" class="btn btn-icon btn-sm btn-ghost host-group-edit" onclick="openHostGroupRename(${jsArg(grp.name)}, event)" title="${escapeHtml(t('host_group_rename', 'Rename group'))}" aria-label="${escapeHtml(t('host_group_rename', 'Rename group'))}">${svgIcon('pencil', 'icon-xs')}</button>`}
+          ${grp.isUngrouped ? '' : `<button type="button" class="btn btn-icon btn-sm btn-ghost host-group-edit" onclick="openHostGroupRename(${jsArg(grp.name)}, event)" title="${escapeHtml(t('host_group_rename', 'Rename group'))}" aria-label="${escapeHtml(t('host_group_rename', 'Rename group'))}">${svgIcon('pencil', 'icon-xs')}</button>
+          <button type="button" class="btn btn-icon btn-sm btn-ghost host-group-delete" onclick="deleteHostGroup(${jsArg(grp.name)}, event)" title="${escapeHtml(t('host_group_delete', 'Delete all hosts in group'))}" aria-label="${escapeHtml(t('host_group_delete', 'Delete all hosts in group'))}">${svgIcon('trash-2', 'icon-xs')}</button>`}
         </span>
       `;
       nodes.push(divider);
@@ -446,7 +454,8 @@ function renderListView(listContainer, isManualSort) {
             <svg class="icon icon-sm"><use href="#i-folder"/></svg>
             <span>${escapeHtml(grp.name)}</span>
             <span class="badge" style="font-size: var(--fs-xs); background: var(--card-bg); color: var(--text-muted); border: 1px solid var(--card-border);">${grp.hosts.length}</span>
-            ${grp.isUngrouped ? '' : `<button type="button" class="btn btn-icon btn-sm btn-ghost host-group-edit" onclick="openHostGroupRename(${jsArg(grp.name)}, event)" title="${escapeHtml(t('host_group_rename', 'Rename group'))}" aria-label="${escapeHtml(t('host_group_rename', 'Rename group'))}">${svgIcon('pencil', 'icon-xs')}</button>`}
+            ${grp.isUngrouped ? '' : `<button type="button" class="btn btn-icon btn-sm btn-ghost host-group-edit" onclick="openHostGroupRename(${jsArg(grp.name)}, event)" title="${escapeHtml(t('host_group_rename', 'Rename group'))}" aria-label="${escapeHtml(t('host_group_rename', 'Rename group'))}">${svgIcon('pencil', 'icon-xs')}</button>
+            <button type="button" class="btn btn-icon btn-sm btn-ghost host-group-delete" onclick="deleteHostGroup(${jsArg(grp.name)}, event)" title="${escapeHtml(t('host_group_delete', 'Delete all hosts in group'))}" aria-label="${escapeHtml(t('host_group_delete', 'Delete all hosts in group'))}">${svgIcon('trash-2', 'icon-xs')}</button>`}
           </div>
         </td>
       `;
@@ -1875,13 +1884,12 @@ async function submitBulkGroup() {
   }
 }
 
-async function deleteSelectedHosts() {
-  const hosts = S.allRawHosts.filter(h => S.selectedHostIds.has(h.id));
+async function deleteSelectedHosts(hosts = S.allRawHosts.filter(h => S.selectedHostIds.has(h.id)), title) {
   if (!hosts.length || S.hostBulkDeleting) return;
   const names = hosts.map(h => h.name);
   const shown = names.slice(0, 10).join(', ') + (names.length > 10 ? ' ' + t('and_n_more', 'and {n} more').replace('{n}', names.length - 10) : '');
   const ok = await showConfirm({
-    title: t('confirm_delete_hosts_title', 'Delete {n} hosts?').replace('{n}', hosts.length),
+    title: title || t('confirm_delete_hosts_title', 'Delete {n} hosts?').replace('{n}', hosts.length),
     message: t('confirm_delete_hosts', 'These hosts will be removed from Pantau.') + '\n\n' + shown,
     confirmText: t('delete_n_hosts', 'Delete {n} hosts').replace('{n}', hosts.length)
   });
@@ -2076,4 +2084,4 @@ function openTerminalForPath(targetPath) {
   openTerminalForHost(S.currentHost.id, null, true, customTitle, targetPath);
 }
 
-export { renderHosts, openHostGroupRename, saveHostGroupRename, groupHosts, getHostGroupsCollapsed, toggleHostGroupCollapsed, renderGridView, renderListView, fitHostList, setEngineStatus, updateFooterMetrics, loadVpnNetworkIndex, populateHostNetworkSelect, loadHosts, toggleAlertOverlay, closeAlertOverlay, renderAlertOverlayState, loadAlerts, loadAlertTriage, applyTriageRemediation, loadDailyBriefing, generateDailyBriefing, ackAlert, ackAllAlerts, openHostDetailFromAlert, populateHostKeySelect, vpnBadge, hostNetworkBadgeHtml, loadVpnNetworks, saveVpnGate, vpnDriverField, openVpnNetworkModal, loadVpnInterfaces, renderVpnDriverFields, collectVpnConfig, saveVpnNetwork, deleteVpnNetwork, vpnNetworkUp, vpnNetworkProbe, vpnNetworkDown, openVpnNetworkLog, onHostKeySelectChange, openAddHostModal, openEditHostModal, updateGroupSuggestions, saveHost, openCommissionDateModal, importFill, importReasonText, openImportHostsModal, importLoadFile, importRequestPreview, importParse, importReadServer, populateImportKeySelect, importBulkNetworkChanged, populateImportNetworkSelect, importInspectCreated, renderImportPreview, importNetworkPicked, importableBoxes, updateImportCount, importToggleAll, importSubmit, showImportGroupsStep, refreshImportGroupSuggestions, importSaveGroups, submitQuickCommissionDate, clearCommissionDate, showToast, showBusyToast, toggleDropdown, closeAllDropdowns, openInjectKeyModal, submitInjectKey, deleteHost, toggleHostSelectMode, toggleHostSelected, selectAllShownHosts, renderHostSelectBar, openBulkGroupModal, submitBulkGroup, deleteSelectedHosts, testHostSSH, inspectHost, applyHostDetailMaximizeState, toggleHostDetailMaximize, getHostActiveTab, setHostActiveTab, getHostFilesPath, setHostFilesPath, openTerminalForPath };
+export { renderHosts, openHostGroupRename, saveHostGroupRename, deleteHostGroup, groupHosts, getHostGroupsCollapsed, toggleHostGroupCollapsed, renderGridView, renderListView, fitHostList, setEngineStatus, updateFooterMetrics, loadVpnNetworkIndex, populateHostNetworkSelect, loadHosts, toggleAlertOverlay, closeAlertOverlay, renderAlertOverlayState, loadAlerts, loadAlertTriage, applyTriageRemediation, loadDailyBriefing, generateDailyBriefing, ackAlert, ackAllAlerts, openHostDetailFromAlert, populateHostKeySelect, vpnBadge, hostNetworkBadgeHtml, loadVpnNetworks, saveVpnGate, vpnDriverField, openVpnNetworkModal, loadVpnInterfaces, renderVpnDriverFields, collectVpnConfig, saveVpnNetwork, deleteVpnNetwork, vpnNetworkUp, vpnNetworkProbe, vpnNetworkDown, openVpnNetworkLog, onHostKeySelectChange, openAddHostModal, openEditHostModal, updateGroupSuggestions, saveHost, openCommissionDateModal, importFill, importReasonText, openImportHostsModal, importLoadFile, importRequestPreview, importParse, importReadServer, populateImportKeySelect, importBulkNetworkChanged, populateImportNetworkSelect, importInspectCreated, renderImportPreview, importNetworkPicked, importableBoxes, updateImportCount, importToggleAll, importSubmit, showImportGroupsStep, refreshImportGroupSuggestions, importSaveGroups, submitQuickCommissionDate, clearCommissionDate, showToast, showBusyToast, toggleDropdown, closeAllDropdowns, openInjectKeyModal, submitInjectKey, deleteHost, toggleHostSelectMode, toggleHostSelected, selectAllShownHosts, renderHostSelectBar, openBulkGroupModal, submitBulkGroup, deleteSelectedHosts, testHostSSH, inspectHost, applyHostDetailMaximizeState, toggleHostDetailMaximize, getHostActiveTab, setHostActiveTab, getHostFilesPath, setHostFilesPath, openTerminalForPath };
