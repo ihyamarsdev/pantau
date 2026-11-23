@@ -2,6 +2,7 @@ package vpnnet
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -67,7 +68,6 @@ const (
 	breakerHalfOpen = "half-open"
 )
 
-
 // Status is the supervisor's verdict for one network.
 type Status struct {
 	State     string    `json:"state"`
@@ -115,14 +115,12 @@ const (
 	StateError    = "error"
 )
 
-
 // stopGrace is how long a tunnel process gets to exit after SIGINT before it is killed (a var so tests can shorten it).
 var stopGrace = 10 * time.Second
 
 // fastPathTTL bounds how long a dial may trust the cached "up" verdict without re-reading the network row
 // (enabled flag, config). The status loop re-stamps it every tick, so a live tunnel never leaves the hot path.
 const fastPathTTL = 2 * statusLoopTick
-
 
 type childProc struct {
 	cmd      *exec.Cmd
@@ -173,22 +171,22 @@ func NewManager(opts Options) *Manager {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	m := &Manager{
-		db:      opts.DB,
-		root:    opts.Root,
-		gate:    opts.Gate,
-		log:     opts.Logger,
-		procs:   map[int64]*childProc{},
-		status:  map[int64]Status{},
-		logs:    map[int64][]string{},
-		locks:   map[int64]chan struct{}{},
-		attempt: map[int64]time.Time{},
-		fails:   map[int64]int{},
-		paths:   map[int64]*Path{},
-		flights: map[int64]*flight{},
-		stopped: map[int64]bool{},
+		db:       opts.DB,
+		root:     opts.Root,
+		gate:     opts.Gate,
+		log:      opts.Logger,
+		procs:    map[int64]*childProc{},
+		status:   map[int64]Status{},
+		logs:     map[int64][]string{},
+		locks:    map[int64]chan struct{}{},
+		attempt:  map[int64]time.Time{},
+		fails:    map[int64]int{},
+		paths:    map[int64]*Path{},
+		flights:  map[int64]*flight{},
+		stopped:  map[int64]bool{},
 		breakers: map[int64]*breakerState{},
-		ctx:     ctx,
-		cancel:  cancel,
+		ctx:      ctx,
+		cancel:   cancel,
 	}
 	go m.statusLoop()
 	return m
@@ -249,7 +247,7 @@ func (m *Manager) network(id int64) (Network, error) {
 	if row == nil {
 		return Network{}, ErrNetworkNotFound
 	}
-	n := Network{ID: row.ID, Name: row.Name, Driver: row.Driver, Enabled: row.Enabled, AutoUp: row.AutoUp, Iface: row.Iface, Config: parseConfig(row.Config)}
+	n := Network{ID: row.ID, Name: row.Name, Driver: row.Driver, Enabled: row.Enabled, AutoUp: row.AutoUp, Iface: row.Iface, Config: parseConfig(row.Config), Identity: row.Identity}
 	n.Root = filepath.Join(m.root, fmt.Sprint(id))
 	if err := os.MkdirAll(n.Root, 0o700); err != nil {
 		return Network{}, fmt.Errorf("create %s: %w", n.Root, err)
@@ -484,7 +482,6 @@ func (m *Manager) Invalidate(id int64) {
 	}
 }
 
-
 // Forget drops everything held for a deleted network, and stops the process it may still own.
 func (m *Manager) Forget(id int64) {
 	m.stopChild(id)
@@ -500,6 +497,72 @@ func (m *Manager) Forget(id int64) {
 	delete(m.breakers, id)
 }
 
+// Reset follows a System Snapshot restore: a network ID may now name another network, so forget every network,
+// delete the folders of IDs the restore dropped, and remove each registration the restore replaces (bringUp
+// writes the restored one back).
+func (m *Manager) Reset() {
+	m.mu.Lock()
+	ids := make([]int64, 0, len(m.procs)+len(m.status))
+	for id := range m.procs {
+		ids = append(ids, id)
+	}
+	for id := range m.status {
+		ids = append(ids, id)
+	}
+	m.mu.Unlock()
+	for _, id := range ids {
+		m.Forget(id)
+	}
+	rows, err := m.db.ListVPNNetworks()
+	if err != nil {
+		m.log("vpn: reset after restore: %v", err)
+		return
+	}
+	keep := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		dir := fmt.Sprint(row.ID)
+		keep[dir] = true
+		n := Network{ID: row.ID, Driver: row.Driver, Config: parseConfig(row.Config), Root: filepath.Join(m.root, dir)}
+		if f := identityFile(n); f != "" && len(row.Identity) > 0 {
+			_ = os.Remove(f)
+		}
+	}
+	entries, _ := os.ReadDir(m.root)
+	for _, e := range entries {
+		if e.IsDir() && !keep[e.Name()] {
+			_ = os.RemoveAll(filepath.Join(m.root, e.Name()))
+		}
+	}
+}
+
+// restoreIdentity puts the saved registration back when the daemon has none (fresh machine, restored snapshot).
+func (m *Manager) restoreIdentity(n Network) {
+	f := identityFile(n)
+	if f == "" || len(n.Identity) == 0 {
+		return
+	}
+	if _, err := os.Stat(f); !os.IsNotExist(err) {
+		return
+	}
+	if err := os.WriteFile(f, n.Identity, 0o600); err != nil {
+		m.logf(n, "restore identity: %v", err)
+	}
+}
+
+// saveIdentity keeps the daemon's current registration with the network row, and so in the System Snapshot.
+func (m *Manager) saveIdentity(n Network) {
+	f := identityFile(n)
+	if f == "" {
+		return
+	}
+	data, err := os.ReadFile(f)
+	if err != nil || len(data) == 0 || bytes.Equal(data, n.Identity) {
+		return
+	}
+	if err := m.db.SetVPNNetworkIdentity(n.ID, data); err != nil {
+		m.logf(n, "save identity: %v", err)
+	}
+}
 
 // Up is the manual bring-up. It overrides the retry backoff and the three-strike cooldown (that is what
 // "retry manually" means) and joins a bring-up already running instead of starting a second one.
@@ -541,6 +604,7 @@ func (m *Manager) bringUp(ctx context.Context, n Network) (Status, error) {
 	}
 
 	m.record(n, Status{State: StateStarting})
+	m.restoreIdentity(n)
 	if err := d.Up(ctx, m, n); err != nil {
 		m.mu.Lock()
 		m.fails[n.ID]++
@@ -567,6 +631,7 @@ func (m *Manager) bringUp(ctx context.Context, n Network) (Status, error) {
 	delete(m.stopped, n.ID)
 	m.mu.Unlock()
 	m.record(n, st)
+	m.saveIdentity(n)
 	return st, nil
 }
 

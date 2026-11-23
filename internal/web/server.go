@@ -3373,6 +3373,13 @@ func (s *Server) handleSnapshotExport(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(enc)
 }
 
+// resetVPNAfterRestore drops tunnels and on-disk VPN state that belonged to the networks a restore replaced.
+func (s *Server) resetVPNAfterRestore() {
+	if s.vpnMgr != nil {
+		s.vpnMgr.Reset()
+	}
+}
+
 func (s *Server) handleSnapshotImport(w http.ResponseWriter, r *http.Request) {
 	if !s.checkAuthOrFresh(r) {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
@@ -3437,6 +3444,7 @@ func (s *Server) handleSnapshotImport(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": fmt.Sprintf("import failed: %v", err)})
 		return
 	}
+	s.resetVPNAfterRestore()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok":             true,
@@ -3523,6 +3531,7 @@ func (s *Server) handleSnapshotGitHubRestore(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": err.Error()})
 		return
 	}
+	s.resetVPNAfterRestore()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "message": "Snapshot successfully restored from GitHub"})
 }

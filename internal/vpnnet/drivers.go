@@ -60,14 +60,15 @@ func ValidDriver(name string) bool {
 
 // Network is one row of store.VPNNetwork with its config already parsed.
 type Network struct {
-	ID      int64
-	Name    string
-	Driver  string
-	Enabled bool
-	AutoUp  bool
-	Iface   string
-	Config  map[string]string
-	Root    string
+	ID       int64
+	Name     string
+	Driver   string
+	Enabled  bool
+	AutoUp   bool
+	Iface    string
+	Config   map[string]string
+	Root     string
+	Identity []byte // saved daemon registration, see identityFile
 }
 
 func (n Network) cfg(key, def string) string {
@@ -75,6 +76,23 @@ func (n Network) cfg(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// identityFile is the registration a daemon Pantau owns keeps under Root (peer keys, login), or "" when the
+// daemon is the host's. Saved with the network row, it lets a restored snapshot rejoin as the same peer, so a
+// setup key is spent once instead of on every restore (one-off and expired keys fail the second time).
+func identityFile(n Network) string {
+	switch n.Driver {
+	case DriverNetBird:
+		if (netbirdDriver{}).instance(n) {
+			return n.Root + "/config.json"
+		}
+	case DriverTailscale:
+		if !(tailscaleDriver{}).useExternalDaemon(n) {
+			return n.Root + "/tailscaled.state"
+		}
+	}
+	return ""
 }
 
 func (n Network) secrets() []string {

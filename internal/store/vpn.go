@@ -21,6 +21,9 @@ type VPNNetwork struct {
 	LastUpAt    *time.Time `json:"last_up_at,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
+	// Identity is the registration file of a daemon Pantau owns (NetBird instance config.json, tailscaled.state).
+	// Kept with the row so a restored System Snapshot rejoins as the same peer instead of spending the setup key again.
+	Identity []byte `json:"identity,omitempty"`
 }
 
 func boolInt(b bool) int {
@@ -30,13 +33,13 @@ func boolInt(b bool) int {
 	return 0
 }
 
-const vpnNetworkCols = `SELECT id, name, driver, COALESCE(enabled, 0), COALESCE(auto_up, 1), COALESCE(iface, ''), COALESCE(config, '{}'), COALESCE(last_state, 'down'), COALESCE(last_error, ''), last_checked, last_up_at, created_at, updated_at FROM vpn_networks `
+const vpnNetworkCols = `SELECT id, name, driver, COALESCE(enabled, 0), COALESCE(auto_up, 1), COALESCE(iface, ''), COALESCE(config, '{}'), COALESCE(last_state, 'down'), COALESCE(last_error, ''), last_checked, last_up_at, created_at, updated_at, identity FROM vpn_networks `
 
 func scanVPNNetwork(s rowScanner) (*VPNNetwork, error) {
 	var n VPNNetwork
 	var enabled, autoUp int
 	var checked, up sql.NullTime
-	if err := s.Scan(&n.ID, &n.Name, &n.Driver, &enabled, &autoUp, &n.Iface, &n.Config, &n.LastState, &n.LastError, &checked, &up, &n.CreatedAt, &n.UpdatedAt); err != nil {
+	if err := s.Scan(&n.ID, &n.Name, &n.Driver, &enabled, &autoUp, &n.Iface, &n.Config, &n.LastState, &n.LastError, &checked, &up, &n.CreatedAt, &n.UpdatedAt, &n.Identity); err != nil {
 		return nil, err
 	}
 	n.Enabled = enabled == 1
@@ -99,6 +102,12 @@ func (d *DB) DeleteVPNNetwork(id int64) error {
 func (d *DB) SetVPNNetworkState(id int64, state, detail string) error {
 	_, err := d.Exec(`UPDATE vpn_networks SET last_state=?, last_error=?, last_checked=CURRENT_TIMESTAMP,
 		last_up_at=CASE WHEN ? = 'up' THEN CURRENT_TIMESTAMP ELSE last_up_at END WHERE id=?`, state, detail, state, id)
+	return err
+}
+
+// SetVPNNetworkIdentity stores the daemon registration file for a network (see VPNNetwork.Identity).
+func (d *DB) SetVPNNetworkIdentity(id int64, identity []byte) error {
+	_, err := d.Exec(`UPDATE vpn_networks SET identity=? WHERE id=?`, identity, id)
 	return err
 }
 

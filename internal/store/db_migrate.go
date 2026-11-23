@@ -739,6 +739,7 @@ func (d *DB) migrate() error {
 	_ = d.alterAddColumn("hosts", "geo_region", "TEXT DEFAULT ''")
 	_ = d.alterAddColumn("geoip_cache", "region", "TEXT NOT NULL DEFAULT ''")
 	_, _ = d.Exec(`CREATE INDEX IF NOT EXISTS idx_hosts_network ON hosts(network_id)`)
+	_ = d.alterAddColumn("vpn_networks", "identity", "BLOB")
 	// A note may be scoped to a cluster or a functional domain as well as to a host (all optional, '' = none).
 	_ = d.alterAddColumn("agent_memory", "cluster_id", "INTEGER")
 	_ = d.alterAddColumn("agent_memory", "domain", "TEXT NOT NULL DEFAULT ''")

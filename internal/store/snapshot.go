@@ -639,8 +639,8 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 	}
 
 	for _, n := range payload.VPNNetworks {
-		if _, err := tx.Exec(`INSERT INTO vpn_networks (id, name, driver, enabled, auto_up, iface, config, last_state, last_error, last_checked, last_up_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			n.ID, n.Name, n.Driver, boolInt(n.Enabled), boolInt(n.AutoUp), n.Iface, n.Config, n.LastState, n.LastError, n.LastChecked, n.LastUpAt, n.CreatedAt, n.UpdatedAt); err != nil {
+		if _, err := tx.Exec(`INSERT INTO vpn_networks (id, name, driver, enabled, auto_up, iface, config, last_state, last_error, last_checked, last_up_at, created_at, updated_at, identity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			n.ID, n.Name, n.Driver, boolInt(n.Enabled), boolInt(n.AutoUp), n.Iface, n.Config, n.LastState, n.LastError, n.LastChecked, n.LastUpAt, n.CreatedAt, n.UpdatedAt, n.Identity); err != nil {
 			return fmt.Errorf("insert vpn network %d: %w", n.ID, err)
 		}
 	}

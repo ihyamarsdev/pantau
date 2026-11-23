@@ -163,3 +163,45 @@ func TestTickRevivesNeededNetworkButNotAStoppedOne(t *testing.T) {
 		t.Fatal("the status loop brought a network back that was stopped by hand")
 	}
 }
+
+// A restored snapshot must rejoin with the saved daemon registration instead of spending the setup key again
+// (a one-off key fails the second time): Reset drops the stale file and folders of networks the restore removed,
+// and the next bring-up writes the saved registration back.
+func TestIdentitySurvivesRestore(t *testing.T) {
+	m, db := testManager(t)
+	id, err := db.CreateVPNNetwork(&store.VPNNetwork{Name: "nb", Driver: DriverNetBird, Enabled: true, Config: `{"mode":"instance"}`})
+	if err != nil {
+		t.Fatalf("create network: %v", err)
+	}
+	n, err := m.network(id)
+	if err != nil {
+		t.Fatalf("network: %v", err)
+	}
+	cfg := filepath.Join(n.Root, "config.json")
+	if err := os.WriteFile(cfg, []byte("peer-a"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m.saveIdentity(n)
+	if row, _ := db.GetVPNNetwork(id); row == nil || string(row.Identity) != "peer-a" {
+		t.Fatalf("identity not saved with the network row: %+v", row)
+	}
+
+	if err := os.WriteFile(cfg, []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dropped := filepath.Join(m.root, "999")
+	if err := os.MkdirAll(dropped, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	m.Reset()
+	if _, err := os.Stat(dropped); !os.IsNotExist(err) {
+		t.Fatalf("folder of a network the restore dropped survived: %v", err)
+	}
+	if n, err = m.network(id); err != nil {
+		t.Fatalf("network: %v", err)
+	}
+	m.restoreIdentity(n)
+	if got, _ := os.ReadFile(cfg); string(got) != "peer-a" {
+		t.Fatalf("registration after restore = %q, want the saved one", got)
+	}
+}
