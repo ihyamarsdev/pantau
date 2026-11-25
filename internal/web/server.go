@@ -1179,6 +1179,11 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(parts) == 2 && parts[1] == "hostkey-reset" {
+		s.handleHostKeyReset(w, r, parts[0])
+		return
+	}
+
 	if parts[0] == "import" {
 		s.handleHostImport(w, r, parts[1:])
 		return
@@ -1780,6 +1785,11 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				if _, err := inspector.ParseBackupExpected(rData.Expected); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+			case "disk":
+				if err := inspector.ValidateDiskTarget(rData.Target); err != nil {
 					http.Error(w, err.Error(), http.StatusBadRequest)
 					return
 				}

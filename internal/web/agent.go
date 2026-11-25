@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"pantau/internal/inspector"
 	"pantau/internal/logger"
 )
 
@@ -364,7 +365,10 @@ func (s *Server) agentApprove(r *http.Request, ap *agentApproval, gate int) (boo
 		return true, ""
 	}
 	// Gate 3 (terraform apply, ansible run, kubectl apply) and scopes without a host (HostID 0) are never granted.
-	if gate < 3 && ap.HostID != 0 && s.grantCovers(ap.HostID, gate) {
+	// A destructive shell command is never covered by a session grant: it always asks the operator.
+	destructive := (ap.Tool == "exec_command" || ap.Tool == "ssh_batch_inspect") &&
+		inspector.ClassifyAgentCommand(ap.Summary) == riskDestructive
+	if gate < 3 && ap.HostID != 0 && !destructive && s.grantCovers(ap.HostID, gate) {
 		logger.Info("agent", ap.HostName, fmt.Sprintf("auto-approved by session grant, %s: %s", ap.Tool, ap.Summary))
 		return true, ""
 	}

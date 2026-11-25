@@ -278,6 +278,11 @@ func (d *DB) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_host_domains_host ON host_domains(host_id);
 	CREATE INDEX IF NOT EXISTS idx_host_domains_domain ON host_domains(domain);
 
+	CREATE TABLE IF NOT EXISTS ssh_host_keys (
+		addr TEXT PRIMARY KEY,
+		key TEXT NOT NULL,
+		created_at DATETIME NOT NULL
+	);
 	CREATE TABLE IF NOT EXISTS ssh_keys (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL UNIQUE,

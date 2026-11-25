@@ -27,6 +27,11 @@ func (ins *Inspector) BatchInspect(ctx context.Context, hostID int64, commands, 
 		if hint := LintInteractiveCommand(cmd); hint != "" {
 			return "", fmt.Errorf("pre-flight check refused a batch command: %s", hint)
 		}
+		// A destructive command never runs inside a batch, even when the batch was approved: its
+		// wrapper would hide it from the per-command check, so it must go through exec_command.
+		if ClassifyAgentCommand(cmd) == RiskDestructive {
+			return "", fmt.Errorf("a destructive command cannot run in a batch: use exec_command for %q", cmd)
+		}
 	}
 	script, names := BuildBatchScript(commands, labels)
 	stdout, stderr, code, err := ins.ExecShellContext(ctx, hostID, script, timeout, limits)

@@ -304,6 +304,10 @@ func commitAndPush(ctx context.Context, g GitSource, spec CommitSpec, protocols 
 	for _, ch := range spec.Changes {
 		fullPath := filepath.Join(repo, filepath.FromSlash(ch.Path))
 		if ch.Delete {
+			// A symlinked parent would make Lstat/Remove act outside the clone.
+			if err := checkNoSymlinks(repo, ch.Path); err != nil {
+				return nil, err
+			}
 			fi, err := os.Lstat(fullPath)
 			if err != nil {
 				if os.IsNotExist(err) {

@@ -61,7 +61,8 @@ func serviceBatchCmd(targets []string) string {
 	for i, t := range targets {
 		quoted[i] = shellQuote(t)
 	}
-	return fmt.Sprintf(`sh -c 'command -v systemctl >/dev/null 2>&1 || { echo %s; exit 0; }; systemctl is-active %s 2>/dev/null'`,
+	// Targets go after `--` as positional args so they are never parsed as shell code.
+	return fmt.Sprintf(`sh -c 'command -v systemctl >/dev/null 2>&1 || { echo %s; exit 0; }; systemctl is-active "$@" 2>/dev/null' -- %s`,
 		serviceBatchSentinel, strings.Join(quoted, " "))
 }
 
@@ -269,12 +270,13 @@ func (ins *Inspector) evaluateRule(h *store.Host, runner sshrunner.Runner, rule 
 			target = "/"
 		}
 		// ponytail: Use timeout wrapper to prevent hanging on stale NFS/remote mounts
+		// Mount point is passed as positional $1 (after `--`), never spliced into the script text.
 		dfCmd := fmt.Sprintf(`sh -c 'if [ "$(uname -s)" = "Darwin" ]; then `+
-			`if [ %[1]s = "/" ]; then `+
+			`if [ "$1" = "/" ]; then `+
 			`out=$(df -lPk /System/Volumes/Data 2>/dev/null) || out=$(df -lPk / 2>/dev/null); `+
 			`echo "$out" | awk '\''NR==2 {used=$2-$4; print $1, $2, used, $4, int(used*100/$2)"%%", "/"}'\''; `+
-			`else df -lPk %[1]s 2>/dev/null || df -Pk %[1]s 2>/dev/null; fi; `+
-			`else timeout -k 2s 5s df -Pk %[1]s 2>/dev/null || df -Pk %[1]s 2>/dev/null; fi'`, shellQuote(target))
+			`else df -lPk "$1" 2>/dev/null || df -Pk "$1" 2>/dev/null; fi; `+
+			`else timeout -k 2s 5s df -Pk "$1" 2>/dev/null || df -Pk "$1" 2>/dev/null; fi' -- %s`, shellQuote(target))
 		out, _, exitCode, _ := runner.Exec(dfCmd)
 		if exitCode == 124 {
 			current = "unresponsive"
@@ -650,4 +652,12 @@ func (ins *Inspector) GenerateBaseline(hostID int64) ([]store.DesiredRule, error
 	}
 
 	return rules, nil
+}
+
+// ValidateDiskTarget requires an absolute mount point; the value is still passed as a positional arg.
+func ValidateDiskTarget(target string) error {
+	if !strings.HasPrefix(target, "/") || strings.ContainsAny(target, "\x00\r\n") {
+		return fmt.Errorf("invalid disk target: must be an absolute mount point path")
+	}
+	return nil
 }

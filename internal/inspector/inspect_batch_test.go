@@ -15,11 +15,8 @@ import (
 func batchServiceMockExec(states map[string]string) func(cmd string) (string, string, int, error) {
 	return func(cmd string) (string, string, int, error) {
 		if strings.Contains(cmd, serviceBatchSentinel) {
-			idx := strings.Index(cmd, "systemctl is-active")
-			rest := cmd[idx+len("systemctl is-active"):]
-			if end := strings.Index(rest, " 2>/dev/null"); end >= 0 {
-				rest = rest[:end]
-			}
+			// Targets are the positional args after the final " -- ".
+			rest := cmd[strings.LastIndex(cmd, " -- ")+len(" -- "):]
 			var b strings.Builder
 			for _, f := range strings.Fields(rest) {
 				state, ok := states[strings.Trim(f, "'\"")]

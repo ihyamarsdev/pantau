@@ -2,6 +2,10 @@ package web
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"net/http"
@@ -16,6 +20,56 @@ import (
 	"pantau/internal/sshrunner"
 	"pantau/internal/store"
 )
+
+// tunnelCookieName carries a per-tunnel capability. Its value is an HMAC over one host and port, and its
+// Path is that tunnel only, so a tunneled app on another port cannot send it. The admin session cookie
+// is not accepted on the tunnel origin at all.
+const tunnelCookieName = "pantau_tunnel"
+
+// tunnelKey is random per process, so a restart revokes every tunnel capability.
+var tunnelKey = func() []byte {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return b
+}()
+
+func tunnelToken(hostID int64, port int) string {
+	m := hmac.New(sha256.New, tunnelKey)
+	fmt.Fprintf(m, "%d/%d", hostID, port)
+	return hex.EncodeToString(m.Sum(nil))
+}
+
+// parseTunnelPath returns the host and port of /api/tunnel/:hostId/:port/...
+func parseTunnelPath(path string) (int64, int, bool) {
+	parts := strings.SplitN(strings.TrimPrefix(path, "/api/tunnel/"), "/", 3)
+	if len(parts) < 2 {
+		return 0, 0, false
+	}
+	hostID, err1 := strconv.ParseInt(parts[0], 10, 64)
+	port, err2 := strconv.Atoi(parts[1])
+	return hostID, port, err1 == nil && err2 == nil && hostID > 0 && port > 0
+}
+
+// tunnelAuth admits a request on the tunnel origin only with the capability issued for that host and port.
+func (s *Server) tunnelAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		hostID, port, ok := parseTunnelPath(r.URL.Path)
+		if !ok {
+			next(w, r) // malformed route: handleTunnel answers 400 without touching any host
+			return
+		}
+		want := tunnelToken(hostID, port)
+		for _, c := range r.Cookies() {
+			if c.Name == tunnelCookieName && hmac.Equal([]byte(c.Value), []byte(want)) {
+				next(w, r)
+				return
+			}
+		}
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+	}
+}
 
 type tunnelRunnerEntry struct {
 	mu        sync.Mutex
@@ -190,11 +244,11 @@ func (s *Server) handleTunnel(w http.ResponseWriter, r *http.Request) {
 			pr.Out.Header.Set("X-Forwarded-Prefix", pathPrefix)
 			pr.Out.Host = targetHostPort
 
-			// Strip Pantau's own session cookie: the tunneled app runs on a
+			// Strip Pantau's own cookies: the tunneled app runs on a
 			// different origin but cookies are not port-isolated.
 			pr.Out.Header.Del("Cookie")
 			for _, c := range pr.In.Cookies() {
-				if c.Name == "pantau_session" {
+				if c.Name == "pantau_session" || c.Name == tunnelCookieName {
 					continue
 				}
 				pr.Out.AddCookie(c)
@@ -214,7 +268,7 @@ func (s *Server) handleTunnel(w http.ResponseWriter, r *http.Request) {
 			res.Header.Del("Set-Cookie")
 			for _, sc := range setCookies {
 				c, err := http.ParseSetCookie(sc)
-				if err != nil || c.Name == "pantau_session" {
+				if err != nil || c.Name == "pantau_session" || c.Name == tunnelCookieName {
 					continue
 				}
 				res.Header.Add("Set-Cookie", sc)
@@ -243,7 +297,7 @@ func (s *Server) SetTunnelPort(p int) {
 // It serves only /api/tunnel/; every other path is a 404.
 func (s *Server) TunnelHandler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/tunnel/", s.authMiddleware(s.handleTunnel))
+	mux.HandleFunc("/api/tunnel/", s.tunnelAuth(s.handleTunnel))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	})
@@ -257,6 +311,28 @@ func (s *Server) handleTunnelRedirect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "tunnel listener not running", http.StatusServiceUnavailable)
 		return
 	}
+
+	// Only a navigation the operator starts in Pantau may mint a tunnel capability. A fetch from a
+	// tunneled page (same-site, other port) is refused.
+	switch r.Header.Get("Sec-Fetch-Site") {
+	case "", "none", "same-origin":
+	default:
+		http.Error(w, "tunnel must be opened from Pantau", http.StatusForbidden)
+		return
+	}
+	hostID, port, ok := parseTunnelPath(r.URL.Path)
+	if !ok {
+		http.Error(w, "invalid tunnel route (expected /api/tunnel/:hostId/:port/)", http.StatusBadRequest)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     tunnelCookieName,
+		Value:    tunnelToken(hostID, port),
+		Path:     fmt.Sprintf("/api/tunnel/%d/%d", hostID, port),
+		MaxAge:   12 * 60 * 60,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
 
 	// r.Host is restricted to localhost/IP literals by Guard, so this is not
 	// an open redirect.

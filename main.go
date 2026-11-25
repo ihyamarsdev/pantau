@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"log/slog"
+	"pantau/internal/ansible"
 	"pantau/internal/gwupdate"
 	"pantau/internal/inspector"
 	"pantau/internal/instance"
@@ -409,6 +410,7 @@ func main() {
 	updaterMgr := updater.NewManager(ver, disableUpdateCheck)
 	updaterMgr.StartBackgroundTicker(ctx)
 
+	sshrunner.SetHostKeyStore(db) // trusted SSH host keys survive restarts
 	server := web.NewServer(db, ins, dispatcher)
 	server.SetVersion(ver)
 	server.SetSnapshotManager(snapshotMgr)
@@ -417,6 +419,7 @@ func main() {
 	// ADR 0090: warm the offline-safe GeoIP cache in the background; never on the read path.
 	server.StartGeoResolver(ctx)
 	server.SetAnsibleLibraryDir(filepath.Join(filepath.Dir(dbPath), "ansible-library"))
+	ansible.SetGitKnownHostsFile(filepath.Join(filepath.Dir(dbPath), "git_known_hosts"))
 	// Pantau installs the CLIs it manages into its own directory, so an update needs neither root
 	// nor a package manager and never touches the system copy in /usr/bin.
 	gwupdate.SetManagedRoot(filepath.Join(filepath.Dir(dbPath), "cli"))
