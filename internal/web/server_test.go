@@ -2183,3 +2183,117 @@ func TestSSHKeyProvisioningWithLibraryKey(t *testing.T) {
 		t.Errorf("expected verification connection to use library private key")
 	}
 }
+
+func TestGlobeCacheInvalidatedOnInspectAndAck(t *testing.T) {
+	tmpDir := t.TempDir()
+	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	var reachable bool
+	mockRunner := sshrunner.NewMockRunner()
+	mockRunner.DefaultExec = func(cmd string) (string, string, int, error) {
+		if strings.Contains(cmd, "uname -r") {
+			parts := []string{
+				"5.15.0-generic", "---",
+				"NAME=\"Ubuntu\"\nVERSION=\"22.04 LTS\"", "---",
+				"up 1 day, load average: 0.10, 0.10, 0.10", "---",
+				"Mem: 8000000000 2000000000 6000000000", "---",
+				"/dev/sda1 100000 50000 50000 50% /", "---",
+				"0", "---", "100 100", "---", "time=5.0", "---",
+				"1.1.1.1", "---", "", "---", "", "---", "0", "---", "4", "---",
+				"01/01/2022", "---", "KVM", "---", "1640995200",
+			}
+			return strings.Join(parts, "\n"), "", 0, nil
+		}
+		return "", "", 0, nil
+	}
+	ins := inspector.New(db, func(sshrunner.Target) (sshrunner.Runner, error) {
+		if !reachable {
+			return nil, io.EOF
+		}
+		return mockRunner, nil
+	}, nil)
+	srv := NewServer(db, ins, nil)
+	authReq := func(r *http.Request) {
+		r.AddCookie(&http.Cookie{Name: "pantau_session", Value: "tok-globe"})
+	}
+	srv.sessions.Store("tok-globe", time.Now().Add(time.Hour))
+
+	hostID, err := db.CreateHost(&store.Host{Name: "dgx-01", Host: "10.0.0.5", Port: 22, User: "root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = ins.InspectHost(hostID)
+	alertID, err := db.CreateAlert(&store.Alert{HostID: hostID, Level: "critical", Message: "host down"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	getNode := func() (string, int) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/api/network-radar/globe", nil)
+		authReq(req)
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("GET globe: %d %s", w.Code, w.Body.String())
+		}
+		var body struct {
+			Nodes []struct {
+				HostID       int64  `json:"host_id"`
+				Status       string `json:"status"`
+				ActiveAlerts int    `json:"active_alerts"`
+			} `json:"nodes"`
+		}
+		if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range body.Nodes {
+			if n.HostID == hostID {
+				return n.Status, n.ActiveAlerts
+			}
+		}
+		t.Fatalf("host %d missing from globe payload", hostID)
+		return "", 0
+	}
+
+	// Warm the globe cache with initial down + 1 alert.
+	st, al := getNode()
+	if st != "down" || al != 1 {
+		t.Fatalf("initial globe node = (%q, %d), want (down, 1)", st, al)
+	}
+
+	// Ack alert must invalidate globe cache immediately (within 20s TTL).
+	reqAck := httptest.NewRequest(http.MethodPost, "/api/alerts/"+strconv.FormatInt(alertID, 10)+"/ack", nil)
+	authReq(reqAck)
+	wAck := httptest.NewRecorder()
+	srv.ServeHTTP(wAck, reqAck)
+	if wAck.Code != http.StatusOK {
+		t.Fatalf("ack alert: %d %s", wAck.Code, wAck.Body.String())
+	}
+	st, al = getNode()
+	if st != "down" || al != 0 {
+		t.Fatalf("after alert ack = (%q, %d), want (down, 0)", st, al)
+	}
+
+	// Inspection recovery must invalidate globe cache immediately.
+	reachable = true
+	if err := ins.InspectHost(hostID); err != nil {
+		t.Fatalf("inspect host: %v", err)
+	}
+	st, al = getNode()
+	if st != "healthy" || al != 0 {
+		t.Fatalf("after inspect recovery = (%q, %d), want (healthy, 0)", st, al)
+	}
+
+	// Failed inspection back to down must also invalidate globe cache.
+	reachable = false
+	_ = ins.InspectHost(hostID)
+	st, _ = getNode()
+	if st != "down" {
+		t.Fatalf("after failed inspect = %q, want down", st)
+	}
+}

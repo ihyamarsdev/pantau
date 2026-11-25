@@ -55,8 +55,26 @@ type Inspector struct {
 	triage                *TriageWorker
 	// sudoRetryAt remembers, per host, when passwordless sudo may be probed again after it failed, so a
 	// host that requires a sudo password logs at most one failed attempt per sudoRetryAfter.
-	sudoMu      sync.Mutex
-	sudoRetryAt map[int64]time.Time
+	sudoMu        sync.Mutex
+	sudoRetryAt   map[int64]time.Time
+	onInspectMu   sync.RWMutex
+	onInspectDone func(int64)
+}
+
+// SetOnInspectDone registers a callback invoked after a host inspection persists its status.
+func (ins *Inspector) SetOnInspectDone(fn func(int64)) {
+	ins.onInspectMu.Lock()
+	ins.onInspectDone = fn
+	ins.onInspectMu.Unlock()
+}
+
+func (ins *Inspector) notifyInspectDone(hostID int64) {
+	ins.onInspectMu.RLock()
+	fn := ins.onInspectDone
+	ins.onInspectMu.RUnlock()
+	if fn != nil {
+		fn(hostID)
+	}
 }
 
 func New(db *store.DB, factory sshrunner.RunnerFactory, notifier *notify.Dispatcher) *Inspector {
@@ -225,10 +243,11 @@ func (ins *Inspector) InspectHostWithTimeout(hostID int64, timeout time.Duration
 			Summary:    summary,
 			Details:    details,
 		})
+		ins.notifyInspectDone(host.ID)
 		if networkDown {
-			logger.Warn("inspect", host.Name, summary, "duration_ms", duration, "details", details)
+			logger.Warn("inspect", host.Name, summary, "duration_ms", duration, "details", details, "status", host.Status)
 		} else {
-			logger.Error("inspect", host.Name, "SSH connection failed: "+err.Error(), "duration_ms", duration)
+			logger.Error("inspect", host.Name, "SSH connection failed: "+err.Error(), "duration_ms", duration, "status", host.Status)
 		}
 		// Network-path failure is ONE infrastructure event shared by every Host behind the
 		// network. It is deliberately NOT a per-host alert: no db.CreateAlert, no
@@ -275,7 +294,8 @@ func (ins *Inspector) InspectHostWithTimeout(hostID int64, timeout time.Duration
 			Summary:    summary,
 			Details:    details,
 		})
-		logger.Warn("inspect", host.Name, summary, "duration_ms", duration, "details", details)
+		ins.notifyInspectDone(host.ID)
+		logger.Warn("inspect", host.Name, summary, "duration_ms", duration, "details", details, "status", host.Status)
 		return err
 	}
 
@@ -305,7 +325,8 @@ func (ins *Inspector) InspectHostWithTimeout(hostID int64, timeout time.Duration
 			Summary:    summary,
 			Details:    details,
 		})
-		logger.Warn("inspect", host.Name, summary, "duration_ms", duration, "details", details)
+		ins.notifyInspectDone(host.ID)
+		logger.Warn("inspect", host.Name, summary, "duration_ms", duration, "details", details, "status", host.Status)
 		return err
 	}
 
@@ -326,12 +347,10 @@ func (ins *Inspector) InspectHostWithTimeout(hostID int64, timeout time.Duration
 		runStatus = "drift"
 		summary = fmt.Sprintf("Drift detected in %d rule(s)", len(driftSummaries))
 		details = strings.Join(driftSummaries, "\n")
-		logger.Warn("inspect", host.Name, summary, "duration_ms", duration, "drift_rules", len(driftSummaries))
 	} else {
 		host.Status = "healthy"
 		// ponytail: Auto-resolve/acknowledge active alerts when host recovers to fully healthy/desired state.
 		_ = ins.db.AcknowledgeHostAlerts(host.ID)
-		logger.Info("inspect", host.Name, summary, "duration_ms", duration)
 	}
 
 	_ = ins.db.RecordInspectionRun(&store.InspectionRun{
@@ -343,5 +362,12 @@ func (ins *Inspector) InspectHostWithTimeout(hostID int64, timeout time.Duration
 		Details:    details,
 	})
 
-	return ins.db.UpdateHostInspection(host)
+	updateErr := ins.db.UpdateHostInspection(host)
+	ins.notifyInspectDone(host.ID)
+	if driftFound {
+		logger.Warn("inspect", host.Name, summary, "duration_ms", duration, "drift_rules", len(driftSummaries), "status", host.Status)
+	} else {
+		logger.Info("inspect", host.Name, summary, "duration_ms", duration, "status", host.Status)
+	}
+	return updateErr
 }

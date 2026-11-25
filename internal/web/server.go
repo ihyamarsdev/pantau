@@ -173,6 +173,9 @@ func NewServer(db *store.DB, ins *inspector.Inspector, disp *notify.Dispatcher) 
 	if db != nil {
 		s.globeCache = globe.NewCache(db, globeCacheTTL)
 		s.geoResolver = globe.NewResolver(db)
+		if ins != nil {
+			ins.SetOnInspectDone(func(int64) { s.invalidateGlobe() })
+		}
 		_, _ = db.MarkAnsibleRunsInterrupted()
 		s.ansibleMgr = NewAnsibleRunManager(db, s.ansibleRun)
 		_, _ = db.MarkAnsibleAdhocRunsInterrupted()
@@ -2787,12 +2790,14 @@ func (s *Server) handleAlertDetail(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(subpath, "/")
 	if len(parts) >= 1 && (parts[0] == "ack-all" || parts[0] == "ack_all") && r.Method == http.MethodPost {
 		_ = s.db.AcknowledgeAllAlerts()
+		s.invalidateGlobe()
 		writeJSON(w, http.StatusOK, map[string]string{"status": "acknowledged_all"})
 		return
 	}
 	if len(parts) >= 2 && parts[1] == "ack" && r.Method == http.MethodPost {
 		id, _ := strconv.ParseInt(parts[0], 10, 64)
 		_ = s.db.AcknowledgeAlert(id)
+		s.invalidateGlobe()
 		writeJSON(w, http.StatusOK, map[string]string{"status": "acknowledged"})
 		return
 	}

@@ -1177,3 +1177,106 @@ test('network globe: selecting Whole world clears the hierarchy and flies back t
   await browser.locator('#viewListBtn').click();
   await expect(browser.locator('#hostGlobe')).toBeHidden();
 });
+
+// Regression: when a host recovers from down to healthy (via loadHosts() or an
+// SSE inspect event), the HUD header dot, sidebar dot, and globe link must stay
+// in sync with the embedded host card instead of remaining red.
+test('network globe: host status dot and links sync with loadHosts and SSE inspect events', async ({ app, screen, browser }) => {
+  await app.open('/');
+  await initApp(screen, browser);
+
+  let hostStatus = 'down';
+  let globeStatus = 'down';
+  const hostRecord = () => ({
+    id: 42,
+    name: 'sync-dgx-01',
+    host: '100.91.91.10',
+    port: 22,
+    user: 'nvidia',
+    status: hostStatus,
+    group_name: 'SyncLab',
+    cpu_cores: 4,
+    cpu_load: '0.10, 0.10, 0.10',
+    ram_used_bytes: 1024,
+    ram_total_bytes: 4096,
+    disk_used_bytes: 1024,
+    disk_total_bytes: 4096,
+    lifecycle_score: 95,
+  });
+
+  await browser.route('**/api/hosts', async (route) => {
+    await route.fulfill({ json: [hostRecord()] });
+  });
+
+  await browser.route('**/api/network-radar/globe', async (route) => {
+    await route.fulfill({
+      json: {
+        nodes: [
+          { id: 'gateway', name: 'Pantau Gateway', kind: 'gateway', ip: '', status: 'healthy', lat: 0, lon: 0, city: 'Gateway', active_alerts: 0, geo_source: 'default' },
+          { id: 'host:42', name: 'sync-dgx-01', kind: 'host', host_id: 42, ip: '100.91.91.10', status: globeStatus, lat: -6.2, lon: 106.8, city: 'Jakarta', active_alerts: globeStatus === 'down' ? 1 : 0, group_id: 'SyncLab', network_id: 0, geo_source: 'manual' },
+        ],
+        links: [
+          { id: 'gw-host-42', source_id: 'gateway', target_id: 'host:42', type: 'ssh', latency_ms: 5, status: globeStatus, active: globeStatus !== 'down', label: 'SSH telemetry' },
+        ],
+        generated_at: new Date().toISOString(),
+      },
+    });
+  });
+
+  await browser.route('**/api/logs/stream*', async (route) => {
+    await route.fulfill({ status: 200, headers: { 'Content-Type': 'text/event-stream' }, body: '' });
+  });
+
+  await browser.evaluate(async () => {
+    await (window as unknown as { loadHosts(): Promise<void> }).loadHosts();
+  });
+  await browser.locator('#glRefreshBtn').click();
+
+  await expect(browser.locator('.gl-side-item[data-node="host:42"] .gl-side-dot')).toHaveAttribute('class', /\bdown\b/);
+  await browser.locator('.gl-side-item[data-node="host:42"]').click();
+  await expect(browser.locator('#glHud .gl-hud-dot')).toHaveAttribute('class', /\bdown\b/);
+  await expect(browser.locator('#glHud .host-card .host-card-header-actions .badge')).toHaveText('down');
+
+  // 1. Host recovers in /api/hosts -> loadHosts() triggers renderHosts() -> GlobeRadar.mount() while mounted.
+  // Keep globeStatus='down' here to prove loadHosts() reconciles S.graph even without re-fetching /globe.
+  hostStatus = 'healthy';
+  await browser.evaluate(async () => {
+    await (window as unknown as { loadHosts(): Promise<void> }).loadHosts();
+  });
+
+  await expect(browser.locator('#glHud .host-card .host-card-header-actions .badge')).toHaveText('healthy');
+  await expect(browser.locator('#glHud .gl-hud-dot')).toHaveAttribute('class', /\bhealthy\b/);
+  await expect(browser.locator('#glHud .gl-hud-dot')).not.toHaveAttribute('class', /\bdown\b/);
+
+  const afterLoad = await browser.evaluate(() => {
+    const g = (window as unknown as { GlobeRadar: { state: { graph: { nodes: Array<{ id: string; status: string; active_alerts: number }>; links: Array<{ id: string; status: string; active: boolean }> } } } }).GlobeRadar.state.graph;
+    return {
+      node: g.nodes.find((n) => n.id === 'host:42'),
+      link: g.links.find((l) => l.id === 'gw-host-42'),
+    };
+  });
+  expect(afterLoad.node?.status).toBe('healthy');
+  expect(afterLoad.node?.active_alerts).toBe(0);
+  expect(afterLoad.link?.status).toBe('healthy');
+  expect(afterLoad.link?.active).toBe(true);
+
+  // 2. SSE inspect event updates status in-place across HUD dot, host card, and globe link.
+  hostStatus = 'degraded';
+  globeStatus = 'degraded';
+  await browser.evaluate(() => {
+    const src = (window as unknown as { GlobeRadar: { state: { source: { onmessage?: (e: MessageEvent) => void } } } }).GlobeRadar.state.source;
+    src.onmessage?.(new MessageEvent('message', {
+      data: JSON.stringify({
+        id: 999,
+        level: 'WARN',
+        module: 'inspect',
+        host: 'sync-dgx-01',
+        message: 'Drift detected in 1 rule(s)',
+        attrs: { status: 'degraded' },
+      }),
+    }));
+  });
+
+  await expect(browser.locator('#glHud .gl-hud-dot')).toHaveAttribute('class', /\bdegraded\b/);
+  await expect(browser.locator('#glHud .host-card .host-card-header-actions .badge')).toHaveText('degraded');
+});

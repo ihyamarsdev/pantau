@@ -419,7 +419,112 @@
     }).catch(function () { /* offline: keep current position */ });
   };
 
-  // ---- Data loading --------------------------------------------------------
+  // ---- Data loading & host status sync -------------------------------------
+  function normStatus(s) {
+    s = String(s || '').toLowerCase();
+    return (s === 'healthy' || s === 'degraded' || s === 'down') ? s : 'unknown';
+  }
+  function flowStatus(s) {
+    s = normStatus(s);
+    return s === 'unknown' ? 'degraded' : s;
+  }
+  function combinedStatus(a, b) {
+    a = normStatus(a); b = normStatus(b);
+    if (a === 'down' || b === 'down') return 'down';
+    if (a === 'degraded' || b === 'degraded' || a === 'unknown' || b === 'unknown') return 'degraded';
+    return 'healthy';
+  }
+  function hostSig(list) {
+    if (!Array.isArray(list) || !list.length) return '';
+    return list.map(function (h) { return h.id; }).sort(function (a, b) { return a - b; }).join(',');
+  }
+
+  function syncLinks() {
+    if (!S.graph || !Array.isArray(S.graph.links)) return false;
+    var byId = {};
+    S.graph.nodes.forEach(function (n) { byId[n.id] = n; });
+    var changed = false;
+    S.graph.links.forEach(function (l) {
+      var src = byId[l.source_id], tgt = byId[l.target_id];
+      if (!src || !tgt) return;
+      var nextStatus = l.status;
+      var nextActive = l.active;
+      if ((src.kind === 'gateway' || src.kind === 'cloudflare') && tgt.kind === 'host') {
+        nextStatus = flowStatus(tgt.status);
+        if (src.kind === 'gateway') nextActive = nextStatus !== 'down';
+      } else if (src.kind === 'host' && tgt.kind === 'host' && l.type !== 'vpn') {
+        nextStatus = combinedStatus(src.status, tgt.status);
+      }
+      if (nextStatus !== l.status || nextActive !== l.active) {
+        l.status = nextStatus;
+        l.active = nextActive;
+        changed = true;
+      }
+    });
+    return changed;
+  }
+
+  // Reconcile S.graph host nodes and links with the latest /api/hosts list so
+  // the HUD header dot, sidebar dot, 3D pins, and arcs never lag behind host cards.
+  GL.syncHosts = function () {
+    if (!S.graph || !Array.isArray(window.allRawHosts)) return false;
+    var byHostId = {};
+    window.allRawHosts.forEach(function (h) { byHostId[h.id] = h; });
+    var changed = false;
+    S.graph.nodes.forEach(function (n) {
+      if (n.kind !== 'host') return;
+      var h = byHostId[n.host_id];
+      if (!h) return;
+      var nextStatus = normStatus(h.status);
+      if (n.status !== nextStatus) {
+        n.status = nextStatus;
+        if (nextStatus === 'healthy') n.active_alerts = 0;
+        changed = true;
+      }
+      if (h.name && n.name !== h.name) { n.name = h.name; changed = true; }
+      var grp = h.group_name || '';
+      if (n.group_id !== grp) { n.group_id = grp; changed = true; }
+      var netId = h.network_id || 0;
+      if (n.network_id !== netId) { n.network_id = netId; changed = true; }
+      var pub = (h.public_ip || '').trim();
+      if (n.public_ip !== pub) n.public_ip = pub;
+      var ip = pub || (h.host || '').trim();
+      if (ip && n.ip !== ip) n.ip = ip;
+    });
+    if (syncLinks()) changed = true;
+    if (changed) S.sceneDirty = true;
+    return changed;
+  };
+
+  function syncRawHostsFromGraph(g) {
+    if (!g || !Array.isArray(g.nodes) || !Array.isArray(window.allRawHosts)) return;
+    var byHostId = {};
+    g.nodes.forEach(function (n) {
+      if (n.kind === 'host' && n.host_id) byHostId[n.host_id] = n;
+    });
+    window.allRawHosts.forEach(function (h) {
+      var n = byHostId[h.id];
+      if (n && n.status) h.status = n.status;
+    });
+  }
+
+  function scheduleGraphLoad() {
+    if (S.loadTimer) clearTimeout(S.loadTimer);
+    S.loadTimer = setTimeout(function () {
+      S.loadTimer = 0;
+      if (S.mounted) GL.load();
+    }, 250);
+  }
+
+  function scheduleHostsReload() {
+    if (typeof window.loadHosts !== 'function') return;
+    if (S.hostReloadTimer) clearTimeout(S.hostReloadTimer);
+    S.hostReloadTimer = setTimeout(function () {
+      S.hostReloadTimer = 0;
+      if (S.mounted && typeof window.loadHosts === 'function') window.loadHosts();
+    }, 250);
+  }
+
   GL.load = function () {
     return fetch('/api/network-radar/globe').then(function (res) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -427,6 +532,8 @@
     }).then(function (g) {
       indexCountries(g.nodes);
       S.graph = g;
+      S.lastHostSig = hostSig(window.allRawHosts);
+      syncRawHostsFromGraph(g);
       GL.renderUI();
     }).catch(function (err) {
       var c = document.getElementById('glCount');
@@ -447,20 +554,32 @@
   function handleEvent(evt) {
     if (!S.graph) return;
     var attrs = evt.attrs || {};
-    var status = attrs.status || (evt.module === 'inspector' ? attrs.host_status : null);
+    var isInspect = evt.module === 'inspect' || evt.module === 'inspector';
+    var status = attrs.status || (isInspect ? attrs.host_status : null);
+    var updated = false;
     if (status && ['healthy', 'degraded', 'down', 'unknown'].indexOf(status) >= 0) {
       var target = evt.host ? S.graph.nodes.find(function (n) { return n.kind === 'host' && n.name === evt.host; }) : null;
       if (target) {
         target.status = status;
+        if (status === 'healthy') target.active_alerts = 0;
+        syncLinks();
+        if (Array.isArray(window.allRawHosts)) {
+          var rawHost = window.allRawHosts.find(function (h) { return h.id === target.host_id; });
+          if (rawHost) rawHost.status = status;
+        }
         if (S.selected === target.id) GL.renderHud();
         GL.renderSidebar();
         S.sceneDirty = true;
+        updated = true;
       }
+      if (isInspect) scheduleHostsReload();
     }
     var msg = (evt.message || '').toLowerCase();
-    if (msg.indexOf('drift') >= 0 || msg.indexOf('alert') >= 0 || msg.indexOf('inspection') >= 0) GL.load();
+    if (msg.indexOf('drift') >= 0 || msg.indexOf('alert') >= 0 || msg.indexOf('inspection') >= 0 || (isInspect && !updated)) {
+      scheduleGraphLoad();
+    }
     // Burst traffic on active inspections (visual only; no scene rebuild).
-    if (evt.module === 'inspector' || msg.indexOf('probe') >= 0) S.burst = performance.now() + 1200;
+    if (isInspect || msg.indexOf('probe') >= 0) S.burst = performance.now() + 1200;
   }
 
   function connectSSE() {
@@ -480,6 +599,8 @@
   // ---- Mount lifecycle (the Hosts view shows the globe; renderHosts drives it) ----
   GL.unmount = function () {
     if (!S.mounted) return;
+    if (S.loadTimer) { clearTimeout(S.loadTimer); S.loadTimer = 0; }
+    if (S.hostReloadTimer) { clearTimeout(S.hostReloadTimer); S.hostReloadTimer = 0; }
     if (S.source) { S.source.close(); S.source = null; }
     setLive('offline');
     S.mounted = false;
@@ -489,10 +610,16 @@
     if (S.renderer) { S.renderer.dispose(); S.renderer = null; }
   };
 
-  // First mount builds the renderer, stream and loop, then loads the graph. Later mounts only re-render the
-  // panels from the dashboard's current host data: no fetch.
+  // First mount builds the renderer, stream and loop, then loads the graph. Later mounts reconcile the graph
+  // with the dashboard's current host data and only re-fetch when the host set itself changed.
   GL.mount = function () {
-    if (S.mounted) { GL.renderUI(); return; }
+    if (S.mounted) {
+      GL.syncHosts();
+      GL.renderUI();
+      var sig = hostSig(window.allRawHosts);
+      if (S.graph && sig !== S.lastHostSig) scheduleGraphLoad();
+      return;
+    }
     if (!GL.ensurePanel()) return;
     S.mounted = true;
     if (!S.renderer) S.renderer = new window.WebGlobe.Renderer(document.getElementById('glCanvas'));

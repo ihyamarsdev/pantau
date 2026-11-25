@@ -278,6 +278,7 @@ func (s *Server) handleHostGroups(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, status, map[string]string{"error": err.Error()})
 		return
 	}
+	s.invalidateGlobe()
 	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "updated": len(req.Assignments)})
 }
 
@@ -306,5 +307,6 @@ func (s *Server) handleHostGroupRename(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, status, map[string]string{"error": err.Error()})
 		return
 	}
+	s.invalidateGlobe()
 	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "name": name, "hosts": n})
 }

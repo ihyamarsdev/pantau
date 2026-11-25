@@ -41,6 +41,9 @@
     source: null,
     mounted: false,       // the Hosts view is showing the globe (SSE, loop and renderer live)
     burst: 0,             // performance.now() deadline of the live-traffic pulse boost
+    loadTimer: 0,
+    hostReloadTimer: 0,
+    lastHostSig: '',
   };
 
   var esc = function (s) { return escapeHtml(String(s === null || s === undefined ? '' : s)); };

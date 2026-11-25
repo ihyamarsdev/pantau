@@ -166,6 +166,7 @@ func toolAlertAck(s *Server, r *http.Request, args map[string]interface{}) (stri
 		if err := s.db.AcknowledgeAlert(id); err != nil {
 			return "", err
 		}
+		s.invalidateGlobe()
 		return fmt.Sprintf("alert #%d acknowledged", id), nil
 	}
 	return "", fmt.Errorf("no active alert #%d; see list_alerts", id)

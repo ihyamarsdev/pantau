@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"pantau/internal/logger"
 	"pantau/internal/notify"
 	"pantau/internal/sshrunner"
 	"pantau/internal/store"
@@ -1247,5 +1250,97 @@ func TestInspectHost_ThreeHostsOneDownedNetwork(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	if got := notified.Load(); got != 0 {
 		t.Fatalf("one VPN drop must not send per-host notifications, got %d", got)
+	}
+}
+
+func TestInspectHost_EmitsStatusAndCallback(t *testing.T) {
+	b := logger.SetupGlobalLogger(io.Discard, slog.LevelInfo)
+	ch, unsub := b.Subscribe()
+	defer unsub()
+
+	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	hostID, err := db.CreateHost(&store.Host{
+		Name: "Server Status",
+		Host: "10.0.0.12",
+		Port: 22,
+		User: "root",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var reachable atomic.Bool
+	mockRunner := sshrunner.NewMockRunner()
+	mockRunner.DefaultExec = func(cmd string) (string, string, int, error) {
+		if strings.Contains(cmd, "uname -r") {
+			parts := []string{
+				"5.15.0-generic", "---",
+				"NAME=\"Ubuntu\"\nVERSION=\"22.04 LTS\"", "---",
+				"up 1 day, load average: 0.10, 0.10, 0.10", "---",
+				"Mem: 8000000000 2000000000 6000000000", "---",
+				"/dev/sda1 100000 50000 50000 50% /", "---",
+				"0", "---", "100 100", "---", "time=5.0", "---",
+				"1.1.1.1", "---", "", "---", "", "---", "0", "---", "4", "---",
+				"01/01/2022", "---", "KVM", "---", "1640995200",
+			}
+			return strings.Join(parts, "\n"), "", 0, nil
+		}
+		return "", "", 0, nil
+	}
+	factory := func(sshrunner.Target) (sshrunner.Runner, error) {
+		if !reachable.Load() {
+			return nil, errors.New("connection refused")
+		}
+		return mockRunner, nil
+	}
+
+	ins := New(db, factory, nil)
+	var callbackStatuses []string
+	ins.SetOnInspectDone(func(id int64) {
+		h, _ := db.GetHost(id)
+		if h != nil {
+			callbackStatuses = append(callbackStatuses, h.Status)
+		}
+	})
+
+	readInspectEvent := func() logger.Event {
+		t.Helper()
+		deadline := time.After(time.Second)
+		for {
+			select {
+			case evt := <-ch:
+				if evt.Module == "inspect" && evt.Host == "Server Status" {
+					return evt
+				}
+			case <-deadline:
+				t.Fatal("timed out waiting for inspect logger event")
+			}
+		}
+	}
+
+	if err := ins.InspectHost(hostID); err == nil {
+		t.Fatal("expected initial unreachable inspect to fail")
+	}
+	evtDown := readInspectEvent()
+	if got := evtDown.Attrs["status"]; got != "down" {
+		t.Fatalf("expected inspect event status='down', got %v", got)
+	}
+
+	reachable.Store(true)
+	if err := ins.InspectHost(hostID); err != nil {
+		t.Fatalf("expected reachable inspect to succeed, got %v", err)
+	}
+	evtUp := readInspectEvent()
+	if got := evtUp.Attrs["status"]; got != "healthy" {
+		t.Fatalf("expected inspect event status='healthy', got %v", got)
+	}
+
+	if len(callbackStatuses) != 2 || callbackStatuses[0] != "down" || callbackStatuses[1] != "healthy" {
+		t.Fatalf("expected callback statuses [down healthy], got %v", callbackStatuses)
 	}
 }
