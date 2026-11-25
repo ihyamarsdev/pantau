@@ -55,17 +55,17 @@ func DefaultAgentExecLimits() AgentExecLimits {
 // conservative: a false positive only asks the operator for approval, a false negative would run a
 // destructive command without it. Patterns are lowercased before matching.
 var destructiveCommandPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`(^|[;&|]\s*|\$\(\s*)rm\s+-[a-z]*[rRfF]`), // rm -rf, rm -fr, rm -f -r
-	regexp.MustCompile(`(^|[;&|]\s*)mkfs\.`),
-	regexp.MustCompile(`(^|[;&|]\s*)dd\s+`),
-	regexp.MustCompile(`(^|[;&|]\s*)(shutdown|reboot|halt|poweroff)(\s|$)`),
-	regexp.MustCompile(`(^|[;&|]\s*)docker\s+(system\s+prune|volume\s+(rm|prune)|image\s+rm|container\s+prune|rm\s+-f)`),
-	regexp.MustCompile(`(^|[;&|]\s*)kubectl\s+(delete|drain|cordon|uncordon)\b`),
+	regexp.MustCompile(`(^|[;&|({\n]\s*|\b(?:sudo|xargs|env|nohup|exec|time|nice)\s+(?:-\S+\s+|[a-z_][a-z0-9_]*=\S*\s+)*|\$\(\s*)rm\s+-[a-z]*[rRfF]`), // rm -rf, rm -fr, rm -f -r
+	regexp.MustCompile(`(^|[;&|({\n]\s*|\b(?:sudo|xargs|env|nohup|exec|time|nice)\s+(?:-\S+\s+|[a-z_][a-z0-9_]*=\S*\s+)*)mkfs\.`),
+	regexp.MustCompile(`(^|[;&|({\n]\s*|\b(?:sudo|xargs|env|nohup|exec|time|nice)\s+(?:-\S+\s+|[a-z_][a-z0-9_]*=\S*\s+)*)dd\s+`),
+	regexp.MustCompile(`(^|[;&|({\n]\s*|\b(?:sudo|xargs|env|nohup|exec|time|nice)\s+(?:-\S+\s+|[a-z_][a-z0-9_]*=\S*\s+)*)(shutdown|reboot|halt|poweroff)(\s|$)`),
+	regexp.MustCompile(`(^|[;&|({\n]\s*|\b(?:sudo|xargs|env|nohup|exec|time|nice)\s+(?:-\S+\s+|[a-z_][a-z0-9_]*=\S*\s+)*)docker\s+(system\s+prune|volume\s+(rm|prune)|image\s+rm|container\s+prune|rm\s+-f)`),
+	regexp.MustCompile(`(^|[;&|({\n]\s*|\b(?:sudo|xargs|env|nohup|exec|time|nice)\s+(?:-\S+\s+|[a-z_][a-z0-9_]*=\S*\s+)*)kubectl\s+(delete|drain|cordon|uncordon)\b`),
 	regexp.MustCompile(`\bterraform\s+(apply|destroy)\b`),
 	regexp.MustCompile(`\b(ufw|firewall-cmd|iptables|nft)\s+`),
 	regexp.MustCompile(`\b(chmod|chown)\s+-R\b`),
 	regexp.MustCompile(`\b(mv|cp)\s+.*\s+/dev/`),
-	regexp.MustCompile(`(^|[;&|]\s*):\s*\(\s*\)\s*\{`), // fork bomb
+	regexp.MustCompile(`(^|[;&|({\n]\s*|\b(?:sudo|xargs|env|nohup|exec|time|nice)\s+(?:-\S+\s+|[a-z_][a-z0-9_]*=\S*\s+)*):\s*\(\s*\)\s*\{`), // fork bomb
 }
 
 // mutatingCommandPatterns are controlled changes that are safe to execute and log (ADR 0030) after the

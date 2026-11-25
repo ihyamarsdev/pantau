@@ -206,12 +206,29 @@ func cloneGit(ctx context.Context, g GitSource, workDir, protocols string, log i
 	return repoDir, playbookPath, sha, nil
 }
 
+// gitKnownHosts is the file that records host keys accepted for git over SSH. Set once at startup
+// (SetGitKnownHostsFile) so trust survives restarts; empty falls back to a file in the temp dir.
+var gitKnownHosts string
+
+// SetGitKnownHostsFile sets where git-over-SSH host keys are recorded.
+func SetGitKnownHostsFile(p string) { gitKnownHosts = p }
+
+// GitSSHCommand is the GIT_SSH_COMMAND prefix. accept-new records a host the first time it is seen and
+// refuses a later, different key, instead of skipping host verification altogether.
+func GitSSHCommand() string {
+	kh := gitKnownHosts
+	if kh == "" {
+		kh = filepath.Join(os.TempDir(), "pantau-git-known-hosts")
+	}
+	return "ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile='" + kh + "' -o IdentitiesOnly=yes"
+}
+
 // setupGitEnv builds the environment slice with proxy settings, protocol restrictions,
 // optional SSH key, and optional HTTPS token header. Reused by clone, tree/file read, and push.
 func setupGitEnv(repoURL, token, privateKey, workDir, protocols string) ([]string, error) {
 	env := gitEnv(workDir, protocols)
 
-	sshCmd := "ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes"
+	sshCmd := GitSSHCommand()
 	if strings.TrimSpace(privateKey) != "" {
 		kp := filepath.Join(workDir, "git_key")
 		if err := os.WriteFile(kp, []byte(strings.TrimSpace(privateKey)+"\n"), 0600); err != nil {

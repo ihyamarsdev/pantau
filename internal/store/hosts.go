@@ -169,6 +169,9 @@ func (d *DB) ListHosts() ([]Host, error) {
 		}
 		list = append(list, *h)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return list, nil
 }
 

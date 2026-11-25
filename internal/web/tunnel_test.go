@@ -71,10 +71,18 @@ func TestTunnel_AuthEnforcement(t *testing.T) {
 	}
 }
 
+// tunnelCap returns the capability cookie the main origin issues for the tunnel named by path.
+func tunnelCap(t *testing.T, path string) *http.Cookie {
+	t.Helper()
+	hostID, port, ok := parseTunnelPath(path)
+	if !ok {
+		t.Fatalf("not a tunnel path: %s", path)
+	}
+	return &http.Cookie{Name: tunnelCookieName, Value: tunnelToken(hostID, port)}
+}
+
 func TestTunnel_RouteValidation(t *testing.T) {
 	s, _, host := setupTunnelTestServer(t, nil)
-	token := "valid-session-token"
-	s.sessions.Store(token, time.Now().Add(1*time.Hour))
 
 	tests := []struct {
 		name         string
@@ -94,7 +102,9 @@ func TestTunnel_RouteValidation(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
-			req.AddCookie(&http.Cookie{Name: "pantau_session", Value: token})
+			if _, _, ok := parseTunnelPath(tc.path); ok {
+				req.AddCookie(tunnelCap(t, tc.path))
+			}
 			rec := httptest.NewRecorder()
 			s.TunnelHandler().ServeHTTP(rec, req)
 
@@ -160,12 +170,10 @@ func TestTunnel_SuccessfulProxyAndRedirectRewrite(t *testing.T) {
 	}
 
 	s, _, host := setupTunnelTestServer(t, dialFunc)
-	token := "valid-session-token"
-	s.sessions.Store(token, time.Now().Add(1*time.Hour))
 
 	// 1. Test normal HTTP GET
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/tunnel/%d/3000/hello", host.ID), nil)
-	req.AddCookie(&http.Cookie{Name: "pantau_session", Value: token})
+	req.AddCookie(tunnelCap(t, req.URL.Path))
 	rec := httptest.NewRecorder()
 	s.TunnelHandler().ServeHTTP(rec, req)
 
@@ -181,7 +189,7 @@ func TestTunnel_SuccessfulProxyAndRedirectRewrite(t *testing.T) {
 
 	// 2. Test Location redirect rewriting
 	req2 := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/tunnel/%d/3000/login", host.ID), nil)
-	req2.AddCookie(&http.Cookie{Name: "pantau_session", Value: token})
+	req2.AddCookie(tunnelCap(t, req2.URL.Path))
 	rec2 := httptest.NewRecorder()
 	s.TunnelHandler().ServeHTTP(rec2, req2)
 
@@ -196,7 +204,8 @@ func TestTunnel_SuccessfulProxyAndRedirectRewrite(t *testing.T) {
 	// 3. Cookie hardening: pantau_session must not reach the app, other
 	// cookies must, and the app must not set pantau_session or a service worker.
 	req3 := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/tunnel/%d/3000/cookies", host.ID), nil)
-	req3.AddCookie(&http.Cookie{Name: "pantau_session", Value: token})
+	req3.AddCookie(tunnelCap(t, req3.URL.Path))
+	req3.AddCookie(&http.Cookie{Name: "pantau_session", Value: "session-token"})
 	req3.AddCookie(&http.Cookie{Name: "app", Value: "keepme"})
 	rec3 := httptest.NewRecorder()
 	s.TunnelHandler().ServeHTTP(rec3, req3)
@@ -204,8 +213,8 @@ func TestTunnel_SuccessfulProxyAndRedirectRewrite(t *testing.T) {
 	if rec3.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK, got %d: %s", rec3.Code, rec3.Body.String())
 	}
-	if strings.Contains(rec3.Body.String(), "pantau_session") {
-		t.Errorf("backend received pantau_session cookie: %s", rec3.Body.String())
+	if strings.Contains(rec3.Body.String(), "pantau_session") || strings.Contains(rec3.Body.String(), tunnelCookieName) {
+		t.Errorf("backend received a Pantau cookie: %s", rec3.Body.String())
 	}
 	if !strings.Contains(rec3.Body.String(), "app=keepme") {
 		t.Errorf("backend did not receive app cookie: %s", rec3.Body.String())

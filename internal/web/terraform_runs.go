@@ -402,6 +402,11 @@ func (m *TerraformRunManager) StartApply(ws *store.TFWorkspace, run *store.TFRun
 		m.mu.Unlock()
 		return fmt.Errorf("workspace already has an active run (run %d)", activeID)
 	}
+	// The same run already applying (double click, two approvals): a second apply would run on the same plan and state.
+	if _, applying := m.activeRuns[run.ID]; applying {
+		m.mu.Unlock()
+		return fmt.Errorf("run %d is already applying", run.ID)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	logBuf := newLogBuffer()
@@ -458,7 +463,16 @@ func (m *TerraformRunManager) executeApply(ctx context.Context, ar *activeTFRun,
 
 	applyRes, applyErr := applier(ctx, spec, ar.logBuf)
 
+	// Partial state from a failed or cancelled apply is kept too, so the next plan does not
+	// overwrite the state file with an older copy and lose track of created resources.
+	var partial []byte
+	if applyRes != nil {
+		partial = applyRes.State
+	}
 	if ctx.Err() == context.Canceled {
+		if err := m.saveRunState(ws, run, partial); err != nil {
+			_, _ = io.WriteString(ar.logBuf, fmt.Sprintf("\n[pantau] could not save partial state: %v\n", err))
+		}
 		_ = m.db.FinishTFRun(run.ID, "canceled", nil, ar.logBuf.String())
 		return
 	}
@@ -471,6 +485,9 @@ func (m *TerraformRunManager) executeApply(ctx context.Context, ar *activeTFRun,
 		if applyErr != nil {
 			_, _ = io.WriteString(ar.logBuf, fmt.Sprintf("\n[pantau] apply error: %v\n", applyErr))
 		}
+		if err := m.saveRunState(ws, run, partial); err != nil {
+			_, _ = io.WriteString(ar.logBuf, fmt.Sprintf("\n[pantau] could not save partial state: %v\n", err))
+		}
 		_ = m.db.FinishTFRun(run.ID, "errored", &exitCode, ar.logBuf.String())
 		_ = m.db.PruneTFRuns(ws.ID, 100)
 		m.tfEmit(ws, "errored", "Apply errored", tfEventDetail(run.ID, tfRunSummary(run), ar.logBuf.String(), tfSecrets(cfg)))
@@ -482,40 +499,12 @@ func (m *TerraformRunManager) executeApply(ctx context.Context, ar *activeTFRun,
 		exitCode = applyRes.ExitCode
 	}
 
-	// If new state produced, save state version if sha256 differs
-	if applyRes != nil && len(applyRes.State) > 0 {
-		h := sha256.Sum256(applyRes.State)
-		shaStr := hex.EncodeToString(h[:])
-
-		latestState, _ := m.db.LatestTFStateVersion(ws.ID)
-		if latestState == nil || latestState.SHA256 != shaStr {
-			stInfo, err := terraform.ParseState(applyRes.State)
-			serial := int64(1)
-			lineage := ""
-			resCount := 0
-			if err == nil && stInfo != nil {
-				serial = stInfo.Serial
-				lineage = stInfo.Lineage
-				resCount = len(stInfo.Resources)
-			}
-			source := "apply"
-			if run.Type == "refresh" {
-				source = "refresh"
-			}
-			sv := &store.TFStateVersion{
-				WorkspaceID:   ws.ID,
-				RunID:         run.ID,
-				Serial:        serial,
-				Lineage:       lineage,
-				Source:        source,
-				Size:          int64(len(applyRes.State)),
-				ResourceCount: resCount,
-				SHA256:        shaStr,
-				State:         applyRes.State,
-			}
-			_, _ = m.db.CreateTFStateVersion(sv)
-			_ = m.db.PruneTFStateVersions(ws.ID, 100)
-		}
+	// A state that cannot be stored must not look applied: the next plan would rebuild it from an older copy.
+	if err := m.saveRunState(ws, run, partial); err != nil {
+		_, _ = io.WriteString(ar.logBuf, fmt.Sprintf("\n[pantau] apply finished but state could not be saved: %v\n", err))
+		_ = m.db.FinishTFRun(run.ID, "errored", &exitCode, ar.logBuf.String())
+		m.tfEmit(ws, "errored", "Apply errored", tfEventDetail(run.ID, tfRunSummary(run), ar.logBuf.String(), tfSecrets(cfg)))
+		return
 	}
 
 	// Reset drift_detected
@@ -524,6 +513,49 @@ func (m *TerraformRunManager) executeApply(ctx context.Context, ar *activeTFRun,
 	_ = m.db.FinishTFRun(run.ID, "applied", &exitCode, ar.logBuf.String())
 	_ = m.db.PruneTFRuns(ws.ID, 100)
 	m.tfEmit(ws, "applied", "Apply succeeded", tfEventDetail(run.ID, tfRunSummary(run), "", nil))
+}
+
+// saveRunState stores state as a new version unless it equals the latest one. Empty state is a no-op.
+func (m *TerraformRunManager) saveRunState(ws *store.TFWorkspace, run *store.TFRun, state []byte) error {
+	if len(state) == 0 {
+		return nil
+	}
+	h := sha256.Sum256(state)
+	shaStr := hex.EncodeToString(h[:])
+	latest, err := m.db.LatestTFStateVersion(ws.ID)
+	if err != nil {
+		return err
+	}
+	if latest != nil && latest.SHA256 == shaStr {
+		return nil
+	}
+	serial := int64(1)
+	lineage := ""
+	resCount := 0
+	if stInfo, err := terraform.ParseState(state); err == nil && stInfo != nil {
+		serial = stInfo.Serial
+		lineage = stInfo.Lineage
+		resCount = len(stInfo.Resources)
+	}
+	source := "apply"
+	if run.Type == "refresh" {
+		source = "refresh"
+	}
+	if _, err := m.db.CreateTFStateVersion(&store.TFStateVersion{
+		WorkspaceID:   ws.ID,
+		RunID:         run.ID,
+		Serial:        serial,
+		Lineage:       lineage,
+		Source:        source,
+		Size:          int64(len(state)),
+		ResourceCount: resCount,
+		SHA256:        shaStr,
+		State:         state,
+	}); err != nil {
+		return err
+	}
+	_ = m.db.PruneTFStateVersions(ws.ID, 100)
+	return nil
 }
 
 // DiscardRun marks an awaiting_approval run as discarded and unlocks workspace.
@@ -537,6 +569,9 @@ func (m *TerraformRunManager) DiscardRun(wsID int64, runID int64, comment string
 	}
 	if run.Status != "awaiting_approval" {
 		return errors.New("run is not awaiting approval")
+	}
+	if _, applying := m.activeRuns[runID]; applying {
+		return errors.New("run is already applying")
 	}
 
 	wsDir := filepath.Join(m.dataRoot, strconv.FormatInt(wsID, 10))

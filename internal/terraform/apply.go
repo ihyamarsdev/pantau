@@ -96,14 +96,15 @@ func Apply(ctx context.Context, spec ApplySpec, log io.Writer) (*ApplyResult, er
 	cmd.Stderr = rLog
 
 	exitCode, err := runCmd(runCtx, cmd)
-	if err != nil {
-		return nil, err
-	}
 
-	// Read state file
+	// Read state file. Terraform records state as it goes, so the state is returned even when the run
+	// failed or was cancelled; dropping it would orphan the resources already created.
 	var stateBytes []byte
 	if sb, rErr := os.ReadFile(stateFilePath); rErr == nil {
 		stateBytes = sb
+	}
+	if err != nil {
+		return &ApplyResult{ExitCode: exitCode, State: stateBytes}, err
 	}
 
 	var outputs []Output

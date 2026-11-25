@@ -71,7 +71,7 @@ var agentTools = []agentTool{
 	{Name: "security_scan", Description: "Run a security scan now (pending updates, hardening checks); read the result with security_status.", gate: 1, InputSchema: schema(hostReq, map[string]interface{}{"host_id": pHost}), run: toolSecurityScan},
 	{Name: "exec_command", Description: "Run a shell command on a host as the SSH user (use `sudo -n` for root). Needed for editing config, package changes, etc. ALWAYS waits for explicit operator approval. Prefer the dedicated tools.", gate: 2,
 		InputSchema: schema([]string{"host_id", "command"}, map[string]interface{}{"host_id": pHost, "command": map[string]interface{}{"type": "string"}}), run: toolExec},
-	{Name: "ssh_batch_inspect", Description: "Run several read-only diagnostic commands on a host in ONE SSH round-trip, each under a labeled section with its exit code. Use it to gather related probes (uptime, disk, service status) in one call instead of many exec_command turns. Interactive TUI/pager commands are refused. Read-only: never mutates.", gate: 0,
+	{Name: "ssh_batch_inspect", Description: "Run several read-only diagnostic commands on a host in ONE SSH round-trip, each under a labeled section with its exit code. Use it to gather related probes (uptime, disk, service status) in one call instead of many exec_command turns. Interactive TUI/pager commands are refused. Read-only: never mutates. ALWAYS waits for explicit operator approval.", gate: 2,
 		InputSchema: schema([]string{"host_id", "commands"}, map[string]interface{}{"host_id": pHost, "commands": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "read-only shell commands, max 20"}, "labels": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "optional short label per command"}}), run: toolBatchInspect},
 }
 
@@ -774,9 +774,8 @@ func toolExec(s *Server, r *http.Request, args map[string]interface{}) (string, 
 	return out, nil
 }
 
-// toolBatchInspect runs several read-only probes in one SSH round-trip. It is gate 0 (read-only): the
-// inspector still lints every command for interactive hangs, but no operator approval is required
-// because the tool contract forbids mutations.
+// toolBatchInspect runs several probes in one SSH round-trip. It is gate 2: the operator approves the
+// whole batch, because the commands are model-written shell and the read-only classifier is a denylist.
 func toolBatchInspect(s *Server, r *http.Request, args map[string]interface{}) (string, error) {
 	id, err := argHost(args)
 	if err != nil {
@@ -801,6 +800,9 @@ func toolBatchInspect(s *Server, r *http.Request, args map[string]interface{}) (
 			l, _ := v.(string)
 			labels = append(labels, l)
 		}
+	}
+	if err := s.agentGate(r, id, "ssh_batch_inspect", strings.Join(commands, "\n"), 2); err != nil {
+		return "", err
 	}
 	ctx, cancel := contextTimeout(r, agentExecTimeout)
 	defer cancel()

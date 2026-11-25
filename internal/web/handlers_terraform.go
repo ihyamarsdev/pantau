@@ -724,7 +724,7 @@ func (s *Server) handleWorkspaceVCSTest(w http.ResponseWriter, r *http.Request, 
 		"GIT_ALLOW_PROTOCOL=https:ssh",
 	}
 
-	sshCmd := "ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes"
+	sshCmd := ansible.GitSSHCommand()
 	if ws.GitAuth == "ssh" && ws.GitKeyID > 0 {
 		key, _ := s.db.GetSSHKey(ws.GitKeyID)
 		if key != nil && strings.TrimSpace(key.PrivateKey) != "" {

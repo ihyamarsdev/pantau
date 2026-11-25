@@ -230,6 +230,33 @@ type SnapshotPayload struct {
 	TerraformModules       []SnapshotTFModule          `json:"terraform_modules,omitempty"`
 	TerraformStates        []SnapshotTFState           `json:"terraform_states,omitempty"`
 	VPNNetworks            []VPNNetwork                `json:"vpn_networks,omitempty"`
+	// VaultIncluded marks a snapshot that carries the vault rows together with the master key from
+	// Settings. Older snapshots lack it, and restoring one must not replace the local master key.
+	VaultIncluded bool                   `json:"vault_included,omitempty"`
+	VaultSecrets  []SnapshotVaultSecret  `json:"vault_secrets,omitempty"`
+	VaultVersions []SnapshotVaultVersion `json:"vault_versions,omitempty"`
+}
+
+// SnapshotVaultSecret and SnapshotVaultVersion hold the encrypted rows as stored. They decrypt only with
+// the master key in the same snapshot.
+type SnapshotVaultSecret struct {
+	ID             int64        `json:"id"`
+	Key            string       `json:"key"`
+	Scope          string       `json:"scope"`
+	ScopeRef       string       `json:"scope_ref"`
+	Ciphertext     []byte       `json:"ciphertext"`
+	CurrentVersion int          `json:"current_version"`
+	ExpiresAt      sql.NullTime `json:"expires_at"`
+	RotationDays   int          `json:"rotation_days"`
+	CreatedAt      time.Time    `json:"created_at"`
+	UpdatedAt      time.Time    `json:"updated_at"`
+}
+
+type SnapshotVaultVersion struct {
+	SecretID   int64     `json:"secret_id"`
+	Version    int       `json:"version"`
+	Ciphertext []byte    `json:"ciphertext"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 func (d *DB) IsFresh() (bool, error) {
@@ -288,6 +315,9 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 		rulesByHost[r.HostID] = append(rulesByHost[r.HostID], r)
 	}
 	if err := ruleRows.Err(); err != nil {
+		return nil, fmt.Errorf("export snapshot: read rows: %w", err)
+	}
+	if err := ruleRows.Err(); err != nil {
 		ruleRows.Close()
 		return nil, fmt.Errorf("iterate desired rules: %w", err)
 	}
@@ -310,16 +340,25 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 		}
 		settings[k] = v
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("export snapshot: read rows: %w", err)
+	}
 
 	var allPresets []TerminalPreset
 	pRows, err := d.Query("SELECT id, host_id, name, command, sort_order, use_tmux, created_at FROM terminal_presets ORDER BY sort_order ASC, id ASC")
-	if err == nil {
+	if err != nil {
+		return nil, fmt.Errorf("export snapshot: %w", err)
+	}
+	{
 		defer pRows.Close()
 		for pRows.Next() {
 			var p TerminalPreset
 			var rawHostID sql.NullInt64
 			var useTmux int
-			if err := pRows.Scan(&p.ID, &rawHostID, &p.Name, &p.Command, &p.SortOrder, &useTmux, &p.CreatedAt); err == nil {
+			if err := pRows.Scan(&p.ID, &rawHostID, &p.Name, &p.Command, &p.SortOrder, &useTmux, &p.CreatedAt); err != nil {
+				return nil, fmt.Errorf("export snapshot: %w", err)
+			}
+			{
 				if rawHostID.Valid {
 					hid := rawHostID.Int64
 					p.HostID = &hid
@@ -327,6 +366,9 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 				p.UseTmux = useTmux == 1
 				allPresets = append(allPresets, p)
 			}
+		}
+		if err := pRows.Err(); err != nil {
+			return nil, fmt.Errorf("export snapshot: read rows: %w", err)
 		}
 	}
 
@@ -337,65 +379,118 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 
 	var allSSHKeys []SnapshotSSHKey
 	kRows, err := d.Query("SELECT id, name, private_key, public_key, fingerprint, created_at FROM ssh_keys ORDER BY id ASC")
-	if err == nil {
+	if err != nil {
+		return nil, fmt.Errorf("export snapshot: %w", err)
+	}
+	{
 		defer kRows.Close()
 		for kRows.Next() {
 			var k SnapshotSSHKey
-			if err := kRows.Scan(&k.ID, &k.Name, &k.PrivateKey, &k.PublicKey, &k.Fingerprint, &k.CreatedAt); err == nil {
+			if err := kRows.Scan(&k.ID, &k.Name, &k.PrivateKey, &k.PublicKey, &k.Fingerprint, &k.CreatedAt); err != nil {
+				return nil, fmt.Errorf("export snapshot: %w", err)
+			}
+			{
 				allSSHKeys = append(allSSHKeys, k)
 			}
+		}
+		if err := kRows.Err(); err != nil {
+			return nil, fmt.Errorf("export snapshot: read rows: %w", err)
 		}
 	}
 	var allClusters []SnapshotKubeCluster
 	cRows, err := d.Query("SELECT id, name, context, server, provider, kube_mode, kube_cluster_id, kubeconfig, created_at FROM kube_clusters ORDER BY id ASC")
-	if err == nil {
+	if err != nil {
+		return nil, fmt.Errorf("export snapshot: %w", err)
+	}
+	{
 		defer cRows.Close()
 		for cRows.Next() {
 			var c SnapshotKubeCluster
 			var clusterUID sql.NullString
-			if err := cRows.Scan(&c.ID, &c.Name, &c.Context, &c.Server, &c.Provider, &c.KubeMode, &clusterUID, &c.Kubeconfig, &c.CreatedAt); err == nil {
+			if err := cRows.Scan(&c.ID, &c.Name, &c.Context, &c.Server, &c.Provider, &c.KubeMode, &clusterUID, &c.Kubeconfig, &c.CreatedAt); err != nil {
+				return nil, fmt.Errorf("export snapshot: %w", err)
+			}
+			{
 				if clusterUID.Valid {
 					c.KubeClusterID = clusterUID.String
 				}
 				allClusters = append(allClusters, c)
 			}
 		}
+		if err := cRows.Err(); err != nil {
+			return nil, fmt.Errorf("export snapshot: read rows: %w", err)
+		}
 	}
 	var allCFAccounts []SnapshotCloudflareAccount
 	cfRows, err := d.Query("SELECT id, name, account_id, api_token, created_at FROM cloudflare_accounts ORDER BY id ASC")
-	if err == nil {
+	if err != nil {
+		return nil, fmt.Errorf("export snapshot: %w", err)
+	}
+	{
 		defer cfRows.Close()
 		for cfRows.Next() {
 			var a SnapshotCloudflareAccount
-			if err := cfRows.Scan(&a.ID, &a.Name, &a.AccountID, &a.APIToken, &a.CreatedAt); err == nil {
+			if err := cfRows.Scan(&a.ID, &a.Name, &a.AccountID, &a.APIToken, &a.CreatedAt); err != nil {
+				return nil, fmt.Errorf("export snapshot: %w", err)
+			}
+			{
 				allCFAccounts = append(allCFAccounts, a)
 			}
+		}
+		if err := cfRows.Err(); err != nil {
+			return nil, fmt.Errorf("export snapshot: read rows: %w", err)
 		}
 	}
 	var allS3Accounts []SnapshotS3Account
 	s3Rows, err := d.Query("SELECT " + s3AccountCols + " FROM s3_accounts ORDER BY id ASC")
-	if err == nil {
+	if err != nil {
+		return nil, fmt.Errorf("export snapshot: %w", err)
+	}
+	{
 		defer s3Rows.Close()
 		for s3Rows.Next() {
-			if a, err := scanS3Account(s3Rows); err == nil {
+			{
+				a, err := scanS3Account(s3Rows)
+				if err != nil {
+					return nil, fmt.Errorf("export snapshot: %w", err)
+				}
 				allS3Accounts = append(allS3Accounts, SnapshotS3Account(*a))
 			}
+		}
+		if err := s3Rows.Err(); err != nil {
+			return nil, fmt.Errorf("export snapshot: read rows: %w", err)
 		}
 	}
 	var allPlaybooks []SnapshotAnsiblePlaybook
 	pbRows, err := d.Query("SELECT id, name, description, content, extra_vars, source, git_url, git_branch, git_path, git_auth, git_token, git_key_id, survey, last_sync_at, last_sync_commit, group_name, created_at, updated_at FROM ansible_playbooks ORDER BY id ASC")
-	if err == nil {
+	if err != nil {
+		return nil, fmt.Errorf("export snapshot: %w", err)
+	}
+	{
 		defer pbRows.Close()
 		for pbRows.Next() {
 			var p SnapshotAnsiblePlaybook
-			if err := pbRows.Scan(&p.ID, &p.Name, &p.Description, &p.Content, &p.ExtraVars, &p.Source, &p.GitURL, &p.GitBranch, &p.GitPath, &p.GitAuth, &p.GitToken, &p.GitKeyID, &p.Survey, &p.LastSyncAt, &p.LastSyncCommit, &p.GroupName, &p.CreatedAt, &p.UpdatedAt); err == nil {
+			if err := pbRows.Scan(&p.ID, &p.Name, &p.Description, &p.Content, &p.ExtraVars, &p.Source, &p.GitURL, &p.GitBranch, &p.GitPath, &p.GitAuth, &p.GitToken, &p.GitKeyID, &p.Survey, &p.LastSyncAt, &p.LastSyncCommit, &p.GroupName, &p.CreatedAt, &p.UpdatedAt); err != nil {
+				return nil, fmt.Errorf("export snapshot: %w", err)
+			}
+			{
 				allPlaybooks = append(allPlaybooks, p)
 			}
 		}
+		if err := pbRows.Err(); err != nil {
+			return nil, fmt.Errorf("export snapshot: read rows: %w", err)
+		}
 	}
-	allSchedules, _ := d.ListAnsibleSchedules(0)
+	allSchedules, err := d.ListAnsibleSchedules(0)
+	if err != nil {
+		return nil, fmt.Errorf("export ansible schedules: %w", err)
+	}
 	var allAssets []SnapshotAnsibleAsset
-	if assets, err := d.LoadAnsibleAssets(); err == nil {
+	{
+		assets, err := d.LoadAnsibleAssets()
+		if err != nil {
+			return nil, fmt.Errorf("export snapshot: %w", err)
+		}
 		for _, a := range assets {
 			allAssets = append(allAssets, SnapshotAnsibleAsset{Kind: a.Kind, Name: a.Name, Data: a.Data, UpdatedAt: a.UpdatedAt})
 		}
@@ -403,22 +498,38 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 
 	var allTFWorkspaces []SnapshotTFWorkspace
 	wsRows, err := d.Query(`SELECT id, name, description, environment, tags, binary, source, files, git_url, git_branch, git_path, git_auth, git_token, git_key_id, webhook_token, webhook_secret, drift_interval_minutes, plan_interval_minutes, auto_apply, group_name, cloud_account_ids, created_at, updated_at FROM tf_workspaces ORDER BY id ASC`)
-	if err == nil {
+	if err != nil {
+		return nil, fmt.Errorf("export snapshot: %w", err)
+	}
+	{
 		defer wsRows.Close()
 		for wsRows.Next() {
 			var w SnapshotTFWorkspace
 			var cloudIDs string
 			var autoApply int
-			if err := wsRows.Scan(&w.ID, &w.Name, &w.Description, &w.Environment, &w.Tags, &w.Binary, &w.Source, &w.Files, &w.GitURL, &w.GitBranch, &w.GitPath, &w.GitAuth, &w.GitToken, &w.GitKeyID, &w.WebhookToken, &w.WebhookSecret, &w.DriftIntervalMinutes, &w.PlanIntervalMinutes, &autoApply, &w.GroupName, &cloudIDs, &w.CreatedAt, &w.UpdatedAt); err == nil {
+			if err := wsRows.Scan(&w.ID, &w.Name, &w.Description, &w.Environment, &w.Tags, &w.Binary, &w.Source, &w.Files, &w.GitURL, &w.GitBranch, &w.GitPath, &w.GitAuth, &w.GitToken, &w.GitKeyID, &w.WebhookToken, &w.WebhookSecret, &w.DriftIntervalMinutes, &w.PlanIntervalMinutes, &autoApply, &w.GroupName, &cloudIDs, &w.CreatedAt, &w.UpdatedAt); err != nil {
+				return nil, fmt.Errorf("export snapshot: %w", err)
+			}
+			{
 				w.AutoApply = autoApply != 0
 				w.CloudAccountIDs = unmarshalCloudAccountIDs(cloudIDs)
 				allTFWorkspaces = append(allTFWorkspaces, w)
 			}
 		}
+		if err := wsRows.Err(); err != nil {
+			return nil, fmt.Errorf("export snapshot: read rows: %w", err)
+		}
 	}
-	allTFLinks, _ := d.ListAllTFOutputLinks()
+	allTFLinks, err := d.ListAllTFOutputLinks()
+	if err != nil {
+		return nil, fmt.Errorf("export terraform output links: %w", err)
+	}
 	var allTFCloudAccounts []SnapshotTFCloudAccount
-	if accts, err := d.ListTFCloudAccounts(); err == nil {
+	{
+		accts, err := d.ListTFCloudAccounts()
+		if err != nil {
+			return nil, fmt.Errorf("export snapshot: %w", err)
+		}
 		for _, a := range accts {
 			allTFCloudAccounts = append(allTFCloudAccounts, SnapshotTFCloudAccount{
 				ID: a.ID, Name: a.Name, Provider: a.Provider, Description: a.Description, Fields: a.Fields,
@@ -428,13 +539,19 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 	}
 	var allTFVariables []SnapshotTFVariable
 	varRows, err := d.Query(`SELECT id, workspace_id, varset_id, key, value, category, hcl, sensitive, description FROM tf_variables ORDER BY id ASC`)
-	if err == nil {
+	if err != nil {
+		return nil, fmt.Errorf("export snapshot: %w", err)
+	}
+	{
 		defer varRows.Close()
 		for varRows.Next() {
 			var v SnapshotTFVariable
 			var hclInt, sensInt int
 			var wsID, vsID sql.NullInt64
-			if err := varRows.Scan(&v.ID, &wsID, &vsID, &v.Key, &v.Value, &v.Category, &hclInt, &sensInt, &v.Description); err == nil {
+			if err := varRows.Scan(&v.ID, &wsID, &vsID, &v.Key, &v.Value, &v.Category, &hclInt, &sensInt, &v.Description); err != nil {
+				return nil, fmt.Errorf("export snapshot: %w", err)
+			}
+			{
 				if wsID.Valid {
 					v.WorkspaceID = wsID.Int64
 				}
@@ -446,53 +563,96 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 				allTFVariables = append(allTFVariables, v)
 			}
 		}
+		if err := varRows.Err(); err != nil {
+			return nil, fmt.Errorf("export snapshot: read rows: %w", err)
+		}
 	}
 	var allTFVarsets []SnapshotTFVarset
 	vsRows, err := d.Query(`SELECT id, name, description, global FROM tf_varsets ORDER BY id ASC`)
-	if err == nil {
+	if err != nil {
+		return nil, fmt.Errorf("export snapshot: %w", err)
+	}
+	{
 		defer vsRows.Close()
 		for vsRows.Next() {
 			var s SnapshotTFVarset
 			var globalInt int
-			if err := vsRows.Scan(&s.ID, &s.Name, &s.Description, &globalInt); err == nil {
+			if err := vsRows.Scan(&s.ID, &s.Name, &s.Description, &globalInt); err != nil {
+				return nil, fmt.Errorf("export snapshot: %w", err)
+			}
+			{
 				s.Global = globalInt != 0
-				s.WorkspaceIDs, _ = d.GetTFVarsetWorkspaceIDs(s.ID)
+				ids, err := d.GetTFVarsetWorkspaceIDs(s.ID)
+				if err != nil {
+					return nil, fmt.Errorf("export varset %d workspaces: %w", s.ID, err)
+				}
+				s.WorkspaceIDs = ids
 				allTFVarsets = append(allTFVarsets, s)
 			}
+		}
+		if err := vsRows.Err(); err != nil {
+			return nil, fmt.Errorf("export snapshot: read rows: %w", err)
 		}
 	}
 	var allTFPolicies []SnapshotTFPolicy
 	polRows, err := d.Query(`SELECT id, name, description, kind, params, enforcement, enabled, workspace_id FROM tf_policies ORDER BY id ASC`)
-	if err == nil {
+	if err != nil {
+		return nil, fmt.Errorf("export snapshot: %w", err)
+	}
+	{
 		defer polRows.Close()
 		for polRows.Next() {
 			var p SnapshotTFPolicy
 			var enInt int
-			if err := polRows.Scan(&p.ID, &p.Name, &p.Description, &p.Kind, &p.Params, &p.Enforcement, &enInt, &p.WorkspaceID); err == nil {
+			if err := polRows.Scan(&p.ID, &p.Name, &p.Description, &p.Kind, &p.Params, &p.Enforcement, &enInt, &p.WorkspaceID); err != nil {
+				return nil, fmt.Errorf("export snapshot: %w", err)
+			}
+			{
 				p.Enabled = enInt != 0
 				allTFPolicies = append(allTFPolicies, p)
 			}
 		}
+		if err := polRows.Err(); err != nil {
+			return nil, fmt.Errorf("export snapshot: read rows: %w", err)
+		}
 	}
 	var allTFModules []SnapshotTFModule
 	modRows, err := d.Query(`SELECT id, name, provider, description FROM tf_modules ORDER BY id ASC`)
-	if err == nil {
+	if err != nil {
+		return nil, fmt.Errorf("export snapshot: %w", err)
+	}
+	{
 		defer modRows.Close()
 		for modRows.Next() {
 			var m SnapshotTFModule
-			if err := modRows.Scan(&m.ID, &m.Name, &m.Provider, &m.Description); err == nil {
+			if err := modRows.Scan(&m.ID, &m.Name, &m.Provider, &m.Description); err != nil {
+				return nil, fmt.Errorf("export snapshot: %w", err)
+			}
+			{
 				vRows, err := d.Query(`SELECT id, module_id, version, files, doc, source_url, created_at FROM tf_module_versions WHERE module_id = ? ORDER BY id ASC`, m.ID)
-				if err == nil {
+				if err != nil {
+					return nil, fmt.Errorf("export snapshot: %w", err)
+				}
+				{
 					for vRows.Next() {
 						var mv SnapshotTFModuleVersion
-						if err := vRows.Scan(&mv.ID, &mv.ModuleID, &mv.Version, &mv.Files, &mv.Doc, &mv.SourceURL, &mv.CreatedAt); err == nil {
+						if err := vRows.Scan(&mv.ID, &mv.ModuleID, &mv.Version, &mv.Files, &mv.Doc, &mv.SourceURL, &mv.CreatedAt); err != nil {
+							return nil, fmt.Errorf("export snapshot: %w", err)
+						}
+						{
 							m.Versions = append(m.Versions, mv)
 						}
+					}
+					if err := vRows.Err(); err != nil {
+						return nil, fmt.Errorf("export snapshot: read rows: %w", err)
 					}
 					vRows.Close()
 				}
 				allTFModules = append(allTFModules, m)
 			}
+		}
+		if err := modRows.Err(); err != nil {
+			return nil, fmt.Errorf("export snapshot: read rows: %w", err)
 		}
 	}
 	var allTFStates []SnapshotTFState
@@ -515,6 +675,13 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 	vpnNetworks, err := d.ListVPNNetworks()
 	if err != nil {
 		return nil, fmt.Errorf("list vpn networks: %w", err)
+	}
+
+	// Vault rows are exported as stored (encrypted). A failed read fails the export, so a partial
+	// vault is never pushed as a complete backup.
+	vaultSecrets, vaultVersions, err := d.exportVaultRows()
+	if err != nil {
+		return nil, err
 	}
 
 	return &SnapshotPayload{
@@ -541,6 +708,9 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 		TerraformModules:       allTFModules,
 		TerraformStates:        allTFStates,
 		VPNNetworks:            vpnNetworks,
+		VaultIncluded:          true,
+		VaultSecrets:           vaultSecrets,
+		VaultVersions:          vaultVersions,
 	}, nil
 }
 
@@ -564,6 +734,28 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 	for _, t := range tables {
 		if _, err := tx.Exec("DELETE FROM " + t); err != nil {
 			return fmt.Errorf("clear %s: %w", t, err)
+		}
+	}
+	if payload.VaultIncluded {
+		if _, err := tx.Exec("DELETE FROM vault_versions"); err != nil {
+			return fmt.Errorf("clear vault_versions: %w", err)
+		}
+		if _, err := tx.Exec("DELETE FROM vault_secrets"); err != nil {
+			return fmt.Errorf("clear vault_secrets: %w", err)
+		}
+		for _, v := range payload.VaultSecrets {
+			_, err := tx.Exec(`INSERT INTO vault_secrets (id, key, scope, scope_ref, ciphertext, current_version, expires_at, rotation_days, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				v.ID, v.Key, v.Scope, v.ScopeRef, v.Ciphertext, v.CurrentVersion, v.ExpiresAt, v.RotationDays, v.CreatedAt, v.UpdatedAt)
+			if err != nil {
+				return fmt.Errorf("insert vault secret %d: %w", v.ID, err)
+			}
+		}
+		for _, v := range payload.VaultVersions {
+			_, err := tx.Exec(`INSERT INTO vault_versions (secret_id, version, ciphertext, created_at) VALUES (?, ?, ?, ?)`,
+				v.SecretID, v.Version, v.Ciphertext, v.CreatedAt)
+			if err != nil {
+				return fmt.Errorf("insert vault version %d/%d: %w", v.SecretID, v.Version, err)
+			}
 		}
 	}
 
@@ -818,6 +1010,10 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 		}
 	}
 	for k, v := range payload.Settings {
+		// A legacy snapshot has no vault rows; swapping the master key under local secrets would make them unreadable.
+		if k == vaultMasterKeySetting && !payload.VaultIncluded {
+			continue
+		}
 		_, err := tx.Exec(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, k, v)
 		if err != nil {
 			return fmt.Errorf("insert setting %s: %w", k, err)
@@ -835,4 +1031,42 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 		return err
 	}
 	return d.migrateAgentSettings()
+}
+
+// exportVaultRows reads every vault secret and version as stored (ciphertext), failing on any read error.
+func (d *DB) exportVaultRows() ([]SnapshotVaultSecret, []SnapshotVaultVersion, error) {
+	var secrets []SnapshotVaultSecret
+	rows, err := d.Query(`SELECT id, key, scope, scope_ref, ciphertext, current_version, expires_at, rotation_days, created_at, updated_at FROM vault_secrets ORDER BY id`)
+	if err != nil {
+		return nil, nil, fmt.Errorf("export vault secrets: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var v SnapshotVaultSecret
+		if err := rows.Scan(&v.ID, &v.Key, &v.Scope, &v.ScopeRef, &v.Ciphertext, &v.CurrentVersion, &v.ExpiresAt, &v.RotationDays, &v.CreatedAt, &v.UpdatedAt); err != nil {
+			return nil, nil, fmt.Errorf("scan vault secret: %w", err)
+		}
+		secrets = append(secrets, v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("export vault secrets: %w", err)
+	}
+
+	var versions []SnapshotVaultVersion
+	vRows, err := d.Query(`SELECT secret_id, version, ciphertext, created_at FROM vault_versions ORDER BY secret_id, version`)
+	if err != nil {
+		return nil, nil, fmt.Errorf("export vault versions: %w", err)
+	}
+	defer vRows.Close()
+	for vRows.Next() {
+		var v SnapshotVaultVersion
+		if err := vRows.Scan(&v.SecretID, &v.Version, &v.Ciphertext, &v.CreatedAt); err != nil {
+			return nil, nil, fmt.Errorf("scan vault version: %w", err)
+		}
+		versions = append(versions, v)
+	}
+	if err := vRows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("export vault versions: %w", err)
+	}
+	return secrets, versions, nil
 }

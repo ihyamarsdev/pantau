@@ -22,38 +22,85 @@ import (
 )
 
 var (
-	tofuMu         sync.RWMutex
+	tofuMu         sync.Mutex
 	tofuKnownHosts = make(map[string]ssh.PublicKey)
-	pemSigners     sync.Map // [32]byte sha256(PEM) -> []ssh.Signer; bounded by distinct keys
+	hostKeyStore   HostKeyStore // persists trusted keys across restarts; nil keeps them in memory only
+	pemSigners     sync.Map     // [32]byte sha256(PEM) -> []ssh.Signer; bounded by distinct keys
 )
+
+// HostKeyStore persists trusted host keys as authorized_keys lines, keyed by "host:port".
+type HostKeyStore interface {
+	GetTrustedHostKey(addr string) (string, bool, error)
+	InsertTrustedHostKey(addr, key string) (bool, error)
+	DeleteTrustedHostKey(addr string) error
+}
+
+// SetHostKeyStore makes trusted host keys survive a restart. Without it, every restart trusts again.
+func SetHostKeyStore(s HostKeyStore) {
+	tofuMu.Lock()
+	defer tofuMu.Unlock()
+	hostKeyStore = s
+}
+
+// ForgetHostKey drops the trusted key for addr (host:port), for a host that was reinstalled.
+func ForgetHostKey(addr string) error {
+	tofuMu.Lock()
+	defer tofuMu.Unlock()
+	delete(tofuKnownHosts, addr)
+	if hostKeyStore == nil {
+		return nil
+	}
+	return hostKeyStore.DeleteTrustedHostKey(addr)
+}
 
 // TOFUHostKeyCallback automatically accepts and trusts the host key upon first connection,
 // and enforces that subsequent connections match the recorded key to prevent MITM attacks.
+// A key that cannot be recorded is refused rather than trusted for this process only.
 func TOFUHostKeyCallback() ssh.HostKeyCallback {
 	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 		addr := hostname
-		if remote != nil {
+		if addr == "" && remote != nil {
 			addr = remote.String()
 		}
-		tofuMu.RLock()
+		tofuMu.Lock()
+		defer tofuMu.Unlock()
 		trustedKey, exists := tofuKnownHosts[addr]
-		tofuMu.RUnlock()
-
 		if !exists {
-			tofuMu.Lock()
-			if trustedKey, exists = tofuKnownHosts[addr]; !exists {
-				tofuKnownHosts[addr] = key
-				tofuMu.Unlock()
-				return nil
+			var err error
+			if trustedKey, err = trustHostKey(addr, key); err != nil {
+				return err
 			}
-			tofuMu.Unlock()
 		}
-
 		if bytes.Equal(trustedKey.Marshal(), key.Marshal()) {
 			return nil
 		}
 		return fmt.Errorf("ssh host key mismatch for %s: potential MITM attack or changed host key", addr)
 	}
+}
+
+// trustHostKey returns the key to trust for addr, recording key on first use. Caller holds tofuMu.
+func trustHostKey(addr string, key ssh.PublicKey) (ssh.PublicKey, error) {
+	if hostKeyStore == nil {
+		tofuKnownHosts[addr] = key
+		return key, nil
+	}
+	line := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key)))
+	stored, found, err := hostKeyStore.GetTrustedHostKey(addr)
+	if err != nil {
+		return nil, fmt.Errorf("read trusted host key for %s: %w", addr, err)
+	}
+	if !found {
+		if _, err := hostKeyStore.InsertTrustedHostKey(addr, line); err != nil {
+			return nil, fmt.Errorf("record host key for %s: %w", addr, err)
+		}
+		stored = line
+	}
+	trusted, _, _, _, err := ssh.ParseAuthorizedKey([]byte(stored))
+	if err != nil {
+		return nil, fmt.Errorf("stored host key for %s is unreadable: %w", addr, err)
+	}
+	tofuKnownHosts[addr] = trusted
+	return trusted, nil
 }
 
 type Runner interface {
