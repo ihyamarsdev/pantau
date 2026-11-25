@@ -172,3 +172,7 @@
     return p;
   };
 })();
+
+// Core (non-module) code calls these by global name; the bundle is a module, so export them here.
+// Last file in the bundle, so tfGateExtras already holds its final (wrapped) value.
+Object.assign(window, { tfCloudRefresh, tfAuditRefresh, tfRegistryRefresh, tfGateExtras });
