@@ -1006,6 +1006,5 @@ function renderCfTunnels() {
   }).join('');
 }
 
-for (const [k, v] of Object.entries(S.TF_TXT)) { S.I18N.en[k] = v[0]; S.I18N.id[k] = v[1]; }
 
 export { loadCfAccounts, populateCfAccountSelect, onSelectCfAccount, refreshCfSection, loadCfZones, filterCfZones, renderCfZones, openCfAccountModal, submitCfAccountModal, deleteCfAccount, openCfZoneModal, switchCfZoneTab, refreshCurrentCfZoneTab, loadCfDnsRecords, renderCfDnsTable, toggleCfRecordProxied, onCfRecordTypeChange, openCfRecordModal, submitCfRecordModal, deleteCfRecord, submitCfPurgeEverything, submitCfPurgeUrls, loadCfZoneSettings, cfOptionLabel, renderCfSettingRow, renderCfZoneSettings, updateCfZoneSetting, cfPermHint, cfErrMsg, setCfPerm, cfFmtDate, fillCfAccessSelects, onCfAccessTargetChange, loadCfAccessRules, renderCfAccessTable, submitCfAccessRule, deleteCfAccessRule, exportCfDns, cfTunnelsReset, onCfTunnelsToggle, loadCfTunnels, renderCfTunnels };

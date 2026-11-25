@@ -1,0 +1,133 @@
+/* Terraform Runs: global feed, workspace Runs tab, Run Viewer (stepper, approval gate, diff, log). */
+
+.tf-banner {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--warning-border, var(--card-border));
+  background: var(--warning-soft, var(--surface-2)); font-size: var(--fs-sm);
+}
+.tf-banner[hidden] { display: none; }
+.tf-runs-toolbar { flex-wrap: wrap; }
+.tf-runs-toolbar .form-input { height: 32px; font-size: var(--fs-xs); width: auto; min-width: 140px; }
+.tf-runs-toolbar input[type="search"] { flex: 1 1 240px; min-width: 200px; }
+.tf-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.tf-chip {
+  padding: 4px 10px; border-radius: var(--radius-full); border: 1px solid var(--card-border);
+  background: transparent; color: var(--text-muted); font-size: var(--fs-xs); cursor: pointer;
+}
+.tf-chip:hover { color: var(--text); }
+.tf-chip.active { color: var(--accent-text); border-color: var(--primary); background: var(--accent-soft); }
+.tf-chip:focus-visible, .tf-run-row:focus-visible { outline: 2px solid var(--accent-ring, var(--primary)); outline-offset: 2px; }
+
+.tf-table-wrap { overflow-x: auto; border: 1px solid var(--card-border); border-radius: var(--radius); }
+.tf-table-wrap[hidden] { display: none; }
+.tf-table { width: 100%; border-collapse: collapse; font-size: var(--fs-xs); }
+.tf-table th, .tf-table td { padding: 8px 10px; border-bottom: 1px solid var(--card-border); text-align: left; vertical-align: top; white-space: nowrap; }
+.tf-table th { color: var(--text-muted); font-weight: 600; background: var(--surface-2); }
+.tf-table td.tf-wrap, .tf-table td:nth-child(2) { white-space: normal; }
+.tf-run-row { cursor: pointer; }
+.tf-run-row:hover td { background: var(--hover); }
+.tf-small { font-size: var(--fs-xs); }
+.tf-grow { flex: 1; }
+.tf-check { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-muted); cursor: pointer; }
+.tf-stat { font-size: var(--fs-lg); font-weight: 600; }
+
+.tf-elapsed { font-variant-numeric: tabular-nums; }
+.tf-ws-runs-bar { justify-content: space-between; margin-bottom: 10px; }
+.tf-ws-runs-bar select { height: 32px; font-size: var(--fs-xs); width: auto; }
+
+/* ---- Run Viewer ---- */
+.tf-run-view { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.tf-run-view [hidden] { display: none !important; }
+.tf-run-head { gap: 10px; }
+.tf-meta { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 0; font-size: var(--fs-xs); }
+.tf-meta dt { color: var(--text-muted); }
+.tf-meta dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+.tf-stepper { list-style: none; margin: 0; padding: 0; display: flex; gap: 6px; flex-wrap: wrap; }
+.tf-step {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: var(--radius-full);
+  border: 1px solid var(--card-border); font-size: var(--fs-xs); color: var(--text-faint);
+}
+.tf-step-done { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, var(--card-border)); }
+.tf-step-active { color: var(--info); border-color: var(--info); }
+.tf-step-active svg { animation: tf-spin 1.1s linear infinite; }
+.tf-step-warn { color: var(--warning); border-color: var(--warning); }
+.tf-step-failed { color: var(--danger); border-color: var(--danger); }
+.tf-step-skipped { text-decoration: line-through; }
+@keyframes tf-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .tf-step-active svg { animation: none; } }
+
+/* Sticky so the approval decision stays visible while the diff or log scrolls underneath. */
+.tf-run-gate {
+  position: sticky; top: 0; z-index: 2; gap: 8px;
+  border-left: 4px solid var(--primary); background: var(--card-bg);
+  box-shadow: 0 6px 12px -8px rgba(0, 0, 0, 0.5);
+}
+.tf-run-gate textarea { width: 100%; box-sizing: border-box; }
+.tf-run-gate .tf-error { font-size: var(--fs-xs); }
+
+.tf-card-accent { border-left: 4px solid var(--card-border); gap: 6px; }
+.tf-card-passed { border-left-color: var(--success); }
+.tf-card-warning { border-left-color: var(--warning); }
+.tf-card-failed { border-left-color: var(--danger); }
+.tf-policy-row { font-size: var(--fs-xs); margin-top: 4px; }
+.tf-violation { margin-left: 20px; color: var(--warning); overflow-wrap: anywhere; }
+.tf-card-failed .tf-violation { color: var(--danger); }
+.tf-policy-panel { display: flex; flex-direction: column; gap: 12px; }
+
+/* Plan diff */
+.tf-diff-tools { flex-wrap: wrap; justify-content: space-between; margin-bottom: 10px; }
+.tf-diff-tools .form-input { height: 32px; font-size: var(--fs-xs); flex: 1 1 200px; max-width: 320px; }
+.tf-diff-list { display: flex; flex-direction: column; gap: 6px; }
+.tf-diff-card { border: 1px solid var(--card-border); border-left: 4px solid var(--card-border); border-radius: var(--radius); background: var(--card-bg); min-width: 0; }
+.tf-diff-create { border-left-color: var(--success); }
+.tf-diff-update { border-left-color: var(--warning); }
+.tf-diff-replace { border-left-color: var(--danger); }
+.tf-diff-delete { border-left-color: var(--danger); }
+.tf-diff-read { border-left-color: var(--info); }
+.tf-diff-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; cursor: pointer; list-style: none; min-width: 0; flex-wrap: wrap; }
+.tf-diff-head::-webkit-details-marker { display: none; }
+.tf-sym { min-width: 26px; }
+.tf-addr { overflow-wrap: anywhere; min-width: 0; flex: 1 1 200px; font-size: var(--fs-xs); }
+.tf-diff-rows { padding: 4px 10px 10px 36px; display: flex; flex-direction: column; gap: 4px; font-family: var(--font-mono); font-size: var(--fs-xs); }
+.tf-diff-row { overflow-wrap: anywhere; }
+.tf-diff-row-add { color: var(--success); }
+.tf-diff-row-del { color: var(--danger); }
+.tf-diff-row-mod { color: var(--warning); }
+.tf-val { display: inline; }
+
+/* Console log */
+.tf-log-tools { flex-wrap: wrap; margin-bottom: 8px; }
+.tf-log-tools .form-input { height: 32px; font-size: var(--fs-xs); width: 200px; max-width: 100%; }
+.tf-run-log {
+  margin: 0; padding: 10px; max-height: 60vh; overflow: auto;
+  background: var(--surface-2); border: 1px solid var(--card-border); border-radius: var(--radius);
+  font-family: var(--font-mono); font-size: var(--fs-xs); line-height: 1.5; white-space: pre;
+}
+.tf-run-log.tf-log-wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+.tf-log-line { min-height: 1.5em; }
+.tf-log-hit { background: var(--accent-soft); }
+.tf-log-cur { outline: 1px solid var(--primary); }
+.tf-b { font-weight: 700; }
+.tf-d { opacity: 0.65; }
+.tf-u { text-decoration: underline; }
+/* ANSI colours mapped onto the app's semantic tokens, so they stay legible in both themes. */
+.tf-fg-0 { color: var(--text-faint); }
+.tf-fg-1, .tf-fg-9 { color: var(--danger); }
+.tf-fg-2, .tf-fg-10 { color: var(--success); }
+.tf-fg-3, .tf-fg-11 { color: var(--warning); }
+.tf-fg-4, .tf-fg-12 { color: var(--info); }
+.tf-fg-5, .tf-fg-13 { color: var(--primary); }
+.tf-fg-6, .tf-fg-14 { color: var(--accent-text); }
+.tf-fg-7, .tf-fg-15 { color: var(--text); }
+.tf-fg-8 { color: var(--text-muted); }
+
+@container tfbody (max-width: 640px) {
+  .tf-meta { grid-template-columns: 1fr; }
+  .tf-meta dt { margin-top: 6px; }
+}
+@media (max-width: 900px) {
+  .tf-table th, .tf-table td { padding: 6px 8px; }
+  .tf-diff-rows { padding-left: 14px; }
+  .tf-run-log { max-height: 50vh; }
+}

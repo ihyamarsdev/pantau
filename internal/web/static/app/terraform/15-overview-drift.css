@@ -1,0 +1,62 @@
+/* Workspace drawer: Overview and Drift tabs. */
+
+.tf-ov, .tf-drift { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.tf-ov-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; min-width: 0; }
+@container tfbody (min-width: 720px) { .tf-ov-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container tfbody (min-width: 1040px) { .tf-ov-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 900px) { .tf-ov-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.tf-ov-card {
+  min-width: 0; padding: 14px; border: 1px solid var(--card-border); border-radius: var(--radius);
+  background: var(--card-bg); display: flex; flex-direction: column; gap: 10px;
+}
+.tf-ov-title { margin: 0; font-size: var(--fs-sm); font-weight: 600; }
+.tf-ov-small { font-size: var(--fs-xs); }
+.tf-ov-head { justify-content: space-between; }
+.tf-ov-wrap { overflow-wrap: anywhere; min-width: 0; }
+
+/* banners */
+.tf-ov-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--card-border); border-left-width: 4px;
+  background: var(--card-bg); min-width: 0;
+}
+.tf-ov-banner-text { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; overflow-wrap: anywhere; }
+.tf-ov-banner-accent { border-left-color: var(--primary); background: var(--accent-soft); }
+.tf-ov-banner-warn { border-left-color: var(--warning); }
+.tf-ov-banner-danger { border-left-color: var(--danger); }
+.tf-ov-banner-ok { border-left-color: var(--success); }
+#tfOvBanners { display: flex; flex-direction: column; gap: 8px; }
+#tfOvBanners:empty { display: none; }
+
+/* run pips: one square per recent run, newest first */
+.tf-pips { display: flex; flex-wrap: wrap; gap: 4px; }
+.tf-pip {
+  width: 18px; height: 18px; border-radius: 4px; border: 1px solid var(--card-border);
+  background: var(--surface-2); padding: 0; cursor: pointer; flex-shrink: 0;
+}
+.tf-pip:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: 2px; }
+.tf-pip-empty { border-style: dashed; cursor: default; }
+.tf-pip-applied { background: var(--success); border-color: transparent; }
+.tf-pip-errored { background: var(--danger); border-color: transparent; }
+.tf-pip-awaiting { background: var(--warning); border-color: transparent; }
+.tf-pip-live { background: var(--info); border-color: transparent; animation: tf-pulse 1.2s ease-in-out infinite; }
+.tf-pip-other { background: var(--text-faint); border-color: transparent; }
+@media (prefers-reduced-motion: reduce) { .tf-pip-live { animation: none; } }
+
+/* outputs */
+.tf-ov-table-wrap { overflow-x: auto; max-width: 100%; }
+.tf-ov-table { width: 100%; border-collapse: collapse; font-size: var(--fs-xs); table-layout: fixed; }
+.tf-ov-table td { padding: 6px 4px; border-bottom: 1px solid var(--card-border); vertical-align: top; overflow-wrap: anywhere; }
+.tf-ov-name { width: 34%; }
+.tf-ov-val { width: auto; }
+.tf-ov-act { width: 36px; text-align: right; }
+
+/* config key/value list */
+.tf-ov-kv { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr); gap: 6px 12px; margin: 0; font-size: var(--fs-xs); }
+.tf-ov-kv dt { color: var(--text-muted); }
+.tf-ov-kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 420px) { .tf-ov-kv { grid-template-columns: minmax(0, 1fr); } .tf-ov-kv dt { margin-top: 4px; } }
+
+#tfIacChip:empty { display: none; }
+#tfDriftDiff { display: flex; flex-direction: column; gap: 8px; min-width: 0; }

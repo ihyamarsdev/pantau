@@ -1,0 +1,110 @@
+/* Terraform core: section shell, tabs, Gate card, status dots, drawer, dialog. Feature CSS lives next to each module. */
+
+.tf-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.tf-head-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tf-tabs { border-bottom: 1px solid var(--card-border); margin-bottom: 16px; }
+#sectionTerraform .tabs .tab,
+#tfDrawerRoot .tabs .tab,
+#tfDrawerRoot .tf-file-tabs .tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+#sectionTerraform .tabs .tab:hover,
+#tfDrawerRoot .tabs .tab:hover,
+#tfDrawerRoot .tf-file-tabs .tab:hover { color: var(--text); }
+#sectionTerraform .tabs .tab.active,
+#tfDrawerRoot .tabs .tab.active,
+#tfDrawerRoot .tf-file-tabs .tab.active {
+  color: var(--text);
+  border-bottom-color: var(--primary);
+}
+#sectionTerraform .tabs .tab:focus-visible,
+#tfDrawerRoot .tabs .tab:focus-visible,
+#tfDrawerRoot .tf-file-tabs .tab:focus-visible {
+  outline: 2px solid var(--accent-ring, var(--primary));
+  outline-offset: -2px;
+  border-radius: var(--radius-sm, 4px);
+}
+.tf-panel { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.tf-panel[hidden] { display: none; }
+.tf-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tf-muted { color: var(--text-muted); }
+.tf-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+.tf-empty { padding: 28px 16px; }
+.tf-error {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 10px 12px; border-radius: var(--radius);
+  background: var(--danger-soft); border: 1px solid var(--danger-border); color: var(--danger);
+  font-size: var(--fs-sm);
+}
+.tf-skeleton { display: flex; flex-direction: column; gap: 10px; }
+.tf-skel-row {
+  height: 14px; border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--hover) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%; animation: tf-shimmer 1.4s linear infinite;
+}
+@keyframes tf-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+.tf-gate-off {
+  display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center;
+  padding: 36px 20px; border: 1px dashed var(--card-border); border-radius: var(--radius); color: var(--text-muted);
+}
+.tf-gate-title { font-weight: 600; color: var(--text); font-size: var(--fs-md); }
+.tf-gate-desc { max-width: 560px; font-size: var(--fs-sm); }
+
+.tf-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--text-faint); flex-shrink: 0; }
+.tf-dot-applied, .tf-dot-no_changes { background: var(--success, #22c55e); }
+.tf-dot-awaiting_approval, .tf-dot-queued, .tf-dot-planned { background: var(--warning, #f59e0b); }
+.tf-dot-planning, .tf-dot-applying { background: var(--info, #3b82f6); }
+.tf-dot-errored, .tf-dot-policy_failed { background: var(--danger); }
+.tf-dot-live { animation: tf-pulse 1.2s ease-in-out infinite; }
+@keyframes tf-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .tf-dot-live, .tf-skel-row { animation: none; } }
+
+/* ---- drawer ---- */
+.tf-drawer-root { position: fixed; inset: 0; z-index: 1000; display: flex; justify-content: flex-end; }
+.tf-drawer-root[hidden] { display: none; }
+.tf-drawer-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.45); opacity: 0; transition: opacity var(--dur, 180ms) var(--ease, ease); }
+.tf-drawer-root.open .tf-drawer-backdrop { opacity: 1; }
+.tf-drawer {
+  position: relative; width: min(980px, 94vw); height: 100%;
+  display: flex; flex-direction: column; min-height: 0;
+  background: var(--card-bg); border-left: 1px solid var(--card-border); box-shadow: var(--shadow-lg, 0 10px 40px rgba(0, 0, 0, 0.35));
+  transform: translateX(16px); opacity: 0; transition: transform var(--dur, 180ms) var(--ease, ease), opacity var(--dur, 180ms) var(--ease, ease);
+  outline: none;
+}
+.tf-drawer-root.open .tf-drawer { transform: none; opacity: 1; }
+.tf-drawer.wide { width: min(1320px, 96vw); }
+.tf-drawer-head { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--card-border); flex-shrink: 0; }
+.tf-drawer-titles { min-width: 0; flex: 1; }
+.tf-drawer-titles h3 { margin: 0; font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tf-drawer-sub { font-size: var(--fs-xs); color: var(--text-muted); }
+.tf-drawer-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tf-drawer-body { flex: 1; min-height: 0; overflow: auto; padding: 16px; container-name: tfbody; container-type: inline-size; }
+.tf-drawer-tabs { display: flex; gap: 4px; overflow-x: auto; white-space: nowrap; border-bottom: 1px solid var(--card-border); margin-bottom: 14px; }
+
+@media (max-width: 900px) {
+  .tf-drawer, .tf-drawer.wide { width: 100vw; }
+}
+
+/* ---- dialog ---- */
+.tf-dlg .modal-dialog { width: calc(100vw - 32px); }
+.tf-dlg-err { margin: 0 20px 12px; padding: 8px 12px; border-radius: var(--radius); background: var(--danger-soft); border: 1px solid var(--danger-border); color: var(--danger); font-size: var(--fs-sm); }
+.tf-dlg-err[hidden] { display: none; }
+
+/* ---- shared form bits used across modules ---- */
+.tf-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.tf-field-label { font-size: var(--fs-xs); color: var(--text-muted); font-weight: 600; }
+.tf-hint { font-size: var(--fs-xs); color: var(--text-faint); }
+.tf-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@container tfbody (max-width: 640px) { .tf-grid-2 { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .tf-grid-2 { grid-template-columns: 1fr; } }

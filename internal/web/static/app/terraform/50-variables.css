@@ -1,0 +1,83 @@
+/* Variables module: Variables & Cloud tab, workspace Variables drawer tab, Linked Outputs, Detect dialog. */
+
+.tf-v-spacer { flex: 1; }
+.tf-v-grow { flex: 1; min-width: 200px; }
+.tf-v-mb { margin-bottom: 10px; }
+.tf-v-between { justify-content: space-between; }
+.tf-v-span2 { grid-column: 1 / -1; }
+.tf-v-desc { font-size: var(--fs-xs); margin-top: 2px; }
+
+/* segmented control (segment switch inside the tab, and sub-views inside the drawer) */
+.tf-v-seg { display: inline-flex; gap: 4px; padding: 3px; border: 1px solid var(--card-border); border-radius: var(--radius); background: var(--surface-2); max-width: 100%; overflow-x: auto; }
+.tf-v-seg-sm { padding: 2px; }
+.tf-v-seg-btn {
+  display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--text-muted);
+  padding: 6px 12px; border-radius: var(--radius-sm); font-size: var(--fs-sm); cursor: pointer; white-space: nowrap;
+}
+.tf-v-seg-btn:hover { color: var(--text); }
+.tf-v-seg-btn.active { background: var(--card-bg); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2); }
+.tf-v-seg-btn:focus-visible { outline: 2px solid var(--accent-ring, var(--primary)); outline-offset: 2px; }
+
+.tf-v-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.tf-v-bar > input[type="search"] { flex: 1 1 200px; max-width: 320px; }
+.tf-v-bar select.form-input { width: auto; }
+
+.tf-v-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.tf-v-card { display: flex; flex-direction: column; gap: 10px; justify-content: space-between; }
+.tf-v-card-main { min-width: 0; }
+.tf-v-card-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.tf-v-tablewrap { overflow-x: auto; border: 1px solid var(--card-border); border-radius: var(--radius); }
+.tf-v-table { width: 100%; border-collapse: collapse; font-size: var(--fs-xs); }
+.tf-v-table th, .tf-v-table td { padding: 8px 10px; border-bottom: 1px solid var(--card-border); text-align: left; vertical-align: top; }
+.tf-v-table th { color: var(--text-muted); font-weight: 600; background: var(--surface-2); white-space: nowrap; }
+.tf-v-val { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tf-v-acts { text-align: right; white-space: nowrap; }
+.tf-v-flags { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.tf-v-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 36px 20px; text-align: center; color: var(--text-muted); border: 1px dashed var(--card-border); border-radius: var(--radius); }
+
+.tf-check { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); cursor: pointer; }
+.tf-ws-picker { max-height: 180px; overflow: auto; display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--card-border); border-radius: var(--radius-sm); padding: 8px; margin-top: 6px; }
+.tf-ws-opt[hidden] { display: none; }
+
+/* cloud accounts */
+.tf-ca-card { display: flex; flex-direction: column; gap: 8px; }
+.tf-ca-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.tf-ca-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: var(--fs-xs); font-weight: 600; background: var(--accent-soft); color: var(--accent-text); border: 1px solid var(--card-border); }
+.tf-ca-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tf-ca-empty-title { font-weight: 600; color: var(--text); }
+.tf-ca-kv { margin: 0; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-xs); }
+.tf-ca-kv > div { display: flex; justify-content: space-between; gap: 12px; min-width: 0; }
+.tf-ca-kv dt { color: var(--text-muted); }
+.tf-ca-kv dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tf-ca-secret { color: var(--text-faint); }
+
+/* linked outputs */
+.tf-lk-rows { display: flex; flex-direction: column; gap: 8px; }
+.tf-lk-row { display: grid; grid-template-columns: minmax(120px, 1.2fr) minmax(120px, 1fr) minmax(120px, 1fr) auto auto; gap: 8px; align-items: center; }
+.tf-lk-status { font-size: var(--fs-xs); padding: 2px 8px; border-radius: 999px; border: 1px solid var(--card-border); white-space: nowrap; }
+.tf-lk-ok { color: var(--success); }
+.tf-lk-info { color: var(--info); }
+.tf-lk-warn { color: var(--warning); }
+.tf-lk-danger { color: var(--danger); background: var(--danger-soft); border-color: var(--danger-border); }
+.tf-lk-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-top: 12px; }
+.tf-lk-err { flex: 1; color: var(--danger); font-size: var(--fs-xs); min-width: 0; }
+
+/* detect dialog */
+.tf-vd-list { border: 1px solid var(--card-border); border-radius: var(--radius); max-height: 60vh; overflow-y: auto; }
+.tf-vd-row { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; padding: 10px 12px; border-bottom: 1px solid var(--card-border); }
+.tf-vd-row:last-child { border-bottom: 0; }
+.tf-vd-row input[type="checkbox"] { margin-top: 3px; }
+.tf-vd-main { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.tf-vd-err { color: var(--danger); font-size: var(--fs-xs); }
+.tf-vd-err[hidden] { display: none; }
+
+@container tfbody (max-width: 640px) {
+  .tf-lk-row { grid-template-columns: 1fr 1fr; }
+  .tf-lk-row > input { grid-column: 1 / -1; }
+}
+@media (max-width: 900px) {
+  .tf-lk-row { grid-template-columns: 1fr 1fr; }
+  .tf-lk-row > input { grid-column: 1 / -1; }
+  .tf-v-bar > input[type="search"] { max-width: none; flex-basis: 100%; }
+}

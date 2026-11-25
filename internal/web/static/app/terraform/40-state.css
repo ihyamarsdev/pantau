@@ -1,0 +1,41 @@
+/* Workspace drawer tab "State" (lock card, Resources, Versions & Diff). */
+
+.tf-st-lock { flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.tf-st-lock-info { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.tf-st-segs { display: flex; gap: 4px; border-bottom: 1px solid var(--card-border); margin: 14px 0; overflow-x: auto; white-space: nowrap; }
+.tf-st-segs .tab { background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 8px 12px; cursor: pointer; color: var(--text-muted); font: inherit; }
+.tf-st-segs .tab.active { color: var(--text); border-bottom-color: var(--primary); }
+.tf-st-bar { margin: 10px 0; align-items: flex-end; flex-wrap: wrap; }
+.tf-st-q { min-width: 0; flex: 1 1 220px; }
+.tf-st-meta { font-size: var(--fs-xs); }
+.tf-st-table-wrap { overflow-x: auto; border: 1px solid var(--card-border); border-radius: var(--radius); margin-top: 8px; }
+.tf-st-table { width: 100%; border-collapse: collapse; font-size: var(--fs-xs); }
+.tf-st-table th, .tf-st-table td { padding: 8px 10px; border-bottom: 1px solid var(--card-border); text-align: left; vertical-align: middle; }
+.tf-st-table th { color: var(--text-muted); font-weight: 600; background: var(--surface-2); }
+.tf-st-addr { word-break: break-all; min-width: 180px; }
+.tf-st-prov { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tf-st-acts { white-space: nowrap; }
+.tf-st-acts .tf-row { flex-wrap: nowrap; }
+.tf-st-json { font-family: var(--font-mono); font-size: var(--fs-xs); white-space: pre-wrap; word-break: break-word; max-height: 60vh; overflow: auto; margin: 10px 0 0; padding: 10px; background: var(--surface-2); border: 1px solid var(--card-border); border-radius: var(--radius); }
+.tf-st-run { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-sm); }
+.tf-spin { animation: tf-spin 1s linear infinite; }
+@keyframes tf-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .tf-spin { animation: none; } }
+.tf-st-warn { display: flex; align-items: center; gap: 6px; color: var(--warning); margin-bottom: 8px; }
+.tf-st-text { width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: var(--fs-xs); margin-top: 8px; }
+.tf-st-diff { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.tf-st-diff-h { font-weight: 600; font-size: var(--fs-sm); margin-top: 6px; }
+.tf-st-add { color: var(--success, #22c55e); }
+.tf-st-del { color: var(--danger); }
+.tf-st-mod { color: var(--warning); word-break: break-word; }
+.tf-st-chg { border: 1px solid var(--card-border); border-radius: var(--radius); padding: 6px 10px; }
+.tf-st-chg summary { cursor: pointer; word-break: break-all; }
+.tf-st-chg[open] summary { margin-bottom: 6px; }
+
+@container tfbody (max-width: 640px) {
+  .tf-st-prov, .tf-st-table th:nth-child(3), .tf-st-table td:nth-child(3) { display: none; }
+}
+@media (max-width: 900px) {
+  .tf-st-q { flex-basis: 100%; }
+  .tf-st-lock { flex-direction: column; align-items: stretch; }
+}

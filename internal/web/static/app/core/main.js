@@ -14,7 +14,6 @@ import * as m08metricssystemddocker from './08-metrics-systemd-docker.js';
 import * as m09kube from './09-kube.js';
 import * as m10bulkpkg from './10-bulk-pkg.js';
 import * as m11cloudflare from './11-cloudflare.js';
-import * as m12terraform from './12-terraform.js';
 
 Object.assign(window, m00foundation);
 Object.assign(window, m01i18nauth);
@@ -28,7 +27,6 @@ Object.assign(window, m08metricssystemddocker);
 Object.assign(window, m09kube);
 Object.assign(window, m10bulkpkg);
 Object.assign(window, m11cloudflare);
-Object.assign(window, m12terraform);
 
 Object.defineProperty(window, "hostSelectMode", { get: () => S.hostSelectMode, set: (v) => { S.hostSelectMode = v; }, configurable: true });
 Object.defineProperty(window, "selectedHostIds", { get: () => S.selectedHostIds, set: (v) => { S.selectedHostIds = v; }, configurable: true });
@@ -228,39 +226,6 @@ Object.defineProperty(window, "CF_ACCESS_TARGETS", { get: () => S.CF_ACCESS_TARG
 Object.defineProperty(window, "cfAccessRules", { get: () => S.cfAccessRules, set: (v) => { S.cfAccessRules = v; }, configurable: true });
 Object.defineProperty(window, "cfTunnels", { get: () => S.cfTunnels, set: (v) => { S.cfTunnels = v; }, configurable: true });
 Object.defineProperty(window, "cfTunnelsAcc", { get: () => S.cfTunnelsAcc, set: (v) => { S.cfTunnelsAcc = v; }, configurable: true });
-Object.defineProperty(window, "TF_TXT", { get: () => S.TF_TXT, set: (v) => { S.TF_TXT = v; }, configurable: true });
-Object.defineProperty(window, "tfStatus", { get: () => S.tfStatus, set: (v) => { S.tfStatus = v; }, configurable: true });
-Object.defineProperty(window, "tfWorkspaces", { get: () => S.tfWorkspaces, set: (v) => { S.tfWorkspaces = v; }, configurable: true });
-Object.defineProperty(window, "tfCurrentTab", { get: () => S.tfCurrentTab, set: (v) => { S.tfCurrentTab = v; }, configurable: true });
-Object.defineProperty(window, "tfWsViewMode", { get: () => S.tfWsViewMode, set: (v) => { S.tfWsViewMode = v; }, configurable: true });
-Object.defineProperty(window, "tfApplyBusy", { get: () => S.tfApplyBusy, set: (v) => { S.tfApplyBusy = v; }, configurable: true });
-Object.defineProperty(window, "tfWs", { get: () => S.tfWs, set: (v) => { S.tfWs = v; }, configurable: true });
-Object.defineProperty(window, "tfWsTab", { get: () => S.tfWsTab, set: (v) => { S.tfWsTab = v; }, configurable: true });
-Object.defineProperty(window, "tfRunId", { get: () => S.tfRunId, set: (v) => { S.tfRunId = v; }, configurable: true });
-Object.defineProperty(window, "tfRunTimer", { get: () => S.tfRunTimer, set: (v) => { S.tfRunTimer = v; }, configurable: true });
-Object.defineProperty(window, "tfLogOffset", { get: () => S.tfLogOffset, set: (v) => { S.tfLogOffset = v; }, configurable: true });
-Object.defineProperty(window, "tfLogText", { get: () => S.tfLogText, set: (v) => { S.tfLogText = v; }, configurable: true });
-Object.defineProperty(window, "tfPollFails", { get: () => S.tfPollFails, set: (v) => { S.tfPollFails = v; }, configurable: true });
-Object.defineProperty(window, "TF_POLL_MAX_FAILS", { get: () => S.TF_POLL_MAX_FAILS, set: (v) => { S.TF_POLL_MAX_FAILS = v; }, configurable: true });
-Object.defineProperty(window, "tfVars", { get: () => S.tfVars, set: (v) => { S.tfVars = v; }, configurable: true });
-Object.defineProperty(window, "tfVarScope", { get: () => S.tfVarScope, set: (v) => { S.tfVarScope = v; }, configurable: true });
-Object.defineProperty(window, "tfPolicies", { get: () => S.tfPolicies, set: (v) => { S.tfPolicies = v; }, configurable: true });
-Object.defineProperty(window, "tfVarsets", { get: () => S.tfVarsets, set: (v) => { S.tfVarsets = v; }, configurable: true });
-Object.defineProperty(window, "tfModules", { get: () => S.tfModules, set: (v) => { S.tfModules = v; }, configurable: true });
-Object.defineProperty(window, "tfModule", { get: () => S.tfModule, set: (v) => { S.tfModule = v; }, configurable: true });
-Object.defineProperty(window, "tfOutputs", { get: () => S.tfOutputs, set: (v) => { S.tfOutputs = v; }, configurable: true });
-Object.defineProperty(window, "tfOutputsRevealed", { get: () => S.tfOutputsRevealed, set: (v) => { S.tfOutputsRevealed = v; }, configurable: true });
-Object.defineProperty(window, "tfStateVersions", { get: () => S.tfStateVersions, set: (v) => { S.tfStateVersions = v; }, configurable: true });
-Object.defineProperty(window, "tfFE", { get: () => S.tfFE, set: (v) => { S.tfFE = v; }, configurable: true });
-Object.defineProperty(window, "TF_ACTIVE_RUN", { get: () => S.TF_ACTIVE_RUN, set: (v) => { S.TF_ACTIVE_RUN = v; }, configurable: true });
-Object.defineProperty(window, "TF_WS_TABS", { get: () => S.TF_WS_TABS, set: (v) => { S.TF_WS_TABS = v; }, configurable: true });
-Object.defineProperty(window, "tfE", { get: () => S.tfE, set: (v) => { S.tfE = v; }, configurable: true });
-Object.defineProperty(window, "tfTabRenderers", { get: () => S.tfTabRenderers, set: (v) => { S.tfTabRenderers = v; }, configurable: true });
-Object.defineProperty(window, "tfDirtyGuard", { get: () => S.tfDirtyGuard, set: (v) => { S.tfDirtyGuard = v; }, configurable: true });
-Object.defineProperty(window, "tfStateRes", { get: () => S.tfStateRes, set: (v) => { S.tfStateRes = v; }, configurable: true });
-Object.defineProperty(window, "tfDiffSel", { get: () => S.tfDiffSel, set: (v) => { S.tfDiffSel = v; }, configurable: true });
-Object.defineProperty(window, "TF_POLICY_KINDS", { get: () => S.TF_POLICY_KINDS, set: (v) => { S.TF_POLICY_KINDS = v; }, configurable: true });
-Object.defineProperty(window, "tfModuleVer", { get: () => S.tfModuleVer, set: (v) => { S.tfModuleVer = v; }, configurable: true });
 
 // Release background resources on unload so SSE/WebSocket connections and timers are torn down.
 window.addEventListener('pagehide', () => {
@@ -275,7 +240,7 @@ window.addEventListener('pagehide', () => {
   for (const key of ['dockerLogsSocket', 'kubeLogsSocket', 'pkgUpgradeSocket', 'terminalSocket']) {
     if (S[key]) { try { S[key].close(); } catch (e) {} S[key] = null; }
   }
-  for (const key of ['inspectAllPollingInterval', 'transferPollInterval', 'dockerStatsTimer', 'kubeAutoRefreshTimer', 'tfRunTimer', 'pkgCooldownTimer', 'pkgUpdateCooldownTimer', 'secCooldownTimer']) {
+  for (const key of ['inspectAllPollingInterval', 'transferPollInterval', 'dockerStatsTimer', 'kubeAutoRefreshTimer', 'pkgCooldownTimer', 'pkgUpdateCooldownTimer', 'secCooldownTimer']) {
     if (S[key]) { clearInterval(S[key]); S[key] = null; }
   }
   document.querySelectorAll('[data-fit-observer]').forEach(el => {

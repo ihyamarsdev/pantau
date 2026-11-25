@@ -10,7 +10,6 @@ import { stopDockerLogs, applyEditorMaximizeState, minimizeHostDetail, minimizeE
 import { activateTerminalTab, toggleTabSplit, closeTerminalTab, minimizeTerminalDock } from './04-terminal.js';
 import { stopKubeLogs } from './09-kube.js';
 import { stopPkgUpgradeLogs } from './10-bulk-pkg.js';
-import { tfDrawerOpen, closeTfWorkspace } from './12-terraform.js';
 
 function openModal(id) {
   const el = document.getElementById(id);
@@ -175,7 +174,7 @@ window.addEventListener('keydown', (e) => {
       }
       return;
     }
-    if (tfDrawerOpen()) closeTfWorkspace();
+    if (window.Tf && Tf.drawer.isOpen()) Tf.drawer.close();
   }
 });
 

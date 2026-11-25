@@ -10,7 +10,20 @@ import { hostIpCopyHtml, openTerminalForHost, restoreSavedTerminalTabs } from '.
 import { formatBytes } from './05-settings-transfer.js';
 import { openModal, closeModal, escapeHtml, jsArg } from './06-modal-docs-activity.js';
 import { isHostStale, fleetCounts, recordHostTrafficSample, getHostTrafficHistory, renderSparklineSVG, setKpiFilter, renderKpiStrip, hostSecurityChip, getHostTopIssues, updateSideNavData } from './08-metrics-systemd-docker.js';
-import { tfDlg, tfDlgClose, tfFoot, tfPrimary } from './12-terraform.js';
+// VPN dialogs (levels 1 and 2) on top of the shared Tf.dlg modal. Footer buttons call vpnDlgClose by global name.
+const vpnDlgs = {};
+function vpnDlg(n, title, body, footer, width) {
+  if (vpnDlgs[n]) vpnDlgs[n].close();
+  vpnDlgs[n] = Tf.dlg.open({ title, body, footer, width, onClose: () => { delete vpnDlgs[n]; } });
+}
+function vpnDlgClose(n) { if (vpnDlgs[n]) vpnDlgs[n].close(); }
+window.vpnDlgClose = vpnDlgClose;
+function vpnFoot(n, primary) {
+  return `<button type="button" class="btn btn-sm" onclick="vpnDlgClose(${n})">${Tf.esc(t('cancel', 'Cancel'))}</button>${primary || ''}`;
+}
+function vpnPrimary(label, onclick, danger) {
+  return `<button type="button" class="btn btn-sm ${danger ? 'btn-danger' : 'btn-primary'}" onclick="${onclick}">${Tf.esc(label)}</button>`;
+}
 
 function renderHosts() {
   // Drop selections of hosts that no longer exist (deleted elsewhere or filtered by reload).
@@ -1105,7 +1118,7 @@ function openVpnNetworkModal(id) {
     </div>
     <div id="vpnModalError" class="form-hint" style="color:var(--danger);"></div>`;
   S.vpnDriverFields = n && n.config ? n.config : {};
-  tfDlg(2, id ? t('vpn_edit_title', 'Edit Network') : t('vpn_new_title', 'New Network'), body, tfFoot(2, tfPrimary(t('save', 'Save'), `saveVpnNetwork(${id || 0})`)), 620);
+  vpnDlg(2, id ? t('vpn_edit_title', 'Edit Network') : t('vpn_new_title', 'New Network'), body, vpnFoot(2, vpnPrimary(t('save', 'Save'), `saveVpnNetwork(${id || 0})`)), 620);
   renderVpnDriverFields();
   loadVpnInterfaces();
 }
@@ -1174,7 +1187,7 @@ async function saveVpnNetwork(id) {
     return;
   }
   showToast(t('vpn_saved', 'Network saved'), 'success');
-  tfDlgClose(2);
+  vpnDlgClose(2);
   loadVpnNetworks();
   loadHosts();
 }
@@ -1231,7 +1244,7 @@ async function openVpnNetworkLog(id) {
   const res = await fetch('/api/vpn/networks/' + id + '/log');
   const data = res.ok ? await res.json() : { lines: [] };
   const n = S.vpnNetworks.find(x => x.id === id) || {};
-  tfDlg(1, t('vpn_log_title', 'Tunnel log') + ': ' + (n.name || '#' + id), `<pre class="mono" style="font-size:var(--fs-xs);white-space:pre-wrap;max-height:60vh;overflow:auto;margin:0;">${escapeHtml((data.lines || []).join('\n') || t('vpn_log_empty', 'No output yet.'))}</pre>`, tfFoot(1), 720);
+  vpnDlg(1, t('vpn_log_title', 'Tunnel log') + ': ' + (n.name || '#' + id), `<pre class="mono" style="font-size:var(--fs-xs);white-space:pre-wrap;max-height:60vh;overflow:auto;margin:0;">${escapeHtml((data.lines || []).join('\n') || t('vpn_log_empty', 'No output yet.'))}</pre>`, vpnFoot(1), 720);
 }
 
 function onHostKeySelectChange() {

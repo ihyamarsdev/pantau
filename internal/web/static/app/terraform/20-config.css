@@ -1,55 +1,91 @@
-/* Terraform workspace drawer: Configuration tab (.tf-cfg). Two-pane editor; container queries on .tf-drawer-body. */
-.tf-cfg { display: flex; flex-direction: column; min-height: 100%; }
-.tf-cfg-main { display: grid; grid-template-columns: 1fr; gap: 14px; min-height: 0; flex: 1; }
-@container tfbody (min-width: 700px) { .tf-cfg-main { grid-template-columns: 220px minmax(0, 1fr); } }
+/* Workspace drawer tab "Configuration": inline editor and Git browser. */
 
+.tf-cfg { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.tf-cfg-main { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 12px; min-width: 0; }
 .tf-cfg-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .tf-cfg-add { display: flex; gap: 6px; }
-.tf-cfg-add .form-input { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: var(--fs-xs); }
-.tf-cfg-list { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; max-height: 50vh; }
-.tf-cfg-frow { display: flex; align-items: center; gap: 2px; border-radius: var(--radius-sm); }
-.tf-cfg-frow:hover { background: var(--surface-2); }
-.tf-cfg-fbtn { flex: 1; display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 6px 8px; background: transparent; border: 0; border-radius: var(--radius-sm); color: var(--text); font: inherit; font-size: var(--fs-xs); font-family: var(--font-mono); cursor: pointer; text-align: left; }
-.tf-cfg-frow.active { background: var(--surface-3); }
-.tf-cfg-frow.active .tf-cfg-fbtn { font-weight: 600; }
-.tf-cfg-fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tf-cfg-fdel { display: none; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; background: transparent; border: 0; border-radius: var(--radius-sm); color: var(--text-muted); cursor: pointer; flex: none; }
-.tf-cfg-frow:hover .tf-cfg-fdel, .tf-cfg-frow.active .tf-cfg-fdel { display: inline-flex; }
-.tf-cfg-fdel:hover { color: var(--danger); background: var(--surface-2); }
-.tf-cfg-dot { width: 6px; height: 6px; border-radius: 50%; background: transparent; flex: none; }
-.tf-cfg-frow.dirty .tf-cfg-dot { background: var(--accent); }
+.tf-cfg-add .form-input { flex: 1; min-width: 0; height: 32px; font-size: var(--fs-xs); }
+.tf-cfg-count { font-size: var(--fs-xs); color: var(--text-faint); }
+.tf-cfg-list { display: flex; flex-direction: column; gap: 2px; max-height: 60vh; overflow: auto; min-width: 0; }
+.tf-cfg-frow { display: flex; align-items: center; gap: 4px; border-radius: var(--radius-sm); }
+.tf-cfg-frow.active { background: var(--accent-soft); }
+.tf-cfg-fbtn {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+  background: transparent; border: 0; color: var(--text); font: inherit; font-size: var(--fs-xs); text-align: left; cursor: pointer;
+}
+.tf-cfg-fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
+.tf-cfg-dot { display: none; width: 7px; height: 7px; border-radius: 50%; background: var(--warning, #f59e0b); flex-shrink: 0; }
+.tf-cfg-frow.dirty .tf-cfg-dot { display: inline-block; }
+.tf-cfg-fdel { background: transparent; border: 0; color: var(--text-faint); padding: 4px; cursor: pointer; }
+.tf-cfg-fdel:hover { color: var(--danger); }
+.tf-cfg-wd .tf-cfg-fname { font-weight: 600; }
 
-.tf-cfg-ed { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; }
-.tf-cfg-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.tf-cfg-name { font-size: var(--fs-sm); font-weight: 600; }
-.tf-cfg-size { font-size: var(--fs-xs); color: var(--text-muted); }
-.tf-cfg-dirty { color: var(--accent); font-size: var(--fs-xs); }
+.tf-cfg-ed { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.tf-cfg-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.tf-cfg-name { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40%; }
+.tf-cfg-size { font-size: var(--fs-xs); color: var(--text-faint); }
+.tf-cfg-dirty {
+  font-size: var(--fs-xs); padding: 2px 8px; border-radius: var(--radius-full);
+  background: var(--warning-soft, var(--surface-2)); color: var(--warning); border: 1px solid var(--card-border);
+}
+.tf-cfg-dirty[hidden] { display: none; }
 .tf-cfg-gap { flex: 1; }
-.tf-cfg-grp { display: inline-flex; gap: 8px; flex-wrap: nowrap; }
-.tf-cfg-err { padding: 8px 12px; border: 1px solid var(--danger-border, var(--danger)); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--danger); font-size: var(--fs-xs); }
-.tf-cfg-hint { display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: var(--fs-xs); }
-.tf-cfg-edbox { flex: 1; min-height: 360px; border: 1px solid var(--card-border); border-radius: var(--radius); overflow: hidden; }
-.tf-cfg-edbox .CodeMirror { height: 100%; font-family: var(--font-mono); font-size: var(--fs-xs); }
+.tf-cfg-grp { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.tf-cfg-hint { font-size: var(--fs-xs); color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+.tf-cfg-edbox { min-width: 0; border: 1px solid var(--card-border); border-radius: var(--radius); overflow: hidden; }
+.tf-cfg-edbox .CodeMirror { height: 52vh; min-height: 260px; font-size: var(--fs-sm); }
 
-/* Git-source card */
-.tf-cfg-gitcard { display: flex; flex-direction: column; gap: 10px; }
-.tf-cfg-gk { color: var(--text-muted); }
-.tf-cfg-gitbtns { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tf-cfg-err {
+  padding: 8px 12px; border-radius: var(--radius); font-size: var(--fs-sm);
+  background: var(--danger-soft); border: 1px solid var(--danger-border); color: var(--danger);
+}
+.tf-cfg-err[hidden] { display: none; }
+.tf-cfg-note { font-size: var(--fs-xs); color: var(--text-muted); padding: 4px 0; }
+.tf-cfg-x { float: right; background: transparent; border: 0; color: var(--text-muted); cursor: pointer; padding: 2px; }
 
-/* Format / Validate diagnostics panel */
-.tf-cfg-diag { position: relative; border: 1px solid var(--card-border); border-radius: var(--radius-sm); background: var(--surface-2); font-size: var(--fs-xs); }
-.tf-cfg-diag-x { position: absolute; top: 6px; right: 6px; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; background: transparent; border: 0; border-radius: var(--radius-sm); color: var(--text-muted); cursor: pointer; }
-.tf-cfg-diag-x:hover { color: var(--text); background: var(--surface-3); }
-.tf-cfg-diag-sum { padding: 8px 36px 8px 12px; font-weight: 600; cursor: pointer; }
-.tf-cfg-diag-sum.ok { color: var(--success, #34d399); }
+.tf-cfg-diag, .tf-cfg-regc {
+  position: relative; padding: 10px 12px; border: 1px solid var(--card-border); border-radius: var(--radius);
+  background: var(--surface-2); font-size: var(--fs-sm); max-height: 30vh; overflow: auto;
+}
+.tf-cfg-diag[hidden], .tf-cfg-regc[hidden] { display: none; }
+.tf-cfg-diag-sum { cursor: pointer; font-weight: 600; }
+.tf-cfg-diag-sum.ok { color: var(--success); }
 .tf-cfg-diag-sum.err { color: var(--danger); }
-.tf-cfg-dg-list { list-style: none; margin: 0; padding: 0 12px 8px; display: flex; flex-direction: column; gap: 8px; max-height: 240px; overflow-y: auto; }
-.tf-cfg-dg-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.tf-cfg-dg-sum { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
-.tf-cfg-sev { padding: 1px 8px; border-radius: var(--radius-full); font-size: var(--fs-xs); font-weight: 600; flex: none; }
-.tf-cfg-sev-error { background: var(--danger-soft); color: var(--danger); border: 1px solid var(--danger-border); }
-.tf-cfg-sev-warning { background: var(--warning-soft); color: var(--warning); border: 1px solid var(--warning-border); }
-.tf-cfg-loc { margin-left: auto; padding: 0; background: transparent; border: 0; color: var(--accent); font-size: var(--fs-xs); cursor: pointer; text-decoration: underline; }
-.tf-cfg-dg-detail { margin: 4px 0 0; padding: 6px 8px; background: var(--code-bg); border-radius: var(--radius-sm); white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); max-height: 200px; overflow-y: auto; }
-.tf-cfg-diag > .tf-cfg-dg-detail, .tf-cfg-diag details > .tf-cfg-dg-detail { margin: 0 12px 8px; }
-#tfCfgValidate .spinner { display: inline-flex; }
+.tf-cfg-dg-list, .tf-cfg-regc-list { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.tf-cfg-dg-head, .tf-cfg-regc-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tf-cfg-dg-sum { flex: 1; min-width: 0; }
+.tf-cfg-dg-detail { margin: 4px 0 0; font-size: var(--fs-xs); white-space: pre-wrap; color: var(--text-muted); }
+.tf-cfg-sev { font-size: var(--fs-xs); padding: 1px 6px; border-radius: var(--radius-sm); font-weight: 600; }
+.tf-cfg-sev-error { background: var(--danger-soft); color: var(--danger); }
+.tf-cfg-sev-warning { background: var(--warning-soft, var(--surface-2)); color: var(--warning); }
+.tf-cfg-loc { background: transparent; border: 0; color: var(--accent-text); cursor: pointer; font-size: var(--fs-xs); padding: 0; }
+.tf-cfg-regc-loc { font-size: var(--fs-xs); color: var(--text-faint); }
+
+/* Git mode */
+.tf-cfg-gitinfo {
+  display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
+  border: 1px solid var(--card-border); border-radius: var(--radius); background: var(--surface-2);
+}
+.tf-cfg-gitgrid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; font-size: var(--fs-xs); }
+.tf-cfg-gk { color: var(--text-muted); }
+.tf-cfg-vcs { font-size: var(--fs-xs); }
+.tf-cfg-vcs.ok { color: var(--success); }
+.tf-cfg-vcs.err { color: var(--danger); }
+.tf-cfg-tree .tf-cfg-fbtn { font-family: var(--font-mono); }
+.tf-cfg-commit { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.tf-cfg-commit .form-input { flex: 1; min-width: 180px; }
+.tf-cfg-changed { font-size: var(--fs-xs); }
+
+/* Narrow drawer or phone: stack the two panes; the file list becomes a horizontal strip. */
+@container tfbody (max-width: 700px) {
+  .tf-cfg-main { grid-template-columns: 1fr; }
+  .tf-cfg-list { max-height: 22vh; }
+  .tf-cfg-name { max-width: 100%; }
+  .tf-cfg-gitgrid { grid-template-columns: 1fr; }
+}
+@media (max-width: 900px) {
+  .tf-cfg-main { grid-template-columns: 1fr; }
+  .tf-cfg-list { max-height: 22vh; }
+  .tf-cfg-edbox .CodeMirror { height: 46vh; min-height: 220px; }
+  .tf-cfg-commit .form-input { min-width: 0; width: 100%; }
+}

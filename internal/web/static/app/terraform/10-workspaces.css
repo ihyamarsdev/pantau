@@ -1,0 +1,124 @@
+/* Workspaces tab, card grid, dense table, New Workspace drawer, workspace drawer header/split button. */
+
+/* ---- KPI strip (exception-first: clickable status chips) ---- */
+.tf-ws-toolbar { display: flex; flex-direction: column; gap: 10px; }
+.tf-kpi-strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.tf-kpi {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left;
+  padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--card-border);
+  background: var(--card-bg); color: var(--text); cursor: pointer; min-width: 0;
+  transition: border-color var(--dur, 180ms) var(--ease, ease), background var(--dur, 180ms) var(--ease, ease);
+}
+.tf-kpi:hover { background: var(--hover); }
+.tf-kpi.active { border-color: var(--primary); background: var(--accent-soft); }
+.tf-kpi-n { font-size: var(--fs-md); font-weight: 600; }
+.tf-kpi-l { font-size: var(--fs-xs); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.tf-kpi-warning .tf-kpi-n { color: var(--warning); }
+.tf-kpi-danger .tf-kpi-n { color: var(--danger); }
+.tf-kpi-info .tf-kpi-n { color: var(--info); }
+.tf-kpi-primary .tf-kpi-n { color: var(--accent-text); }
+
+/* ---- toolbar ---- */
+.tf-ws-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tf-ws-bar-end { justify-content: flex-end; }
+.tf-ws-search { margin: 0; flex: 1 1 220px; max-width: 320px; }
+.tf-sel { height: 32px; width: auto; font-size: var(--fs-xs); }
+.tf-kbd-hint { font-size: var(--fs-xs); }
+
+/* ---- card grid ---- */
+.tf-ws-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.tf-ws-grid > .tf-group { grid-column: 1 / -1; }
+.tf-ws-card { cursor: pointer; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.tf-ws-card:focus-visible, .tf-ws-row:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.tf-ws-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tf-ws-name { font-weight: 600; min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tf-ws-desc { font-size: var(--fs-xs); min-height: 16px; }
+.tf-ws-meta { gap: 6px; }
+.tf-ws-card-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-xs); margin-top: auto; }
+
+/* ---- group headers (group-by) ---- */
+.tf-group {
+  display: flex; align-items: center; gap: 8px; padding: 6px 4px; margin-top: 6px; cursor: pointer;
+  font-size: var(--fs-sm); font-weight: 600; color: var(--text-muted); user-select: none;
+}
+.tf-group:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.tf-caret { display: inline-flex; transition: transform var(--dur, 180ms) var(--ease, ease); }
+.tf-caret.collapsed { transform: rotate(-90deg); }
+.tf-group-row td { padding: 0; border-bottom: none; }
+
+/* ---- dense table ---- */
+.tf-ws-table-wrap { overflow-x: auto; border: 1px solid var(--card-border); border-radius: var(--radius); }
+.tf-ws-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.tf-ws-table th { text-align: left; font-size: var(--fs-xs); color: var(--text-muted); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--card-border); white-space: nowrap; cursor: pointer; user-select: none; }
+.tf-ws-table th[aria-sort="ascending"]::after { content: " ▲"; color: var(--accent-text); }
+.tf-ws-table th[aria-sort="descending"]::after { content: " ▼"; color: var(--accent-text); }
+.tf-ws-table td { padding: 8px 10px; border-bottom: 1px solid color-mix(in srgb, var(--card-border) 60%, transparent); vertical-align: middle; }
+.tf-ws-row { cursor: pointer; }
+.tf-ws-row:hover td { background: var(--hover); }
+.tf-actions { text-align: right; white-space: nowrap; }
+.tf-row .tf-more { display: inline-block; }
+
+/* ---- overflow / split menus (native details) ---- */
+.tf-more { position: relative; display: inline-block; }
+.tf-more > summary { list-style: none; cursor: pointer; }
+.tf-more > summary::-webkit-details-marker { display: none; }
+.tf-menu {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 180px;
+  display: flex; flex-direction: column; padding: 4px; border-radius: var(--radius);
+  background: var(--card-bg); border: 1px solid var(--card-border); box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.3));
+}
+.tf-menu button {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--text); font-size: var(--fs-sm); text-align: left; cursor: pointer; white-space: nowrap;
+}
+.tf-menu button:hover, .tf-menu button:focus-visible { background: var(--hover); outline: none; }
+
+/* ---- workspace drawer header split button ---- */
+.tf-split { display: inline-flex; align-items: stretch; gap: 1px; }
+.tf-split > .btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.tf-split > .tf-more > summary { border-top-left-radius: 0; border-bottom-left-radius: 0; height: 100%; }
+.tf-split .tf-menu { top: calc(100% + 4px); }
+.tf-menu-right { right: 0; left: auto; }
+
+/* ---- drawer tab bar ---- */
+.tf-ws-body { min-width: 0; }
+
+/* ---- New Workspace drawer ---- */
+.tf-new { display: flex; flex-direction: column; gap: 14px; }
+.tf-section-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text-muted); }
+.tf-tpl-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.tf-tpl-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 10px; min-width: 0;
+  border: 1px solid var(--card-border); border-radius: var(--radius); background: var(--card-bg); color: var(--text);
+  font-size: var(--fs-sm); text-align: left; cursor: pointer;
+}
+.tf-tpl-card span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.tf-tpl-card:hover { background: var(--hover); }
+.tf-tpl-card.on { border-color: var(--primary); background: var(--accent-soft); }
+.tf-tpl-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.tf-seg { display: inline-flex; border: 1px solid var(--card-border); border-radius: var(--radius); overflow: hidden; align-self: flex-start; }
+.tf-seg button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 0; background: transparent; color: var(--text-muted); cursor: pointer; font-size: var(--fs-sm); }
+.tf-seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--text); }
+.tf-file-tabs { display: flex; gap: 4px; overflow-x: auto; white-space: nowrap; border-bottom: 1px solid var(--card-border); }
+.tf-file-tabs .tab { padding: 6px 10px; }
+.tf-code {
+  width: 100%; min-height: 240px; margin-top: 6px; box-sizing: border-box; resize: vertical;
+  font-family: var(--font-mono); font-size: var(--fs-sm); padding: 10px; border-radius: var(--radius);
+  border: 1px solid var(--card-border); background: var(--surface-2); color: var(--text); tab-size: 2;
+}
+.tf-file-name { flex: 1 1 160px; max-width: 260px; }
+.tf-check { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-sm); }
+.tf-full { grid-column: 1 / -1; }
+.tf-new-foot { justify-content: flex-end; }
+
+@container tfbody (max-width: 640px) {
+  .tf-kpi-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .tf-ws-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 900px) {
+  .tf-kpi-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tf-ws-search { max-width: none; flex-basis: 100%; }
+  .tf-ws-bar-end { justify-content: space-between; }
+  .tf-ws-grid { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { .tf-caret, .tf-kpi { transition: none; } }

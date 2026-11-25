@@ -12,7 +12,6 @@ import { formatBytes } from './05-settings-transfer.js';
 import { openModal, closeModal, escapeHtml } from './06-modal-docs-activity.js';
 import { loadKubeClusters, populateKubeHostSelect, stopKubeAutorefresh } from './09-kube.js';
 import { loadCfAccounts } from './11-cloudflare.js';
-import { tx, refreshTfSection } from './12-terraform.js';
 
 function isHostStale(h) {
   if (S.currentPollInterval === 0) return false;
@@ -1331,7 +1330,7 @@ function switchSideNav(section) {
   else if (section === 'kube') { loadKubeClusters(); populateKubeHostSelect(); }
   else if (section === 'cloudflare') { loadCfAccounts(); }
   else if (section === 'ansible') { refreshAnsibleSection(); }
-  else if (section === 'terraform') { refreshTfSection(); }
+  else if (section === 'terraform') { window.refreshTfSection(); }
   else if (section === 'repos') { if (window.Repos) Repos.refresh(); }
   else if (section === 'shortcuts') { if (window.Shortcuts) Shortcuts.refresh(); }
   else if (section === 'secrets') { if (window.Vault) Vault.refresh(); }

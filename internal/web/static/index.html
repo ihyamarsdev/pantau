@@ -3360,32 +3360,7 @@ header {
 .cf-perm-table { width: 100%; font-size: var(--fs-xs); }
 .cf-perm-table code { font-family: var(--font-mono); }
 
-/* --- Terraform Management Styles --- */
-#tfTabs { border-bottom: 1px solid var(--card-border); margin-bottom: 20px; }
-#tfTabs .tab { background: transparent; border-top: 0; border-right: 0; border-left: 0; font-family: inherit; display: inline-flex; align-items: center; gap: 6px; }
-#tfWsTabs .tab { background: transparent; border-top: 0; border-right: 0; border-left: 0; font-family: inherit; display: inline-flex; align-items: center; gap: 6px; }
-.tf-log { background: var(--code-bg); border: 1px solid var(--card-border); border-radius: var(--radius-sm); padding: 10px; font-family: var(--font-mono); font-size: var(--fs-xs); max-height: 360px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
-.tf-diff-card { border: 1px solid var(--card-border); border-radius: var(--radius-md); margin-bottom: 10px; overflow: hidden; background: var(--surface-1); }
-.tf-diff-header { padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; gap: 10px; font-size: var(--fs-xs); }
-.tf-diff-header:hover { background: var(--hover); }
-.tf-diff-create { border-left: 4px solid var(--success); }
-.tf-diff-update { border-left: 4px solid var(--warning); }
-.tf-diff-delete { border-left: 4px solid var(--danger); }
-.tf-diff-replace { border-left: 4px solid var(--danger); }
-.tf-diff-body { padding: 10px 14px; border-top: 1px solid var(--card-border); background: var(--code-bg); font-family: var(--font-mono); font-size: var(--fs-xs); line-height: 1.5; overflow-x: auto; }
-.tf-diff-row-add { color: var(--success); }
-.tf-diff-row-mod { color: var(--warning); }
-.tf-diff-row-del { color: var(--danger); }
-.badge-drifted { background: color-mix(in srgb, var(--warning) 20%, transparent); color: var(--warning); border: 1px solid var(--warning-border); }
-.badge-locked { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); border: 1px solid var(--danger-border); }
-.badge-awaiting_approval { background: color-mix(in srgb, var(--primary) 20%, transparent); color: var(--accent-text); border: 1px solid var(--primary); }
-.badge-never { background: var(--surface-3); color: var(--text-muted); }
-.badge-applied { background: var(--success-soft); color: var(--success); }
 .badge-errored { background: var(--danger-soft); color: var(--danger); }
-.badge-running { background: var(--info-soft); color: var(--info); }
-.badge-policy-passed { background: var(--success-soft); color: var(--success); }
-.badge-policy-warning { background: var(--warning-soft); color: var(--warning); }
-.badge-policy-failed { background: var(--danger-soft); color: var(--danger); }
 
 /* --- 2FA Setup Well & Recovery Grid --- */
 .qr-well {
@@ -4216,167 +4191,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
       </div>
       <div id="vaultStatusStrip" class="vault-status-strip"></div>
     </div>
-    <div id="sectionTerraform" class="app-section" style="display:none;">
-      <div class="section-header" style="margin-bottom:20px;position:relative;z-index:20;">
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
-          <div>
-            <h2 style="margin:0 0 4px 0;font-size:var(--fs-xl);font-weight:600;" data-i18n="tf_section_title">Terraform Management</h2>
-            <p style="margin:0;color:var(--text-muted);font-size:var(--fs-sm);" data-i18n="tf_section_desc">Manage workspaces, state versions, runs, variables, modules, and drift detection.</p>
-          </div>
-          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-            <span id="tfGateStatus" role="status" onclick="switchTfTab('gate')" style="cursor:pointer;"></span>
-            <button id="btnTfRefresh" class="btn btn-sm header-btn" onclick="refreshTfSection()" title="Refresh" data-i18n-title="refresh" style="height:34px;display:inline-flex;align-items:center;gap:6px;">
-              <svg class="icon icon-sm"><use href="#i-refresh-cw"/></svg> <span data-i18n="refresh">Refresh</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div id="tfTabs" class="tabs" role="tablist" aria-label="Terraform" onkeydown="onTfTabKeydown(event)">
-        <button type="button" class="tab active" id="tabTfWorkspaces" data-tab="workspaces" role="tab" aria-selected="true" aria-controls="tfPanelWorkspaces" onclick="switchTfTab('workspaces')">
-          <svg class="icon icon-sm"><use href="#i-layers"/></svg> <span data-i18n="tf_tab_workspaces">Workspaces</span>
-        </button>
-        <button type="button" class="tab" id="tabTfVarsets" data-tab="varsets" role="tab" aria-selected="false" aria-controls="tfPanelVarsets" tabindex="-1" onclick="switchTfTab('varsets')">
-          <svg class="icon icon-sm"><use href="#i-sliders-horizontal"/></svg> <span data-i18n="tf_tab_varsets">Variable Sets</span>
-        </button>
-        <button type="button" class="tab" id="tabTfCloud" data-tab="cloud" role="tab" aria-selected="false" aria-controls="tfPanelCloud" tabindex="-1" onclick="switchTfTab('cloud')">
-          <svg class="icon icon-sm"><use href="#i-cloud"/></svg> <span data-i18n="tf_tab_cloud">Cloud Accounts</span>
-        </button>
-        <button type="button" class="tab" id="tabTfPolicies" data-tab="policies" role="tab" aria-selected="false" aria-controls="tfPanelPolicies" tabindex="-1" onclick="switchTfTab('policies')">
-          <svg class="icon icon-sm"><use href="#i-shield"/></svg> <span data-i18n="tf_tab_policies">Policies</span>
-        </button>
-        <button type="button" class="tab" id="tabTfModules" data-tab="modules" role="tab" aria-selected="false" aria-controls="tfPanelModules" tabindex="-1" onclick="switchTfTab('modules')">
-          <svg class="icon icon-sm"><use href="#i-package"/></svg> <span data-i18n="tf_tab_modules">Module Catalog</span>
-        </button>
-        <button type="button" class="tab" id="tabTfRegistry" data-tab="registry" role="tab" aria-selected="false" aria-controls="tfPanelRegistry" tabindex="-1" onclick="switchTfTab('registry')">
-          <svg class="icon icon-sm"><use href="#i-globe"/></svg> <span data-i18n="tf_tab_registry">Registry</span>
-        </button>
-        <button type="button" class="tab" id="tabTfAudit" data-tab="audit" role="tab" aria-selected="false" aria-controls="tfPanelAudit" tabindex="-1" onclick="switchTfTab('audit')">
-          <svg class="icon icon-sm"><use href="#i-activity"/></svg> <span data-i18n="tf_tab_audit">Audit</span>
-        </button>
-        <button type="button" class="tab" id="tabTfGate" data-tab="gate" role="tab" aria-selected="false" aria-controls="tfPanelGate" tabindex="-1" onclick="switchTfTab('gate')">
-          <svg class="icon icon-sm"><use href="#i-shield-alert"/></svg> <span data-i18n="tf_tab_gate">Terraform Gate</span>
-        </button>
-      </div>
-
-      <!-- Tab 1: Workspaces List -->
-      <div id="tfPanelWorkspaces" class="ans-section-panel" role="tabpanel" aria-labelledby="tabTfWorkspaces" tabindex="0" style="display:flex;">
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:1;max-width:760px;">
-            <div class="search-box" style="margin:0;max-width:280px;">
-              <svg class="icon icon-sm text-muted"><use href="#i-search"/></svg>
-              <input type="text" id="tfWsSearchInput" placeholder="Search workspaces..." data-i18n-placeholder="tf_search_ws_ph" style="height:32px;font-size:var(--fs-xs);" oninput="renderTfWorkspaces()" />
-            </div>
-            <select id="tfWsEnvFilter" class="form-input" style="height:32px;font-size:var(--fs-xs);width:auto;" onchange="renderTfWorkspaces()">
-              <option value="" data-i18n="tf_filter_all_env">All Environments</option>
-              <option value="production">Production</option>
-              <option value="staging">Staging</option>
-              <option value="development">Development</option>
-            </select>
-            <select id="tfWsTagFilter" class="form-input" style="height:32px;font-size:var(--fs-xs);width:auto;" onchange="renderTfWorkspaces()">
-              <option value="" data-i18n="tf_filter_all_tags">All Tags</option>
-            </select>
-            <select id="tfWsGroupFilter" class="form-input" style="height:32px;font-size:var(--fs-xs);width:auto;" onchange="renderTfWorkspaces()">
-              <option value="all" data-i18n="filter_all_groups">All Groups</option>
-            </select>
-
-          </div>
-          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-            <div class="view-mode-toggle">
-              <button type="button" class="view-btn active" id="tfWsViewGridBtn" onclick="setTfWsViewMode('grid')" title="Grid"><svg class="icon icon-sm"><use href="#i-layout-grid"/></svg></button>
-              <button type="button" class="view-btn" id="tfWsViewListBtn" onclick="setTfWsViewMode('list')" title="List"><svg class="icon icon-sm"><use href="#i-list"/></svg></button>
-            </div>
-            <div id="tfWsCountBadge" class="badge" style="background:var(--surface-2);border:1px solid var(--card-border);font-family:var(--font-mono);">0 workspaces</div>
-            <button type="button" class="btn btn-sm btn-primary" onclick="openTfWorkspaceModal()" data-i18n-title="tf_btn_new_ws" title="New Workspace" style="display:inline-flex;align-items:center;gap:6px;">
-              <svg class="icon icon-sm"><use href="#i-plus"/></svg> <span data-i18n="tf_btn_new_ws">New Workspace</span>
-            </button>
-          </div>
-        </div>
-        <div id="tfWsGrid" class="grid"></div>
-        <div id="tfWsTableWrap" style="display:none;overflow-x:auto;border:1px solid var(--card-border);border-radius:var(--radius-md);">
-          <table class="ans-sched-tbl" style="width:100%;border-collapse:collapse;font-size:var(--fs-xs);">
-            <thead>
-              <tr>
-                <th data-i18n="tf_col_name">Workspace</th>
-                <th style="width:110px;" data-i18n="status">Status</th>
-                <th style="width:110px;" data-i18n="tf_col_env">Environment</th>
-                <th style="width:90px;" data-i18n="tf_col_binary">Binary</th>
-                <th style="width:80px;" data-i18n="tf_col_resources">Resources</th>
-                <th data-i18n="tf_col_last_run">Last Run</th>
-                <th style="width:120px;text-align:right;" data-i18n="cf_col_actions">Actions</th>
-              </tr>
-            </thead>
-            <tbody id="tfWsTableBody"></tbody>
-          </table>
-        </div>
-        <div id="tfWsEmpty" class="empty-state" style="display:none;">
-          <div class="empty-state-icon"><svg class="icon icon-xl"><use href="#i-layers"/></svg></div>
-          <div class="empty-state-desc" data-i18n="tf_no_ws">No workspaces found</div>
-        </div>
-      </div>
-
-      <!-- Tab 2: Variable Sets -->
-      <div id="tfPanelVarsets" class="ans-section-panel" role="tabpanel" aria-labelledby="tabTfVarsets" tabindex="0" style="display:none;">
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
-          <div style="font-size:var(--fs-xs);color:var(--text-muted);" data-i18n="tf_varsets_hint">Variable sets share environment and terraform variables across workspaces. Global sets apply to all workspaces automatically.</div>
-          <button type="button" class="btn btn-sm btn-primary" onclick="openTfVarsetModal()" style="display:inline-flex;align-items:center;gap:6px;">
-            <svg class="icon icon-sm"><use href="#i-plus"/></svg> <span data-i18n="tf_btn_new_varset">New Variable Set</span>
-          </button>
-        </div>
-        <div id="tfVarsetsList" style="display:flex;flex-direction:column;gap:12px;"></div>
-      </div>
-
-      <!-- Tab 3: Cloud Accounts -->
-      <div id="tfPanelCloud" class="ans-section-panel" role="tabpanel" aria-labelledby="tabTfCloud" tabindex="0" style="display:none;flex-direction:column;">
-        <div id="tfCloudRoot"></div>
-      </div>
-
-      <!-- Tab 4: Policies -->
-      <div id="tfPanelPolicies" class="ans-section-panel" role="tabpanel" aria-labelledby="tabTfPolicies" tabindex="0" style="display:none;">
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
-          <div style="font-size:var(--fs-xs);color:var(--text-muted);" data-i18n="tf_policies_hint">Policy as Code guards runs with built-in rules (deny_destroy, max_deletes, max_changes, deny_resource_types, require_tags, deny_open_cidr).</div>
-          <button type="button" class="btn btn-sm btn-primary" onclick="openTfPolicyModal()" style="display:inline-flex;align-items:center;gap:6px;">
-            <svg class="icon icon-sm"><use href="#i-plus"/></svg> <span data-i18n="tf_btn_new_policy">New Policy</span>
-          </button>
-        </div>
-        <div id="tfPoliciesList" style="display:flex;flex-direction:column;gap:12px;"></div>
-      </div>
-
-      <!-- Tab 4: Module Catalog -->
-      <div id="tfPanelModules" class="ans-section-panel" role="tabpanel" aria-labelledby="tabTfModules" tabindex="0" style="display:none;">
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
-          <div style="font-size:var(--fs-xs);color:var(--text-muted);" data-i18n="tf_modules_hint">Private Module Registry documentation &amp; snippets for Terraform workspaces.</div>
-          <button type="button" class="btn btn-sm btn-primary" onclick="openTfModuleModal()" style="display:inline-flex;align-items:center;gap:6px;">
-            <svg class="icon icon-sm"><use href="#i-plus"/></svg> <span data-i18n="tf_btn_new_module">New Module</span>
-          </button>
-        </div>
-        <div id="tfModulesList" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(320px, 1fr));gap:14px;"></div>
-      </div>
-
-      <!-- Tab 5: Gate & Settings -->
-      <div id="tfPanelGate" class="ans-section-panel" role="tabpanel" aria-labelledby="tabTfGate" tabindex="0" style="display:none;flex-direction:column;gap:14px;">
-        <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
-          <h4 style="margin:0;font-size:var(--fs-md);font-weight:600;" data-i18n="tf_gate_panel_title">Terraform Gate &amp; CLI Detection</h4>
-          <p style="margin:0;font-size:var(--fs-xs);color:var(--text-muted);" data-i18n="tf_gate_panel_desc">Terraform and OpenTofu binaries execute locally on the Pantau server with master process privileges. Infracost estimates plan monthly cost diff if installed.</p>
-          <div id="tfGateWarn" role="status" style="font-size:var(--fs-xs);line-height:1.5;"></div>
-          <div id="tfGatePanelStatusList" style="display:flex;flex-direction:column;gap:8px;font-family:var(--font-mono);font-size:var(--fs-xs);"></div>
-          <div style="margin-top:8px;">
-            <button type="button" id="btnTfToggleGate" class="btn btn-sm btn-primary" onclick="toggleTfGate()"></button>
-          </div>
-        </div>
-        <div id="tfGateExtras"></div>
-      </div>
-
-      <!-- Tab 6: Audit trail -->
-      <div id="tfPanelAudit" class="ans-section-panel" role="tabpanel" aria-labelledby="tabTfAudit" tabindex="0" style="display:none;flex-direction:column;">
-        <div id="tfAuditRoot"></div>
-      </div>
-
-      <!-- Tab 7: Terraform Registry browser -->
-      <div id="tfPanelRegistry" class="ans-section-panel" role="tabpanel" aria-labelledby="tabTfRegistry" tabindex="0" style="display:none;flex-direction:column;">
-        <div id="tfRegistryRoot"></div>
-      </div>
-    </div>
+    <div id="sectionTerraform" class="app-section" style="display:none;"></div>
 
   <!-- Activity Console Drawer -->
   <div id="activityConsoleDrawer" class="activity-console-drawer" style="display: none;">
@@ -4801,24 +4616,6 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
   </div>
 </div>
 
-<!-- Terraform Workspace Drawer (docked, mirrors the Ansible drawer) -->
-<div id="tfDrawerRoot" class="tf-drawer-root" hidden>
-  <div class="tf-drawer-backdrop" onclick="closeTfWorkspace()"></div>
-  <aside id="tfDrawer" class="tf-drawer" role="dialog" aria-modal="false" aria-labelledby="tfWsModalName">
-    <div class="tf-drawer-head">
-      <svg class="icon icon-sm text-accent"><use href="#i-terraform"/></svg>
-      <h3 id="tfWsModalName" style="font-size: var(--fs-md); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1;"></h3>
-      <span id="tfWsHeadBadges" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;"></span>
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <button class="btn btn-icon btn-sm" onclick="tfReloadWs().then(() => switchTfWsTab(tfWsTab))" title="Refresh" data-i18n-title="refresh"><svg class="icon icon-sm"><use href="#i-refresh-cw"/></svg></button>
-        <button type="button" id="tfDrawerWide" class="tf-drawer-wide btn-icon btn-sm" onclick="tfToggleDrawerWide()" title="Expand Drawer" data-i18n-title="tf_drawer_expand" aria-label="Expand Drawer"><svg class="icon icon-sm"><use href="#i-maximize-2"/></svg></button>
-        <button type="button" class="btn btn-icon btn-sm" onclick="closeTfWorkspace()" title="Close" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
-      </div>
-    </div>
-    <div id="tfWsTabs" class="tabs tf-drawer-tabs" role="tablist"></div>
-    <div id="tfWsBody" class="tf-drawer-body"></div>
-  </aside>
-</div>
 
 <!-- Vault: Secrets, Templates, Sync Targets and Audit (Workspace Modal) -->
 <div id="vaultModal" role="dialog" aria-modal="true" class="modal">
@@ -4946,25 +4743,6 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
   </div>
 </div>
 
-<!-- Terraform Action Dialogs (level 1 and stacked level 2) -->
-<div id="tfDlg1" role="dialog" aria-modal="true" class="modal">
-  <div id="tfDlg1Content" class="modal-content modal-dialog" style="max-width: 560px;">
-    <div class="modal-header"><h3 id="tfDlg1Title" style="font-size: var(--fs-md); margin: 0;"></h3>
-      <button class="btn btn-icon btn-sm btn-ghost" onclick="tfDlgClose(1)" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button></div>
-    <div id="tfDlg1Body" class="modal-body" style="padding: 16px 20px; overflow: auto;"></div>
-    <div id="tfDlg1Err" role="alert" style="display: none; margin: 0 20px 12px; background: var(--danger-soft); border: 1px solid var(--danger-border); border-radius: var(--radius-sm); padding: 8px 12px; font-size: var(--fs-xs); color: var(--danger); white-space: pre-wrap; word-break: break-all;"></div>
-    <div id="tfDlg1Footer" class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end; align-items: center;"></div>
-  </div>
-</div>
-<div id="tfDlg2" role="dialog" aria-modal="true" class="modal">
-  <div id="tfDlg2Content" class="modal-content modal-dialog" style="max-width: 560px;">
-    <div class="modal-header"><h3 id="tfDlg2Title" style="font-size: var(--fs-md); margin: 0;"></h3>
-      <button class="btn btn-icon btn-sm btn-ghost" onclick="tfDlgClose(2)" aria-label="Close"><svg class="icon icon-sm"><use href="#i-x"/></svg></button></div>
-    <div id="tfDlg2Body" class="modal-body" style="padding: 16px 20px; overflow: auto;"></div>
-    <div id="tfDlg2Err" role="alert" style="display: none; margin: 0 20px 12px; background: var(--danger-soft); border: 1px solid var(--danger-border); border-radius: var(--radius-sm); padding: 8px 12px; font-size: var(--fs-xs); color: var(--danger); white-space: pre-wrap; word-break: break-all;"></div>
-    <div id="tfDlg2Footer" class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end; align-items: center;"></div>
-  </div>
-</div>
 
 <!-- Cloudflare Zone Workspace Modal -->
 <div id="cfZoneModal" role="dialog" aria-modal="true" class="modal">

@@ -480,6 +480,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/terraform/templates", s.authMiddleware(s.handleTerraformTemplates))
 	s.mux.HandleFunc("/api/terraform/workspaces", s.authMiddleware(s.handleTerraformWorkspaces))
 	s.mux.HandleFunc("/api/terraform/workspaces/", s.authMiddleware(s.handleTerraformWorkspaceRoute))
+	s.mux.HandleFunc("/api/terraform/runs", s.authMiddleware(s.handleTerraformRunsFeed))
 	s.mux.HandleFunc("/api/terraform/runs/", s.authMiddleware(s.handleTerraformRunRoute))
 	s.mux.HandleFunc("/api/terraform/varsets", s.authMiddleware(s.handleTerraformVarsets))
 	s.mux.HandleFunc("/api/terraform/varsets/", s.authMiddleware(s.handleTerraformVarsetRoute))
