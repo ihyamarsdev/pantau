@@ -39,3 +39,6 @@ bin/**
 *.test
 *.out
 *.pb.go
+
+# Local scratch/issue tracker (not for Claude context)
+.scratch/**

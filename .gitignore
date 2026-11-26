@@ -18,3 +18,6 @@ internal/store/tmpdiag/
 
 # Per-machine MCP config (absolute paths, local servers)
 .omp/mcp.json
+
+# Local scratch/issue tracker (AGENTS.md); kept on disk, not versioned
+.scratch/
