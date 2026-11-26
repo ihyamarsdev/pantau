@@ -10,7 +10,7 @@ import { copyTextToClipboard, hostIpCopyHtml, loadTerminalPins, openTerminalForH
 import { formatBytes, openTransferDialog, openS3UploadDialog } from './05-settings-transfer.js';
 import { openModal, closeModal, escapeHtml, jsArg } from './06-modal-docs-activity.js';
 import { renderNetDiagTab, netDiagPrivateIPs } from './07-netdiag-compare.js';
-import { loadSystemdTab, openDockerRunForm, openDockerRenameForm, dockerConsole, openDockerInspect, loadDockerInspect, renderDockerImages, openDockerPullForm, openDockerVolumeForm, dockerVolumeRemove, openDockerNetworkForm, openDockerConnectForm, dockerNetworkRemove, renderDockerStacks, dockerFloatingMenu, openDockerStackForm, renderDockerSystem, dockerPrune } from './08-metrics-systemd-docker.js';
+import { loadSystemdTab, openDockerRunForm, openDockerRenameForm, dockerConsole, openDockerInspect, loadDockerInspect, renderDockerImages, openDockerPullForm, openDockerVolumeForm, dockerVolumeRemove, openDockerNetworkForm, openDockerConnectForm, dockerNetworkRemove, renderDockerStacks, dockerFloatingMenu, openDockerStackForm, renderDockerSystem, dockerPrune, dockerExecute } from './08-metrics-systemd-docker.js';
 import { openHostPackageUpgradePreview, pkgAction, openPkgInstallModal } from './10-bulk-pkg.js';
 
 function formatHostCapabilityBadge(host) {
@@ -2273,27 +2273,134 @@ function dockerChips(items) {
     : `<div style="display: flex; flex-wrap: wrap; gap: 4px;">${items.map(([label, title]) => `<span class="badge badge-info" style="text-transform: none;" title="${escapeHtml(title || '')}">${escapeHtml(label)}</span>`).join('')}</div>`;
 }
 
+function dockerContainerProject(c) {
+  return ((c.labels && c.labels['com.docker.compose.project']) || c.compose_project || '').trim();
+}
+
+function dockerContainerService(c) {
+  return ((c.labels && c.labels['com.docker.compose.service']) || c.compose_service || '').trim();
+}
+
+function toggleDockerGroup(groupKey) {
+  const collapsed = S.dockerCollapsedGroups || (S.dockerCollapsedGroups = {});
+  const next = !collapsed[groupKey];
+  collapsed[groupKey] = next;
+  const header = document.querySelector(`.dk-group-row[data-dk-group-key="${CSS.escape(groupKey)}"]`);
+  if (header) {
+    header.setAttribute('aria-expanded', String(!next));
+    const caret = header.querySelector('.dk-group-caret');
+    if (caret) caret.innerHTML = svgIcon(next ? 'chevron-right' : 'chevron-down', 'icon-sm');
+  }
+  document.querySelectorAll(`tr[data-dk-group-item="${CSS.escape(groupKey)}"]`).forEach(tr => {
+    tr.style.display = next ? 'none' : '';
+  });
+}
+
+async function dockerStackQuickAction(project, action) {
+  const actLabel = t(action, action.charAt(0).toUpperCase() + action.slice(1));
+  const ok = await showConfirm({
+    title: t('dk_stack_quick_confirm_title', '{action} stack "{name}"?').replace('{action}', actLabel).replace('{name}', project),
+    message: t('dk_stack_quick_confirm_msg', 'This will {action} all containers in Compose project "{name}".').replace('{action}', action).replace('{name}', project),
+    confirmText: actLabel,
+    danger: action === 'stop'
+  });
+  if (!ok) return;
+  await dockerExecute({ sub: 'stack', payload: { project, action } });
+}
+
 function renderDockerContainers(data) {
   const containers = data.containers || [];
   if (containers.length === 0) return dockerEmptyHtml(t('no_containers_title'), t('no_containers_desc'));
   S.dockerContainersCache = containers;
-  return dockerTableHtml(
-    [t('container_name'), t('container_image'), t('status'), t('container_ports'), t('action')],
-    containers.map((c, idx) => {
-      const running = c.state === 'running';
+
+  const groupsMap = new Map();
+  const standalone = [];
+  containers.forEach((c, idx) => {
+    const proj = dockerContainerProject(c);
+    if (!proj) standalone.push({ c, idx });
+    else {
+      if (!groupsMap.has(proj)) groupsMap.set(proj, []);
+      groupsMap.get(proj).push({ c, idx });
+    }
+  });
+
+  const groups = Array.from(groupsMap.keys()).sort((a, b) => a.localeCompare(b)).map(name => ({
+    key: 'stack:' + name,
+    name,
+    isCompose: true,
+    items: groupsMap.get(name)
+  }));
+  if (standalone.length > 0) {
+    groups.push({
+      key: '__standalone__',
+      name: t('dk_group_standalone', 'Standalone'),
+      isCompose: false,
+      items: standalone
+    });
+  }
+
+  const collapsed = S.dockerCollapsedGroups || {};
+  const askEnabled = typeof window.AG !== 'undefined' && typeof window.AG.btn === 'function';
+
+  const rowsHtml = groups.map(g => {
+    const isCollapsed = !!collapsed[g.key];
+    const total = g.items.length;
+    const running = g.items.filter(it => it.c.state === 'running').length;
+    const unhealthy = g.items.filter(it => it.c.state === 'restarting' || it.c.state === 'dead' || (it.c.status || '').toLowerCase().includes('unhealthy')).length;
+    const statusCls = running === total ? 'badge-healthy' : (running > 0 ? 'badge-warning' : 'badge-down');
+    const summaryText = t('dk_group_running', '{r}/{t} running').replace('{r}', running).replace('{t}', total);
+    const kindBadge = g.isCompose
+      ? `<span class="badge badge-info" style="text-transform:none;">${escapeHtml(t('dk_group_compose', 'Compose Stack'))}</span>`
+      : `<span class="badge badge-unknown" style="text-transform:none;">${escapeHtml(t('dk_group_standalone', 'Standalone'))}</span>`;
+    const stackActions = g.isCompose ? `
+      <button type="button" class="btn btn-sm btn-ghost btn-icon" title="${escapeHtml(t('start', 'Start'))}" data-stack="${escapeHtml(g.name)}" onclick="event.stopPropagation(); dockerStackQuickAction(this.dataset.stack, 'start')">${svgIcon('play', 'icon-sm')}</button>
+      <button type="button" class="btn btn-sm btn-ghost btn-icon" title="${escapeHtml(t('stop', 'Stop'))}" data-stack="${escapeHtml(g.name)}" onclick="event.stopPropagation(); dockerStackQuickAction(this.dataset.stack, 'stop')">${svgIcon('square', 'icon-sm')}</button>
+      <button type="button" class="btn btn-sm btn-ghost btn-icon" title="${escapeHtml(t('restart', 'Restart'))}" data-stack="${escapeHtml(g.name)}" onclick="event.stopPropagation(); dockerStackQuickAction(this.dataset.stack, 'restart')">${svgIcon('rotate-ccw', 'icon-sm')}</button>
+      ${askEnabled ? `<span onclick="event.stopPropagation()">${window.AG.btn('askStack', g.name, 'btn-ghost')}</span>` : ''}
+    ` : '';
+
+    const groupHeaderRow = `
+      <tr class="dk-group-row" data-dk-group-key="${escapeHtml(g.key)}" aria-expanded="${!isCollapsed}" onclick="toggleDockerGroup(${jsArg(g.key)})">
+        <td colspan="5">
+          <div class="dk-group-bar">
+            <div class="dk-group-left">
+              <span class="dk-group-caret">${svgIcon(isCollapsed ? 'chevron-right' : 'chevron-down', 'icon-sm')}</span>
+              <span class="dk-group-title">${escapeHtml(g.name)}</span>
+              ${kindBadge}
+              <span class="badge ${statusCls}" style="text-transform:none;">${escapeHtml(summaryText)}</span>
+              ${unhealthy > 0 ? `<span class="badge badge-danger" style="text-transform:none;">${unhealthy} unhealthy</span>` : ''}
+            </div>
+            <div class="dk-group-actions">${stackActions}</div>
+          </div>
+        </td>
+      </tr>`;
+
+    const itemRows = g.items.map(({ c, idx }) => {
+      const isRunning = c.state === 'running';
+      const svc = dockerContainerService(c);
+      const svcBadge = svc ? `<span class="badge" style="margin-left:6px;background:var(--surface-2);border:1px solid var(--card-border);font-size:10px;text-transform:none;">${escapeHtml(svc)}</span>` : '';
+      const askContainerBtn = askEnabled ? window.AG.btn('askContainer', c.name, 'btn-ghost btn-icon') : '';
       return `
-        <tr>
-          <td><a href="javascript:void(0)" class="dk-name-link" data-name="${escapeHtml(c.name)}" onclick="openDockerInspect(this.dataset.name)">${escapeHtml(c.name)}</a></td>
+        <tr data-dk-group-item="${escapeHtml(g.key)}"${isCollapsed ? ' style="display:none;"' : ''}>
+          <td><a href="javascript:void(0)" class="dk-name-link" data-name="${escapeHtml(c.name)}" onclick="openDockerInspect(this.dataset.name)">${escapeHtml(c.name)}</a>${svcBadge}</td>
           <td style="font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-muted);">${escapeHtml(c.image)}</td>
-          <td><span class="badge badge-${running ? 'healthy' : (c.state === 'exited' || c.state === 'dead' ? 'down' : 'warning')}">${escapeHtml(c.status)}</span></td>
+          <td><span class="badge badge-${isRunning ? 'healthy' : (c.state === 'exited' || c.state === 'dead' ? 'down' : 'warning')}">${escapeHtml(c.status)}</span></td>
           <td style="font-family: var(--font-mono); font-size: var(--fs-xs); word-break: break-all; color: var(--text-muted);">${escapeHtml(c.ports || '')}</td>
           <td class="dk-actions">
             <button class="btn btn-sm btn-ghost btn-icon" title="${t('dk_inspect')}" data-name="${escapeHtml(c.name)}" onclick="openDockerInspect(this.dataset.name)">${svgIcon('search', 'icon-sm')}</button>
             <button class="btn btn-sm btn-ghost btn-icon" title="${t('docker_logs')}" data-name="${escapeHtml(c.name)}" onclick="openDockerLogs(this.dataset.name)">${svgIcon('scroll-text', 'icon-sm')}</button>
+            ${askContainerBtn}
             <button class="btn btn-sm btn-ghost btn-icon" title="${t('docker_menu_title')}" aria-label="${t('docker_menu_title')}" onclick="openDockerMenu(event, ${idx})">${svgIcon('ellipsis-vertical', 'icon-sm')}</button>
           </td>
         </tr>`;
-    }).join(''));
+    }).join('');
+
+    return groupHeaderRow + itemRows;
+  }).join('');
+
+  return dockerTableHtml(
+    [t('container_name'), t('container_image'), t('status'), t('container_ports'), t('action')],
+    rowsHtml);
 }
 
 function dockerStatsRowsHtml(stats) {
@@ -4229,4 +4336,4 @@ function renderWorkspaceShelf() {
   }).join('');
 }
 
-export { openHostDetail, openHostTerminal, formatProcessCmd, switchTab, renderInspectionRunsTab, switchRunsFilter, loadAndDisplayInspectionRuns, updatePkgCooldownUI, renderPackagesTab, loadHostPackages, rescanHostPackages, loadHostPackageUpdates, pkgUpdateCooldownPaint, checkHostPackageUpdates, startPkgUpdateCooldown, renderPkgUpdatesPanel, filterPackages, searchPackages, displayPackagesTable, secCooldownPaint, updateSecCooldownUI, loadSecurityTab, renderSecurityData, appendSecurityFooter, listenProcessName, listenProcessCellHtml, securityExposureHtml, getSecuritySeverityBadge, filterSecurityFindings, runHostSecurityScan, generateBaseline, onRuleKindChange, addRulePrompt, openAddRuleModal, editRulePrompt, submitRuleForm, deleteRule, refreshHostDetailAfterRuleChange, updateRuleSelection, toggleAllRules, deleteSelectedRules, stopDockerStatsTimer, startDockerStatsTimer, toggleDockerStatsAuto, setDockerSubTab, dockerHeaderHtml, dockerEmptyHtml, dockerTableHtml, dockerBar, dockerChips, renderDockerContainers, dockerStatsRowsHtml, dockerStatsTotalsText, renderDockerStats, refreshDockerStats, renderDockerVolumes, renderDockerNetworks, dockerRefreshIndicator, loadDockerTab, closeDockerMenu, openDockerMenu, stopDockerLogs, openDockerLogs, dockerAction, dockerRemoveContainer, getHostFileAccess, setHostFileAccess, resetHostFileAccess, filesApiUrl, renderFileAccessControls, onFileAccessSelectChange, onFileAccessCustomBlur, switchFileAccess, loadHostFilePins, loadFiles, renderQuickAccessBar, toggleBreadcrumbInput, renderBreadcrumbs, getFileIcon, renderFilesView, setupFileDragAndDrop, renderFilesTableBody, uploadRawFile, fileOpBanner, fileOpBannerClear, fileOpBannerAutoClear, fileOpBannerArchive, onFileFilterInput, clearFileFilter, setFileTypeFilter, toggleFileSort, downloadFolder, backupSelFor, backupBtnLabel, toggleBackupSel, backupSelected, uploadFile, deleteRemoteFile, generateDuplicateName, openDuplicateModal, executeDuplicate, openPinModal, submitSavePin, submitUnpin, openGlobalPinsModal, loadGlobalPins, onGlobalPinsSearch, renderGlobalPinsList, openTerminalFromGlobalPin, deleteGlobalPin, jumpToHostFile, toggleEditorMaximize, applyEditorMaximizeState, getEditorModeForPath, setupCodeEditorEvents, openNewEditor, openEditor, saveEditorFile, minimizeHostDetail, closeHostDetailModal, minimizeEditor, closeEditorModalWithConfirm, closeWorkspaceSession, restoreWorkspaceSession, updateHostSessionBadges, renderWorkspaceShelf };
+export { openHostDetail, openHostTerminal, formatProcessCmd, switchTab, renderInspectionRunsTab, switchRunsFilter, loadAndDisplayInspectionRuns, updatePkgCooldownUI, renderPackagesTab, loadHostPackages, rescanHostPackages, loadHostPackageUpdates, pkgUpdateCooldownPaint, checkHostPackageUpdates, startPkgUpdateCooldown, renderPkgUpdatesPanel, filterPackages, searchPackages, displayPackagesTable, secCooldownPaint, updateSecCooldownUI, loadSecurityTab, renderSecurityData, appendSecurityFooter, listenProcessName, listenProcessCellHtml, securityExposureHtml, getSecuritySeverityBadge, filterSecurityFindings, runHostSecurityScan, generateBaseline, onRuleKindChange, addRulePrompt, openAddRuleModal, editRulePrompt, submitRuleForm, deleteRule, refreshHostDetailAfterRuleChange, updateRuleSelection, toggleAllRules, deleteSelectedRules, stopDockerStatsTimer, startDockerStatsTimer, toggleDockerStatsAuto, setDockerSubTab, dockerHeaderHtml, dockerEmptyHtml, dockerTableHtml, dockerBar, dockerChips, toggleDockerGroup, dockerStackQuickAction, renderDockerContainers, dockerStatsRowsHtml, dockerStatsTotalsText, renderDockerStats, refreshDockerStats, renderDockerVolumes, renderDockerNetworks, dockerRefreshIndicator, loadDockerTab, closeDockerMenu, openDockerMenu, stopDockerLogs, openDockerLogs, dockerAction, dockerRemoveContainer, getHostFileAccess, setHostFileAccess, resetHostFileAccess, filesApiUrl, renderFileAccessControls, onFileAccessSelectChange, onFileAccessCustomBlur, switchFileAccess, loadHostFilePins, loadFiles, renderQuickAccessBar, toggleBreadcrumbInput, renderBreadcrumbs, getFileIcon, renderFilesView, setupFileDragAndDrop, renderFilesTableBody, uploadRawFile, fileOpBanner, fileOpBannerClear, fileOpBannerAutoClear, fileOpBannerArchive, onFileFilterInput, clearFileFilter, setFileTypeFilter, toggleFileSort, downloadFolder, backupSelFor, backupBtnLabel, toggleBackupSel, backupSelected, uploadFile, deleteRemoteFile, generateDuplicateName, openDuplicateModal, executeDuplicate, openPinModal, submitSavePin, submitUnpin, openGlobalPinsModal, loadGlobalPins, onGlobalPinsSearch, renderGlobalPinsList, openTerminalFromGlobalPin, deleteGlobalPin, jumpToHostFile, toggleEditorMaximize, applyEditorMaximizeState, getEditorModeForPath, setupCodeEditorEvents, openNewEditor, openEditor, saveEditorFile, minimizeHostDetail, closeHostDetailModal, minimizeEditor, closeEditorModalWithConfirm, closeWorkspaceSession, restoreWorkspaceSession, updateHostSessionBadges, renderWorkspaceShelf };

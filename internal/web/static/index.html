@@ -3625,6 +3625,38 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 #kubeHostPickerBtn { border: 1px solid var(--card-border); border-radius: var(--radius); color: var(--text); transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
 #kubeHostPickerBtn:hover { border-color: var(--border-strong); }
 #kubeHostPickerBtn:focus-visible, #kubeHostPickerBtn[aria-expanded="true"] { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--accent-soft); }
+/* Docker Compose group rows */
+.dk-group-row { cursor: pointer; background: var(--surface-2); }
+.dk-group-row:hover { background: var(--surface-hover, rgba(255,255,255,0.04)); }
+.dk-group-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.dk-group-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dk-group-caret { display: inline-flex; align-items: center; color: var(--text-muted); }
+.dk-group-title { font-weight: 600; color: var(--text); }
+.dk-group-actions { display: inline-flex; align-items: center; gap: 4px; }
+
+/* Kubernetes Topology Drawer */
+.kube-topo-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); z-index: 100040; }
+.kube-topo-backdrop[hidden], .kube-topo-drawer[hidden] { display: none; }
+.kube-topo-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(920px, 94vw); background: var(--card-bg); border-left: 1px solid var(--card-border); z-index: 100041; display: flex; flex-direction: column; transform: translateX(100%); transition: transform 0.18s ease; box-shadow: -8px 0 28px rgba(0,0,0,0.35); }
+.kube-topo-drawer.open { transform: translateX(0); }
+.kube-topo-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--card-border); }
+.kube-topo-body { flex: 1; overflow: auto; padding: 18px; }
+.kube-topo-empty { padding: 32px 16px; text-align: center; color: var(--text-muted); }
+.kube-topo-canvas { position: relative; min-width: 720px; }
+.kube-topo-svg { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.kube-topo-edge { fill: none; stroke: var(--accent); stroke-width: 1.75; stroke-opacity: 0.65; }
+.kube-topo-grid { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(5, minmax(128px, 1fr)); gap: 22px; align-items: start; }
+.kube-topo-col { display: flex; flex-direction: column; gap: 10px; }
+.kube-topo-col-title { font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); padding-bottom: 4px; border-bottom: 1px solid var(--card-border); }
+.kube-topo-col-items { display: flex; flex-direction: column; gap: 10px; }
+.kube-topo-card { padding: 10px; border-radius: var(--radius-md); background: var(--surface-2); border: 1px solid var(--card-border); cursor: pointer; transition: border-color 0.15s ease; }
+.kube-topo-card:hover { border-color: var(--accent); }
+.kube-topo-card.root { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.kube-topo-card-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 4px; }
+.kube-topo-kind { font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); }
+.kube-topo-name { font-size: var(--fs-xs); font-weight: 600; color: var(--text); word-break: break-all; }
+.kube-topo-meta { font-size: 11px; font-family: var(--font-mono); color: var(--text-muted); margin-top: 4px; word-break: break-all; }
+.kube-topo-none { font-size: var(--fs-xs); color: var(--text-muted); padding: 8px 4px; }
 </style>
 </head>
 <body>
@@ -4081,7 +4113,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
           <div class="tab" id="tabKubeEvents" onclick="switchKubeTab('events')" role="tab" data-i18n="kube_tab_events">Events</div>
           <div class="tab" id="tabKubeApply" onclick="switchKubeTab('apply')" role="tab" data-i18n="kube_tab_apply">Apply</div>
           <label id="kubeEventsFilterWrap" style="display:none;align-items:center;gap:4px;margin-left:auto;font-size:var(--fs-xs);color:var(--text-muted);cursor:pointer;"><input type="checkbox" id="kubeEventsWarningFilter" style="width:auto;" onchange="onKubeEventsFilterChange()" /> <span data-i18n="kube_warning_only">Warning only</span></label>
-          <label id="kubePodsFilterWrap" style="display:none;align-items:center;gap:4px;margin-left:auto;font-size:var(--fs-xs);color:var(--text-muted);cursor:pointer;"><input type="checkbox" id="kubePodsOnlyProblemsFilter" style="width:auto;" onchange="onKubePodsFilterChange()" /> <span data-i18n="kube_pods_only_problems">Only problems</span></label>
+          <label id="kubePodsFilterWrap" style="display:none;align-items:center;gap:4px;margin-left:auto;font-size:var(--fs-xs);color:var(--text-muted);cursor:pointer;"><input type="checkbox" id="kubePodsOnlyProblemsFilter" style="width:auto;" onchange="onKubePodsFilterChange()" /> <span data-i18n="kube_unhealthy_only">Unhealthy only</span></label>
           <span id="kubeAutorefreshWrap" style="display:none;align-items:center;gap:6px;margin-left:auto;font-size:var(--fs-xs);color:var(--text-muted);">
             <span data-i18n="kube_autorefresh">Auto-refresh</span>:
             <select id="kubeAutorefreshSelect" class="form-input" style="height:26px;font-size:var(--fs-xs);padding:0 6px;min-width:70px;" onchange="restartKubeAutorefresh()">
@@ -4095,6 +4127,17 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <div id="kubeRefreshStatus" style="display:none;"></div>
         <div id="kubeTabContent" style="min-height:250px;"></div>
       </div>
+      <div id="kubeTopoBackdrop" class="kube-topo-backdrop" hidden onclick="closeKubeTopology()"></div>
+      <aside id="kubeTopoDrawer" class="kube-topo-drawer" role="dialog" aria-modal="true" aria-labelledby="kubeTopoTitle" hidden>
+        <div class="kube-topo-header">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <svg class="icon"><use href="#i-network"/></svg>
+            <h3 id="kubeTopoTitle" style="margin:0;font-size:var(--fs-base);" data-i18n="kube_topology_title">Resource Topology</h3>
+          </div>
+          <button type="button" class="btn btn-sm btn-ghost btn-icon" onclick="closeKubeTopology()" aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button>
+        </div>
+        <div id="kubeTopoBody" class="kube-topo-body"></div>
+      </aside>
     </div>
     <div id="sectionCloudflare" class="app-section" style="display:none;">
       <div class="section-header" style="margin-bottom:20px;position:relative;z-index:20;">
@@ -5759,6 +5802,20 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         </div>
         <!-- General Tab -->
         <div id="settingsPanelGeneral" style="display: flex; flex-direction: column; gap: 16px;">
+          <div class="set-card">
+            <div class="set-header">
+              <div>
+                <h4 class="set-title"><svg class="icon"><use href="#i-layout-dashboard"/></svg> <span data-i18n="setting_default_hosts_view">Default Hosts View</span></h4>
+                <p class="set-desc" data-i18n="setting_default_hosts_view_desc">Choose the default layout when opening the Hosts dashboard. Compact Ops Table uses zero GPU.</p>
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <select id="settingDefaultHostsView" class="form-input" style="min-width: 220px;" onchange="setDefaultHostsView(this.value)">
+                <option value="globe" data-i18n="view_3d_globe">3D Globe</option>
+                <option value="list" data-i18n="view_compact_table">Compact Ops Table</option>
+              </select>
+            </div>
+          </div>
           <div class="set-card">
             <div class="set-header">
               <div>

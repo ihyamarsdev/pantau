@@ -334,6 +334,19 @@ func (s *Server) handleKubeManage(w http.ResponseWriter, r *http.Request, hostID
 			return map[string]interface{}{"ok": true, "output": out}, nil
 		})
 
+	case get && sub == "topology":
+		q := r.URL.Query()
+		kind := q.Get("kind")
+		ns := q.Get("ns")
+		name := q.Get("name")
+		runRead(func(targetID int64) (map[string]interface{}, error) {
+			topo, err := s.inspector.KubeTopology(targetID, kind, ns, name)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]interface{}{"ok": true, "topology": topo}, nil
+		})
+
 	case get && sub == "resources":
 		q := r.URL.Query()
 		kind := q.Get("kind")

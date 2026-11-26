@@ -4,7 +4,7 @@
  * from 00-state.js; cross-domain functions are imported explicitly. */
 import { S } from './00-state.js';
 import { svgIcon } from './00-foundation.js';
-import { t, showConfirm } from './01-i18n-auth.js';
+import { t, showConfirm, getDefaultHostsView } from './01-i18n-auth.js';
 import { loadVpnNetworks, showToast } from './02-hosts.js';
 import { loadSettingsPresets } from './04-terminal.js';
 import { openModal, closeModal, escapeHtml } from './06-modal-docs-activity.js';
@@ -427,6 +427,10 @@ async function openSettingsModal(tab) {
   if (testRes) { testRes.style.display = 'none'; testRes.innerHTML = ''; }
   const pollEl = document.getElementById('settingPollInterval');
   if (pollEl) pollEl.value = (data.poll_interval_sec !== undefined && data.poll_interval_sec !== '') ? data.poll_interval_sec : '300';
+  const defaultHostsViewEl = document.getElementById('settingDefaultHostsView');
+  if (defaultHostsViewEl && typeof getDefaultHostsView === 'function') {
+    defaultHostsViewEl.value = getDefaultHostsView();
+  }
   const secScanEl = document.getElementById('settingSecurityScanInterval');
   if (secScanEl) secScanEl.value = (data.security_scan_interval_hours !== undefined && data.security_scan_interval_hours !== '') ? data.security_scan_interval_hours : '24';
   const vulnIntelEl = document.getElementById('settingVulnIntel');

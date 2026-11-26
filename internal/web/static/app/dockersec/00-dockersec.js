@@ -422,13 +422,19 @@
     }
     return groups.map((g, i) => {
       const open = groupOpen(g.name, i);
-      const head = `<button type="button" class="ds-group-head" data-group="${esc(g.name)}" onclick="DS.toggleGroup(this.dataset.group, ${i})" aria-expanded="${open}">
-        <span class="ds-group-caret">${icon(open ? 'chevron-down' : 'chevron-right')}</span>
-        <span class="ds-group-name">${esc(g.name)}</span>
-        ${g.worst ? `<span class="badge ${SEV_CLASS[g.worst]}">${esc(t('ds_' + g.worst))}</span>` : ''}
-        <span class="ds-group-count">${num(g.items.length)} ${esc(t('ds_findings'))}</span>
-        <span class="ds-group-chips">${SEV_ORDER.filter((s) => g.counts[s]).map((s) => `<span class="badge ${SEV_CLASS[s]}" style="text-transform: none;">${num(g.counts[s])} ${esc(t('ds_' + s))}</span>`).join('')}</span>
-      </button>`;
+      const askBtn = (typeof window.AG !== 'undefined' && typeof window.AG.btn === 'function')
+        ? window.AG.btn('askContainer', g.name, 'btn-ghost')
+        : '';
+      const head = `<div class="ds-group-head-row" style="display:flex;align-items:center;gap:6px;">
+        <button type="button" class="ds-group-head" style="flex:1;" data-group="${esc(g.name)}" onclick="DS.toggleGroup(this.dataset.group, ${i})" aria-expanded="${open}">
+          <span class="ds-group-caret">${icon(open ? 'chevron-down' : 'chevron-right')}</span>
+          <span class="ds-group-name">${esc(g.name)}</span>
+          ${g.worst ? `<span class="badge ${SEV_CLASS[g.worst]}">${esc(t('ds_' + g.worst))}</span>` : ''}
+          <span class="ds-group-count">${num(g.items.length)} ${esc(t('ds_findings'))}</span>
+          <span class="ds-group-chips">${SEV_ORDER.filter((s) => g.counts[s]).map((s) => `<span class="badge ${SEV_CLASS[s]}" style="text-transform: none;">${num(g.counts[s])} ${esc(t('ds_' + s))}</span>`).join('')}</span>
+        </button>
+        ${askBtn}
+      </div>`;
       const body = open ? `<div class="ds-group-body">${g.items.map(findingHtml).join('')}</div>` : '';
       return `<div class="ds-group" data-group-box="${esc(g.name)}">${head}${body}</div>`;
     }).join('');

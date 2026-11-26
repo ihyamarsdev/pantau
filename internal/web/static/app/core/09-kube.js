@@ -674,7 +674,7 @@ function switchKubeTab(tab) {
   const podWrap = document.getElementById('kubePodsFilterWrap');
   const roWrap = document.getElementById('kubeAutorefreshWrap');
   if (evWrap) evWrap.style.display = tab === 'events' ? 'inline-flex' : 'none';
-  if (podWrap) podWrap.style.display = tab === 'pods' ? 'inline-flex' : 'none';
+  if (podWrap) podWrap.style.display = (tab === 'pods' || tab === 'workloads') ? 'inline-flex' : 'none';
   if (roWrap) roWrap.style.display = tab === 'apply' ? 'none' : 'inline-flex';
   restartKubeAutorefresh();
   const nsWrapper = document.getElementById('kubeNamespaceSelectorWrapper');
@@ -785,31 +785,61 @@ function loadKubeNodes() {
   );
 }
 
+function kubeWorkloadIsProblem(w) {
+  const desired = w.desired || 0;
+  const ready = w.ready || 0;
+  const available = w.available != null ? w.available : ready;
+  return ready < desired || available < desired;
+}
+
+function renderKubeWorkloadsTable() {
+  const content = document.getElementById('kubeTabContent');
+  if (!content) return;
+  let items = (S.kubeWorkloadsCache || []).slice();
+  items.sort((a, b) => (kubeWorkloadIsProblem(b) ? 1 : 0) - (kubeWorkloadIsProblem(a) ? 1 : 0));
+  if (S.kubePodsOnlyProblems) items = items.filter(kubeWorkloadIsProblem);
+  if (items.length === 0) { content.innerHTML = kubeEmptyHtml(t('kube_no_data', 'No items found'), ''); return; }
+  const heads = ['Kind', t('kube_namespace', 'Namespace'), t('col_name', 'Name'), 'Ready', 'Images', t('col_age', 'Age'), ''];
+  content.innerHTML = dockerTableHtml(heads, items.map((w) => {
+    const idx = S.kubeWorkloadsCache.indexOf(w);
+    const problem = kubeWorkloadIsProblem(w);
+    const imgs = Array.isArray(w.images) ? w.images.join(', ') : (w.images || '-');
+    return `<tr${problem ? ' style="background:var(--warning-soft, rgba(234,179,8,0.06));"' : ''}>
+      <td><span class="badge" style="background:var(--surface-2);border:1px solid var(--card-border);">${escapeHtml(w.kind)}</span></td>
+      <td style="font-size:var(--fs-xs);color:var(--text-muted);">${escapeHtml(w.namespace)}</td>
+      <td><b>${escapeHtml(w.name)}</b></td>
+      <td><span class="badge ${!problem ? 'badge-healthy' : 'badge-degraded'}">${w.ready || 0}/${w.desired || 0}</span></td>
+      <td class="mono" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(imgs)}">${escapeHtml(imgs)}</td>
+      <td style="color:var(--text-muted);font-size:var(--fs-xs);">${kubeAge(w.created)}</td>
+      <td style="text-align:right;white-space:nowrap;">
+        <button class="btn btn-icon btn-sm btn-ghost" onclick="openKubeTopology(${jsArg(w.kind)}, ${jsArg(w.namespace)}, ${jsArg(w.name)})" title="${escapeHtml(t('kube_topology', 'Topology'))}">${svgIcon('network', 'icon-sm')}</button>
+        <button class="btn btn-icon btn-sm btn-ghost" onclick="openKubeWorkloadMenu(event,${idx})" title="Actions">${svgIcon('ellipsis-vertical', 'icon-sm')}</button>
+      </td>
+    </tr>`;
+  }).join(''));
+}
+
 function loadKubeWorkloads() {
   kubeFetchTab(`${kubeApiBase()}/workloads?ns=${encodeURIComponent(S.currentKubeNamespace)}`, 'workloads',
-    ['Kind', t('kube_namespace', 'Namespace'), t('col_name', 'Name'), 'Ready', 'Images', t('col_age', 'Age'), ''],
-    (w, idx) => {
-      const imgs = Array.isArray(w.images) ? w.images.join(', ') : (w.images || '-');
-      return `<tr>
-        <td><span class="badge" style="background:var(--surface-2);border:1px solid var(--card-border);">${escapeHtml(w.kind)}</span></td>
-        <td style="font-size:var(--fs-xs);color:var(--text-muted);">${escapeHtml(w.namespace)}</td>
-        <td><b>${escapeHtml(w.name)}</b></td>
-        <td><span class="badge ${w.ready >= w.desired ? 'badge-healthy' : 'badge-degraded'}">${w.ready || 0}/${w.desired || 0}</span></td>
-        <td class="mono" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(imgs)}">${escapeHtml(imgs)}</td>
-        <td style="color:var(--text-muted);font-size:var(--fs-xs);">${kubeAge(w.created)}</td>
-        <td style="text-align:right;"><button class="btn btn-icon btn-sm btn-ghost" onclick="openKubeWorkloadMenu(event,${idx})" title="Actions">${svgIcon('ellipsis-vertical','icon-sm')}</button></td>
-      </tr>`;
-    }
+    null, null,
+    workloads => { S.kubeWorkloadsCache = workloads || []; renderKubeWorkloadsTable(); }
   );
 }
 
+const KUBE_UNHEALTHY_STATUSES = new Set([
+  'CrashLoopBackOff', 'Pending', 'OOMKilled', 'ImagePullBackOff', 'ErrImagePull', 'Failed'
+]);
+
 function kubePodIsProblem(p) {
-  return p.status !== 'Running' && p.status !== 'Completed' && p.status !== 'Succeeded';
+  const st = (p.status || '').trim();
+  if (KUBE_UNHEALTHY_STATUSES.has(st)) return true;
+  return st !== 'Running' && st !== 'Completed' && st !== 'Succeeded';
 }
 
 function onKubePodsFilterChange() {
   S.kubePodsOnlyProblems = document.getElementById('kubePodsOnlyProblemsFilter').checked;
-  renderKubePodsTable();
+  if (S.currentKubeTab === 'workloads') renderKubeWorkloadsTable();
+  else renderKubePodsTable();
 }
 
 function renderKubePodsTable() {
@@ -839,7 +869,10 @@ function renderKubePodsTable() {
       <td>${escapeHtml(p.usageCPU || '-')}</td>
       <td>${p.usageMemory ? escapeHtml(formatKubeMemory(p.usageMemory)) : '-'}</td>
       <td style="color:var(--text-muted);font-size:var(--fs-xs);">${kubeAge(p.created)}</td>
-      <td style="text-align:right;"><button class="btn btn-icon btn-sm btn-ghost" onclick="openKubePodMenu(event,${idx})" title="Actions">${svgIcon('ellipsis-vertical','icon-sm')}</button></td>
+      <td style="text-align:right;white-space:nowrap;">
+        <button class="btn btn-icon btn-sm btn-ghost" onclick="openKubeTopology('Pod', ${jsArg(p.namespace)}, ${jsArg(p.name)})" title="${escapeHtml(t('kube_topology', 'Topology'))}">${svgIcon('network', 'icon-sm')}</button>
+        <button class="btn btn-icon btn-sm btn-ghost" onclick="openKubePodMenu(event,${idx})" title="Actions">${svgIcon('ellipsis-vertical','icon-sm')}</button>
+      </td>
     </tr>`;
   }).join(''));
 }
@@ -863,7 +896,10 @@ function loadKubeServices() {
         <td class="mono">${escapeHtml(s.externalIP || '-')}</td>
         <td class="mono" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(ports)}">${escapeHtml(ports)}</td>
         <td style="color:var(--text-muted);font-size:var(--fs-xs);">${kubeAge(s.created)}</td>
-        <td style="text-align:right;"><button class="btn btn-icon btn-sm btn-ghost" onclick="openKubeServiceMenu(event,${idx})" title="Actions">${svgIcon('ellipsis-vertical','icon-sm')}</button></td>
+        <td style="text-align:right;white-space:nowrap;">
+          <button class="btn btn-icon btn-sm btn-ghost" onclick="openKubeTopology('Service', ${jsArg(s.namespace)}, ${jsArg(s.name)})" title="${escapeHtml(t('kube_topology', 'Topology'))}">${svgIcon('network', 'icon-sm')}</button>
+          <button class="btn btn-icon btn-sm btn-ghost" onclick="openKubeServiceMenu(event,${idx})" title="Actions">${svgIcon('ellipsis-vertical','icon-sm')}</button>
+        </td>
       </tr>`;
     }
   );
@@ -982,6 +1018,9 @@ function openKubeGenericMenu(e, kind, rowIdx) {
   const items = [];
   if (S.kubeYamlEditable && S.kubeYamlEditable[singular]) {
     items.push({ label: t('kube_edit_yaml', 'Edit YAML'), run: () => openKubeYamlEditor(singular, ns, name) });
+  }
+  if (singular === 'ingress' || singular === 'pvc') {
+    items.push({ label: t('kube_topology', 'Topology'), run: () => openKubeTopology(singular === 'pvc' ? 'PVC' : 'Ingress', ns, name) });
   }
   items.push({ label: t('kube_describe', 'Describe'), run: () => kubeDescribe(singular, ns, name) });
   dockerFloatingMenu(e, 'kg_' + kind + '_' + rowIdx, items);
@@ -1282,6 +1321,7 @@ function openKubeWorkloadMenu(e, idx) {
       kubeAction({ op: 'restart', kind: wl.kind.toLowerCase(), ns: wl.namespace, name: wl.name }, null, 'workloads');
     }
   });
+  items.push({ label: t('kube_topology', 'Topology'), run: () => openKubeTopology(wl.kind, wl.namespace, wl.name) });
   items.push({ label: t('kube_describe', 'Describe'), run: () => kubeDescribe(wl.kind.toLowerCase(), wl.namespace, wl.name) });
   dockerFloatingMenu(e, 'kw_' + idx, items);
 }
@@ -1302,6 +1342,7 @@ function openKubePodMenu(e, idx) {
     });
   }
   menuItems.push({ label: t('kube_logs', 'Pod Logs'), run: () => promptKubeContainer(p, t('kube_logs', 'Pod Logs'), c => openKubeLogs(p, c)) });
+  menuItems.push({ label: t('kube_topology', 'Topology'), run: () => openKubeTopology('Pod', p.namespace, p.name) });
   menuItems.push({ label: t('kube_describe', 'Describe'), run: () => kubeDescribe('pod', p.namespace, p.name) });
   menuItems.push(null);
   menuItems.push({
@@ -1318,6 +1359,7 @@ function openKubeServiceMenu(e, idx) {
   const s = S.kubeServicesCache[idx];
   if (!s) return;
   dockerFloatingMenu(e, 'ks_' + idx, [
+    { label: t('kube_topology', 'Topology'), run: () => openKubeTopology('Service', s.namespace, s.name) },
     { label: t('kube_edit_yaml', 'Edit YAML'), run: () => openKubeYamlEditor('service', s.namespace, s.name) },
     { label: t('kube_describe', 'Describe'), run: () => kubeDescribe('service', s.namespace, s.name) }
   ]);
@@ -2478,4 +2520,123 @@ async function deleteKubeCli(version) {
   await checkKubeCli();
 }
 
-export { saveKubeWorkspaces, kubeApiBase, kubeWsParam, kubeHostClusterName, kubeTargetInfo, kubeSameTarget, renderKubeWorkspaces, closeKubeWorkspace, kubeProviderLabel, loadKubeClusters, handleKubeEnvelope, getSelectedKubeMode, updateKubeModeChip, findHostForKubeNode, detectKubeClusters, formatKubeMemory, kubeAge, kubeEmptyHtml, populateKubeHostSelect, updateKubeHostPickerBtn, toggleKubeHostPicker, closeKubeHostPicker, onKubeHostPickerBtnKeydown, onKubeHostPickerKeydown, updateKubePickerHighlight, renderKubeHostPickerList, pickKubeHost, onSelectKubeHost, loadKubeNamespaces, renderKubeRefreshStatus, switchKubeTab, onKubeNamespaceChange, refreshKubeCurrentTab, loadKubeTabData, kubeFetchTab, loadKubeNodes, loadKubeWorkloads, kubePodIsProblem, onKubePodsFilterChange, renderKubePodsTable, loadKubePods, loadKubeServices, onKubeEventsFilterChange, renderKubeEventsTable, loadKubeEvents, loadKubeGenericResource, openKubeGenericMenu, loadKubeApply, onKubeApplyYamlInput, clearKubeApply, submitKubeDiff, kubeBusy, kubeAction, kubeGetOutput, submitKubeApply, openKubeNodeMenu, openKubeWorkloadMenu, openKubePodMenu, openKubeServiceMenu, openKubeScaleModal, submitKubeScale, kubeDeletePod, kubeDescribe, promptKubeContainer, submitKubeContainerChoice, kubePodExec, stopKubeLogs, openKubeLogs, onKubeLogsParamChange, connectKubeLogsStream, copyKubeLogs, kubeAutoRefreshIntervalSec, stopKubeAutorefresh, restartKubeAutorefresh, openKubeYamlEditor, initKubeYamlEditor, onKubeYamlEditorInput, submitKubeYamlDiff, submitKubeYamlApply, setKubeLogsCount, appendKubeLogText, onKubeLogsFilterInput, openKubeWorkloadLogs, openKubeDrain, renderKubeDrainPreview, confirmKubeDrain, showToastDrainUncordon, setKubeClusterError, openKubeClusterModal, loadKubeClusterFile, loadKubeClusterContexts, onKubeClusterContextChange, submitKubeClusterModal, editKubeCurrentCluster, currentKubeHostClusterId, openKubeHostClusterModal, submitKubeHostClusterModal, deleteKubeCluster, openKubeCliModal, checkKubeCli, installKubeCli, switchKubeCli, revertKubeCliToSystem };
+let kubeTopoSeq = 0;
+
+function closeKubeTopology() {
+  const drawer = document.getElementById('kubeTopoDrawer');
+  const backdrop = document.getElementById('kubeTopoBackdrop');
+  if (drawer) { drawer.classList.remove('open'); drawer.hidden = true; }
+  if (backdrop) backdrop.hidden = true;
+  if (window.GlobeRadar && window.GlobeRadar.syncPauseState) window.GlobeRadar.syncPauseState();
+}
+
+async function openKubeTopology(kind, ns, name) {
+  const drawer = document.getElementById('kubeTopoDrawer');
+  const backdrop = document.getElementById('kubeTopoBackdrop');
+  const titleEl = document.getElementById('kubeTopoTitle');
+  const bodyEl = document.getElementById('kubeTopoBody');
+  if (!drawer || !bodyEl || !S.selectedKubeHostId) return;
+
+  if (titleEl) titleEl.textContent = `${t('kube_topology_title', 'Resource Topology')} · ${kind}: ${ns}/${name}`;
+  bodyEl.innerHTML = `<div class="kube-topo-empty">${SP.loading(t('kube_topology_loading', 'Loading topology...'))}</div>`;
+  if (backdrop) backdrop.hidden = false;
+  drawer.hidden = false;
+  requestAnimationFrame(() => drawer.classList.add('open'));
+  if (window.GlobeRadar && window.GlobeRadar.syncPauseState) window.GlobeRadar.syncPauseState();
+
+  const seq = ++kubeTopoSeq;
+  try {
+    const url = `${kubeApiBase()}/topology?kind=${encodeURIComponent(kind)}&ns=${encodeURIComponent(ns || 'default')}&name=${encodeURIComponent(name)}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (seq !== kubeTopoSeq) return;
+    handleKubeEnvelope(data);
+    if (!data.ok) {
+      bodyEl.innerHTML = `<div class="kube-topo-empty">${escapeHtml(t('error_prefix', 'Error: ') + (data.error || 'Failed to load topology'))}</div>`;
+      return;
+    }
+    renderKubeTopology(data.topology);
+  } catch (e) {
+    if (seq !== kubeTopoSeq) return;
+    bodyEl.innerHTML = `<div class="kube-topo-empty">${escapeHtml(t('error_prefix', 'Error: ') + e.message)}</div>`;
+  }
+}
+
+function kubeTopoStatusClass(status) {
+  const s = (status || '').toLowerCase();
+  if (s === 'running' || s === 'healthy' || s === 'bound' || s === 'active' || s === 'succeeded' || s === 'completed') return 'badge-healthy';
+  if (s === 'degraded' || s === 'pending' || s === 'terminating') return 'badge-warning';
+  return 'badge-down';
+}
+
+function renderKubeTopology(topo) {
+  const bodyEl = document.getElementById('kubeTopoBody');
+  if (!bodyEl) return;
+  if (!topo || !Array.isArray(topo.columns) || topo.columns.every(c => !c.items || c.items.length === 0)) {
+    bodyEl.innerHTML = `<div class="kube-topo-empty">${escapeHtml(t('kube_topology_empty', 'No topology relations found for this resource.'))}</div>`;
+    return;
+  }
+  const rootId = topo.root ? topo.root.id : '';
+  const colsHtml = topo.columns.map(col => {
+    const stageLabel = t('kube_topo_' + col.stage, col.stage);
+    const cardsHtml = (col.items || []).length
+      ? col.items.map(item => {
+          const isRoot = item.id === rootId;
+          return `<div class="kube-topo-card${isRoot ? ' root' : ''}" data-topo-id="${escapeHtml(item.id)}" onclick="openKubeTopology(${jsArg(item.kind)}, ${jsArg(item.namespace)}, ${jsArg(item.name)})">
+            <div class="kube-topo-card-head">
+              <span class="kube-topo-kind">${escapeHtml(item.kind)}</span>
+              <span class="badge ${kubeTopoStatusClass(item.status)}" style="font-size:10px;">${escapeHtml(item.status || '-')}</span>
+            </div>
+            <div class="kube-topo-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
+            ${item.meta ? `<div class="kube-topo-meta" title="${escapeHtml(item.meta)}">${escapeHtml(item.meta)}</div>` : ''}
+          </div>`;
+        }).join('')
+      : `<div class="kube-topo-none">—</div>`;
+    return `<div class="kube-topo-col">
+      <div class="kube-topo-col-title">${escapeHtml(stageLabel)}</div>
+      <div class="kube-topo-col-items">${cardsHtml}</div>
+    </div>`;
+  }).join('');
+
+  bodyEl.innerHTML = `<div class="kube-topo-canvas" id="kubeTopoCanvas">
+    <svg class="kube-topo-svg" id="kubeTopoSvg" aria-hidden="true"></svg>
+    <div class="kube-topo-grid" id="kubeTopoGrid">${colsHtml}</div>
+  </div>`;
+
+  requestAnimationFrame(() => drawKubeTopologyEdges(topo.edges || []));
+}
+
+function drawKubeTopologyEdges(edges) {
+  const canvas = document.getElementById('kubeTopoCanvas');
+  const svg = document.getElementById('kubeTopoSvg');
+  if (!canvas || !svg) return;
+  const cRect = canvas.getBoundingClientRect();
+  svg.setAttribute('width', String(Math.max(1, Math.round(canvas.scrollWidth))));
+  svg.setAttribute('height', String(Math.max(1, Math.round(canvas.scrollHeight))));
+  svg.setAttribute('viewBox', `0 0 ${Math.max(1, Math.round(canvas.scrollWidth))} ${Math.max(1, Math.round(canvas.scrollHeight))}`);
+  svg.innerHTML = '';
+
+  const nodeMap = new Map();
+  canvas.querySelectorAll('[data-topo-id]').forEach(el => {
+    nodeMap.set(el.getAttribute('data-topo-id'), el);
+  });
+
+  edges.forEach(edge => {
+    const fromEl = nodeMap.get(edge.from);
+    const toEl = nodeMap.get(edge.to);
+    if (!fromEl || !toEl) return;
+    const fRect = fromEl.getBoundingClientRect();
+    const tRect = toEl.getBoundingClientRect();
+    const x1 = fRect.right - cRect.left + canvas.scrollLeft;
+    const y1 = fRect.top + fRect.height / 2 - cRect.top + canvas.scrollTop;
+    const x2 = tRect.left - cRect.left + canvas.scrollLeft;
+    const y2 = tRect.top + tRect.height / 2 - cRect.top + canvas.scrollTop;
+    const dx = Math.max(24, Math.abs(x2 - x1) * 0.45);
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`);
+    path.setAttribute('class', 'kube-topo-edge');
+    svg.appendChild(path);
+  });
+}
+
+export { saveKubeWorkspaces, kubeApiBase, kubeWsParam, kubeHostClusterName, kubeTargetInfo, kubeSameTarget, renderKubeWorkspaces, closeKubeWorkspace, kubeProviderLabel, loadKubeClusters, handleKubeEnvelope, getSelectedKubeMode, updateKubeModeChip, findHostForKubeNode, detectKubeClusters, formatKubeMemory, kubeAge, kubeEmptyHtml, populateKubeHostSelect, updateKubeHostPickerBtn, toggleKubeHostPicker, closeKubeHostPicker, onKubeHostPickerBtnKeydown, onKubeHostPickerKeydown, updateKubePickerHighlight, renderKubeHostPickerList, pickKubeHost, onSelectKubeHost, loadKubeNamespaces, renderKubeRefreshStatus, switchKubeTab, onKubeNamespaceChange, refreshKubeCurrentTab, loadKubeTabData, kubeFetchTab, loadKubeNodes, kubeWorkloadIsProblem, renderKubeWorkloadsTable, loadKubeWorkloads, kubePodIsProblem, onKubePodsFilterChange, renderKubePodsTable, loadKubePods, loadKubeServices, onKubeEventsFilterChange, renderKubeEventsTable, loadKubeEvents, loadKubeGenericResource, openKubeGenericMenu, loadKubeApply, onKubeApplyYamlInput, clearKubeApply, submitKubeDiff, kubeBusy, kubeAction, kubeGetOutput, submitKubeApply, openKubeNodeMenu, openKubeWorkloadMenu, openKubePodMenu, openKubeServiceMenu, openKubeScaleModal, submitKubeScale, kubeDeletePod, kubeDescribe, promptKubeContainer, submitKubeContainerChoice, kubePodExec, stopKubeLogs, openKubeLogs, onKubeLogsParamChange, connectKubeLogsStream, copyKubeLogs, kubeAutoRefreshIntervalSec, stopKubeAutorefresh, restartKubeAutorefresh, openKubeYamlEditor, initKubeYamlEditor, onKubeYamlEditorInput, submitKubeYamlDiff, submitKubeYamlApply, setKubeLogsCount, appendKubeLogText, onKubeLogsFilterInput, openKubeWorkloadLogs, openKubeDrain, renderKubeDrainPreview, confirmKubeDrain, showToastDrainUncordon, setKubeClusterError, openKubeClusterModal, loadKubeClusterFile, loadKubeClusterContexts, onKubeClusterContextChange, submitKubeClusterModal, editKubeCurrentCluster, currentKubeHostClusterId, openKubeHostClusterModal, submitKubeHostClusterModal, deleteKubeCluster, openKubeCliModal, checkKubeCli, installKubeCli, switchKubeCli, revertKubeCliToSystem, openKubeTopology, closeKubeTopology, renderKubeTopology, drawKubeTopologyEdges };

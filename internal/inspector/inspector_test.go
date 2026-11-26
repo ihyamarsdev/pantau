@@ -1010,6 +1010,24 @@ func TestParseDockerPSIncludesStoppedContainersAndDerivesState(t *testing.T) {
 	}
 }
 
+func TestParseDockerPSComposeLabels(t *testing.T) {
+	out := "app-web-1|nginx:1.27|Up 2 hours|80/tcp|myapp|web\n" +
+		"standalone-redis|redis:7|Up 1 hour|6379/tcp||\n"
+	got := parseDockerPS(out)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 containers, got %d", len(got))
+	}
+	if got[0].ComposeProject != "myapp" || got[0].ComposeService != "web" {
+		t.Fatalf("unexpected compose fields: %+v", got[0])
+	}
+	if got[0].Labels["com.docker.compose.project"] != "myapp" || got[0].Labels["com.docker.compose.service"] != "web" {
+		t.Fatalf("unexpected labels: %+v", got[0].Labels)
+	}
+	if got[1].ComposeProject != "" || len(got[1].Labels) != 0 {
+		t.Fatalf("expected empty compose fields for standalone container: %+v", got[1])
+	}
+}
+
 func TestParseNetworkMetricsListeningServiceNames(t *testing.T) {
 	listen := strings.Join([]string{
 		`LISTEN 0.0.0.0:22 users:(("sshd",pid=812,fd=3))`,

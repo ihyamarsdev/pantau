@@ -239,14 +239,26 @@
     S.raf = requestAnimationFrame(drawFrame);
   }
 
+  function isGlobeOccluded() {
+    if (document.visibilityState === 'hidden' || document.hidden) return true;
+    if (document.querySelector('.modal.open')) return true;
+    if (document.querySelector('#ansibleDrawer.open, #tfDrawer.open, #kubeTopoDrawer.open')) return true;
+    return false;
+  }
+
   GL.startLoop = function () {
-    if (S.raf) return;
+    if (S.raf || !S.mounted || isGlobeOccluded()) return;
     S.lastFrame = 0;
     S.raf = requestAnimationFrame(drawFrame);
   };
   GL.stopLoop = function () {
     if (S.raf) { cancelAnimationFrame(S.raf); S.raf = 0; }
   };
+  GL.syncPauseState = function () {
+    if (isGlobeOccluded()) GL.stopLoop();
+    else if (S.mounted) GL.startLoop();
+  };
+  GL.isPaused = function () { return !S.raf; };
 
   // ---- Camera --------------------------------------------------------------
   GL.flyTo = function (node) {
@@ -550,7 +562,6 @@
   });
 
   document.addEventListener('visibilitychange', function () {
-    if (document.hidden) GL.stopLoop();
-    else if (S.mounted) GL.startLoop();
+    GL.syncPauseState();
   });
 })();

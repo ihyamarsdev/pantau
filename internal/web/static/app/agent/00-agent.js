@@ -77,6 +77,7 @@
       ag_s_testing: 'Testing connection…',
       ag_q_unit: 'Service {unit} on host "{host}" (id {id}) has a problem. Find the root cause and propose a fix. Check its status and journal first. Do not change anything until I confirm the plan.',
       ag_q_container: 'Container {name} on host "{host}" (id {id}) has a problem. Read its logs and state, find the root cause and propose a fix. Do not change anything until I confirm the plan.',
+      ag_q_stack: 'Docker Compose stack "{stack}" on host "{host}" (id {id}) needs inspection. Check its containers, status, and logs, find any issues and propose a fix. Do not change anything until I confirm the plan.',
       ag_q_alert: 'Alert on host "{host}" (id {id}): {msg}\nRoot cause excerpt:\n{rc}\nInvestigate and propose a fix. Do not change anything until I confirm the plan.',
       ag_m_title: 'Agent memory', ag_m_desc: 'Durable notes the agent saves about your infrastructure and re-reads at the start of every chat. Review them: delete anything wrong. Notes are sent to your LLM provider with every chat.',
       ag_m_empty: 'No notes yet. The agent adds them as it learns your setup; you can add your own below.', ag_m_fleet: 'Whole fleet', ag_m_ph: 'e.g. Backups run at 02:00 via /opt/backup.sh',
@@ -137,6 +138,7 @@
       ag_s_testing: 'Menguji koneksi…',
       ag_q_unit: 'Service {unit} di host "{host}" (id {id}) bermasalah. Cari akar masalahnya dan usulkan perbaikan. Cek status dan journal dulu. Jangan ubah apa pun sebelum saya setujui rencananya.',
       ag_q_container: 'Container {name} di host "{host}" (id {id}) bermasalah. Baca log dan statusnya, cari akar masalah, lalu usulkan perbaikan. Jangan ubah apa pun sebelum saya setujui rencananya.',
+      ag_q_stack: 'Stack Docker Compose "{stack}" di host "{host}" (id {id}) perlu diperiksa. Cek container, status, dan log-nya, temukan masalah jika ada, lalu usulkan perbaikan. Jangan ubah apa pun sebelum saya setujui rencananya.',
       ag_q_alert: 'Alert di host "{host}" (id {id}): {msg}\nCuplikan root cause:\n{rc}\nSelidiki dan usulkan perbaikan. Jangan ubah apa pun sebelum saya setujui rencananya.',
       ag_m_title: 'Memori agent', ag_m_desc: 'Catatan permanen yang disimpan agent tentang infrastruktur Anda dan dibaca ulang di awal setiap chat. Tinjau: hapus yang salah. Catatan dikirim ke penyedia LLM Anda di setiap chat.',
       ag_m_empty: 'Belum ada catatan. Agent menambahkannya saat memahami setup Anda; Anda juga bisa menambah sendiri di bawah.', ag_m_fleet: 'Seluruh fleet', ag_m_ph: 'misal: Backup jalan jam 02:00 lewat /opt/backup.sh',
@@ -878,6 +880,7 @@
   const hostCtx = () => (typeof currentHost !== 'undefined' && currentHost ? { id: currentHost.id, host: currentHost.name } : null);
   AG.askUnit = function (unit) { const h = hostCtx(); if (h) AG.ask(fill(t('ag_q_unit'), { unit, host: h.host, id: h.id })); };
   AG.askContainer = function (name) { const h = hostCtx(); if (h) AG.ask(fill(t('ag_q_container'), { name, host: h.host, id: h.id })); };
+  AG.askStack = function (stack) { const h = hostCtx(); if (h) AG.ask(fill(t('ag_q_stack'), { stack, host: h.host, id: h.id })); };
   AG.askSecurity = function (hostId) { const h = hostCtx(); AG.ask(fill(t('ag_q_security'), { host: h ? h.host : '', id: hostId })); };
   AG.askAlert = function (alertId) {
     const a = (typeof latestAlerts !== 'undefined' ? latestAlerts : []).find((x) => x.id === alertId);

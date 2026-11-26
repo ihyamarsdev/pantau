@@ -15,11 +15,14 @@ import (
 
 // DockerContainer is a live snapshot of one container (running or not) on a host.
 type DockerContainer struct {
-	Name   string `json:"name"`
-	Image  string `json:"image"`
-	State  string `json:"state"`  // running, paused, restarting, exited, created, dead
-	Status string `json:"status"` // raw `docker ps` status, e.g. "Up 3 hours (healthy)"
-	Ports  string `json:"ports"`
+	Name           string            `json:"name"`
+	Image          string            `json:"image"`
+	State          string            `json:"state"`  // running, paused, restarting, exited, created, dead
+	Status         string            `json:"status"` // raw `docker ps` status, e.g. "Up 3 hours (healthy)"
+	Ports          string            `json:"ports"`
+	ComposeProject string            `json:"compose_project,omitempty"`
+	ComposeService string            `json:"compose_service,omitempty"`
+	Labels         map[string]string `json:"labels,omitempty"`
 }
 
 // ListDockerContainers lists all containers (including stopped ones) via `docker ps -a`.
@@ -51,8 +54,8 @@ func (ins *Inspector) ListDockerContainers(hostID int64) ([]DockerContainer, err
 	return containers, nil
 }
 
-// dockerPSCommand lists every container (running or not) with its image and status.
-const dockerPSCommand = `docker ps -a --no-trunc --format '{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}'`
+// dockerPSCommand lists every container (running or not) with its image, status, ports, and Compose labels.
+const dockerPSCommand = `docker ps -a --no-trunc --format '{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}|{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.service"}}'`
 
 // dockerNotInstalled is printed by the inspection probe when docker is absent.
 const dockerNotInstalled = "__PANTAU_NO_DOCKER__"
@@ -107,13 +110,28 @@ func parseDockerPS(out string) []DockerContainer {
 		if line == "" {
 			continue
 		}
-		f := strings.SplitN(line, "|", 4)
+		f := strings.SplitN(line, "|", 6)
 		if len(f) < 3 {
 			continue
 		}
 		c := DockerContainer{Name: f[0], Image: f[1], Status: f[2], State: dockerStateFromStatus(f[2])}
-		if len(f) == 4 {
+		if len(f) >= 4 {
 			c.Ports = f[3]
+		}
+		if len(f) >= 5 {
+			c.ComposeProject = strings.TrimSpace(f[4])
+		}
+		if len(f) >= 6 {
+			c.ComposeService = strings.TrimSpace(f[5])
+		}
+		if c.ComposeProject != "" || c.ComposeService != "" {
+			c.Labels = make(map[string]string, 2)
+			if c.ComposeProject != "" {
+				c.Labels["com.docker.compose.project"] = c.ComposeProject
+			}
+			if c.ComposeService != "" {
+				c.Labels["com.docker.compose.service"] = c.ComposeService
+			}
 		}
 		containers = append(containers, c)
 	}

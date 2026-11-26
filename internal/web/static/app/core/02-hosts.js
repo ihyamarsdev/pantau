@@ -31,7 +31,7 @@ function renderHosts() {
     if (!S.allRawHosts.some(h => h.id === id)) S.selectedHostIds.delete(id);
   }
   const prefs = getUIPrefs();
-  const viewMode = prefs.viewMode || 'globe';
+  const viewMode = prefs.viewMode || prefs.defaultViewMode || 'globe';
   const sortVal = document.getElementById('sortSelect')?.value || 'manual';
   const hasSearch = !!(document.getElementById('hostSearchInput')?.value.trim());
   const hasStatusFilter = (document.getElementById('statusFilterSelect')?.value || 'all') !== 'all';

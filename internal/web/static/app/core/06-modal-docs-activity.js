@@ -20,6 +20,7 @@ function openModal(id) {
   if (!S.openModalStack.includes(id)) {
     S.openModalStack.push(id);
   }
+  if (window.GlobeRadar && window.GlobeRadar.syncPauseState) window.GlobeRadar.syncPauseState();
 }
 
 function closeModal(id) {
@@ -71,6 +72,7 @@ function closeModal(id) {
     el.style.zIndex = '';
   }
   S.openModalStack = S.openModalStack.filter(mId => mId !== id);
+  if (window.GlobeRadar && window.GlobeRadar.syncPauseState) window.GlobeRadar.syncPauseState();
 }
 
 window.addEventListener('click', (e) => {

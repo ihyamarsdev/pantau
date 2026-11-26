@@ -385,7 +385,22 @@ function initDashboardToolbar() {
   }
   if (statusSelect && prefs.statusFilter) statusSelect.value = prefs.statusFilter;
   if (sortSelect && prefs.sortBy) sortSelect.value = prefs.sortBy;
-  updateViewModeButtons(prefs.viewMode || 'globe');
+  const initialView = prefs.defaultViewMode || prefs.viewMode || 'globe';
+  if (prefs.defaultViewMode && prefs.viewMode !== prefs.defaultViewMode) {
+    setUIPrefs({ viewMode: initialView });
+  }
+  updateViewModeButtons(initialView);
+}
+
+function getDefaultHostsView() {
+  return getUIPrefs().defaultViewMode || 'globe';
+}
+
+function setDefaultHostsView(mode) {
+  const normalized = (mode === 'list' || mode === 'grid' || mode === 'globe') ? mode : 'globe';
+  setUIPrefs({ defaultViewMode: normalized, viewMode: normalized });
+  updateViewModeButtons(normalized);
+  renderHosts();
 }
 
 function setViewMode(mode) {
@@ -783,4 +798,4 @@ async function saveIacGateSetting(on) {
   }
 }
 
-export { t, setLanguage, toggleLanguage, checkAuth, doLogin, doLogin2FA, cancel2FALogin, showConfirm, resolveConfirm, doLogout, getUIPrefs, setUIPrefs, loadGlobalNotes, openGlobalNotesModal, showGlobalNotesViewMode, startEditGlobalNotesModal, cancelEditGlobalNotesModal, saveGlobalNotesModal, openEditNoteModal, saveHostNote, initDashboardToolbar, setViewMode, updateViewModeButtons, onSearchFilterChange, onSearchInput, clearSearch, hostStateClass, getFilteredAndSortedHosts, reorderHostsAPI, handleDropReorder, updateInspectionStatusUI, loadInspectionSettings, formatRelativeTime, setInspectAllBanner, setInspectAllRunning, checkInspectAllStatus, startInspectAllPolling, inspectAllHosts, savePollInterval, saveSecurityScanInterval, saveVulnIntelSetting, saveOsvEnabledSetting, saveIacGateSetting };
+export { t, setLanguage, toggleLanguage, checkAuth, doLogin, doLogin2FA, cancel2FALogin, showConfirm, resolveConfirm, doLogout, getUIPrefs, setUIPrefs, getDefaultHostsView, setDefaultHostsView, loadGlobalNotes, openGlobalNotesModal, showGlobalNotesViewMode, startEditGlobalNotesModal, cancelEditGlobalNotesModal, saveGlobalNotesModal, openEditNoteModal, saveHostNote, initDashboardToolbar, setViewMode, updateViewModeButtons, onSearchFilterChange, onSearchInput, clearSearch, hostStateClass, getFilteredAndSortedHosts, reorderHostsAPI, handleDropReorder, updateInspectionStatusUI, loadInspectionSettings, formatRelativeTime, setInspectAllBanner, setInspectAllRunning, checkInspectAllStatus, startInspectAllPolling, inspectAllHosts, savePollInterval, saveSecurityScanInterval, saveVulnIntelSetting, saveOsvEnabledSetting, saveIacGateSetting };
