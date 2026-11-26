@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"pantau/internal/gwupdate"
 	"pantau/internal/sshrunner"
 	"pantau/internal/store"
 
@@ -56,11 +57,96 @@ type PreparedKubeconfig struct {
 	Provider   string
 }
 
-func ensureKubectlInstalled() error {
-	if _, err := exec.LookPath("kubectl"); err != nil {
-		return errors.New("kubectl is not installed on the Pantau server")
+// resolveKubectlBinary returns the kubectl External Cluster operations run: the one Pantau manages
+// when it has one, otherwise the system kubectl on PATH (ADR 0081).
+func resolveKubectlBinary() (string, error) {
+	p, err := gwupdate.ResolveBinary("kubectl")
+	if err != nil {
+		return "", errors.New("kubectl is not installed on the Pantau server")
 	}
-	return nil
+	return p, nil
+}
+
+func ensureKubectlInstalled() error {
+	_, err := resolveKubectlBinary()
+	return err
+}
+
+// KubectlStatus is the kubectl that External Cluster operations run on this server.
+type KubectlStatus struct {
+	Path            string `json:"path"`
+	Version         string `json:"version"`
+	Source          string `json:"source"` // managed, system or missing
+	SystemAvailable bool   `json:"system_available"`
+	SystemVersion   string `json:"system_version"`
+}
+
+const kubectlDetectTTL = 30 * time.Second
+
+var (
+	kubectlDetectMu    sync.RWMutex
+	kubectlDetectCache *KubectlStatus
+	kubectlDetectTime  time.Time
+)
+
+// InvalidateKubectlDetectCache drops the cached kubectl detection. It is called after Pantau installs
+// or switches kubectl, so the next detection sees the new version right away.
+func InvalidateKubectlDetectCache() {
+	kubectlDetectMu.Lock()
+	kubectlDetectCache, kubectlDetectTime = nil, time.Time{}
+	kubectlDetectMu.Unlock()
+}
+
+// DetectLocalKubectl reports the kubectl in use and whether the system copy exists too, so the UI
+// knows if "use system kubectl" is available.
+func DetectLocalKubectl() KubectlStatus {
+	kubectlDetectMu.RLock()
+	if kubectlDetectCache != nil && time.Since(kubectlDetectTime) < kubectlDetectTTL {
+		s := *kubectlDetectCache
+		kubectlDetectMu.RUnlock()
+		return s
+	}
+	kubectlDetectMu.RUnlock()
+
+	s := detectKubectl()
+	kubectlDetectMu.Lock()
+	kubectlDetectCache, kubectlDetectTime = &s, time.Now()
+	kubectlDetectMu.Unlock()
+	return s
+}
+
+func detectKubectl() KubectlStatus {
+	var s KubectlStatus
+	path, err := resolveKubectlBinary()
+	if err != nil {
+		s.Source = "missing"
+		return s
+	}
+	s.Path = path
+	s.Version = kubectlClientVersion(path)
+	s.Source = "system"
+	if _, ok := gwupdate.Dir().ManagedBinary("kubectl"); ok {
+		s.Source = "managed"
+	}
+	// The process PATH never holds the managed bin, so this finds the system copy even while a
+	// managed version is active.
+	if sys, err := exec.LookPath("kubectl"); err == nil {
+		s.SystemAvailable = true
+		s.SystemVersion = kubectlClientVersion(sys)
+	}
+	return s
+}
+
+// kubectlClientVersion reads the client version offline: without --client kubectl contacts the API
+// server.
+func kubectlClientVersion(path string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, path, "version", "--client").Output()
+	if err != nil {
+		return ""
+	}
+	return gwupdate.ExtractVersion(string(out))
 }
 
 // writeTempKubeconfig writes raw bytes to a 0600 temp file and returns its path and a cleanup func.
@@ -107,7 +193,11 @@ func ListKubeconfigContexts(raw string) (*KubeconfigContexts, error) {
 	}
 	defer cleanup()
 
-	cmd := exec.Command("kubectl", "config", "view", "-o", "json", "--kubeconfig", tmpFile)
+	kubectlPath, err := resolveKubectlBinary()
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(kubectlPath, "config", "view", "-o", "json", "--kubeconfig", tmpFile)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -200,7 +290,11 @@ func PrepareKubeconfig(raw, contextName string) (*PreparedKubeconfig, error) {
 		args = append(args, "--context="+contextName)
 	}
 
-	cmd := exec.Command("kubectl", args...)
+	kubectlPath, err := resolveKubectlBinary()
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(kubectlPath, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -324,6 +418,12 @@ func (r *localKubeRunner) Exec(cmd string) (stdout, stderr string, exitCode int,
 	return r.ExecTimeout(cmd, sshrunner.DefaultExecTimeout)
 }
 
+// env is the environment of a command on the external cluster. The managed kubectl comes first on
+// PATH, so a version switch applies without a restart; the cloud credentials are inherited as-is.
+func (r *localKubeRunner) env() []string {
+	return append(os.Environ(), "PATH="+gwupdate.PrependPath(os.Getenv("PATH")), "KUBECONFIG="+r.kubeconfigPath)
+}
+
 func (r *localKubeRunner) ExecTimeout(cmdStr string, timeout time.Duration) (stdout, stderr string, exitCode int, err error) {
 	if timeout <= 0 {
 		timeout = sshrunner.DefaultExecTimeout
@@ -331,7 +431,7 @@ func (r *localKubeRunner) ExecTimeout(cmdStr string, timeout time.Duration) (std
 
 	cmd := exec.Command("sh", "-c", cmdStr)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Env = append(os.Environ(), "KUBECONFIG="+r.kubeconfigPath)
+	cmd.Env = r.env()
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdoutBuf
@@ -375,7 +475,7 @@ func (r *localKubeRunner) Stream(cmdStr string, out io.Writer) error {
 
 	cmd := exec.Command("sh", "-c", cmdStr)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Env = append(os.Environ(), "KUBECONFIG="+r.kubeconfigPath)
+	cmd.Env = r.env()
 	cmd.Stdout = pw
 	cmd.Stderr = pw
 
@@ -426,7 +526,7 @@ func (r *localKubeRunner) Stream(cmdStr string, out io.Writer) error {
 func (r *localKubeRunner) PipeCommand(cmdStr string, in io.Reader, out io.Writer) error {
 	cmd := exec.Command("sh", "-c", cmdStr)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Env = append(os.Environ(), "KUBECONFIG="+r.kubeconfigPath)
+	cmd.Env = r.env()
 	cmd.Stdin = in
 	cmd.Stdout = out
 	cmd.Stderr = out
