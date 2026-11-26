@@ -154,6 +154,8 @@ func (s *Server) registerAgentRoutes() {
 	s.mux.HandleFunc("/api/agent/approvals/", s.authMiddleware(s.handleAgentApprovalDecide))
 	s.mux.HandleFunc("/api/agent/grants", s.authMiddleware(s.handleAgentGrants))
 	s.mux.HandleFunc("/api/agent/memory", s.authMiddleware(s.handleAgentMemory))
+	s.mux.HandleFunc("/api/agent/threads", s.authMiddleware(s.handleAgentThreads))
+	s.mux.HandleFunc("/api/agent/threads/", s.authMiddleware(s.handleAgentThread))
 }
 
 func (s *Server) handleAgentSettings(w http.ResponseWriter, r *http.Request) {
@@ -300,6 +302,9 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 		Message   string `json:"message"`
 		SessionID string `json:"session_id"`
 		Page      string `json:"page"` // active UI page; narrows the tools offered to the model
+		ThreadID  int64  `json:"thread_id"`
+		HostID    int64  `json:"host_id"`
+		ClusterID int64  `json:"cluster_id"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&req); err != nil || strings.TrimSpace(req.Message) == "" || !agentSessionRe.MatchString(req.SessionID) {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -314,11 +319,12 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the AI agent is not configured: choose a provider and a model in Settings -> AI Agent"})
 		return
 	}
-	s.chatNative(w, r, c, req.Message, req.SessionID, req.Page)
+	scopeType, scopeID := agentScopeFor(req.Page, req.HostID, req.ClusterID)
+	s.chatNative(w, r, c, req.Message, req.SessionID, req.Page, req.ThreadID, scopeType, scopeID)
 }
 
 // chatNative runs one turn of the in-process agent: Pantau calls the provider itself and streams the answer.
-func (s *Server) chatNative(w http.ResponseWriter, r *http.Request, c agentCfg, message, sessionID, page string) {
+func (s *Server) chatNative(w http.ResponseWriter, r *http.Request, c agentCfg, message, sessionID, page string, threadID int64, scopeType string, scopeID int64) {
 	if c.Model == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no model is configured in Settings (AI agent)"})
 		return
@@ -338,6 +344,14 @@ func (s *Server) chatNative(w http.ResponseWriter, r *http.Request, c agentCfg, 
 		return
 	}
 	defer s.endConv(conv)
+	// The stored thread of this conversation: the named one, else the session's newest, else a new one. A
+	// reload or a Pantau restart therefore resumes the conversation instead of starting over.
+	th := s.agentThreadFor(sessionID, scopeType, scopeID, threadID)
+	s.attachAgentThread(conv, th)
+	if th != nil {
+		// The browser binds the conversation to this thread, so the next turn does not have to search for it.
+		w.Header().Set("X-Agent-Thread", strconv.FormatInt(th.ID, 10))
+	}
 	// A page context narrows the tools. An empty page (API callers) keeps all tools; a set_tool_domain
 	// meta-tool can still widen it later in the conversation.
 	if d := agentDomainForContext(page); d != domainAll {

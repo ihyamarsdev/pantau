@@ -27,7 +27,8 @@ const (
 	agentLabelMax      = 80
 )
 
-// agentConv is the conversation of one chat session. History lives in memory only.
+// agentConv is the conversation of one chat session. Its history is held here while the turn runs and mirrored
+// into agent_messages, so a restart resumes it (agent_threads.go).
 type agentConv struct {
 	mu         sync.Mutex
 	msgs       []llmMessage
@@ -36,6 +37,9 @@ type agentConv struct {
 	lastTokens int                          // the prompt size of the last model call, 0 when unknown
 	domain     toolDomain                   // active tool domain, set from the UI page and mutable via set_tool_domain
 	exec       *inspector.AgentSessionState // per-session SSH cwd state (ADR 0086)
+	threadID   int64                        // stored thread this conversation belongs to, 0 = not stored
+	stored     int                          // history entries already in the database
+	loaded     bool                         // history was read from the thread (never re-read mid-turn)
 }
 
 type agentToolEvent struct {
@@ -171,6 +175,7 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 	lastTokens := conv.lastTokens
 	domain := conv.domain
 	history := append([]llmMessage{}, conv.msgs...)
+	threadID, stored := conv.threadID, conv.stored
 	conv.mu.Unlock()
 	// The domain pointer and the per-session cwd state travel with the request so tools can widen the
 	// domain and run relative to the session's working directory (ADR 0086).
@@ -184,6 +189,9 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 	// would forget that it already restarted a service and would repeat the action.
 	var saved []llmMessage
 	success := false
+	// rewrite is set by a compaction: the oldest messages are gone from the history, so the stored rows are
+	// replaced instead of appended, or they would come back on the next resume.
+	rewrite := false
 	defer func() {
 		conv.mu.Lock()
 		switch {
@@ -192,7 +200,15 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 		case saved != nil:
 			conv.msgs = saved
 		}
+		final := conv.msgs
 		conv.domain = domain
+		conv.mu.Unlock()
+		if threadID == 0 {
+			return
+		}
+		s.saveAgentHistory(threadID, final, stored, rewrite)
+		conv.mu.Lock()
+		conv.stored = len(final)
 		conv.mu.Unlock()
 	}()
 
@@ -203,7 +219,9 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 
 	// A long text-only exchange never reaches a tool batch, so the history is compacted here too.
 	if lastTokens > 0 && lastTokens+len(message)/3 > c.CompactTokens {
+		before := len(history)
 		history = s.compactHistory(r.Context(), client, c, history)
+		rewrite = rewrite || len(history) < before
 	}
 	for step := range agentMaxSteps {
 		if err := rctx.Context().Err(); err != nil {
@@ -270,7 +288,9 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 		// The batch is complete: it is kept even if the turn fails later.
 		saved = append([]llmMessage{}, history...)
 		if tokens > c.CompactTokens {
+			before := len(history)
 			history = s.compactHistory(r.Context(), client, c, history)
+			rewrite = rewrite || len(history) < before
 			saved = append([]llmMessage{}, history...)
 		}
 	}

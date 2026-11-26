@@ -214,6 +214,34 @@ func (d *DB) migrate() error {
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
+	-- AI agent chat history: local and re-creatable, so it stays out of System Snapshots (ADR-0091). A thread
+	-- groups one conversation under the resource it is about; its messages go with it (ON DELETE CASCADE).
+	CREATE TABLE IF NOT EXISTS agent_threads (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		scope_type TEXT NOT NULL DEFAULT 'global',
+		scope_id INTEGER NOT NULL DEFAULT 0,
+		session TEXT NOT NULL DEFAULT '',
+		title TEXT NOT NULL DEFAULT '',
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_agent_threads_scope ON agent_threads(scope_type, scope_id, updated_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_agent_threads_session ON agent_threads(session, updated_at DESC);
+
+	CREATE TABLE IF NOT EXISTS agent_messages (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		thread_id INTEGER NOT NULL REFERENCES agent_threads(id) ON DELETE CASCADE,
+		role TEXT NOT NULL,
+		content TEXT NOT NULL DEFAULT '',
+		tool_calls_json TEXT NOT NULL DEFAULT '',
+		approval_status TEXT NOT NULL DEFAULT '',
+		tool_call_id TEXT NOT NULL DEFAULT '',
+		tool_name TEXT NOT NULL DEFAULT '',
+		is_error INTEGER NOT NULL DEFAULT 0,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_agent_messages_thread ON agent_messages(thread_id, id);
+
 	CREATE TABLE IF NOT EXISTS inspection_runs (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,

@@ -4,7 +4,7 @@ Architecture decisions live in `docs/adr/`. Read only the ADRs relevant to your 
 
 ## Entry points by area
 
-- **Agent / AI**: 0066 (Hermes, superseded in part), 0073 (in-process agent), 0074 (tool coverage), 0082 guardrails (this repo has several 0082s; use the title), 0082 scoped memory, 0082 proactive triage.
+- **Agent / AI**: 0066 (Hermes, superseded in part), 0073 (in-process agent), 0074 (tool coverage), 0082 guardrails (this repo has several 0082s; use the title), 0082 scoped memory, 0082 proactive triage, 0091 (chat history in SQLite, per-resource threads).
 
 - **Activity Console / telemetry**: 0030.
 

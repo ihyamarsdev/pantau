@@ -5,7 +5,7 @@
   'use strict';
 
   const AG = (window.AG = {});
-  const S = { grants: [], enabled: false, open: false, expanded: false, busy: false, session: null, abort: null, approvals: [], timer: null, msgs: [], chatT0: 0, apprT0: 0, fab: null, drag: null, suppressToggle: false, wired: false };
+  const S = { grants: [], enabled: false, open: false, expanded: false, busy: false, session: null, abort: null, approvals: [], timer: null, msgs: [], chatT0: 0, apprT0: 0, fab: null, drag: null, suppressToggle: false, wired: false, thread: 0, scope: '', hydrated: false };
   const SESSION_KEY = 'pantau_agent_session';
   const POS_KEY = 'pantau_agent_fab_pos';
 
@@ -84,6 +84,39 @@
     const id = 'pantau-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
     localStorage.setItem(SESSION_KEY, id);
     return id;
+  }
+
+  /* ---------- stored history: the conversation comes back after a reload or a Pantau restart ---------- */
+  // The thread is grouped by the resource the chat was opened about: the open host, else the active page.
+  function scope() {
+    const h = typeof currentHost !== 'undefined' && currentHost ? currentHost : null;
+    if (h && h.id) return { scope_type: 'host', scope_id: Number(h.id) };
+    const page = typeof currentSideNav === 'string' ? currentSideNav : '';
+    if (page === 'kube') return { scope_type: 'cluster', scope_id: 0 };
+    if (page === 'docker') return { scope_type: 'docker', scope_id: 0 };
+    if (page === 'ansible') return { scope_type: 'ansible', scope_id: 0 };
+    if (page === 'terraform') return { scope_type: 'terraform', scope_id: 0 };
+    return { scope_type: 'global', scope_id: 0 };
+  }
+
+  // Hydrate paints the stored conversation once per page load; a new chat skips it.
+  async function hydrate() {
+    if (S.hydrated) return;
+    S.hydrated = true;
+    const r = await api('/api/agent/threads?session=' + encodeURIComponent(S.session)).catch(() => null);
+    const th = r && r.ok ? (r.data.threads || [])[0] : null;
+    if (!th) return;
+    S.thread = th.id;
+    S.scope = th.scope_type + ':' + th.scope_id;
+    const d = await api('/api/agent/threads/' + th.id).catch(() => null);
+    if (!d || !d.ok) return;
+    const restored = [];
+    for (const m of d.data.messages || []) {
+      if (m.role === 'user') restored.push({ role: 'user', text: m.content });
+      else if (m.role === 'assistant' && m.content) restored.push({ role: 'bot', text: m.content });
+      else if (m.role === 'tool') restored.push({ role: 'tool', text: (m.tool_name || 'tool'), status: m.is_error ? 'error' : 'done', id: m.tool_call_id });
+    }
+    if (restored.length) { S.msgs = restored; renderLog(); }
   }
 
   /* ---------- minimal markdown: everything is escaped first, then fences, inline code and bold ---------- */
@@ -284,6 +317,8 @@
     api('/api/agent/grants', { method: 'DELETE' }).then(pollApprovals);
     S.msgs = [];
     S.session = newSession();
+    S.thread = 0;
+    S.scope = '';
     S.busy = false;
     setBusy(false);
     renderLog();
@@ -328,10 +363,15 @@
     setBusy(true);
     S.abort = new AbortController();
     try {
+      const sc = scope(), key = sc.scope_type + ':' + sc.scope_id;
       const res = await fetch('/api/agent/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: S.abort.signal,
-        body: JSON.stringify({ message: text, session_id: S.session, page: typeof currentSideNav === 'string' ? currentSideNav : '' })
+        body: JSON.stringify({ message: text, session_id: S.session, thread_id: S.scope === key ? S.thread : 0,
+          page: typeof currentSideNav === 'string' ? currentSideNav : '', host_id: sc.scope_type === 'host' ? sc.scope_id : 0 })
       });
+      // The server names the thread it used; the panel binds to it so the next turn continues it.
+      const bound = Number(res.headers.get('X-Agent-Thread')) || 0;
+      if (bound) { S.thread = bound; S.scope = key; }
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         const err = new Error(j.error || 'HTTP ' + res.status);
@@ -446,6 +486,7 @@
     if (S.enabled) S.timer = setInterval(pollApprovals, 2500);
     if (!S.enabled) { AG.toggle(false); $('agentApprovals').innerHTML = ''; }
     renderLog();
+    if (S.enabled) hydrate();
   }
 
   AG.init = function () { build(); refreshEnabled(); };

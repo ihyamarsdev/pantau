@@ -21,3 +21,7 @@ _Avoid_: Confirmation dialog, permission prompt
 **Agent Memory**:
 Kumpulan catatan permanen (maks. 200, masing-masing maks. 500 karakter) yang disimpan AI Agent lewat `memory_save` dan operator lewat Settings. Setiap catatan berlingkup pada paling banyak satu: seluruh fleet, satu **Host**, satu **Kubernetes Cluster**, atau satu **domain** fungsional (security, network, docker, ansible, terraform, kubernetes, database, storage). Hanya catatan yang relevan dengan pertanyaan yang disisipkan ke pesan sistem, bersama ringkasan inventaris yang disebut pertanyaan itu; sisanya dijangkau satu panggilan `memory_list`. Catatan diperlakukan sebagai data, bukan instruksi.
 _Avoid_: Chat history, knowledge base, agent training
+
+**Agent Thread**:
+Satu percakapan AI Agent yang tersimpan di SQLite (`agent_threads` + `agent_messages`), dikelompokkan menurut resource yang dibahas lewat `scope_type` (`global`, `host`, `cluster`, `docker`, `ansible`, `terraform`) dan `scope_id`. Bertahan setelah reload maupun restart Pantau selama batas rolling pruning (50 thread terakhir, 200 pesan per thread). Isi pesan dan hasil tool di-redaksi sebelum disimpan, dan placeholder blind secret `{{ vault.KEY }}` dibiarkan utuh. Dikecualikan dari System Snapshot karena lokal dan dapat dibuat ulang.
+_Avoid_: Session, chat log, conversation buffer
