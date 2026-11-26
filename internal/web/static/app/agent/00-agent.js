@@ -83,7 +83,17 @@
       ag_m_empty: 'No notes yet. The agent adds them as it learns your setup; you can add your own below.', ag_m_fleet: 'Whole fleet', ag_m_ph: 'e.g. Backups run at 02:00 via /opt/backup.sh',
       ag_m_scope: 'Scope', ag_m_scope_fleet: 'Whole fleet', ag_m_scope_host: 'One host', ag_m_scope_cluster: 'One cluster', ag_m_scope_domain: 'One domain',
       ag_m_add: 'Add', ag_m_forget: 'Forget', ag_m_forget_confirm: 'Delete this note?', ag_m_by_agent: 'agent', ag_m_by_you: 'you',
-      ag_q_security: 'Review the latest security scan of host "{host}" (id {id}): pending security updates and failing hardening checks. Rank what matters and propose safe fixes. Do not change anything until I confirm the plan.'
+      ag_q_security: 'Review the latest security scan of host "{host}" (id {id}): pending security updates and failing hardening checks. Rank what matters and propose safe fixes. Do not change anything until I confirm the plan.',
+      ag_patch_preview: 'Preview Diff', ag_patch_dryrun: 'Validate / Dry-Run', ag_patch_dryrunning: 'Validating…',
+      ag_patch_apply: 'Apply Changes', ag_patch_applying: 'Applying…', ag_patch_applied: 'Applied',
+      ag_patch_view_split: 'Side-by-Side', ag_patch_view_unified: 'Unified Diff',
+      ag_patch_before: 'Current (Before)', ag_patch_after: 'Proposed (After)',
+      ag_patch_need_dryrun: 'Run Validate / Dry-Run first', ag_patch_valid_ok: 'Validation passed', ag_patch_valid_fail: 'Validation failed',
+      ag_patch_apply_ok: 'Changes applied',
+      ag_ask_remediate: 'Ask Agent to Remediate', ag_ask_fix: 'Ask Agent to Fix', ag_ask_explain_plan: 'Explain Plan & Risk',
+      ag_q_remediate: 'Remediate this {source} finding:\n- Rule/ID: {rule}\n- Severity: {severity}\n- Target: {target}\n- Finding: {title}\n- Detail: {detail}\n- Suggested remediation: {remediation}\nInvestigate and propose a safe fix (emit a pantau-patch block if editing config/YAML/HCL). Do not apply changes until I confirm.',
+      ag_q_ansible_fix: 'Ansible task failed in "{playbook}" (run #{run_id}) on host "{host}" (status: {status}):\nTask: {task}\nError:\n{error}\nFind the root cause and propose a safe fix (emit a pantau-patch block if editing the playbook). Do not run or modify anything until I confirm.',
+      ag_q_tf_explain: 'Explain this Terraform plan and policy/risk summary for workspace "{workspace}" (run #{run_id}, status: {status}):\n- Plan: +{create} create, ~{update} update, ±{replace} replace, -{delete} delete\n- Policy: {policy}\n- Cost delta: {cost}\nHighlight breaking changes, deletions, and policy risks.'
     },
     id: {
       ag_title: 'Agen AI', ag_ask: 'Tanya agent', ag_new: 'Chat baru', ag_close: 'Tutup', ag_expand: 'Perluas', ag_collapse: 'Perkecil', ag_send: 'Kirim',
@@ -144,7 +154,17 @@
       ag_m_empty: 'Belum ada catatan. Agent menambahkannya saat memahami setup Anda; Anda juga bisa menambah sendiri di bawah.', ag_m_fleet: 'Seluruh fleet', ag_m_ph: 'misal: Backup jalan jam 02:00 lewat /opt/backup.sh',
       ag_m_scope: 'Lingkup', ag_m_scope_fleet: 'Seluruh fleet', ag_m_scope_host: 'Satu host', ag_m_scope_cluster: 'Satu cluster', ag_m_scope_domain: 'Satu domain',
       ag_m_add: 'Tambah', ag_m_forget: 'Lupakan', ag_m_forget_confirm: 'Hapus catatan ini?', ag_m_by_agent: 'agent', ag_m_by_you: 'Anda',
-      ag_q_security: 'Tinjau scan keamanan terakhir host "{host}" (id {id}): update keamanan tertunda dan hardening yang gagal. Urutkan yang penting dan usulkan perbaikan aman. Jangan ubah apa pun sebelum saya setujui rencananya.'
+      ag_q_security: 'Tinjau scan keamanan terakhir host "{host}" (id {id}): update keamanan tertunda dan hardening yang gagal. Urutkan yang penting dan usulkan perbaikan aman. Jangan ubah apa pun sebelum saya setujui rencananya.',
+      ag_patch_preview: 'Pratinjau Diff', ag_patch_dryrun: 'Validasi / Dry-Run', ag_patch_dryrunning: 'Memvalidasi…',
+      ag_patch_apply: 'Terapkan Perubahan', ag_patch_applying: 'Menerapkan…', ag_patch_applied: 'Diterapkan',
+      ag_patch_view_split: 'Berdampingan', ag_patch_view_unified: 'Diff Terpadu',
+      ag_patch_before: 'Saat Ini (Sebelum)', ag_patch_after: 'Usulan (Sesudah)',
+      ag_patch_need_dryrun: 'Jalankan Validasi / Dry-Run terlebih dahulu', ag_patch_valid_ok: 'Validasi berhasil', ag_patch_valid_fail: 'Validasi gagal',
+      ag_patch_apply_ok: 'Perubahan diterapkan',
+      ag_ask_remediate: 'Tanya Agent untuk Remediasi', ag_ask_fix: 'Tanya Agent untuk Perbaiki', ag_ask_explain_plan: 'Jelaskan Plan & Risiko',
+      ag_q_remediate: 'Remediasi temuan {source} ini:\n- Aturan/ID: {rule}\n- Tingkat: {severity}\n- Target: {target}\n- Temuan: {title}\n- Detail: {detail}\n- Saran perbaikan: {remediation}\nSelidiki dan usulkan perbaikan aman (sertakan blok pantau-patch jika mengubah config/YAML/HCL). Jangan terapkan perubahan sebelum saya setujui.',
+      ag_q_ansible_fix: 'Task Ansible gagal pada "{playbook}" (run #{run_id}) di host "{host}" (status: {status}):\nTask: {task}\nError:\n{error}\nCari akar masalahnya dan usulkan perbaikan aman (sertakan blok pantau-patch jika mengubah playbook). Jangan jalankan atau ubah apa pun sebelum saya setujui.',
+      ag_q_tf_explain: 'Jelaskan Terraform plan serta ringkasan kebijakan/risiko untuk workspace "{workspace}" (run #{run_id}, status: {status}):\n- Plan: +{create} tambah, ~{update} ubah, ±{replace} ganti, -{delete} hapus\n- Kebijakan: {policy}\n- Delta biaya: {cost}\nSoroti perubahan yang berisiko, penghapusan resource, dan pelanggaran kebijakan.'
     }
   };
   ['en', 'id'].forEach((l) => { I18N[l] = Object.assign(I18N[l] || {}, I[l]); });
@@ -376,11 +396,48 @@
     if (restored.length) { S.msgs = restored; renderLog(); }
   }
 
-  /* ---------- minimal markdown: everything is escaped first, then fences, inline code and bold ---------- */
+  /* ---------- minimal markdown + structured pantau-patch cards ---------- */
+  const PATCH_KIND_LABEL = {
+    k8s_yaml: 'K8s YAML',
+    sftp_file: 'SFTP Config',
+    ansible_playbook: 'Ansible Playbook',
+    terraform_hcl: 'Terraform HCL',
+    docker_compose: 'Docker Compose'
+  };
+  S.patches = S.patches || {};
+  let patchSeq = 0;
+
+  function renderPatchCard(rawJson) {
+    let p = null;
+    try { p = JSON.parse(rawJson); } catch (_) { return null; }
+    if (!p || typeof p !== 'object' || !p.kind || typeof p.after !== 'string') return null;
+    const id = 'p_' + (++patchSeq);
+    S.patches[id] = Object.assign({ id }, p);
+    const kindLabel = PATCH_KIND_LABEL[p.kind] || p.kind;
+    const title = p.title || p.target || p.stack_name || kindLabel;
+    const target = p.target || p.stack_name || '';
+    return `<div class="ag-patch-card" data-patch-id="${esc(id)}">
+      <div class="ag-patch-head">
+        <span class="badge badge-info">${esc(kindLabel)}</span>
+        <span class="ag-patch-title">${esc(title)}</span>
+      </div>
+      ${target ? `<div class="ag-patch-target">${esc(target)}</div>` : ''}
+      <div class="ag-patch-actions">
+        <button type="button" class="btn btn-sm btn-primary" onclick="AG.openPatchDiff('${esc(id)}')">${svgIcon('git-compare', 'icon-sm')} <span>${esc(t('ag_patch_preview'))}</span></button>
+      </div>
+    </div>`;
+  }
+
   function md(text) {
     const parts = String(text).split(/```/);
     return parts.map((p, i) => {
-      if (i % 2 === 1) return '<pre><code>' + esc(p.replace(/^[a-zA-Z0-9_+-]*\n/, '')) + '</code></pre>';
+      if (i % 2 === 1) {
+        if (/^pantau-patch\s*\n/i.test(p)) {
+          const card = renderPatchCard(p.replace(/^pantau-patch\s*\n/i, '').trim());
+          if (card) return card;
+        }
+        return '<pre><code>' + esc(p.replace(/^[a-zA-Z0-9_+-]*\n/, '')) + '</code></pre>';
+      }
       return esc(p).replace(/`([^`\n]+)`/g, '<code>$1</code>').replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
     }).join('');
   }
@@ -717,9 +774,12 @@
     send(text);
   };
 
-  /** Open the chat and send a message (used by the "Ask agent" buttons). */
-  AG.ask = function (text) {
+  AG.getContext = function () { return S.ctx || detectContext(); };
+
+  /** Open the chat and send a message (used by the "Ask agent" buttons and Command Palette). */
+  AG.ask = function (text, opts) {
     if (!S.enabled) { showToast(t('ag_disabled'), 'info'); return; }
+    if (opts && opts.dock && !S.docked) AG.toggleDock(true);
     AG.toggle(true);
     if (S.busy) { showToast(t('ag_working'), 'info'); return; }
     send(text);
@@ -885,6 +945,257 @@
   AG.askAlert = function (alertId) {
     const a = (typeof latestAlerts !== 'undefined' ? latestAlerts : []).find((x) => x.id === alertId);
     if (a) AG.ask(fill(t('ag_q_alert'), { host: a.host_name, id: a.host_id, msg: a.message, rc: a.root_cause || '-' }));
+  };
+  AG.askRemediation = function (info) {
+    const d = info || {};
+    AG.ask(fill(t('ag_q_remediate'), {
+      source: d.source || 'DevSecOps',
+      rule: d.rule || '-',
+      severity: d.severity || '-',
+      target: d.target || '-',
+      title: d.title || '-',
+      detail: d.detail || '-',
+      remediation: d.remediation || '-'
+    }), { dock: true });
+  };
+  AG.askAnsibleFix = function (info) {
+    const d = info || {};
+    AG.ask(fill(t('ag_q_ansible_fix'), {
+      playbook: d.playbook || 'Playbook',
+      run_id: d.run_id || 0,
+      host: d.host || '-',
+      status: d.status || 'failed',
+      task: d.task || '-',
+      error: (d.error || '-').slice(0, 2000)
+    }), { dock: true });
+  };
+  AG.askTerraformExplain = function (info) {
+    const d = info || {};
+    const p = d.plan || {};
+    const pol = d.policy || {};
+    const cost = d.cost && d.cost.available ? ((d.cost.delta >= 0 ? '+' : '') + Number(d.cost.delta || 0).toFixed(2) + ' ' + (d.cost.currency || 'USD') + '/mo') : 'N/A';
+    const polDesc = pol.status ? (pol.status + ((pol.results || []).length ? ' (' + pol.results.map((r) => r.name + ': ' + (r.passed ? 'pass' : 'fail')).join(', ') + ')' : '')) : 'none';
+    AG.ask(fill(t('ag_q_tf_explain'), {
+      workspace: d.workspace || 'Workspace',
+      run_id: d.run_id || 0,
+      status: d.status || '-',
+      create: Number(p.create || 0),
+      update: Number(p.update || 0),
+      replace: Number(p.replace || 0),
+      delete: Number(p.delete || 0),
+      policy: polDesc,
+      cost
+    }), { dock: true });
+  };
+
+  /* ---------- Interactive Patch Diff (CodeMirror 5.65.16 local) & Dry-Run ---------- */
+  const DS = { patch: null, before: '', after: '', mode: 'split', dryRunOk: false, applied: false, cmBefore: null, cmAfter: null, cmUnified: null };
+
+  function cmModeForPatch(p) {
+    if (!p) return 'yaml';
+    if (p.kind === 'k8s_yaml' || p.kind === 'ansible_playbook' || p.kind === 'docker_compose') return 'yaml';
+    if (p.kind === 'terraform_hcl') return 'hcl';
+    const tgt = String(p.target || '').toLowerCase();
+    if (tgt.endsWith('.json')) return 'application/json';
+    if (tgt.endsWith('.yml') || tgt.endsWith('.yaml')) return 'yaml';
+    if (tgt.endsWith('.conf') || tgt.includes('nginx')) return 'nginx';
+    if (tgt.endsWith('.sh')) return 'shell';
+    if (tgt.endsWith('.py')) return 'python';
+    if (tgt.endsWith('.toml')) return 'toml';
+    return 'text/plain';
+  }
+
+  function computeLineOps(aText, bText) {
+    const a = String(aText || '').split('\n');
+    const b = String(bText || '').split('\n');
+    const n = a.length, m = b.length;
+    if (n * m > 250000) {
+      return { ops: a.map((l) => ({ t: '-', l })).concat(b.map((l) => ({ t: '+', l }))), delLines: a.map((_, i) => i), addLines: b.map((_, i) => i) };
+    }
+    const dp = Array.from({ length: n + 1 }, () => new Int32Array(m + 1));
+    for (let i = n - 1; i >= 0; i--) {
+      for (let j = m - 1; j >= 0; j--) {
+        dp[i][j] = a[i] === b[j] ? 1 + dp[i + 1][j + 1] : Math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+    const ops = [], delLines = [], addLines = [];
+    let i = 0, j = 0;
+    while (i < n && j < m) {
+      if (a[i] === b[j]) { ops.push({ t: ' ', l: a[i] }); i++; j++; }
+      else if (dp[i + 1][j] >= dp[i][j + 1]) { delLines.push(i); ops.push({ t: '-', l: a[i++] }); }
+      else { addLines.push(j); ops.push({ t: '+', l: b[j++] }); }
+    }
+    while (i < n) { delLines.push(i); ops.push({ t: '-', l: a[i++] }); }
+    while (j < m) { addLines.push(j); ops.push({ t: '+', l: b[j++] }); }
+    return { ops, delLines, addLines };
+  }
+
+  function buildUnifiedDiff(target, before, after) {
+    const { ops } = computeLineOps(before, after);
+    const hdr = `--- a/${target || 'current'}\n+++ b/${target || 'proposed'}\n@@ -1,${String(before || '').split('\n').length} +1,${String(after || '').split('\n').length} @@\n`;
+    return hdr + ops.map((o) => o.t + o.l).join('\n');
+  }
+
+  function ensureDiffModal() {
+    if ($('agentDiffModal')) return;
+    const el = document.createElement('div');
+    el.id = 'agentDiffModal';
+    el.className = 'modal';
+    el.innerHTML = `
+      <div class="modal-content modal-workspace">
+        <div class="modal-header">
+          <div class="sd-title">${svgIcon('git-compare', 'icon-sm')} <h3 id="agDiffTitle"></h3></div>
+          <button type="button" class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('agentDiffModal')">${svgIcon('x')}</button>
+        </div>
+        <div class="modal-body" id="agDiffBody">
+          <div class="ag-diff-toolbar">
+            <span class="ag-diff-meta" id="agDiffMeta"></span>
+            <div class="btn-group" role="group">
+              <button type="button" class="btn btn-sm" id="agDiffModeSplit" onclick="AG.setDiffViewMode('split')">${esc(t('ag_patch_view_split'))}</button>
+              <button type="button" class="btn btn-sm" id="agDiffModeUnified" onclick="AG.setDiffViewMode('unified')">${esc(t('ag_patch_view_unified'))}</button>
+            </div>
+            <button type="button" class="btn btn-sm" id="agDiffDryRunBtn" onclick="AG.runPatchDryRun()">${svgIcon('flask-conical', 'icon-sm')} <span>${esc(t('ag_patch_dryrun'))}</span></button>
+            <button type="button" class="btn btn-sm btn-primary" id="agDiffApplyBtn" disabled title="${esc(t('ag_patch_need_dryrun'))}" onclick="AG.applyPatch()">${svgIcon('check', 'icon-sm')} <span>${esc(t('ag_patch_apply'))}</span></button>
+          </div>
+          <div id="agDiffEditors"></div>
+          <div id="agDryRunBox" class="ag-dryrun-box" style="display:none;"></div>
+        </div>
+      </div>`;
+    document.body.appendChild(el);
+  }
+
+  function renderDiffEditors() {
+    const host = $('agDiffEditors');
+    if (!host || !DS.patch) return;
+    DS.cmBefore = null; DS.cmAfter = null; DS.cmUnified = null;
+    const splitBtn = $('agDiffModeSplit'), uniBtn = $('agDiffModeUnified');
+    if (splitBtn) splitBtn.classList.toggle('btn-primary', DS.mode === 'split');
+    if (uniBtn) uniBtn.classList.toggle('btn-primary', DS.mode === 'unified');
+
+    const theme = 'nord';
+    if (DS.mode === 'unified') {
+      host.innerHTML = `<div class="ag-diff-unified"><textarea id="agDiffUnifiedTa"></textarea></div>`;
+      if (typeof CodeMirror !== 'undefined') {
+        const cm = CodeMirror.fromTextArea($('agDiffUnifiedTa'), {
+          value: buildUnifiedDiff(DS.patch.target || DS.patch.stack_name, DS.before, DS.after),
+          mode: 'diff', theme, readOnly: true, lineNumbers: true, lineWrapping: true
+        });
+        cm.setValue(buildUnifiedDiff(DS.patch.target || DS.patch.stack_name, DS.before, DS.after));
+        DS.cmUnified = cm;
+        setTimeout(() => cm.refresh(), 20);
+      }
+      return;
+    }
+
+    host.innerHTML = `
+      <div class="ag-diff-split">
+        <div class="ag-diff-pane"><div class="ag-diff-pane-hdr">${esc(t('ag_patch_before'))}</div><textarea id="agDiffBeforeTa"></textarea></div>
+        <div class="ag-diff-pane"><div class="ag-diff-pane-hdr">${esc(t('ag_patch_after'))}</div><textarea id="agDiffAfterTa"></textarea></div>
+      </div>`;
+    if (typeof CodeMirror !== 'undefined') {
+      const mode = cmModeForPatch(DS.patch);
+      const cmB = CodeMirror.fromTextArea($('agDiffBeforeTa'), { mode, theme, readOnly: true, lineNumbers: true, lineWrapping: true });
+      const cmA = CodeMirror.fromTextArea($('agDiffAfterTa'), { mode, theme, readOnly: false, lineNumbers: true, lineWrapping: true });
+      cmB.setValue(DS.before || '');
+      cmA.setValue(DS.after || '');
+      const paintHighlights = () => {
+        const { delLines, addLines } = computeLineOps(cmB.getValue(), cmA.getValue());
+        for (let i = 0; i < cmB.lineCount(); i++) cmB.removeLineClass(i, 'background', 'ag-diff-line-del');
+        for (let i = 0; i < cmA.lineCount(); i++) cmA.removeLineClass(i, 'background', 'ag-diff-line-add');
+        delLines.forEach((ln) => cmB.addLineClass(ln, 'background', 'ag-diff-line-del'));
+        addLines.forEach((ln) => cmA.addLineClass(ln, 'background', 'ag-diff-line-add'));
+      };
+      paintHighlights();
+      let syncing = false;
+      cmB.on('scroll', () => { if (syncing) return; syncing = true; cmA.scrollTo(cmB.getScrollInfo().left, cmB.getScrollInfo().top); syncing = false; });
+      cmA.on('scroll', () => { if (syncing) return; syncing = true; cmB.scrollTo(cmA.getScrollInfo().left, cmA.getScrollInfo().top); syncing = false; });
+      cmA.on('change', () => {
+        DS.after = cmA.getValue();
+        DS.dryRunOk = false;
+        const applyBtn = $('agDiffApplyBtn');
+        if (applyBtn) { applyBtn.disabled = true; applyBtn.title = t('ag_patch_need_dryrun'); }
+        paintHighlights();
+      });
+      DS.cmBefore = cmB; DS.cmAfter = cmA;
+      setTimeout(() => { cmB.refresh(); cmA.refresh(); }, 20);
+    }
+  }
+
+  AG.setDiffViewMode = function (mode) {
+    DS.mode = mode === 'unified' ? 'unified' : 'split';
+    renderDiffEditors();
+  };
+
+  AG.openPatchDiff = async function (patchId) {
+    const p = S.patches && S.patches[patchId];
+    if (!p) return;
+    ensureDiffModal();
+    DS.patch = Object.assign({}, p);
+    DS.before = p.before || '';
+    DS.after = p.after || '';
+    DS.dryRunOk = false;
+    DS.applied = false;
+    $('agDiffTitle').textContent = (PATCH_KIND_LABEL[p.kind] || p.kind) + ' — ' + (p.title || p.target || p.stack_name || '');
+    $('agDiffMeta').textContent = p.target || p.stack_name || '';
+    const box = $('agDryRunBox');
+    if (box) { box.style.display = 'none'; box.className = 'ag-dryrun-box'; box.innerHTML = ''; }
+    const applyBtn = $('agDiffApplyBtn');
+    if (applyBtn) { applyBtn.disabled = true; applyBtn.title = t('ag_patch_need_dryrun'); applyBtn.innerHTML = `${svgIcon('check', 'icon-sm')} <span>${esc(t('ag_patch_apply'))}</span>`; }
+    openModal('agentDiffModal');
+    renderDiffEditors();
+    if (!DS.before) {
+      const r = await post('/api/agent/patch/prepare', p).catch(() => null);
+      if (r && r.ok && r.data && typeof r.data.before === 'string' && r.data.before !== DS.before) {
+        DS.before = r.data.before;
+        renderDiffEditors();
+      }
+    }
+  };
+
+  AG.runPatchDryRun = async function () {
+    if (!DS.patch) return;
+    const btn = $('agDiffDryRunBtn'), applyBtn = $('agDiffApplyBtn'), box = $('agDryRunBox');
+    const restore = typeof SP !== 'undefined' && SP.busy ? SP.busy(btn, t('ag_patch_dryrunning')) : () => {};
+    if (box) { box.style.display = 'block'; box.className = 'ag-dryrun-box'; box.innerHTML = esc(t('ag_patch_dryrunning')); }
+    try {
+      const payload = Object.assign({}, DS.patch, { after: DS.after });
+      const r = await post('/api/agent/patch/dry-run', payload);
+      const ok = !!(r && r.ok && r.data && r.data.valid);
+      DS.dryRunOk = ok;
+      if (applyBtn) {
+        applyBtn.disabled = !ok || DS.applied;
+        applyBtn.title = ok ? '' : t('ag_patch_need_dryrun');
+      }
+      if (box) {
+        const d = (r && r.data) || {};
+        box.className = 'ag-dryrun-box ' + (ok ? 'is-ok' : 'is-err');
+        box.innerHTML = `<div><b>${esc(ok ? t('ag_patch_valid_ok') : t('ag_patch_valid_fail'))}</b>${d.command ? ` <span class="badge">${esc(d.command)}</span>` : ''}</div>` +
+          (d.error ? `<div style="color:var(--danger);margin-top:4px;">${esc(d.error)}</div>` : '') +
+          (d.output ? `<pre class="ag-dryrun-out">${esc(d.output)}</pre>` : '');
+      }
+    } finally { restore(); }
+  };
+
+  AG.applyPatch = async function () {
+    if (!DS.patch || !DS.dryRunOk || DS.applied) return;
+    const btn = $('agDiffApplyBtn'), box = $('agDryRunBox');
+    const restore = typeof SP !== 'undefined' && SP.busy ? SP.busy(btn, t('ag_patch_applying')) : () => {};
+    try {
+      const payload = Object.assign({}, DS.patch, { after: DS.after });
+      const r = await post('/api/agent/patch/apply', payload);
+      if (!r || !r.ok) {
+        showToast((r && r.data && r.data.error) || 'error', 'error');
+        return;
+      }
+      DS.applied = true;
+      if (btn) { btn.disabled = true; btn.innerHTML = `${svgIcon('check', 'icon-sm')} <span>${esc(t('ag_patch_applied'))}</span>`; }
+      if (box) {
+        box.style.display = 'block';
+        box.className = 'ag-dryrun-box is-ok';
+        box.innerHTML = `<div><b>${esc(t('ag_patch_apply_ok'))}</b></div>` + (r.data && r.data.output ? `<pre class="ag-dryrun-out">${esc(r.data.output)}</pre>` : '');
+      }
+      showToast(t('ag_patch_apply_ok'), 'success');
+    } finally { restore(); }
   };
   /** HTML of an "Ask agent" button; hidden until the agent is enabled. onclick is a JS expression using data-arg. */
   AG.btn = function (call, arg, cls) {

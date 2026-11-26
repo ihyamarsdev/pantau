@@ -80,3 +80,25 @@ body.ag-docked-open #agentFab { display: none; }
 #agentSettingsBody pre.ag-snippet { margin: 4px 0; padding: 10px; background: var(--code-bg); border: 1px solid var(--card-border); border-radius: var(--radius); font-family: var(--font-mono); font-size: var(--fs-xs); overflow-x: auto; user-select: all; }
 .ag-grants { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; padding: 8px 12px; font-size: var(--fs-xs); background: var(--card-bg); border: 1px solid var(--warning-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
 .ag-grant a { color: var(--accent-text); margin-left: 4px; }
+
+/* Structured patch proposal cards & interactive CodeMirror diff modal */
+.ag-patch-card { margin: 8px 0; padding: 10px 12px; border: 1px solid var(--card-border); border-radius: var(--radius-sm); background: var(--surface-2); display: flex; flex-direction: column; gap: 6px; }
+.ag-patch-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: var(--fs-xs); }
+.ag-patch-title { font-weight: 600; color: var(--text); flex: 1; min-width: 120px; }
+.ag-patch-target { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); word-break: break-all; }
+.ag-patch-actions { display: flex; align-items: center; gap: 6px; margin-top: 2px; flex-wrap: wrap; }
+
+.ag-diff-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.ag-diff-meta { font-size: var(--fs-xs); color: var(--text-muted); font-family: var(--font-mono); flex: 1; }
+.ag-diff-split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; min-height: 340px; }
+.ag-diff-pane { display: flex; flex-direction: column; border: 1px solid var(--card-border); border-radius: var(--radius-sm); overflow: hidden; min-width: 0; }
+.ag-diff-pane-hdr { padding: 5px 10px; font-size: var(--fs-xs); font-weight: 600; background: var(--surface-2); border-bottom: 1px solid var(--card-border); color: var(--text-muted); }
+.ag-diff-pane .CodeMirror, .ag-diff-unified .CodeMirror { height: 360px; font-size: 12px; }
+.ag-diff-unified { border: 1px solid var(--card-border); border-radius: var(--radius-sm); overflow: hidden; }
+.ag-diff-line-add { background: rgba(34, 197, 94, 0.16) !important; }
+.ag-diff-line-del { background: rgba(239, 68, 68, 0.16) !important; }
+.ag-dryrun-box { margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--card-border); background: var(--surface-2); font-size: var(--fs-xs); }
+.ag-dryrun-box.is-ok { border-color: var(--success, #22c55e); }
+.ag-dryrun-box.is-err { border-color: var(--danger, #ef4444); }
+.ag-dryrun-out { margin: 6px 0 0; max-height: 150px; overflow: auto; font-family: var(--font-mono); font-size: 11px; white-space: pre-wrap; word-break: break-word; }
+@media (max-width: 768px) { .ag-diff-split { grid-template-columns: 1fr; } }

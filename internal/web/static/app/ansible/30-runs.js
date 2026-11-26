@@ -596,7 +596,10 @@
           '<ul class="ans-rn-hosts">' + hs.map(function (h) {
             const text = failureText(h);
             const det = text && text.trim() && (h.status === 'fatal' || h.status === 'unreachable' || h.status === 'changed' || h.status === 'ignored' || text.length < 400) ? '<pre class="ans-rn-det">' + esc(text.length > 4000 ? text.slice(0, 4000) + '…' : text) + '</pre>' : '';
-            return '<li class="st-' + h.status + '"><span class="ans-rn-hs">' + esc(T('ans_rn_st_' + h.status, h.status)) + '</span><span class="ans-mono">' + esc(h.host) + '</span>' + det + '</li>';
+            const isBad = h.status === 'fatal' || h.status === 'unreachable';
+            const askOn = typeof window.AG !== 'undefined' && typeof window.AG.enabled === 'function' && window.AG.enabled();
+            const fixBtn = isBad ? ' <button type="button" class="btn btn-sm btn-ghost ag-ask-btn" style="' + (askOn ? '' : 'display:none') + ';margin-left:auto;" data-ans-fix="' + esc(JSON.stringify({ run_id: ctx.run && ctx.run.id || 0, playbook: (ctx.run && ctx.run.playbook_name) || 'Playbook', task: t.name || '(unnamed)', host: h.host, status: h.status, error: text || '' })) + '">' + icon('bot', 'icon-xs') + ' <span>' + esc(T('ag_ask_fix', 'Ask Agent to Fix')) + '</span></button>' : '';
+            return '<li class="st-' + h.status + '"><span class="ans-rn-hs">' + esc(T('ans_rn_st_' + h.status, h.status)) + '</span><span class="ans-mono">' + esc(h.host) + '</span>' + fixBtn + det + '</li>';
           }).join('') + '</ul></details>';
       });
       if (ph) html += '<details class="ans-rn-play" open><summary>' + icon('layers', 'icon-sm') + ' ' + esc(p.name || 'play') + '</summary>' + ph + '</details>';
@@ -610,7 +613,14 @@
       '<div class="ans-rn-tree">' + (shown ? html : '<div class="ans-muted ans-rn-empty">' + esc(T('ans_rn_tasks_filtered')) + '</div>') + '</div>';
     if (!pane.dataset.bound) {
       pane.dataset.bound = '1';
-      pane.addEventListener('click', function (e) { const b = e.target.closest('[data-tf]'); if (b) { ctx.taskFilter = b.getAttribute('data-tf'); paintTasks(ctx, pane); } });
+      pane.addEventListener('click', function (e) {
+        const fix = e.target.closest('[data-ans-fix]');
+        if (fix && window.AG && typeof window.AG.askAnsibleFix === 'function') {
+          try { window.AG.askAnsibleFix(JSON.parse(fix.getAttribute('data-ans-fix'))); } catch (_) {}
+          return;
+        }
+        const b = e.target.closest('[data-tf]'); if (b) { ctx.taskFilter = b.getAttribute('data-tf'); paintTasks(ctx, pane); }
+      });
       pane.addEventListener('input', function (e) { if (e.target.matches('[data-tq]')) { ctx.taskQ = e.target.value; paintTasks(ctx, pane); } });
     }
     if (focus) { const i = pane.querySelector('[data-tq]'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }

@@ -509,7 +509,9 @@
     const pol = run.policy || {}, cost = run.cost || {};
     let h = '';
     if (pol.status) {
-      h += '<div class="card tf-card-accent tf-card-' + esc(pol.status) + '"><div class="card-title"><span>' + esc(T('tf_policy_status', 'Policy check')) + ': ' + policyBadge(pol.status) + '</span></div>';
+      const askOn = typeof window.AG !== 'undefined' && typeof window.AG.enabled === 'function' && window.AG.enabled();
+      h += '<div class="card tf-card-accent tf-card-' + esc(pol.status) + '"><div class="card-title"><span>' + esc(T('tf_policy_status', 'Policy check')) + ': ' + policyBadge(pol.status) + '</span>' +
+        '<button type="button" class="btn btn-sm btn-ghost ag-ask-btn" style="' + (askOn ? '' : 'display:none') + ';margin-left:auto;" data-run-act="explain-risk">' + Tf.icon('bot', 'icon-xs') + ' <span>' + esc(T('ag_ask_explain_plan', 'Explain Plan & Risk')) + '</span></button></div>';
       (pol.results || []).forEach(function (r) {
         h += '<div class="tf-policy-row">' + Tf.icon(r.passed ? 'circle-check' : 'triangle-alert', 'icon-xs') + ' <b>' + esc(r.name) + '</b> <span class="badge">' + esc(r.enforcement) + '</span>';
         (r.violations || []).forEach(function (v) { h += '<div class="tf-mono tf-violation">' + esc(v.address ? v.address + ': ' : '') + esc(v.message) + '</div>'; });
@@ -546,8 +548,10 @@
     if (run.status !== 'awaiting_approval') return '';
     const p = run.plan || {}, pol = run.policy || {};
     const cost = run.cost && run.cost.available ? ' · ' + (run.cost.delta >= 0 ? '+' : '') + money(run.cost.delta, run.cost.currency) : '';
+    const askOn = typeof window.AG !== 'undefined' && typeof window.AG.enabled === 'function' && window.AG.enabled();
     return '<div id="tfRunApprovalGate" class="card tf-run-gate">' +
-      '<div class="card-title"><span>' + Tf.icon('shield-alert', 'icon-sm') + ' ' + esc(T('tf_run_gate_title', 'Approval Gate')) + '</span></div>' +
+      '<div class="card-title"><span>' + Tf.icon('shield-alert', 'icon-sm') + ' ' + esc(T('tf_run_gate_title', 'Approval Gate')) + '</span>' +
+      '<button type="button" class="btn btn-sm btn-ghost ag-ask-btn" style="' + (askOn ? '' : 'display:none') + ';margin-left:auto;" data-run-act="explain-risk">' + Tf.icon('bot', 'icon-xs') + ' <span>' + esc(T('ag_ask_explain_plan', 'Explain Plan & Risk')) + '</span></button></div>' +
       '<div class="tf-small">' + esc(T('tf_run_gate_summary', '', { c: p.create || 0, u: p.update || 0, r: p.replace || 0, d: p.delete || 0 })) + ' · ' + policyBadge(pol.status) + esc(cost) + '</div>' +
       (pol.status === 'warning' ? '<label class="tf-check"><input type="checkbox" id="tfApprOverride"> <span>' + esc(T('tf_run_gate_override', 'Override policy warnings')) + '</span></label>' : '') +
       '<textarea id="tfApprComment" class="form-input" rows="2" placeholder="' + esc(T('tf_run_gate_comment_ph', '')) + '"></textarea>' +
@@ -669,6 +673,16 @@
         if (a === 'apply') Tf.runs.apply(st.id);
         else if (a === 'discard') Tf.runs.discard(st.id);
         else if (a === 'cancel') Tf.runs.cancel(st.id);
+        else if (a === 'explain-risk' && window.AG && typeof window.AG.askTerraformExplain === 'function' && st.run) {
+          window.AG.askTerraformExplain({
+            run_id: st.run.id || st.id,
+            workspace: (Tf.state && Tf.state.ws && Tf.state.ws.name) || st.run.workspace_name || ('Workspace #' + (st.run.workspace_id || '')),
+            status: st.run.status,
+            plan: st.run.plan || {},
+            policy: st.run.policy || {},
+            cost: st.run.cost || {}
+          });
+        }
         return;
       }
       const lg = e.target.closest('[data-log]');

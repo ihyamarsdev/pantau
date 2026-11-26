@@ -443,12 +443,23 @@
   // One finding: the rule with its detail and the remediation (visible on expand, not in a wide table).
   function findingHtml(f) {
     const sev = String(f.severity || '').toLowerCase();
+    const askEnabled = typeof window.AG !== 'undefined' && typeof window.AG.enabled === 'function' && window.AG.enabled();
+    const payload = esc(JSON.stringify({
+      source: 'Container Security',
+      rule: f.rule_id || '',
+      severity: sev,
+      target: (f.container || '') + (f.image ? ' (' + f.image + ')' : ''),
+      title: f.title || '',
+      detail: f.detail || '',
+      remediation: f.remediation || ''
+    }));
     return `<div class="ds-finding">
       <div class="ds-finding-head">
         <span class="badge ${SEV_CLASS[sev] || 'badge-unknown'}">${esc(t('ds_' + (sev || 'unknown'), sev))}</span>
         <span class="ds-finding-rule dk-mono">${esc(f.rule_id || '')}</span>
         <span class="ds-finding-title">${esc(f.title || '')}</span>
         <span class="ds-finding-image dk-mono">${esc(f.image || '')}</span>
+        <button type="button" class="btn btn-sm btn-ghost ag-ask-btn" style="${askEnabled ? '' : 'display:none'};margin-left:auto;" data-remediate="${payload}" onclick="AG.askRemediation(JSON.parse(this.dataset.remediate))">${icon('bot', 'icon-xs')} <span>${esc(t('ag_ask_remediate', 'Ask Agent to Remediate'))}</span></button>
       </div>
       ${f.detail ? `<div class="ds-finding-detail">${esc(f.detail)}</div>` : ''}
       ${f.remediation ? `<div class="ds-finding-fix"><b>${esc(t('ds_col_remediation'))}:</b> ${esc(f.remediation)}</div>` : ''}

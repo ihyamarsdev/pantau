@@ -759,7 +759,8 @@ function loadKubeNodes() {
     [t('col_name', 'Name'), t('col_status', 'Status'), 'Roles', 'Version', t('col_ip', 'Internal IP'), t('docker_col_cpu', 'CPU'), t('docker_col_mem', 'Memory'), t('col_age', 'Age'), ''],
     (n, idx) => {
       const h = findHostForKubeNode(n);
-      const hostChip = h ? `<a href="javascript:void(0)" onclick="openHostDetail(${h.id})" class="badge" style="font-size:10px;text-decoration:none;margin-left:6px;background:var(--surface-2);border:1px solid var(--card-border);display:inline-flex;align-items:center;gap:3px;" title="${escapeHtml(h.name)} (${escapeHtml(h.host)})">${svgIcon('server', 'icon-xs')} ${escapeHtml(h.name)}</a>` : '';
+      const hostChip = h ? `<a href="javascript:void(0)" onclick="openHostDetail(${h.id})" class="badge" style="font-size:10px;text-decoration:none;margin-left:6px;background:var(--surface-2);border:1px solid var(--card-border);display:inline-flex;align-items:center;gap:3px;" title="${escapeHtml(t('kube_node_open_host', 'Open Host Detail'))}: ${escapeHtml(h.name)}">${svgIcon('server', 'icon-xs')} ${escapeHtml(h.name)}</a><button type="button" class="btn btn-icon btn-xs btn-ghost" style="margin-left:2px;vertical-align:middle;" onclick="openHostTerminal(${h.id})" title="${escapeHtml(t('open_terminal', 'Terminal'))}">${svgIcon('terminal', 'icon-xs')}</button>` : '';
+      const nodeLabel = h ? `<a href="javascript:void(0)" onclick="openHostDetail(${h.id})" style="color:inherit;text-decoration:none;" title="${escapeHtml(t('kube_node_open_host', 'Open Host Detail'))}"><b>${escapeHtml(n.name)}</b></a>` : `<b>${escapeHtml(n.name)}</b>`;
       let cpuHtml = escapeHtml(n.cpu || '-');
       if (n.usageCPU != null && n.usageCPU !== '') {
         const pct = n.cpuPercent != null ? Math.round(n.cpuPercent) : null;
@@ -771,7 +772,7 @@ function loadKubeNodes() {
         memHtml = `<div style="display:flex;align-items:center;gap:6px;"><span>${escapeHtml(formatKubeMemory(n.usageMemory))}</span>${pct != null ? `<span style="font-size:var(--fs-xs);color:var(--text-muted);">(${pct}%)</span>${dockerBar(pct, 70, 90)}` : ''}</div>`;
       }
       return `<tr>
-        <td><b>${escapeHtml(n.name)}</b>${hostChip}</td>
+        <td>${nodeLabel}${hostChip}</td>
         <td><span class="badge ${n.status === 'Ready' ? 'badge-healthy' : 'badge-degraded'}">${escapeHtml(n.status)}</span>${n.unschedulable ? '<span class="badge badge-warning" style="margin-left:4px;">SchedulingDisabled</span>' : ''}</td>
         <td>${escapeHtml(Array.isArray(n.roles) ? n.roles.join(', ') : (n.roles || '<none>'))}</td>
         <td class="mono">${escapeHtml(n.version || '-')}</td>
@@ -1259,7 +1260,13 @@ function openKubeNodeMenu(e, idx) {
   if (!n) return;
   const isCordoned = !!n.unschedulable;
   const isRo = getSelectedKubeMode() === 'read-only';
-  dockerFloatingMenu(e, 'kn_' + idx, [
+  const h = findHostForKubeNode(n);
+  const items = [];
+  if (h) {
+    items.push({ label: t('kube_node_open_host', 'Open Host Detail') + ' (' + h.name + ')', run: () => openHostDetail(h.id) });
+    items.push({ label: t('kube_node_open_term', 'Open Host Terminal'), run: () => openHostTerminal(h.id) });
+  }
+  items.push(
     {
       label: t('kube_drain', 'Drain'),
       disabled: isRo,
@@ -1284,7 +1291,8 @@ function openKubeNodeMenu(e, idx) {
       }
     },
     { label: t('kube_describe', 'Describe'), run: () => kubeDescribe('node', '', n.name) }
-  ]);
+  );
+  dockerFloatingMenu(e, 'kn_' + idx, items);
 }
 
 function openKubeWorkloadMenu(e, idx) {

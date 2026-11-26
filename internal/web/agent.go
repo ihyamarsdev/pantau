@@ -164,6 +164,9 @@ func (s *Server) registerAgentRoutes() {
 	s.mux.HandleFunc("/api/agent/memory", s.authMiddleware(s.handleAgentMemory))
 	s.mux.HandleFunc("/api/agent/threads", s.authMiddleware(s.handleAgentThreads))
 	s.mux.HandleFunc("/api/agent/threads/", s.authMiddleware(s.handleAgentThread))
+	s.mux.HandleFunc("/api/agent/patch/prepare", s.authMiddleware(s.handleAgentPatchPrepare))
+	s.mux.HandleFunc("/api/agent/patch/dry-run", s.authMiddleware(s.handleAgentPatchDryRun))
+	s.mux.HandleFunc("/api/agent/patch/apply", s.authMiddleware(s.handleAgentPatchApply))
 }
 
 func (s *Server) handleAgentSettings(w http.ResponseWriter, r *http.Request) {

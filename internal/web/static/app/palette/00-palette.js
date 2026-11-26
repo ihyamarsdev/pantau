@@ -49,7 +49,19 @@
       pal_act_inspect: 'Inspect now',
       pal_act_portfwd: 'Port forward',
       pal_act_edit: 'Edit host',
-      pal_more: 'More actions for this host'
+      pal_more: 'More actions for this host',
+      pal_agent: 'AI Agent',
+      pal_pods: 'Pod Logs',
+      pal_containers: 'Container Shell',
+      pal_playbooks: 'Ansible Playbooks',
+      pal_workspaces: 'Terraform Workspaces',
+      pal_agent_ask: "Ask AI Agent: '{q}'",
+      pal_agent_hint: 'Type a prompt after > or ? to send to AI Agent Side-Panel',
+      pal_agent_ctx: 'Context: {ctx} · Press Enter to send',
+      pal_pod_logs_sub: 'Pod logs · {ns} · {status}',
+      pal_ctr_shell_sub: 'Container shell · {host} · {state}',
+      pal_pb_sub: 'Ansible Playbook · {group}',
+      pal_ws_sub: 'Terraform Workspace · {env}'
     },
     id: {
       pal_ph: 'Cari host dan perintah…',
@@ -84,7 +96,19 @@
       pal_act_inspect: 'Periksa sekarang',
       pal_act_portfwd: 'Port forward',
       pal_act_edit: 'Ubah host',
-      pal_more: 'Aksi lain untuk host ini'
+      pal_more: 'Aksi lain untuk host ini',
+      pal_agent: 'Agen AI',
+      pal_pods: 'Log Pod',
+      pal_containers: 'Shell Container',
+      pal_playbooks: 'Playbook Ansible',
+      pal_workspaces: 'Workspace Terraform',
+      pal_agent_ask: "Tanya Agen AI: '{q}'",
+      pal_agent_hint: 'Ketik prompt setelah > atau ? untuk dikirim ke Side-Panel Agen AI',
+      pal_agent_ctx: 'Konteks: {ctx} · Tekan Enter untuk kirim',
+      pal_pod_logs_sub: 'Log pod · {ns} · {status}',
+      pal_ctr_shell_sub: 'Shell container · {host} · {state}',
+      pal_pb_sub: 'Playbook Ansible · {group}',
+      pal_ws_sub: 'Workspace Terraform · {env}'
     }
   };
   ['en', 'id'].forEach((l) => { I18N[l] = Object.assign(I18N[l] || {}, I[l]); });
@@ -228,8 +252,68 @@
     return cmds;
   }
 
+  /* ---------- external resource cache (15s TTL) ---------- */
+  const EXT = { ts: 0, loading: false, containers: [], playbooks: [], workspaces: [] };
+  function refreshExt() {
+    const now = Date.now();
+    if (EXT.loading || (EXT.ts && now - EXT.ts < 15000)) return;
+    EXT.loading = true;
+    const j = (u) => fetch(u).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    Promise.all([j('/api/docker/overview'), j('/api/ansible/playbooks'), j('/api/terraform/workspaces')]).then(([dk, pb, tf]) => {
+      if (dk && Array.isArray(dk.hosts)) {
+        const list = [];
+        dk.hosts.forEach((h) => {
+          (h.containers || []).forEach((c) => {
+            list.push({ host_id: h.host_id, host_name: h.host_name, name: c.name || c.id, image: c.image || '', state: c.state || c.status || '' });
+          });
+        });
+        EXT.containers = list;
+      }
+      if (pb && Array.isArray(pb.playbooks)) EXT.playbooks = pb.playbooks;
+      if (tf && Array.isArray(tf.workspaces)) EXT.workspaces = tf.workspaces;
+      EXT.ts = Date.now();
+      EXT.loading = false;
+      if (S.open) render();
+    }).catch(() => { EXT.loading = false; });
+  }
+
+  function openContainerShell(hostId, name) {
+    const od = g('openHostDocker');
+    if (od) od(hostId);
+    const dc = g('dockerConsole');
+    if (dc) {
+      setTimeout(() => dc(name), 150);
+    } else {
+      const term = g('openHostTerminal');
+      if (term) term(hostId);
+    }
+  }
+
   function buildItems() {
-    const q = S.query.trim();
+    const rawQ = S.query;
+    const q = rawQ.trim();
+
+    // Special prefix `> ` or `? ` sends prompt directly to AI Agent Side-Panel with active context.
+    if (/^[>?]/.test(q)) {
+      const prompt = q.slice(1).trim();
+      const ctx = window.AG && typeof window.AG.getContext === 'function' ? window.AG.getContext() : null;
+      const ctxLabel = ctx ? ctx.label : 'Fleet';
+      if (!prompt) {
+        return [{
+          kind: 'agent', group: 'agent', icon: 'bot',
+          title: t('pal_agent_hint', 'Type a prompt after > or ? to send to AI Agent Side-Panel'),
+          sub: t('pal_agent_ctx', 'Context: {ctx} · Press Enter to send').replace('{ctx}', ctxLabel),
+          run: () => { if (window.AG && typeof window.AG.toggle === 'function') { window.AG.toggleDock(true); window.AG.toggle(true); } }
+        }];
+      }
+      return [{
+        kind: 'agent', group: 'agent', icon: 'bot',
+        title: t('pal_agent_ask', "Ask AI Agent: '{q}'").replace('{q}', prompt),
+        sub: t('pal_agent_ctx', 'Context: {ctx} · Press Enter to send').replace('{ctx}', ctxLabel),
+        run: () => { if (window.AG && typeof window.AG.ask === 'function') window.AG.ask(prompt, { dock: true }); }
+      }];
+    }
+
     const tk = tokens(q);
     if (S.mode === 'host' && S.host) {
       let acts = hostActions(S.host);
@@ -256,6 +340,68 @@
     scored.forEach((s) => {
       if (items.some((it) => it.kind === 'host' && String(it.host.id) === String(s.h.id))) return;
       items.push(hostItem(s.h, 'hosts'));
+    });
+
+    // Pod logs (from active Kubernetes cluster cache)
+    const pods = (window.S && Array.isArray(window.S.kubePodsCache)) ? window.S.kubePodsCache : [];
+    pods.forEach((p) => {
+      const sc = tk.length ? scoreFields(tk, [p.name || '', p.namespace || '', 'pod logs']) : 0;
+      if (tk.length && sc < 0) return;
+      if (!tk.length && items.length >= 25) return;
+      items.push({
+        kind: 'pod', group: 'pods', icon: 'boxes',
+        title: p.name,
+        sub: t('pal_pod_logs_sub', 'Pod logs · {ns} · {status}').replace('{ns}', p.namespace || 'default').replace('{status}', p.status || ''),
+        run: () => {
+          const nav = g('switchSideNav'); if (nav) nav('kube');
+          const okl = g('openKubeLogs'); if (okl) okl(p);
+        }
+      });
+    });
+
+    // Container shell (Docker containers across hosts)
+    EXT.containers.forEach((c) => {
+      const sc = tk.length ? scoreFields(tk, [c.name || '', c.host_name || '', c.image || '', 'container shell']) : 0;
+      if (tk.length && sc < 0) return;
+      if (!tk.length && items.length >= 30) return;
+      items.push({
+        kind: 'container', group: 'containers', icon: 'container',
+        title: c.name,
+        sub: t('pal_ctr_shell_sub', 'Container shell · {host} · {state}').replace('{host}', c.host_name || '').replace('{state}', c.state || ''),
+        run: () => openContainerShell(c.host_id, c.name)
+      });
+    });
+
+    // Ansible Playbooks
+    EXT.playbooks.forEach((pb) => {
+      const sc = tk.length ? scoreFields(tk, [pb.name || '', pb.group_name || '', 'ansible playbook']) : 0;
+      if (tk.length && sc < 0) return;
+      if (!tk.length && items.length >= 35) return;
+      items.push({
+        kind: 'playbook', group: 'playbooks', icon: 'ansible',
+        title: pb.name,
+        sub: t('pal_pb_sub', 'Ansible Playbook · {group}').replace('{group}', pb.group_name || 'default'),
+        run: () => {
+          const nav = g('switchSideNav'); if (nav) nav('ansible');
+          setTimeout(() => { if (window.Ans && Ans.playbooks && typeof Ans.playbooks.open === 'function') Ans.playbooks.open(pb.id); }, 60);
+        }
+      });
+    });
+
+    // Terraform Workspaces
+    EXT.workspaces.forEach((ws) => {
+      const sc = tk.length ? scoreFields(tk, [ws.name || '', ws.environment || '', ws.group_name || '', 'terraform workspace']) : 0;
+      if (tk.length && sc < 0) return;
+      if (!tk.length && items.length >= 40) return;
+      items.push({
+        kind: 'workspace', group: 'workspaces', icon: 'terraform',
+        title: ws.name,
+        sub: t('pal_ws_sub', 'Terraform Workspace · {env}').replace('{env}', ws.environment || 'default'),
+        run: () => {
+          const nav = g('switchSideNav'); if (nav) nav('terraform');
+          setTimeout(() => { if (window.Tf && Tf.workspaces && typeof Tf.workspaces.open === 'function') Tf.workspaces.open(ws.id); }, 60);
+        }
+      });
     });
 
     globalCommands().forEach((c) => {
@@ -320,7 +466,12 @@
   }
 
   const groupLabel = (grp) => grp === 'recent' ? t('pal_recent', 'Recent')
+    : grp === 'agent' ? t('pal_agent', 'AI Agent')
     : grp === 'hosts' ? t('pal_hosts', 'Hosts')
+    : grp === 'pods' ? t('pal_pods', 'Pod Logs')
+    : grp === 'containers' ? t('pal_containers', 'Container Shell')
+    : grp === 'playbooks' ? t('pal_playbooks', 'Ansible Playbooks')
+    : grp === 'workspaces' ? t('pal_workspaces', 'Terraform Workspaces')
     : grp === 'commands' ? t('pal_commands', 'Commands')
     : t('pal_actions', 'Actions');
 
@@ -443,6 +594,7 @@
     S.query = '';
     S.open = true;
     ov.classList.add('open');
+    refreshExt();
     render();
     if (input) input.focus();
   };

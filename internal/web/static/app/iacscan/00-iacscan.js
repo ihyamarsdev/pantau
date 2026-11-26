@@ -134,14 +134,28 @@
     const counts = ['critical', 'high', 'medium', 'low'].map((sev) =>
       `<span class="badge ${SEV_CLASS[sev]}">${esc(sev)}: ${esc(String(Number(s[sev] || 0)))}</span>`).join('');
 
-    const rows = shown.map((f) => `<tr>
+    const askEnabled = typeof window.AG !== 'undefined' && typeof window.AG.enabled === 'function' && window.AG.enabled();
+    const rows = shown.map((f) => {
+      const payload = esc(JSON.stringify({
+        source: 'IaC Security Scan',
+        rule: f.rule_id || '',
+        severity: f.severity || '',
+        target: (f.file || '') + (f.line ? ':' + f.line : ''),
+        title: f.title || '',
+        detail: f.detail || '',
+        remediation: f.remediation || ''
+      }));
+      return `<tr>
       <td class="mono" style="white-space:nowrap;">${esc(f.file)}${f.line ? ':' + esc(f.line) : ''}</td>
       <td><span class="badge ${SEV_CLASS[f.severity] || ''}">${esc(f.severity)}</span> <span class="badge">${esc(f.category)}</span>
         <div><b>${esc(f.title)}</b></div>
         <div style="color:var(--text-muted);">${esc(f.detail)}</div>
         ${f.snippet ? `<div class="iac-snippet mono">${esc(f.snippet)}</div>` : ''}</td>
-      <td>${esc(f.remediation)}</td>
-    </tr>`).join('');
+      <td><div>${esc(f.remediation)}</div>
+        <div style="margin-top:6px;"><button type="button" class="btn btn-sm btn-ghost ag-ask-btn" style="${askEnabled ? '' : 'display:none'}" data-remediate="${payload}" onclick="AG.askRemediation(JSON.parse(this.dataset.remediate))">${icon('bot', 'icon-xs')} <span>${esc(t('ag_ask_remediate', 'Ask Agent to Remediate'))}</span></button></div>
+      </td>
+    </tr>`;
+    }).join('');
 
     body.innerHTML = `
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">${counts}
