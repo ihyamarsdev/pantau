@@ -309,6 +309,18 @@ func (s *Server) handleKubeManage(w http.ResponseWriter, r *http.Request, hostID
 			return map[string]interface{}{"ok": true, "events": events}, nil
 		})
 
+	case get && sub == "pod-diagnose":
+		q := r.URL.Query()
+		ns := q.Get("ns")
+		pod := q.Get("pod")
+		runRead(func(targetID int64) (map[string]interface{}, error) {
+			diag, err := s.inspector.KubeDiagnosePod(targetID, ns, pod)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]interface{}{"ok": true, "diagnosis": diag}, nil
+		})
+
 	case get && sub == "describe":
 		q := r.URL.Query()
 		kind := q.Get("kind")

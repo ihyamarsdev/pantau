@@ -156,7 +156,7 @@ func agentToolDomain(name string) toolDomain {
 		name == "vuln_status", name == "get_exposed_cves", strings.HasPrefix(name, "account_audit"), name == "fleet_keys",
 		strings.HasPrefix(name, "iac_"), name == "fim_diff":
 		return domainSecurity
-	case strings.HasPrefix(name, "kube_"):
+	case strings.HasPrefix(name, "kube_"), strings.HasPrefix(name, "k8s_"):
 		return domainKubernetes
 	case strings.HasPrefix(name, "docker_"), name == "dockerhub_search":
 		return domainDocker
@@ -165,7 +165,7 @@ func agentToolDomain(name string) toolDomain {
 		return domainNetwork
 	case strings.HasPrefix(name, "ansible_"):
 		return domainAnsible
-	case strings.HasPrefix(name, "tf_"):
+	case strings.HasPrefix(name, "tf_"), strings.HasPrefix(name, "terraform_"):
 		return domainTerraform
 	case name == "gateway_cli", name == "gateway_cli_install", name == "list_vault_keys", name == "trigger_env_sync":
 		return domainAutomation
@@ -307,13 +307,12 @@ func (s *Server) callAgentTool(r *http.Request, name string, args map[string]int
 	if err == nil {
 		attrs = append(attrs, "status", "success")
 		logger.Info("agent", name, "tool call finished", attrs...)
-		// The result is not cut here: truncateToolResult keeps the head and the tail and says how to get
-		// the rest. Cutting here would silently drop the end of a log before the model ever sees it.
-		return out, false
+		// Every tool output passes through the redaction filter before reaching the LLM.
+		return agentRedactText(out), false
 	}
 	attrs = append(attrs, "status", "error", "error", err.Error())
 	logger.Warn("agent", name, "tool call failed", attrs...)
-	return strings.TrimSpace(out + "\nERROR: " + err.Error()), true
+	return agentRedactText(strings.TrimSpace(out + "\nERROR: " + err.Error())), true
 }
 
 // agentToolSpecs exposes the tools to the in-process agent.

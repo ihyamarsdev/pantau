@@ -234,8 +234,20 @@ func TestAgentAnsibleThroughLoopback(t *testing.T) {
 		t.Fatalf("playbook content must be masked: %s", one)
 	}
 
-	// A real run needs a human even in auto mode; check/syntax runs do not.
+	// Workflow guard: mode "run" without syntax + diff must be refused before asking the operator.
 	_ = srv.db.SetSetting("agent_approval", "auto")
+	if out, isErr := callTool(t, srv, "ansible_run", `{"playbook_id":`+itoa(pid)+`,"mode":"run","group":"x"}`); !isErr || !strings.Contains(out, "syntax") {
+		t.Fatalf("run without syntax/diff must be blocked by workflow guard: %s", out)
+	}
+	if pendingCount(srv) != 0 {
+		t.Fatal("blocked workflow guard must not ask the operator")
+	}
+
+	// Seed passed syntax and diff runs so mode "run" reaches the gateInfra approval card.
+	_, _ = srv.db.CreateAnsibleRun(&store.AnsibleRun{PlaybookID: pid, PlaybookName: "web-fix", Status: "success", Mode: "syntax", Targets: "all"})
+	_, _ = srv.db.CreateAnsibleRun(&store.AnsibleRun{PlaybookID: pid, PlaybookName: "web-fix", Status: "success", Mode: "diff", Targets: "all"})
+
+	// A real run needs a human even in auto mode; check/syntax runs do not.
 	res := make(chan string, 1)
 	go func() {
 		out, _ := callTool(t, srv, "ansible_run", `{"playbook_id":`+itoa(pid)+`,"mode":"run","group":"x"}`)

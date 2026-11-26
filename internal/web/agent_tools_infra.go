@@ -510,7 +510,23 @@ func toolKubeApply(s *Server, r *http.Request, args map[string]interface{}) (str
 	if err := inspector.ValidateKubeApply(y); err != nil {
 		return "", err
 	}
-	if err := s.agentGateAs(r, t.grantID(), t.Name, "kube_apply", "kubectl apply -f - on "+t.Name+":\n"+y, gateInfra); err != nil {
+	// Mandatory server-side dry-run & diff before presenting to the approval gate.
+	preview := true
+	diffRes, err := s.loopJSON(context.WithValue(r.Context(), gateKey{}, &preview), http.MethodPost, kubePath(t, "diff", nil), map[string]string{"yaml": y})
+	if err != nil {
+		return "", fmt.Errorf("kubectl apply --dry-run=server failed: %w", err)
+	}
+	changed, _ := diffRes["changed"].(bool)
+	diffOut, _ := diffRes["output"].(string)
+	diffSummary := "no changes"
+	if changed {
+		diffSummary = redactSecrets(clipTo(strings.TrimSpace(diffOut), 4000))
+		if diffSummary == "" {
+			diffSummary = "(changes detected)"
+		}
+	}
+	summary := fmt.Sprintf("kubectl apply -f - on %s (server dry-run: passed, changed: %v)\n--- diff ---\n%s\n--- manifest ---\n%s", t.Name, changed, diffSummary, clipTo(redactSecrets(y), 4000))
+	if err := s.agentGateAs(r, t.grantID(), t.Name, "kube_apply", summary, gateInfra); err != nil {
 		return "", err
 	}
 	m, err := s.loopJSON(r.Context(), http.MethodPost, kubePath(t, "apply", nil), map[string]string{"yaml": y})
@@ -576,13 +592,37 @@ func toolAnsibleRun(s *Server, r *http.Request, args map[string]interface{}) (st
 		b, _ := json.Marshal(ev)
 		body["extra_vars"] = string(b)
 	}
+	// Enforce mandatory workflow order: syntax -> diff (--check --diff) -> approval gate -> run.
+	var diffSummary string
+	if mode == "diff" || mode == "run" {
+		runsRes, rerr := s.loopJSON(r.Context(), http.MethodGet, fmt.Sprintf("/api/ansible/runs?playbook_id=%d&limit=30", id), nil)
+		if rerr != nil {
+			return "", rerr
+		}
+		pbUpdatedAt, _ := pb["updated_at"].(string)
+		hasSyntax, diffRunID, diffRecap := checkAnsibleWorkflowRuns(runsRes["runs"], pbUpdatedAt)
+		if !hasSyntax {
+			return "", fmt.Errorf("workflow guard: run mode \"syntax\" first and ensure it passes before running %q", mode)
+		}
+		if mode == "run" {
+			if diffRunID == 0 {
+				return "", fmt.Errorf("workflow guard: run mode \"diff\" (--check --diff) and ensure it passes after syntax check before running \"run\"")
+			}
+			diffSummary = s.ansibleDiffSummary(r.Context(), diffRunID, diffRecap)
+		}
+	}
+
 	gate := gateRoutine
 	if mode == "run" {
 		gate = gateInfra
 	}
 	b, _ := json.Marshal(body)
 	name, _ := pb["name"].(string)
-	if err := s.agentGateAs(r, 0, "Ansible", "ansible_run", fmt.Sprintf("ansible playbook %q (id %d), mode %s\n%s", name, id, mode, b), gate); err != nil {
+	summary := fmt.Sprintf("ansible playbook %q (id %d), mode %s\n%s", name, id, mode, b)
+	if diffSummary != "" {
+		summary += "\n--- check --diff summary ---\n" + diffSummary
+	}
+	if err := s.agentGateAs(r, 0, "Ansible", "ansible_run", summary, gate); err != nil {
 		return "", err
 	}
 	m, err := s.loopJSON(r.Context(), http.MethodPost, fmt.Sprintf("/api/ansible/playbooks/%d/run", id), body)
