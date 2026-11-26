@@ -278,7 +278,8 @@ exec /usr/bin/kubectl "$@"
 }
 
 func TestLocalKubeRunner(t *testing.T) {
-	// Fake kubectl is not needed for runner execution test since runner runs sh -c
+	// The runner only executes "sh -c", but creating it resolves kubectl, so a fake one stands in.
+	writeFakeKubectl(t, "exit 0")
 	runner, err := newLocalKubeRunner("test-kubeconfig-content")
 	if err != nil {
 		t.Fatalf("newLocalKubeRunner failed: %v", err)
