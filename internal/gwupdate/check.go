@@ -14,6 +14,8 @@ const (
 	TargetTerraform = "terraform"
 	// TargetOpenTofu is the tofu (OpenTofu) CLI behind the Terraform Gate.
 	TargetOpenTofu = "tofu"
+	// TargetKubectl is the kubectl CLI that External Cluster operations run with (ADR 0082 scope).
+	TargetKubectl = "kubectl"
 )
 
 // UserAgent identifies Pantau to the upstream release APIs.
@@ -51,6 +53,8 @@ func Latest(ctx context.Context, target string) (Release, error) {
 		return LatestTerraform(ctx)
 	case TargetOpenTofu:
 		return LatestOpenTofu(ctx)
+	case TargetKubectl:
+		return LatestKubectl(ctx)
 	default:
 		return Release{}, fmt.Errorf("unknown target %q", target)
 	}

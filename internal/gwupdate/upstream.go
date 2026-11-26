@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -26,6 +27,16 @@ var (
 	HashiCorpURL = "https://api.releases.hashicorp.com/v1/releases/terraform/latest"
 	// OpenTofuURL is the GitHub latest-release page of OpenTofu; it redirects to the release tag.
 	OpenTofuURL = "https://github.com/opentofu/opentofu/releases/latest"
+	// KubectlBaseURL is the Kubernetes release host (dl.k8s.io); stable.txt and stable-<minor>.txt sit
+	// beside the release directories.
+	KubectlBaseURL = "https://dl.k8s.io/release"
+)
+
+// kubectlRelease and kubectlMinor are the only shapes accepted for a kubectl version and a minor
+// channel. Anything else (a path, "latest", a pre-release) never reaches a URL.
+var (
+	kubectlRelease = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
+	kubectlMinor   = regexp.MustCompile(`^[0-9]+\.[0-9]+$`)
 )
 
 // requestTimeout bounds one upstream request.
@@ -82,6 +93,50 @@ func LatestAnsible(ctx context.Context) (Release, error) {
 		return Release{}, fmt.Errorf("pypi: no version in response")
 	}
 	return Release{Version: info.Version, URL: "https://pypi.org/project/ansible-core/" + info.Version + "/"}, nil
+}
+
+// LatestKubectl returns the newest stable kubectl release.
+func LatestKubectl(ctx context.Context) (Release, error) {
+	return readKubectlRelease(ctx, KubectlBaseURL+"/stable.txt")
+}
+
+// LatestKubectlChannel returns the newest patch release of one Kubernetes minor, e.g. "1.31".
+func LatestKubectlChannel(ctx context.Context, minor string) (Release, error) {
+	if !kubectlMinor.MatchString(minor) {
+		return Release{}, fmt.Errorf("kubernetes: %q is not a minor version", minor)
+	}
+	return readKubectlRelease(ctx, KubectlBaseURL+"/stable-"+minor+".txt")
+}
+
+// readKubectlRelease reads a stable.txt style file: one release such as "v1.31.4".
+func readKubectlRelease(ctx context.Context, url string) (Release, error) {
+	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return Release{}, err
+	}
+	req.Header.Set("User-Agent", "Pantau/"+UserAgent)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return Release{}, fmt.Errorf("kubernetes: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return Release{}, fmt.Errorf("kubernetes: status %s", resp.Status)
+	}
+	// The file is about ten bytes; anything longer is not the file we asked for.
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 64))
+	if err != nil {
+		return Release{}, fmt.Errorf("kubernetes: %w", err)
+	}
+	version := strings.TrimPrefix(strings.TrimSpace(string(data)), "v")
+	if !kubectlRelease.MatchString(version) {
+		return Release{}, fmt.Errorf("kubernetes: %q is not a release version", strings.TrimSpace(string(data)))
+	}
+	return Release{Version: version, URL: "https://github.com/kubernetes/kubernetes/releases/tag/v" + version}, nil
 }
 
 // LatestTerraform returns the newest Terraform release published by HashiCorp.

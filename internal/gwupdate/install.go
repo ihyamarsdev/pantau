@@ -148,6 +148,8 @@ func Install(ctx context.Context, target, version, root string, log io.Writer) e
 		return installAnsible(ctx, version, root, log)
 	case TargetTerraform, TargetOpenTofu:
 		return installStandalone(ctx, target, version, root, log)
+	case TargetKubectl:
+		return installKubectl(ctx, version, root, log)
 	default:
 		return &InstallError{Target: target, Version: version, Reason: "unknown target"}
 	}
@@ -418,6 +420,89 @@ func pypiWheel(ctx context.Context, version string) (pypiWheelInfo, error) {
 		}
 	}
 	return pypiWheelInfo{}, errors.New("pypi: the release has no wheel with a checksum")
+}
+
+// installKubectl installs one kubectl release. kubectl is a bare binary with a SHA-256 file beside it
+// (no archive), and each version is kept on its own, so switching to a cached version needs no
+// download. The bin/kubectl symlink is the active version (ADR 0081).
+func installKubectl(ctx context.Context, version, root string, log io.Writer) error {
+	target := TargetKubectl
+	version = strings.TrimLeft(version, "vV")
+	if !kubectlRelease.MatchString(version) {
+		return &InstallError{Target: target, Version: version, Reason: "the version is not a release number"}
+	}
+	if root == "" {
+		return &InstallError{Target: target, Version: version, Reason: "the managed directory is not set"}
+	}
+	m := ManagedDir{Root: root}
+	final := filepath.Join(m.VersionsDir(), kubectlPrefix+version)
+	link := filepath.Join(m.BinDir(), "kubectl")
+
+	// A cached version that still runs is switched to without touching the network.
+	if st, err := os.Stat(final); err == nil && st.Mode().IsRegular() {
+		err := smokeTestKubectl(ctx, final, version)
+		if err == nil {
+			logf(log, "kubectl %s is already downloaded, switching to it", version)
+			return pointSymlink(link, final)
+		}
+		logf(log, "the cached kubectl %s did not pass its check, downloading it again: %v", version, err)
+	}
+
+	base := KubectlBaseURL + "/v" + version + "/bin/" + runtime.GOOS + "/" + runtime.GOARCH + "/kubectl"
+	logf(log, "downloading kubectl %s", version)
+	sumBody, err := download(ctx, base+".sha256", manifestCap)
+	if err != nil {
+		return &InstallError{Target: target, Version: version, Reason: "the checksum could not be downloaded", Err: err}
+	}
+	fields := strings.Fields(string(sumBody))
+	if len(fields) == 0 || !isHex(fields[0]) {
+		return &InstallError{Target: target, Version: version, Reason: "the checksum file holds no SHA-256 value"}
+	}
+	data, err := download(ctx, base, downloadCap)
+	if err != nil {
+		return &InstallError{Target: target, Version: version, Reason: "the release could not be downloaded", Err: err}
+	}
+	sum := sha256.Sum256(data)
+	if hex.EncodeToString(sum[:]) != fields[0] {
+		return &InstallError{Target: target, Version: version, Reason: "the checksum does not match the release", Hint: "nothing was installed"}
+	}
+	logf(log, "checksum verified")
+
+	if err := os.MkdirAll(m.VersionsDir(), 0755); err != nil {
+		return &InstallError{Target: target, Version: version, Reason: "the install directory could not be created", Err: err}
+	}
+	cand, err := writeCandidate(m.VersionsDir(), "kubectl", data)
+	if err != nil {
+		return &InstallError{Target: target, Version: version, Reason: "the binary could not be written", Err: err}
+	}
+	if err := smokeTestKubectl(ctx, cand, version); err != nil {
+		os.Remove(cand)
+		return &InstallError{Target: target, Version: version, Reason: "the new binary did not run", Err: err}
+	}
+	if err := os.Rename(cand, final); err != nil {
+		os.Remove(cand)
+		return &InstallError{Target: target, Version: version, Reason: "the binary could not be put in place", Err: err}
+	}
+	if err := pointSymlink(link, final); err != nil {
+		return &InstallError{Target: target, Version: version, Reason: "the binary could not be made active", Err: err}
+	}
+	logf(log, "kubectl %s is active", version)
+	return nil
+}
+
+// smokeTestKubectl runs "kubectl version --client", which works offline (without --client kubectl
+// contacts the API server), and checks the version it reports.
+func smokeTestKubectl(ctx context.Context, path, version string) error {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, path, "version", "--client").Output()
+	if err != nil {
+		return fmt.Errorf("kubectl did not run: %v", err)
+	}
+	if got := ExtractVersion(string(out)); got != version {
+		return fmt.Errorf("kubectl reported %q, expected version %s", got, version)
+	}
+	return nil
 }
 
 // smokeTest runs the installed binary and checks that it reports the expected version.
