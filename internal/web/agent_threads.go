@@ -1,12 +1,14 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"pantau/internal/inspector"
@@ -299,4 +301,42 @@ func queryInt64(v string) int64 {
 		return 0
 	}
 	return n
+}
+
+const agentTitleSystem = "Generate a concise 3 to 7 word title for this infrastructure troubleshooting conversation. " +
+	"Reply with ONLY the title text, no quotes or trailing punctuation."
+
+// maybeGenerateThreadTitle asks the Fast / Utility model (falling back to the primary Reasoning model)
+// to generate a short thread title asynchronously.
+func (s *Server) maybeGenerateThreadTitle(c agentCfg, threadID int64, userMsg, assistantReply string) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		_ = s.generateThreadTitle(ctx, c, threadID, userMsg, assistantReply)
+	}()
+}
+
+func (s *Server) generateThreadTitle(ctx context.Context, c agentCfg, threadID int64, userMsg, assistantReply string) error {
+	client, model, err := s.agentFastLLMClient(c)
+	if err != nil || model == "" {
+		return err
+	}
+	prompt := "User: " + clipTo(userMsg, 600)
+	if strings.TrimSpace(assistantReply) != "" {
+		prompt += "\nAssistant: " + clipTo(assistantReply, 400)
+	}
+	res, err := client.Stream(ctx, llmRequest{
+		Model:     model,
+		System:    agentTitleSystem,
+		Messages:  []llmMessage{{Role: llmRoleUser, Text: prompt}},
+		MaxTokens: 32,
+	}, nil)
+	if err != nil {
+		return err
+	}
+	title := strings.Trim(strings.TrimSpace(res.Text), "\"'`.\n\r")
+	if title == "" {
+		return nil
+	}
+	return s.db.UpdateAgentThreadTitle(threadID, title)
 }

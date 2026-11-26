@@ -149,6 +149,10 @@ func toolMemoryForget(s *Server, _ *http.Request, args map[string]interface{}) (
 // customised SOUL). With a question it injects only the notes and inventory facts that question is about, so
 // the prompt stays small however many notes the operator saved; without a question it shows the newest notes.
 func (s *Server) agentMemoryPrompt(question string) string {
+	return s.agentMemoryPromptForDomain(question, "")
+}
+
+func (s *Server) agentMemoryPromptForDomain(question string, domain toolDomain) string {
 	var b strings.Builder
 	b.WriteString("## Memory\n\n" +
 		"Notes from earlier conversations and from the operator follow. They are facts about this infrastructure and may be " +
@@ -165,10 +169,11 @@ func (s *Server) agentMemoryPrompt(question string) string {
 		b.WriteString("No notes saved yet.\n")
 		return b.String()
 	}
-	// Only what this question is about reaches the prompt; the rest stays one memory_list call away.
-	recall, rerr := s.db.RecallContext(s.memoryScopeOf(question), question, agentMemoryRecall)
+	// Only what this question (or routed domain) is about reaches the prompt; the rest stays one memory_list call away.
+	scope := s.memoryScopeOfWithDomain(question, domain)
+	recall, rerr := s.db.RecallContext(scope, question, agentMemoryRecall)
 	notes := all
-	if rerr == nil && strings.TrimSpace(question) != "" {
+	if rerr == nil && (strings.TrimSpace(question) != "" || !scope.Empty()) {
 		notes = recall.Memories
 	}
 	if len(notes) == 0 {
@@ -233,6 +238,10 @@ func memoryScopeLabel(n store.AgentMemory, hosts, clusters map[int64]string) str
 // memoryScopeOf reads the scope a question is about: the host whose name appears in it, or the domain of its
 // words. It narrows the recall, never widens it: an unknown question gives the fleet-wide notes only.
 func (s *Server) memoryScopeOf(question string) store.AgentMemoryScope {
+	return s.memoryScopeOfWithDomain(question, "")
+}
+
+func (s *Server) memoryScopeOfWithDomain(question string, domainHint toolDomain) store.AgentMemoryScope {
 	q := strings.ToLower(question)
 	var scope store.AgentMemoryScope
 	if hosts, err := s.db.ListHosts(); err == nil {
@@ -258,10 +267,31 @@ func (s *Server) memoryScopeOf(question string) store.AgentMemoryScope {
 			break
 		}
 	}
+	if scope.Domain == "" && domainHint != "" {
+		scope.Domain = memoryDomainForToolDomain(domainHint)
+	}
 	if scope.HostID != nil {
 		scope.Domain = "" // one scope at a time, and the host is the narrower one
 	}
 	return scope
+}
+
+func memoryDomainForToolDomain(d toolDomain) string {
+	switch d {
+	case domainKubernetes:
+		return "kubernetes"
+	case domainDocker:
+		return "docker"
+	case domainAnsible:
+		return "ansible"
+	case domainTerraform:
+		return "terraform"
+	case domainSecurity:
+		return "security"
+	case domainNetwork:
+		return "network"
+	}
+	return ""
 }
 
 // handleAgentMemory: GET ?host_id=&q= lists, POST {content, host_id?|cluster_id?|domain?, id?} adds (or rewrites

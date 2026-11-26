@@ -394,16 +394,21 @@ func (c *anthropicLLM) body(req llmRequest) ([]byte, error) {
 	out["messages"] = anthropicMessages(req.Messages)
 	if len(req.Tools) > 0 {
 		tools := make([]map[string]interface{}, 0, len(req.Tools))
-		for _, t := range req.Tools {
+		for i, t := range req.Tools {
 			schema := t.Schema
 			if schema == nil {
 				schema = map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}
 			}
-			tools = append(tools, map[string]interface{}{
+			tool := map[string]interface{}{
 				"name":         t.Name,
 				"description":  t.Description,
 				"input_schema": schema,
-			})
+			}
+			// Anthropic caches Tools -> System -> Messages top-down; marking the last tool caches the entire tools prefix.
+			if i == len(req.Tools)-1 {
+				tool["cache_control"] = map[string]string{"type": "ephemeral"}
+			}
+			tools = append(tools, tool)
 		}
 		out["tools"] = tools
 	}

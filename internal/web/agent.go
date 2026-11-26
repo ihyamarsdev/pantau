@@ -82,8 +82,12 @@ type agentCfg struct {
 	Enabled       bool
 	Provider      string // "", "anthropic" or "openai" (any OpenAI-compatible endpoint)
 	BaseURL       string // empty: the provider default
-	Key           string
+	Key           string `json:"-"`
 	Model         string
+	FastProvider  string // optional utility/fast model provider; empty inherits Provider
+	FastBaseURL   string // optional utility/fast model base URL
+	FastKey       string `json:"-"`
+	FastModel     string // optional utility/fast model; empty falls back to primary Model
 	Approval      string // ask | auto
 	Soul          string
 	TriageEnabled bool
@@ -96,12 +100,16 @@ type agentCfg struct {
 func (s *Server) agentConfig() agentCfg {
 	get := func(k string) string { v, _ := s.db.GetSetting(k); return strings.TrimSpace(v) }
 	c := agentCfg{
-		Enabled:  get("agent_enabled") == "1",
-		Provider: get("agent_llm_provider"),
-		BaseURL:  get("agent_llm_base_url"),
-		Key:      get("agent_llm_api_key"),
-		Model:    get("agent_llm_model"),
-		Approval: get("agent_approval"),
+		Enabled:      get("agent_enabled") == "1",
+		Provider:     get("agent_llm_provider"),
+		BaseURL:      get("agent_llm_base_url"),
+		Key:          get("agent_llm_api_key"),
+		Model:        get("agent_llm_model"),
+		FastProvider: get("agent_fast_llm_provider"),
+		FastBaseURL:  get("agent_fast_llm_base_url"),
+		FastKey:      get("agent_fast_llm_api_key"),
+		FastModel:    get("agent_fast_llm_model"),
+		Approval:     get("agent_approval"),
 	}
 	if c.Approval != "auto" {
 		c.Approval = "ask"
@@ -164,7 +172,9 @@ func (s *Server) handleAgentSettings(w http.ResponseWriter, r *http.Request) {
 		c := s.agentConfig()
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"enabled": c.Enabled, "provider": c.Provider, "base_url": c.BaseURL, "api_key_set": c.Key != "",
-			"model": c.Model, "approval": c.Approval, "soul": c.Soul, "soul_is_default": c.Soul == defaultAgentSoul,
+			"model": c.Model, "fast_provider": c.FastProvider, "fast_base_url": c.FastBaseURL,
+			"fast_api_key_set": c.FastKey != "", "fast_model": c.FastModel,
+			"approval": c.Approval, "soul": c.Soul, "soul_is_default": c.Soul == defaultAgentSoul,
 			"triage_enabled": c.TriageEnabled, "triage_model": c.TriageModel,
 			"triage_daily_budget": c.TriageBudget, "briefing_time": c.BriefingTime, "compact_tokens": c.CompactTokens,
 		})
@@ -175,6 +185,10 @@ func (s *Server) handleAgentSettings(w http.ResponseWriter, r *http.Request) {
 			BaseURL           *string `json:"base_url"`
 			APIKey            *string `json:"api_key"` // nil or "" keeps the stored key
 			Model             *string `json:"model"`
+			FastProvider      *string `json:"fast_provider"`
+			FastBaseURL       *string `json:"fast_base_url"`
+			FastAPIKey        *string `json:"fast_api_key"` // nil or "" keeps the stored key
+			FastModel         *string `json:"fast_model"`
 			Approval          *string `json:"approval"`
 			Soul              *string `json:"soul"`
 			TriageEnabled     *bool   `json:"triage_enabled"`
@@ -214,6 +228,30 @@ func (s *Server) handleAgentSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.Model != nil {
 			set["agent_llm_model"] = strings.TrimSpace(*req.Model)
+		}
+		if req.FastProvider != nil {
+			fp := strings.ToLower(strings.TrimSpace(*req.FastProvider))
+			switch fp {
+			case "", llmProviderAnthropic, llmProviderOpenAI:
+			default:
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the fast LLM provider must be anthropic, openai or empty"})
+				return
+			}
+			set["agent_fast_llm_provider"] = fp
+		}
+		if req.FastBaseURL != nil {
+			fu, err := normalizeLLMBaseURL(*req.FastBaseURL)
+			if err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				return
+			}
+			set["agent_fast_llm_base_url"] = fu
+		}
+		if req.FastAPIKey != nil && strings.TrimSpace(*req.FastAPIKey) != "" {
+			set["agent_fast_llm_api_key"] = strings.TrimSpace(*req.FastAPIKey)
+		}
+		if req.FastModel != nil {
+			set["agent_fast_llm_model"] = strings.TrimSpace(*req.FastModel)
 		}
 		if req.Approval != nil {
 			set["agent_approval"] = map[bool]string{true: "auto", false: "ask"}[*req.Approval == "auto"]
@@ -272,21 +310,43 @@ func (s *Server) handleAgentTest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	var req struct {
+		Target string `json:"target"` // "" or "reasoning" tests primary model; "fast" tests fast/utility model
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&req)
+	}
 	c := s.agentConfig()
-	if c.Model == "" {
+	var (
+		client llmClient
+		model  string
+		key    string
+		err    error
+	)
+	if strings.EqualFold(strings.TrimSpace(req.Target), "fast") {
+		_, _, key, model = resolveFastModelConfig(c)
+		client, model, err = s.agentFastLLMClient(c)
+	} else {
+		model, key = c.Model, c.Key
+		if model == "" {
+			writeJSON(w, http.StatusOK, map[string]interface{}{"ok": false, "error": "no model is configured in Settings"})
+			return
+		}
+		client, err = s.agentLLMClient(c)
+	}
+	if model == "" {
 		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": false, "error": "no model is configured in Settings"})
 		return
 	}
-	client, err := s.agentLLMClient(c)
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": false, "error": redactSecret(err.Error(), c.Key)})
+		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": false, "error": redactSecret(err.Error(), key)})
 		return
 	}
 	ctx, cancel := contextTimeout(r, 20*time.Second)
 	defer cancel()
-	req := llmRequest{Model: c.Model, Messages: []llmMessage{{Role: llmRoleUser, Text: "ping"}}, MaxTokens: 16}
-	if _, err := client.Stream(ctx, req, nil); err != nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": false, "error": redactSecret(err.Error(), c.Key)})
+	lreq := llmRequest{Model: model, Messages: []llmMessage{{Role: llmRoleUser, Text: "ping"}}, MaxTokens: 16}
+	if _, err := client.Stream(ctx, lreq, nil); err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": false, "error": redactSecret(err.Error(), key)})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true})
@@ -352,9 +412,9 @@ func (s *Server) chatNative(w http.ResponseWriter, r *http.Request, c agentCfg, 
 		// The browser binds the conversation to this thread, so the next turn does not have to search for it.
 		w.Header().Set("X-Agent-Thread", strconv.FormatInt(th.ID, 10))
 	}
-	// A page context narrows the tools. An empty page (API callers) keeps all tools; a set_tool_domain
-	// meta-tool can still widen it later in the conversation.
-	if d := agentDomainForContext(page); d != domainAll {
+	// A page context + lightweight intent detection narrows the tools, skill prompt, and scoped memory notes.
+	// An empty page (API callers) keeps all tools; a set_tool_domain meta-tool can still widen it later.
+	if d := s.routeAgentDomain(r.Context(), c, page, message); d != domainAll {
 		conv.mu.Lock()
 		conv.domain = d
 		conv.mu.Unlock()
@@ -368,6 +428,39 @@ func (s *Server) agentLLMClient(c agentCfg) (llmClient, error) {
 		return s.agent.llmFactory(c.Provider, c.BaseURL, c.Key)
 	}
 	return newLLMClient(c.Provider, c.BaseURL, c.Key)
+}
+
+// resolveFastModelConfig returns the Fast / Utility model settings, falling back to the primary Reasoning Model
+// whenever FastModel is empty or optional provider/URL/key fields are left blank.
+func resolveFastModelConfig(c agentCfg) (provider, baseURL, apiKey, model string) {
+	if strings.TrimSpace(c.FastModel) == "" {
+		return c.Provider, c.BaseURL, c.Key, c.Model
+	}
+	provider = c.FastProvider
+	if provider == "" {
+		provider = c.Provider
+	}
+	baseURL = c.FastBaseURL
+	if baseURL == "" && provider == c.Provider {
+		baseURL = c.BaseURL
+	}
+	apiKey = c.FastKey
+	if apiKey == "" && provider == c.Provider && baseURL == c.BaseURL {
+		apiKey = c.Key
+	}
+	return provider, baseURL, apiKey, c.FastModel
+}
+
+// agentFastLLMClient builds the Fast / Utility model client, automatically falling back to the primary
+// Reasoning Model when no Fast Model is configured.
+func (s *Server) agentFastLLMClient(c agentCfg) (llmClient, string, error) {
+	provider, baseURL, apiKey, model := resolveFastModelConfig(c)
+	if s.agent.llmFactory != nil {
+		cl, err := s.agent.llmFactory(provider, baseURL, apiKey)
+		return cl, model, err
+	}
+	cl, err := newLLMClient(provider, baseURL, apiKey)
+	return cl, model, err
 }
 
 // ---------------------------------------------------------------- approvals

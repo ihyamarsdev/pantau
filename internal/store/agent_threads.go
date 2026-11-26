@@ -332,3 +332,17 @@ func pruneAgentThreads(tx *sql.Tx) error {
 	_, err := tx.Exec(pruneAgentThreadsSQL, AgentThreadMax)
 	return err
 }
+
+// UpdateAgentThreadTitle updates the title of a stored thread, clipping it to AgentThreadTitleMax runes.
+func (d *DB) UpdateAgentThreadTitle(id int64, title string) error {
+	clean := clipThreadTitle(title)
+	res, err := d.Exec(`UPDATE agent_threads SET title = ? WHERE id = ?`, clean, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrAgentThreadNotFound
+	}
+	return nil
+}

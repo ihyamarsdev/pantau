@@ -213,9 +213,10 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 	}()
 
 	sse := newAgentSSE(w)
-	// The system prompt is rebuilt every turn and never stored in the history. A host fingerprint gives the
-	// model OS-correct execution context before it writes any shell command (ADR 0086).
-	system := c.Soul + "\n\n" + s.agentMemoryPrompt(message) + "\n" + s.agentFingerprintPrompt(message, threadID)
+	// The system prompt is rebuilt every turn and never stored in the history. Dynamic skill injection keeps
+	// only the active domain's instructions and scoped memory notes, while a host fingerprint gives the model
+	// OS-correct execution context before it writes any shell command (ADR 0086).
+	system := agentSystemPromptFor(c.Soul, domain) + "\n\n" + s.agentMemoryPromptForDomain(message, domain) + "\n" + s.agentFingerprintPrompt(message, threadID)
 
 	// A long text-only exchange never reaches a tool batch, so the history is compacted here too.
 	if lastTokens > 0 && lastTokens+len(message)/3 > c.CompactTokens {
@@ -253,6 +254,10 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 		if len(calls) == 0 {
 			success = true
 			sse.done()
+			// Auto-generate a concise thread title on the first completed turn using the Fast/Utility model.
+			if threadID > 0 && stored == 0 && s.agent.llmFactory == nil {
+				s.maybeGenerateThreadTitle(c, threadID, message, res.Text)
+			}
 			return true
 		}
 		// The calls of one batch run one after the other; a call that did not run still gets a result, so the
@@ -434,20 +439,25 @@ const agentSummarySystem = "You summarise an earlier infrastructure-assistant co
 	"continue it. Keep the host names and ids, the findings, the decisions taken, the actions still waiting for " +
 	"an operator approval and the operator's preferences. Be factual and compact, drop tool noise."
 
-// compactHistory replaces the oldest part of the history with one summary message. If the summary call fails
-// nothing is dropped: the turn continues with the full history.
+// compactHistory replaces the oldest part of the history with one summary message using the Fast / Utility
+// model (falling back to the primary Reasoning model). If the summary call fails nothing is dropped: the turn
+// continues with the full history.
 func (s *Server) compactHistory(ctx context.Context, client llmClient, c agentCfg, history []llmMessage) []llmMessage {
 	cut := agentCompactCut(history)
 	if cut < 0 {
 		return history
 	}
+	fastClient, fastModel, ferr := s.agentFastLLMClient(c)
+	if ferr != nil || fastClient == nil || fastModel == "" {
+		fastClient, fastModel = client, c.Model
+	}
 	req := llmRequest{
-		Model:     c.Model,
+		Model:     fastModel,
 		System:    agentSummarySystem,
 		Messages:  []llmMessage{{Role: llmRoleUser, Text: clipTo(agentTranscript(history[:cut]), 64<<10)}},
 		MaxTokens: 2000,
 	}
-	res, err := client.Stream(ctx, req, nil)
+	res, err := fastClient.Stream(ctx, req, nil)
 	if err != nil {
 		logger.Warn("agent", "llm", "history compaction failed, the full history is kept: "+err.Error())
 		return history

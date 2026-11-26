@@ -89,18 +89,23 @@ var metaTools = []agentTool{
 type toolDomain string
 
 const (
-	domainAll        toolDomain = ""     // no context: advertise everything
-	domainCore       toolDomain = "core" // always available, never filtered out
-	domainHost       toolDomain = "host"
-	domainInfra      toolDomain = "infra"
-	domainNetwork    toolDomain = "network"
-	domainAutomation toolDomain = "automation"
-	domainSecurity   toolDomain = "security"
-	domainRepo       toolDomain = "repo"
+	domainAll        toolDomain = ""           // no context: advertise everything
+	domainCore       toolDomain = "core"       // always available, never filtered out
+	domainHost       toolDomain = "host"       // host, systemd, files, packages
+	domainKubernetes toolDomain = "kubernetes" // Kubernetes clusters, pods, workloads
+	domainDocker     toolDomain = "docker"     // Docker containers, stacks, images, volumes, networks
+	domainAnsible    toolDomain = "ansible"    // Ansible playbooks, runs, schedules, resources
+	domainTerraform  toolDomain = "terraform"  // Terraform workspaces, runs, state, catalog
+	domainSecurity   toolDomain = "security"   // security scans, CVEs, hardening, FIM, audits
+	domainInfra      toolDomain = "infra"      // composite alias: docker + kubernetes
+	domainNetwork    toolDomain = "network"    // cloudflare, VPN, firewall, net_diag
+	domainAutomation toolDomain = "automation" // composite alias: ansible + terraform + gateway/vault
+	domainRepo       toolDomain = "repo"       // cloned git repositories
 )
 
 var agentDomainNames = []string{
-	"host", "infra", "network", "automation", "security", "repo", // short names kept for existing callers
+	"core", "host", "kubernetes", "docker", "ansible", "terraform", "security",
+	"infra", "network", "automation", "repo", // short/composite names kept for existing callers
 	"compute_systemd", "docker_kubernetes", "network_vpn_cloudflare", "automation_git_iac", "security_audit",
 }
 
@@ -108,8 +113,18 @@ var agentDomainNames = []string{
 // descriptive names are the ADR 0082 domain modules; the short names are kept for existing callers.
 func canonicalDomain(name string) toolDomain {
 	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "core":
+		return domainCore
 	case "compute_systemd", "host":
 		return domainHost
+	case "kubernetes", "kube", "k8s":
+		return domainKubernetes
+	case "docker":
+		return domainDocker
+	case "ansible":
+		return domainAnsible
+	case "terraform", "tf":
+		return domainTerraform
 	case "docker_kubernetes", "infra":
 		return domainInfra
 	case "network_vpn_cloudflare", "network":
@@ -141,13 +156,18 @@ func agentToolDomain(name string) toolDomain {
 		name == "vuln_status", name == "get_exposed_cves", strings.HasPrefix(name, "account_audit"), name == "fleet_keys",
 		strings.HasPrefix(name, "iac_"), name == "fim_diff":
 		return domainSecurity
-	case strings.HasPrefix(name, "docker_"), strings.HasPrefix(name, "kube_"), name == "dockerhub_search":
-		return domainInfra
+	case strings.HasPrefix(name, "kube_"):
+		return domainKubernetes
+	case strings.HasPrefix(name, "docker_"), name == "dockerhub_search":
+		return domainDocker
 	case strings.HasPrefix(name, "cf_"), name == "vpn_networks", name == "vpn_network_action", name == "vpn_host_status", name == "net_diag",
 		name == "firewall_action", name == "domain_config_remove", name == "fleet_forwards":
 		return domainNetwork
-	case strings.HasPrefix(name, "ansible_"), strings.HasPrefix(name, "tf_"), name == "gateway_cli", name == "gateway_cli_install",
-		name == "list_vault_keys", name == "trigger_env_sync":
+	case strings.HasPrefix(name, "ansible_"):
+		return domainAnsible
+	case strings.HasPrefix(name, "tf_"):
+		return domainTerraform
+	case name == "gateway_cli", name == "gateway_cli_install", name == "list_vault_keys", name == "trigger_env_sync":
 		return domainAutomation
 	case strings.HasPrefix(name, "repo_"):
 		return domainRepo
@@ -162,12 +182,16 @@ func agentDomainForContext(page string) toolDomain {
 	switch strings.ToLower(strings.TrimSpace(page)) {
 	case "":
 		return domainAll
-	case "docker", "kube":
-		return domainInfra
+	case "kube", "kubernetes":
+		return domainKubernetes
+	case "docker":
+		return domainDocker
+	case "ansible":
+		return domainAnsible
+	case "terraform":
+		return domainTerraform
 	case "cloudflare":
 		return domainNetwork
-	case "ansible", "terraform":
-		return domainAutomation
 	case "security":
 		return domainSecurity
 	case "repos":
@@ -177,13 +201,28 @@ func agentDomainForContext(page string) toolDomain {
 	}
 }
 
+// domainIncludes reports whether a tool belonging to toolDom should be offered when active is activeDom.
+func domainIncludes(active, toolDom toolDomain) bool {
+	if active == domainAll || toolDom == domainCore || toolDom == active {
+		return true
+	}
+	switch active {
+	case domainInfra:
+		return toolDom == domainDocker || toolDom == domainKubernetes
+	case domainAutomation:
+		return toolDom == domainAnsible || toolDom == domainTerraform
+	case domainAnsible, domainTerraform:
+		return toolDom == domainAutomation
+	}
+	return false
+}
+
 // agentToolSpecsFor returns the tool definitions advertised to the model. domainAll keeps the full list
 // (backward compatible); a concrete domain offers only core tools plus that domain's tools.
 func agentToolSpecsFor(domain toolDomain) []llmToolSpec {
 	specs := make([]llmToolSpec, 0, len(agentTools))
 	for _, t := range agentTools {
-		td := agentToolDomain(t.Name)
-		if domain != domainAll && td != domainCore && td != domain {
+		if !domainIncludes(domain, agentToolDomain(t.Name)) {
 			continue
 		}
 		specs = append(specs, llmToolSpec{Name: t.Name, Description: t.Description, Schema: t.InputSchema})
@@ -232,7 +271,7 @@ func toolSetDomain(s *Server, r *http.Request, args map[string]interface{}) (str
 	}
 	names := make([]string, 0, len(agentTools))
 	for _, t := range agentTools {
-		if tdomain := agentToolDomain(t.Name); tdomain == domainCore || tdomain == td {
+		if domainIncludes(td, agentToolDomain(t.Name)) {
 			names = append(names, t.Name)
 		}
 	}

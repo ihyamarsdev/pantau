@@ -59,6 +59,17 @@
       ag_s_key: 'API key', ag_s_key_saved: 'Saved. Leave empty to keep it.',
       ag_s_key_hint: 'Required for Anthropic. Optional for OpenAI-compatible local servers (Ollama, vLLM).',
       ag_s_model: 'Model', ag_s_model_hint: 'Required: the agent needs a model to answer.',
+      ag_s_reasoning_title: 'Reasoning Model (Primary)', ag_s_reasoning_hint: 'Used for complex root-cause analysis, YAML/HCL/Playbook authoring, and remediation.',
+      ag_s_fast_title: 'Fast / Utility Model (Optional)', ag_s_fast_hint: 'Used for summarizing large outputs, intent routing, and auto-generating thread titles. Empty falls back to the Reasoning Model.',
+      ag_s_fast_provider: 'Fast model provider', ag_s_fast_provider_same: 'Same as Reasoning Model',
+      ag_s_fast_base_url: 'Fast model base URL', ag_s_fast_base_url_hint: 'Optional: e.g. http://localhost:11434/v1 for local Ollama.',
+      ag_s_fast_key: 'Fast model API key', ag_s_fast_key_hint: 'Optional for local servers (Ollama, vLLM). Leave empty to keep the saved key or inherit primary.',
+      ag_s_fast_model: 'Fast model name', ag_s_fast_model_hint: 'Optional: e.g. qwen2.5:7b, claude-haiku-4-5, or gpt-4o-mini. Empty falls back to Reasoning Model.',
+      ag_s_test_fast: 'Test fast model',
+      ag_s_triage_enable: 'Proactive AI Auto-Triage', ag_s_triage_hint: 'Diagnose obvious failures locally (0 tokens) and use one short LLM call for the rest',
+      ag_s_triage_model: 'Lightweight triage model (optional)', ag_s_triage_model_hint: 'Empty uses the primary agent model',
+      ag_s_triage_budget: 'Daily triage token budget', ag_s_triage_budget_hint: 'Global cap across all auto-triage calls per day',
+      ag_s_briefing_time: 'Daily briefing time (HH:MM, optional)', ag_s_briefing_hint: 'Delta-only briefing of the last 24 hours; empty disables the schedule',
       ag_s_approval: 'Approval for changes', ag_s_ask: 'Ask me for every change (recommended)',
       ag_s_auto: 'Auto-approve service/container actions, scans and inspections (shell commands still ask)',
       ag_s_soul: 'SOUL (the agent\'s identity and rules, sent with every chat)', ag_s_soul_reset: 'Reset SOUL to default',
@@ -108,6 +119,17 @@
       ag_s_key: 'API key', ag_s_key_saved: 'Tersimpan. Kosongkan untuk tetap memakainya.',
       ag_s_key_hint: 'Wajib untuk Anthropic. Opsional untuk server lokal OpenAI-compatible (Ollama, vLLM).',
       ag_s_model: 'Model', ag_s_model_hint: 'Wajib: agent butuh model untuk menjawab.',
+      ag_s_reasoning_title: 'Model Penalaran (Utama)', ag_s_reasoning_hint: 'Dipakai untuk RCA kompleks, penulisan YAML/HCL/Playbook, dan remediasi.',
+      ag_s_fast_title: 'Model Cepat / Utilitas (Opsional)', ag_s_fast_hint: 'Dipakai untuk meringkas output besar, klasifikasi intent/routing, dan membuat judul thread otomatis. Kosong berarti fallback ke Model Penalaran.',
+      ag_s_fast_provider: 'Penyedia model cepat', ag_s_fast_provider_same: 'Sama dengan Model Penalaran',
+      ag_s_fast_base_url: 'Base URL model cepat', ag_s_fast_base_url_hint: 'Opsional: misal http://localhost:11434/v1 untuk Ollama lokal.',
+      ag_s_fast_key: 'API key model cepat', ag_s_fast_key_hint: 'Opsional untuk server lokal (Ollama, vLLM). Kosongkan untuk tetap memakai key tersimpan atau mewarisi model utama.',
+      ag_s_fast_model: 'Nama model cepat', ag_s_fast_model_hint: 'Opsional: misal qwen2.5:7b, claude-haiku-4-5, atau gpt-4o-mini. Kosong = fallback ke Model Penalaran.',
+      ag_s_test_fast: 'Tes model cepat',
+      ag_s_triage_enable: 'Auto-Triage AI Proaktif', ag_s_triage_hint: 'Diagnosa kegagalan umum secara lokal (0 token) dan pakai satu panggilan LLM singkat untuk sisanya',
+      ag_s_triage_model: 'Model triage ringan (opsional)', ag_s_triage_model_hint: 'Kosong = memakai model agent utama',
+      ag_s_triage_budget: 'Batas token triage harian', ag_s_triage_budget_hint: 'Batas global seluruh panggilan auto-triage per hari',
+      ag_s_briefing_time: 'Waktu briefing harian (HH:MM, opsional)', ag_s_briefing_hint: 'Ringkasan delta 24 jam terakhir; kosong menonaktifkan jadwal',
       ag_s_approval: 'Persetujuan perubahan', ag_s_ask: 'Tanya saya untuk setiap perubahan (disarankan)',
       ag_s_auto: 'Setujui otomatis aksi service/container, scan, dan inspeksi (perintah shell tetap bertanya)',
       ag_s_soul: 'SOUL (identitas dan aturan agent, dikirim di setiap chat)', ag_s_soul_reset: 'Kembalikan SOUL ke default',
@@ -877,10 +899,15 @@
     if (!r.ok) { body.innerHTML = `<div class="ag-err">HTTP ${r.status}</div>`; return; }
     const cfg = r.data;
     const provider = cfg.provider || '';
+    const fastProvider = cfg.fast_provider || '';
     body.innerHTML = `
       <div class="set-card">
         <div class="set-header"><div><h4 class="set-title">${svgIcon('bot')} <span>${esc(t('ag_title'))}</span></h4></div></div>
         <label style="display:flex;gap:8px;align-items:center;cursor:pointer;margin-bottom:12px;"><input type="checkbox" id="agEnabled" style="width:auto" ${cfg.enabled ? 'checked' : ''}> <b>${esc(t('ag_s_enable'))}</b></label>
+        <div style="margin:12px 0 8px;padding-top:10px;border-top:1px solid var(--card-border);">
+          <div style="font-weight:600;font-size:var(--fs-sm);margin-bottom:2px;">${esc(t('ag_s_reasoning_title'))}</div>
+          <div class="form-hint" style="margin-bottom:8px;">${esc(t('ag_s_reasoning_hint'))}</div>
+        </div>
         <div class="form-group"><label class="form-label" for="agProvider">${esc(t('ag_s_provider'))}</label>
           <select id="agProvider" onchange="AG.providerChanged()">
             <option value="" ${provider === '' ? 'selected' : ''}>${esc(t('ag_s_provider_none'))}</option>
@@ -897,6 +924,26 @@
         <div class="form-group"><label class="form-label" for="agModel">${esc(t('ag_s_model'))}</label>
           <input type="text" id="agModel" value="${esc(cfg.model || '')}" placeholder="gpt-4o">
           <span class="form-hint">${esc(t('ag_s_model_hint'))}</span></div>
+        <div style="margin:14px 0 8px;padding-top:10px;border-top:1px solid var(--card-border);">
+          <div style="font-weight:600;font-size:var(--fs-sm);margin-bottom:2px;">${esc(t('ag_s_fast_title'))}</div>
+          <div class="form-hint" style="margin-bottom:8px;">${esc(t('ag_s_fast_hint'))}</div>
+        </div>
+        <div class="form-group"><label class="form-label" for="agFastProvider">${esc(t('ag_s_fast_provider'))}</label>
+          <select id="agFastProvider" onchange="AG.fastProviderChanged()">
+            <option value="" ${fastProvider === '' ? 'selected' : ''}>${esc(t('ag_s_fast_provider_same'))}</option>
+            <option value="anthropic" ${fastProvider === 'anthropic' ? 'selected' : ''}>${esc(t('ag_s_provider_anthropic'))}</option>
+            <option value="openai" ${fastProvider === 'openai' ? 'selected' : ''}>${esc(t('ag_s_provider_openai'))}</option>
+          </select></div>
+        <div class="form-group"><label class="form-label" for="agFastBaseUrl">${esc(t('ag_s_fast_base_url'))}</label>
+          <input type="text" id="agFastBaseUrl" value="${esc(cfg.fast_base_url || '')}" placeholder="http://localhost:11434/v1">
+          <span class="form-hint">${esc(t('ag_s_fast_base_url_hint'))}</span></div>
+        <div class="form-group"><label class="form-label" for="agFastKey">${esc(t('ag_s_fast_key'))}</label>
+          <input type="password" id="agFastKey" placeholder="••••••••" autocomplete="new-password">
+          ${cfg.fast_api_key_set ? `<span class="badge badge-info" id="agFastKeySaved" style="margin-top:4px;">${esc(t('ag_s_key_saved'))}</span>` : ''}
+          <span class="form-hint">${esc(t('ag_s_fast_key_hint'))}</span></div>
+        <div class="form-group"><label class="form-label" for="agFastModel">${esc(t('ag_s_fast_model'))}</label>
+          <input type="text" id="agFastModel" value="${esc(cfg.fast_model || '')}" placeholder="${esc(cfg.model || 'qwen2.5:7b')}">
+          <span class="form-hint">${esc(t('ag_s_fast_model_hint'))}</span></div>
         <div class="form-group"><label class="form-label">${esc(t('ag_s_triage_enable', 'Proactive AI Auto-Triage'))}</label>
           <label style="display:flex;gap:8px;cursor:pointer;font-size:var(--fs-sm);"><input type="checkbox" id="agTriageEnabled" style="width:auto" ${cfg.triage_enabled ? 'checked' : ''}> ${esc(t('ag_s_triage_hint', 'Diagnose obvious failures locally (0 tokens) and use one short LLM call for the rest'))}</label></div>
         <div class="form-group"><label class="form-label" for="agTriageModel">${esc(t('ag_s_triage_model', 'Lightweight triage model (optional)'))}</label>
@@ -913,14 +960,16 @@
           <label style="display:flex;gap:8px;cursor:pointer;font-size:var(--fs-sm);margin-top:4px;"><input type="radio" name="agAppr" value="auto" style="width:auto" ${cfg.approval === 'auto' ? 'checked' : ''}> ${esc(t('ag_s_auto'))}</label></div>
         <div class="form-group"><label class="form-label">${esc(t('ag_s_soul'))}</label><textarea class="ag-soul" id="agSoul">${esc(cfg.soul)}</textarea>
           <div><button class="btn btn-sm btn-ghost" onclick="AG.resetSoul()">${esc(t('ag_s_soul_reset'))}</button></div></div>
-        <div style="display:flex;gap:8px;margin-top:8px;">
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
           <button class="btn btn-primary btn-sm" id="agSave" onclick="AG.saveSettings()">${svgIcon('save', 'icon-sm')} <span>${esc(t('ag_s_save'))}</span></button>
           <button class="btn btn-ghost btn-sm" id="agTest" onclick="AG.testConn()">${esc(t('ag_s_test'))}</button>
+          <button class="btn btn-ghost btn-sm" id="agTestFast" onclick="AG.testConn('fast')">${esc(t('ag_s_test_fast'))}</button>
         </div>
         <div id="agTestResult" style="margin-top:8px;font-size:var(--fs-xs);"></div>
       </div>
       <div id="agMemory"></div>`;
     AG.providerChanged();
+    AG.fastProviderChanged();
     AG.loadMemory();
   };
 
@@ -931,6 +980,14 @@
     const model = $('agModel');
     if (url) url.placeholder = p === 'anthropic' ? 'https://api.anthropic.com/v1' : p === 'openai' ? 'https://api.openai.com/v1' : '';
     if (model) model.placeholder = p === 'anthropic' ? 'claude-sonnet-4-6' : p === 'openai' ? 'gpt-4o' : '';
+  };
+
+  AG.fastProviderChanged = function () {
+    const fp = ($('agFastProvider') || {}).value || ($('agProvider') || {}).value || '';
+    const url = $('agFastBaseUrl');
+    const model = $('agFastModel');
+    if (url) url.placeholder = fp === 'anthropic' ? 'https://api.anthropic.com/v1' : fp === 'openai' ? 'http://localhost:11434/v1' : '';
+    if (model) model.placeholder = fp === 'anthropic' ? 'claude-haiku-4-5' : fp === 'openai' ? 'qwen2.5:7b' : ($('agModel') || {}).value || '';
   };
 
   AG.resetSoul = async function () {
@@ -944,6 +1001,9 @@
       provider: $('agProvider').value,
       base_url: $('agBaseUrl').value.trim(),
       model: $('agModel').value.trim(),
+      fast_provider: $('agFastProvider').value,
+      fast_base_url: $('agFastBaseUrl').value.trim(),
+      fast_model: $('agFastModel').value.trim(),
       approval: (document.querySelector('input[name="agAppr"]:checked') || {}).value || 'ask',
       soul: $('agSoul').value,
       triage_enabled: $('agTriageEnabled').checked,
@@ -953,13 +1013,15 @@
     };
     const key = $('agKey').value;
     if (key !== '') payload.api_key = key; // empty keeps the stored key
+    const fastKey = $('agFastKey').value;
+    if (fastKey !== '') payload.fast_api_key = fastKey; // empty keeps the stored key
     const r = await post('/api/agent/settings', payload);
     if (r.ok) { showToast(t('ag_s_saved'), 'success'); await refreshEnabled(); await AG.loadSettings(); return ''; }
     showToast(r.data.error || 'error', 'error');
     return r.data.error || 'error';
   };
 
-  AG.testConn = async function () {
+  AG.testConn = async function (target) {
     const before = $('agTestResult');
     if (before) before.innerHTML = SP.html(t('ag_s_testing'));
     const err = await AG.saveSettings();
@@ -968,7 +1030,7 @@
     if (err) { out.innerHTML = `<span style="color:var(--danger)">${esc(err)}</span>`; return; }
     let r;
     try {
-      r = await post('/api/agent/test');
+      r = await post('/api/agent/test', target ? { target } : {});
     } catch (e) {
       out.innerHTML = `<span style="color:var(--danger)">${esc(e.message)}</span>`;
       return;
