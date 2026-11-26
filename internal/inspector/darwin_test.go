@@ -589,8 +589,8 @@ func TestBatchCommandsKeepPrivateIPSectionLast(t *testing.T) {
 	// scrapeSystemMetrics reads the private IPv4 list from section 20; a missing trailing separator
 	// would silently drop it (and put ifconfig output in the top-swap slot instead).
 	for name, cmd := range map[string]string{"linux": LinuxSystemMetricsBatchCmd, "darwin": DarwinSystemMetricsBatchCmd} {
-		if got := strings.Count(cmd, `echo "---"`); got != 20 {
-			t.Errorf("%s batch command has %d separators, want 20 (21 sections)", name, got)
+		if got := strings.Count(cmd, `echo "---"`); got != 21 {
+			t.Errorf("%s batch command has %d separators, want 21 (22 sections)", name, got)
 		}
 		// Parse only: the macOS branch cannot run here, but a quoting mistake still fails here.
 		if err := exec.Command("sh", "-n", "-c", cmd).Run(); err != nil {

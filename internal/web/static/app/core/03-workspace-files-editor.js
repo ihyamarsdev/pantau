@@ -13,6 +13,66 @@ import { renderNetDiagTab, netDiagPrivateIPs } from './07-netdiag-compare.js';
 import { loadSystemdTab, openDockerRunForm, openDockerRenameForm, dockerConsole, openDockerInspect, loadDockerInspect, renderDockerImages, openDockerPullForm, openDockerVolumeForm, dockerVolumeRemove, openDockerNetworkForm, openDockerConnectForm, dockerNetworkRemove, renderDockerStacks, dockerFloatingMenu, openDockerStackForm, renderDockerSystem, dockerPrune } from './08-metrics-systemd-docker.js';
 import { openHostPackageUpgradePreview, pkgAction, openPkgInstallModal } from './10-bulk-pkg.js';
 
+function formatHostCapabilityBadge(host) {
+  if (!host || !host.os_profile) return { text: '', title: '' };
+  let prof = host.os_profile;
+  if (typeof prof === 'string') {
+    try { prof = JSON.parse(prof); } catch (_) { return { text: '', title: '' }; }
+  }
+  if (!prof || typeof prof !== 'object') return { text: '', title: '' };
+
+  const distroMap = {
+    ubuntu: 'Ubuntu',
+    debian: 'Debian',
+    rhel: 'RHEL',
+    alpine: 'Alpine',
+    arch: 'Arch',
+    macos: 'macOS',
+    linux: 'Linux',
+  };
+  const initMap = {
+    systemd: 'systemd',
+    openrc: 'OpenRC',
+    launchd: 'launchd',
+    sysv: 'SysV',
+  };
+  const shellMap = {
+    gnu: 'GNU',
+    busybox: 'BusyBox',
+    bsd: 'BSD',
+  };
+
+  const parts = [];
+  const d = distroMap[(prof.distro || '').toLowerCase()] || prof.distro || distroMap[(prof.os_family || '').toLowerCase()] || '';
+  if (d) parts.push(d);
+  const init = initMap[(prof.init_system || '').toLowerCase()] || '';
+  if (init) parts.push(init);
+  if (prof.pkg_manager && prof.pkg_manager !== 'none') parts.push(prof.pkg_manager);
+  const sh = shellMap[(prof.shell_flavor || '').toLowerCase()] || prof.shell_flavor || '';
+  if (sh) parts.push(sh);
+
+  const sudoNote = prof.has_sudo_nopasswd ? 'sudo -n: ready' : 'sudo -n: unavailable';
+  return {
+    text: parts.join(' • '),
+    title: parts.length ? `${parts.join(' • ')} (${sudoNote})` : '',
+  };
+}
+
+function renderHostCapabilityBadge(host) {
+  const el = document.getElementById('detailHostCapBadge');
+  if (!el) return;
+  const { text, title } = formatHostCapabilityBadge(host);
+  if (!text) {
+    el.style.display = 'none';
+    el.innerText = '';
+    el.removeAttribute('title');
+    return;
+  }
+  el.innerText = text;
+  el.title = title;
+  el.style.display = '';
+}
+
 async function openHostDetail(id) {
   // Smart Resume: restore existing minimized session if present (ADR-0026)
   const existingSession = S.workspaceSessions.find(s => s.type === 'host' && s.hostId === id);
@@ -36,6 +96,7 @@ async function openHostDetail(id) {
   badge.className = 'badge badge-' + S.currentHost.status;
   const statusStr = S.currentHost.status || 'unknown';
   badge.innerText = statusStr.charAt(0).toUpperCase() + statusStr.slice(1);
+  renderHostCapabilityBadge(S.currentHost);
   openModal('hostDetailModal');
   applyHostDetailMaximizeState();
   const targetTab = getHostActiveTab(S.currentHost.id);
@@ -4087,6 +4148,7 @@ async function restoreWorkspaceSession(sessionId) {
     const badge = document.getElementById('detailHostBadge');
     badge.className = 'badge badge-' + S.currentHost.status;
     badge.innerText = S.currentHost.status;
+    renderHostCapabilityBadge(S.currentHost);
     openModal('hostDetailModal');
     S.currentTab = session.tab || 'overview';
     switchTab(S.currentTab);

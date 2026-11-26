@@ -2352,6 +2352,16 @@ header {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.badge-os-cap {
+  background: var(--surface-2);
+  border: 1px solid var(--card-border);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  white-space: nowrap;
+}
 .host-detail-actions {
   display: flex;
   align-items: center;
@@ -5547,6 +5557,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
       <div class="host-detail-title-group">
         <h3 id="detailHostName" class="host-detail-name">Host</h3>
         <span id="detailHostBadge" class="badge">UNKNOWN</span>
+        <span id="detailHostCapBadge" class="badge badge-os-cap" style="display: none;"></span>
         <span id="detailHostSubtitle" class="host-detail-subtitle"></span>
         <button class="btn btn-icon btn-sm" id="inspectBtnModal" onclick="inspectHost(currentHost ? currentHost.id : null, event)" title="Run Inspection (Refresh)" data-i18n-title="btn_inspect_title">
           <svg class="icon icon-sm"><use href="#i-refresh-cw"/></svg>

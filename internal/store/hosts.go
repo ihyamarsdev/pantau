@@ -74,6 +74,29 @@ type Host struct {
 	GeoLon            float64 `json:"geo_lon"`
 	GeoRegion         string  `json:"geo_region"`
 	GeoLabel          string  `json:"geo_label"`
+	OSProfile         string  `json:"os_profile"` // JSON serialized OSCapabilityProfile
+}
+
+// OSCapabilityProfile stores structured OS and toolchain capabilities detected during inspection.
+type OSCapabilityProfile struct {
+	OSFamily        string `json:"os_family"`
+	Distro          string `json:"distro"`
+	InitSystem      string `json:"init_system"`
+	PkgManager      string `json:"pkg_manager"`
+	ShellFlavor     string `json:"shell_flavor"`
+	HasSudoNopasswd bool   `json:"has_sudo_nopasswd"`
+}
+
+// CapabilityProfile decodes the host's stored OS capability profile JSON.
+func (h *Host) CapabilityProfile() (OSCapabilityProfile, bool) {
+	if h == nil || strings.TrimSpace(h.OSProfile) == "" {
+		return OSCapabilityProfile{}, false
+	}
+	var p OSCapabilityProfile
+	if err := json.Unmarshal([]byte(h.OSProfile), &p); err != nil {
+		return OSCapabilityProfile{}, false
+	}
+	return p, true
 }
 
 // PrivateIPList returns the host's stored private IPv4 addresses, primary first.
@@ -121,7 +144,8 @@ const hostSelectCols = `SELECT id, name, host, port, user, COALESCE(custom_key,'
 	COALESCE(last_duration_ms, 0), COALESCE(commission_date, ''), COALESCE(bios_date, ''), COALESCE(os_install_epoch, 0),
 	COALESCE(top_cpu_processes, ''), COALESCE(top_ram_processes, ''), COALESCE(top_swap_processes, ''),
 	COALESCE(kube_cluster_id, ''), COALESCE(kube_mode, 'full'), COALESCE(network_id, 0),
-	COALESCE(geo_lat, 0), COALESCE(geo_lon, 0), COALESCE(geo_region, ''), COALESCE(geo_label, '')
+	COALESCE(geo_lat, 0), COALESCE(geo_lon, 0), COALESCE(geo_region, ''), COALESCE(geo_label, ''),
+	COALESCE(os_profile, '')
 	FROM hosts `
 
 func scanHost(s rowScanner) (*Host, error) {
@@ -138,7 +162,8 @@ func scanHost(s rowScanner) (*Host, error) {
 		&h.LastDurationMs, &h.CommissionDate, &h.BIOSDate, &h.OSInstallEpoch,
 		&h.TopCPUProcesses, &h.TopRAMProcesses, &h.TopSwapProcesses,
 		&h.KubeClusterID, &h.KubeMode, &h.NetworkID,
-		&h.GeoLat, &h.GeoLon, &h.GeoRegion, &h.GeoLabel)
+		&h.GeoLat, &h.GeoLon, &h.GeoRegion, &h.GeoLabel,
+		&h.OSProfile)
 	if err != nil {
 		return nil, err
 	}
@@ -299,13 +324,13 @@ func (d *DB) UpdateHostInspection(h *Host) error {
 	if h.InternetOnline {
 		onlineInt = 1
 	}
-	_, err := d.Exec(`UPDATE hosts SET status=?, os_info=?, kernel=?, uptime=?, cpu_load=?, ram_used_bytes=?, ram_total_bytes=?, disk_used_bytes=?, disk_total_bytes=?, lifecycle_score=?, lifecycle_notes=?, lifecycle_breakdown=?, last_inspected=?, net_rx_bytes=?, net_tx_bytes=?, net_rx_speed_bps=?, net_tx_speed_bps=?, disk_read_bytes=?, disk_write_bytes=?, disk_read_speed_bps=?, disk_write_speed_bps=?, internet_online=?, internet_latency_ms=?, public_ip=?, private_ips=?, active_conn_count=?, failed_logins_count=?, top_connections=?, listening_ports=?, cpu_cores=?, hardware_model=?, swap_used_bytes=?, swap_total_bytes=?, last_duration_ms=?, bios_date=?, os_install_epoch=?, top_cpu_processes=?, top_ram_processes=?, top_swap_processes=? WHERE id=?`,
+	_, err := d.Exec(`UPDATE hosts SET status=?, os_info=?, kernel=?, uptime=?, cpu_load=?, ram_used_bytes=?, ram_total_bytes=?, disk_used_bytes=?, disk_total_bytes=?, lifecycle_score=?, lifecycle_notes=?, lifecycle_breakdown=?, last_inspected=?, net_rx_bytes=?, net_tx_bytes=?, net_rx_speed_bps=?, net_tx_speed_bps=?, disk_read_bytes=?, disk_write_bytes=?, disk_read_speed_bps=?, disk_write_speed_bps=?, internet_online=?, internet_latency_ms=?, public_ip=?, private_ips=?, active_conn_count=?, failed_logins_count=?, top_connections=?, listening_ports=?, cpu_cores=?, hardware_model=?, swap_used_bytes=?, swap_total_bytes=?, last_duration_ms=?, bios_date=?, os_install_epoch=?, top_cpu_processes=?, top_ram_processes=?, top_swap_processes=?, os_profile=? WHERE id=?`,
 		h.Status, h.OSInfo, h.Kernel, h.Uptime, h.CPULoad, h.RAMUsedBytes, h.RAMTotalBytes, h.DiskUsedBytes, h.DiskTotalBytes, h.LifecycleScore, h.LifecycleNotes, h.LifecycleBreakdown, now,
 		h.NetRxBytes, h.NetTxBytes, h.NetRxSpeedBps, h.NetTxSpeedBps,
 		h.DiskReadBytes, h.DiskWriteBytes, h.DiskReadSpeedBps, h.DiskWriteSpeedBps,
 		onlineInt, h.InternetLatencyMs, h.PublicIP, h.PrivateIPs, h.ActiveConnCount, h.FailedLoginsCount, h.TopConnections, h.ListeningPorts,
 		h.CPUCores, h.HardwareModel, h.SwapUsedBytes, h.SwapTotalBytes, h.LastDurationMs, h.BIOSDate, h.OSInstallEpoch,
-		h.TopCPUProcesses, h.TopRAMProcesses, h.TopSwapProcesses,
+		h.TopCPUProcesses, h.TopRAMProcesses, h.TopSwapProcesses, h.OSProfile,
 		h.ID)
 	return err
 }

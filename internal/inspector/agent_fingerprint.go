@@ -18,15 +18,19 @@ import (
 
 // HostFingerprint is the compact execution context of one host.
 type HostFingerprint struct {
-	OSFamily       string // linux | darwin
-	Distro         string // raw OSInfo, e.g. "Ubuntu 22.04 LTS", "macOS 26.2 (Tahoe)"
-	Arch           string // x86_64 | arm64 | aarch64 | ?
-	InitSystem     string // systemd | launchd | openrc | sysv | ?
-	PackageManager string // apt | dnf | yum | pacman | apk | brew | softwareupdate | ?
-	SudoCapability string // how elevation works on Pantau-managed hosts (ADR 0037)
-	NetworkID      int64  // bound VPN network, 0 = direct
-	NetworkName    string
-	NetworkState   string // direct | up | down | error | starting | unknown
+	OSFamily        string // linux | darwin
+	Distro          string // raw OSInfo, e.g. "Ubuntu 22.04 LTS", "macOS 26.2 (Tahoe)"
+	DistroSlug      string // normalized: ubuntu | debian | rhel | alpine | arch | macos
+	Arch            string // x86_64 | arm64 | aarch64 | ?
+	InitSystem      string // systemd | launchd | openrc | sysv | none | ?
+	PackageManager  string // apt | dnf | yum | pacman | apk | brew | none | ?
+	ShellFlavor     string // gnu | busybox | bsd
+	HasSudoNopasswd bool
+	SudoCapability  string // how elevation works on Pantau-managed hosts (ADR 0037)
+	NetworkID       int64  // bound VPN network, 0 = direct
+	NetworkName     string
+	NetworkState    string // direct | up | down | error | starting | unknown
+	OSProfile       *store.OSCapabilityProfile
 }
 
 // vpnDownError is a fail-closed diagnostic for a host whose bound VPN path is down (ADR 0077).
@@ -74,7 +78,7 @@ func (ins *Inspector) checkVPNDown(hostID int64) error {
 
 // HostFingerprint reads the host's stored metadata and derives the execution context. It never dials.
 func (ins *Inspector) HostFingerprint(hostID int64) (HostFingerprint, error) {
-	if ins.db == nil {
+	if ins == nil || ins.db == nil {
 		return HostFingerprint{}, fmt.Errorf("host metadata is unavailable")
 	}
 	h, err := ins.db.GetHost(hostID)
@@ -119,6 +123,42 @@ func fingerprintFromHost(db *store.DB, h *store.Host) HostFingerprint {
 	fp.Arch = archFromMetadata(h.HardwareModel, h.OSInfo)
 	fp.InitSystem = initFromFamily(fp.OSFamily, scanFamily, osLower)
 	fp.PackageManager = normalizePackageManager(pkg, scanFamily, fp.OSFamily)
+	fp.ShellFlavor = fallbackShellFlavor(fp.OSFamily, detectDistroSlug(fp.OSFamily, h.OSInfo))
+	fp.DistroSlug = detectDistroSlug(fp.OSFamily, h.OSInfo)
+
+	if prof, ok := h.CapabilityProfile(); ok {
+		if prof.OSFamily != "" {
+			fp.OSFamily = prof.OSFamily
+		}
+		if prof.Distro != "" {
+			fp.DistroSlug = prof.Distro
+		}
+		if prof.InitSystem != "" {
+			fp.InitSystem = prof.InitSystem
+		}
+		if prof.PkgManager != "" {
+			fp.PackageManager = prof.PkgManager
+		}
+		if prof.ShellFlavor != "" {
+			fp.ShellFlavor = prof.ShellFlavor
+		}
+		fp.HasSudoNopasswd = prof.HasSudoNopasswd
+		if !prof.HasSudoNopasswd {
+			fp.SudoCapability = "none (sudo -n unavailable)"
+		}
+		fp.OSProfile = &prof
+	} else {
+		derived := store.OSCapabilityProfile{
+			OSFamily:        fp.OSFamily,
+			Distro:          fp.DistroSlug,
+			InitSystem:      fp.InitSystem,
+			PkgManager:      fp.PackageManager,
+			ShellFlavor:     fp.ShellFlavor,
+			HasSudoNopasswd: true,
+		}
+		fp.HasSudoNopasswd = true
+		fp.OSProfile = &derived
+	}
 
 	if h.NetworkID == 0 {
 		fp.NetworkState = "direct"
@@ -222,9 +262,9 @@ func FormatHostFingerprint(fp HostFingerprint) string {
 	if fp.NetworkID != 0 && fp.NetworkName != "" && net != "direct" {
 		net = fp.NetworkName + ":" + net
 	}
-	line := fmt.Sprintf("os=%s distro=%s arch=%s init=%s pkg=%s sudo=%s net=%s",
+	line := fmt.Sprintf("os=%s distro=%s arch=%s init=%s pkg=%s shell=%s sudo=%s net=%s",
 		orUnknown(fp.OSFamily), distro, orUnknown(fp.Arch), orUnknown(fp.InitSystem),
-		orUnknown(fp.PackageManager), orUnknown(fp.SudoCapability), net)
+		orUnknown(fp.PackageManager), orUnknown(fp.ShellFlavor), orUnknown(fp.SudoCapability), net)
 	if net == "down" || strings.HasSuffix(net, ":down") || net == "error" || strings.HasSuffix(net, ":error") {
 		line += " [VPN DOWN: do not SSH; ask the operator to bring the path up]"
 	}

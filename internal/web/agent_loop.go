@@ -215,7 +215,7 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 	sse := newAgentSSE(w)
 	// The system prompt is rebuilt every turn and never stored in the history. A host fingerprint gives the
 	// model OS-correct execution context before it writes any shell command (ADR 0086).
-	system := c.Soul + "\n\n" + s.agentMemoryPrompt(message) + "\n" + s.agentFingerprintPrompt(message)
+	system := c.Soul + "\n\n" + s.agentMemoryPrompt(message) + "\n" + s.agentFingerprintPrompt(message, threadID)
 
 	// A long text-only exchange never reaches a tool batch, so the history is compacted here too.
 	if lastTokens > 0 && lastTokens+len(message)/3 > c.CompactTokens {

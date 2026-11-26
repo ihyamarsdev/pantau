@@ -125,6 +125,16 @@ func (ins *Inspector) scrapeSystemMetrics(h *store.Host, runner sshrunner.Runner
 		h.PrivateIPs = parsePrivateIPs(sections[20])
 	}
 
+	// OS Capability Profile (section 22 when present; falls back to kernel/os-release sections).
+	var osReleaseSec, capSec string
+	if len(sections) >= 2 {
+		osReleaseSec = sections[1]
+	}
+	if len(sections) >= 22 {
+		capSec = sections[21]
+	}
+	h.OSProfile = MarshalOSCapabilityProfile(ParseOSCapabilityProfile(osReleaseSec, h.Kernel, capSec))
+
 	var diskStatsSec string
 	if len(sections) >= 17 {
 		diskStatsSec = sections[16]

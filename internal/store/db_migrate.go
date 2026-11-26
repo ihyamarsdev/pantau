@@ -92,7 +92,8 @@ func (d *DB) migrate() error {
 		geo_lat REAL DEFAULT 0,
 		geo_lon REAL DEFAULT 0,
 		geo_region TEXT DEFAULT '',
-		geo_label TEXT DEFAULT ''
+		geo_label TEXT DEFAULT '',
+		os_profile TEXT DEFAULT ''
 	);
 
 	-- 3D Globe Network Radar (ADR 0090): offline-safe GeoIP cache with 30-day TTL.
@@ -770,6 +771,7 @@ func (d *DB) migrate() error {
 	_ = d.alterAddColumn("hosts", "geo_lon", "REAL DEFAULT 0")
 	_ = d.alterAddColumn("hosts", "geo_label", "TEXT DEFAULT ''")
 	_ = d.alterAddColumn("hosts", "geo_region", "TEXT DEFAULT ''")
+	_ = d.alterAddColumn("hosts", "os_profile", "TEXT DEFAULT ''")
 	_ = d.alterAddColumn("geoip_cache", "region", "TEXT NOT NULL DEFAULT ''")
 	_, _ = d.Exec(`CREATE INDEX IF NOT EXISTS idx_hosts_network ON hosts(network_id)`)
 	_ = d.alterAddColumn("vpn_networks", "identity", "BLOB")
