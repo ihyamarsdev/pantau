@@ -440,6 +440,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/kube/clusters", s.authMiddleware(s.handleKubeClusters))
 	s.mux.HandleFunc("/api/kube/clusters/", s.authMiddleware(s.handleKubeClusterRoute))
 	s.mux.HandleFunc("/api/kube/host-clusters/", s.authMiddleware(s.handleKubeHostCluster))
+	// kubectl CLI manager: the kubectl External Cluster operations run with
+	s.mux.HandleFunc("/api/kube/cli/update-check", s.authMiddleware(s.handleKubeCliUpdateCheck))
+	s.mux.HandleFunc("/api/kube/cli/install", s.authMiddleware(s.handleKubeCliInstall))
+	s.mux.HandleFunc("/api/kube/cli/switch", s.authMiddleware(s.handleKubeCliSwitch))
+	s.mux.HandleFunc("/api/kube/cli/versions/", s.authMiddleware(s.handleKubeCliVersion))
 	s.mux.HandleFunc("/api/cloudflare/accounts", s.authMiddleware(s.handleCloudflareAccounts))
 	s.mux.HandleFunc("/api/cloudflare/accounts/", s.authMiddleware(s.handleCloudflareAccountRoute))
 	s.mux.HandleFunc("/api/dockerhub/", s.authMiddleware(s.handleDockerHub))
