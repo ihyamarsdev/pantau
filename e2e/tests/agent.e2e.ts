@@ -85,10 +85,11 @@ async function startFakeLLM(toolCalls = 1, calls?: ScriptedCall[]): Promise<Fake
 
 type PageGlobals = {
   openSettingsModal(tab: string): void;
+  openHostDetail(id: number): void;
   closeModal(id: string): void;
   switchSideNav(section: string): void;
   toggleActivityConsole(f: boolean): void;
-  AG: { init(): void; newChat(): void };
+  AG: { init(): void; newChat(): void; toggle(f?: boolean): void; toggleDock(f?: boolean): void };
 };
 
 test('agent: settings configure a provider, the chat streams a tool, and an exec waits for approval', async ({ app, screen, browser }) => {
@@ -655,5 +656,77 @@ test('agent: the host fingerprint is injected into the system prompt when a host
   } finally {
     await llm.close();
     await deleteHosts(browser, ['e2e-fingerprint']);
+  }
+});
+
+test('agent: dockable side-panel toggle persists mode and context pill/chips follow active resource', async ({ app, screen, browser }) => {
+  const llm = await startFakeLLM(0);
+  try {
+    await app.open('/');
+    await initApp(screen, browser);
+
+    const hostName = 'e2e-dock-ctx';
+    llm.hostId = (await browser.evaluate(async (name) => {
+      const h = await (await fetch('/api/hosts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, host: '127.0.0.1', port: 1, user: 'x' }) })).json();
+      return h.id as number;
+    }, hostName)) as number;
+
+    await browser.evaluate(async (base) => {
+      localStorage.removeItem('pantau_agent_mode');
+      localStorage.removeItem('pantau_agent_dock_width');
+      await fetch('/api/agent/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true, provider: 'openai', base_url: base, api_key: 'k-test', model: 'gpt-4o', approval: 'ask' }) });
+      const g = window as unknown as PageGlobals;
+      g.AG.init();
+      g.AG.newChat();
+      return null;
+    }, llm.url);
+
+    // Open in floating mode first, then toggle to Docked Side-Panel.
+    await browser.locator('#agentFab').click();
+    await expect(browser.locator('#agentPanel')).toBeVisible();
+    const initDocked = await browser.evaluate(() => document.getElementById('agentPanel')!.classList.contains('ag-docked'));
+    expect(initDocked).toBe(false);
+
+    await browser.locator('#agentDockToggle').click();
+    expect(await browser.evaluate(() => document.getElementById('agentPanel')!.classList.contains('ag-docked'))).toBe(true);
+    expect(await browser.evaluate(() => document.body.classList.contains('ag-docked-open'))).toBe(true);
+    await expect(browser.locator('#agentResizer')).toBeVisible();
+    const savedMode = await browser.evaluate(() => localStorage.getItem('pantau_agent_mode'));
+    expect(savedMode).toBe('docked');
+
+    // Context pill starts at Fleet on Hosts dashboard.
+    await expect(browser.locator('#agentCtxPill')).toContainText('Fleet');
+
+    // Switching to Terraform updates context pill and shows Analyze Drift/Plan chip.
+    await browser.evaluate(() => { (window as unknown as PageGlobals).switchSideNav('terraform'); return null; });
+    await expect(browser.locator('#agentCtxPill')).toContainText('TF', { timeout: 5000 });
+    await expect(browser.locator('#agentChips')).toContainText('Analyze Drift/Plan');
+
+    // Switching to Ansible updates context pill to Ansible.
+    await browser.evaluate(() => { (window as unknown as PageGlobals).switchSideNav('ansible'); return null; });
+    await expect(browser.locator('#agentCtxPill')).toContainText('Ansible', { timeout: 5000 });
+
+    // Opening Host Detail updates context pill to Host: <name> and clicking a quick chip sends to LLM.
+    await browser.evaluate((id) => {
+      const g = window as unknown as PageGlobals;
+      g.switchSideNav('hosts');
+      g.openHostDetail(id);
+      return null;
+    }, llm.hostId);
+    await expect(browser.locator('#agentCtxPill')).toContainText(`Host: ${hostName}`, { timeout: 5000 });
+    await expect(browser.locator('#agentChips')).toContainText('Explain Error');
+
+    await browser.locator('#agentChips .ag-chip').first().click();
+    await expect(browser.locator('#agentLog .ag-bot').last()).toBeVisible({ timeout: 60000 });
+
+    // Toggle back to Floating mode and verify persistence.
+    await browser.locator('#agentDockToggle').click();
+    expect(await browser.evaluate(() => document.getElementById('agentPanel')!.classList.contains('ag-docked'))).toBe(false);
+    expect(await browser.evaluate(() => document.body.classList.contains('ag-docked-open'))).toBe(false);
+    const floatMode = await browser.evaluate(() => localStorage.getItem('pantau_agent_mode'));
+    expect(floatMode).toBe('floating');
+  } finally {
+    await llm.close();
+    await deleteHosts(browser, ['e2e-dock-ctx']);
   }
 });

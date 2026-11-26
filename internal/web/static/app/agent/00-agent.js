@@ -5,13 +5,48 @@
   'use strict';
 
   const AG = (window.AG = {});
-  const S = { grants: [], enabled: false, open: false, expanded: false, busy: false, session: null, abort: null, approvals: [], timer: null, msgs: [], chatT0: 0, apprT0: 0, fab: null, drag: null, suppressToggle: false, wired: false, thread: 0, scope: '', hydrated: false };
   const SESSION_KEY = 'pantau_agent_session';
   const POS_KEY = 'pantau_agent_fab_pos';
+  const MODE_KEY = 'pantau_agent_mode';
+  const DOCK_W_KEY = 'pantau_agent_dock_width';
+  const DOCK_MIN_W = 300;
+  const DOCK_DEFAULT_W = 400;
+  function storedDockWidth() {
+    const raw = Number(localStorage.getItem(DOCK_W_KEY));
+    if (isFinite(raw) && raw >= DOCK_MIN_W) return Math.round(raw);
+    return DOCK_DEFAULT_W;
+  }
+  const S = {
+    grants: [], enabled: false, open: false, expanded: false, docked: localStorage.getItem(MODE_KEY) === 'docked',
+    dockWidth: storedDockWidth(), busy: false, session: null, abort: null, approvals: [], timer: null,
+    msgs: [], chatT0: 0, apprT0: 0, fab: null, drag: null, suppressToggle: false, wired: false,
+    thread: 0, scope: '', hydrated: false, ctx: null, ctxTimer: null, skipAutoLoadForScope: '', reflowTimer: null
+  };
 
   const I = {
     en: {
       ag_title: 'AI Agent', ag_ask: 'Ask agent', ag_new: 'New chat', ag_close: 'Close', ag_expand: 'Expand', ag_collapse: 'Collapse', ag_send: 'Send',
+      ag_dock: 'Dock to side', ag_float: 'Float window', ag_resize_panel: 'Resize AI panel',
+      ag_ctx_global: 'Fleet', ag_ctx_host: 'Host', ag_ctx_kube: 'K8s', ag_ctx_pod: 'Pod', ag_ctx_docker: 'Docker', ag_ctx_ansible: 'Ansible', ag_ctx_terraform: 'TF',
+      ag_chip_explain: 'Explain Error', ag_chip_diagnose: 'Diagnose Resource', ag_chip_fix: 'Suggest Safe Fix', ag_chip_drift: 'Analyze Drift/Plan',
+      ag_qp_host_explain: 'Check recent errors, failed systemd units, and active alerts on host "{target}" (id {id}). Explain the root cause.',
+      ag_qp_host_diag: 'Diagnose CPU, memory, disk, and top processes on host "{target}" (id {id}). Summarize any bottlenecks.',
+      ag_qp_host_fix: 'Review drift, alerts, and security findings on host "{target}" (id {id}) and suggest safe fixes. Do not change anything until I confirm.',
+      ag_qp_kube_explain: 'Investigate failing pods, crash loops, or warning events in {target}. Explain the root cause.',
+      ag_qp_kube_diag: 'Diagnose Kubernetes resource health, pod status, and node capacity for {target}.',
+      ag_qp_kube_fix: 'Propose safe remediation steps for issues in {target}. Do not apply changes until I confirm.',
+      ag_qp_docker_explain: 'Inspect logs and exit/health state of Docker {target} and explain any errors.',
+      ag_qp_docker_diag: 'Diagnose Docker resource usage, container state, and configuration for {target}.',
+      ag_qp_docker_fix: 'Suggest safe fixes for issues in Docker {target}. Do not change anything until I confirm.',
+      ag_qp_ansible_explain: 'Analyze the latest failed tasks or errors in Ansible "{target}" and explain the root cause.',
+      ag_qp_ansible_diag: 'Review Ansible playbook/inventory readiness and host connectivity for "{target}".',
+      ag_qp_ansible_fix: 'Suggest safe playbook or task fixes for Ansible "{target}". Do not modify or run anything until I confirm.',
+      ag_qp_tf_drift: 'Analyze the current Terraform plan, state, and drift for "{target}". Summarize proposed changes and risks.',
+      ag_qp_tf_explain: 'Explain recent Terraform plan/apply or state errors in "{target}".',
+      ag_qp_tf_fix: 'Suggest safe HCL or state remediation for Terraform "{target}". Do not apply anything until I confirm.',
+      ag_qp_global_diag: 'Summarize overall fleet health, degraded hosts, and resource pressure.',
+      ag_qp_global_explain: 'Summarize recent active alerts across the fleet and explain their likely root causes.',
+      ag_qp_global_fix: 'Prioritize safe remediation steps for current fleet issues. Do not change anything until I confirm.',
       ag_ph: 'Ask about a service, container, alert or security finding…',
       ag_empty: 'Pantau Operator can read host state and, with your approval, restart services and containers or change settings on your hosts.',
       ag_disabled: 'The AI agent is off. Enable it in Settings → AI Agent.', ag_open_settings: 'Open AI Agent settings',
@@ -40,6 +75,27 @@
     },
     id: {
       ag_title: 'Agen AI', ag_ask: 'Tanya agent', ag_new: 'Chat baru', ag_close: 'Tutup', ag_expand: 'Perluas', ag_collapse: 'Perkecil', ag_send: 'Kirim',
+      ag_dock: 'Dok ke sisi kanan', ag_float: 'Mode melayang', ag_resize_panel: 'Ubah ukuran panel AI',
+      ag_ctx_global: 'Fleet', ag_ctx_host: 'Host', ag_ctx_kube: 'K8s', ag_ctx_pod: 'Pod', ag_ctx_docker: 'Docker', ag_ctx_ansible: 'Ansible', ag_ctx_terraform: 'TF',
+      ag_chip_explain: 'Jelaskan Error', ag_chip_diagnose: 'Diagnosa Resource', ag_chip_fix: 'Saran Perbaikan Aman', ag_chip_drift: 'Analisis Drift/Plan',
+      ag_qp_host_explain: 'Periksa error terbaru, unit systemd yang gagal, dan alert aktif pada host "{target}" (id {id}). Jelaskan akar masalahnya.',
+      ag_qp_host_diag: 'Diagnosa CPU, memori, disk, dan proses teratas pada host "{target}" (id {id}). Ringkas bottleneck yang ditemukan.',
+      ag_qp_host_fix: 'Tinjau drift, alert, dan temuan keamanan pada host "{target}" (id {id}) lalu sarankan perbaikan aman. Jangan ubah apa pun sebelum saya setujui.',
+      ag_qp_kube_explain: 'Selidiki pod yang gagal, crash loop, atau event peringatan pada {target}. Jelaskan akar masalahnya.',
+      ag_qp_kube_diag: 'Diagnosa kesehatan resource Kubernetes, status pod, dan kapasitas node untuk {target}.',
+      ag_qp_kube_fix: 'Usulkan langkah perbaikan aman untuk masalah pada {target}. Jangan terapkan perubahan sebelum saya setujui.',
+      ag_qp_docker_explain: 'Periksa log dan status exit/health dari Docker {target} lalu jelaskan error yang ada.',
+      ag_qp_docker_diag: 'Diagnosa penggunaan resource, status container, dan konfigurasi Docker untuk {target}.',
+      ag_qp_docker_fix: 'Sarankan perbaikan aman untuk masalah pada Docker {target}. Jangan ubah apa pun sebelum saya setujui.',
+      ag_qp_ansible_explain: 'Analisis task yang gagal atau error terbaru di Ansible "{target}" dan jelaskan akar masalahnya.',
+      ag_qp_ansible_diag: 'Tinjau kesiapan playbook/inventory dan konektivitas host untuk Ansible "{target}".',
+      ag_qp_ansible_fix: 'Sarankan perbaikan aman pada playbook atau task Ansible "{target}". Jangan ubah atau jalankan apa pun sebelum saya setujui.',
+      ag_qp_tf_drift: 'Analisis Terraform plan, state, dan drift saat ini untuk "{target}". Ringkas perubahan yang diusulkan dan risikonya.',
+      ag_qp_tf_explain: 'Jelaskan error plan/apply atau state Terraform terbaru pada "{target}".',
+      ag_qp_tf_fix: 'Sarankan perbaikan aman untuk HCL atau state Terraform "{target}". Jangan apply apa pun sebelum saya setujui.',
+      ag_qp_global_diag: 'Ringkas kesehatan fleet secara keseluruhan, host yang degraded, dan tekanan resource.',
+      ag_qp_global_explain: 'Ringkas alert aktif terbaru di seluruh fleet dan jelaskan kemungkinan akar masalahnya.',
+      ag_qp_global_fix: 'Urutkan langkah perbaikan aman untuk masalah fleet saat ini. Jangan ubah apa pun sebelum saya setujui.',
       ag_ph: 'Tanyakan soal service, container, alert, atau temuan keamanan…',
       ag_empty: 'Pantau Operator bisa membaca kondisi host dan, dengan persetujuan Anda, me-restart service/container atau mengubah setting host.',
       ag_disabled: 'Agen AI nonaktif. Aktifkan di Pengaturan → AI Agent.', ag_open_settings: 'Buka pengaturan AI Agent',
@@ -86,26 +142,203 @@
     return id;
   }
 
-  /* ---------- stored history: the conversation comes back after a reload or a Pantau restart ---------- */
-  // The thread is grouped by the resource the chat was opened about: the open host, else the active page.
-  function scope() {
-    const h = typeof currentHost !== 'undefined' && currentHost ? currentHost : null;
-    if (h && h.id) return { scope_type: 'host', scope_id: Number(h.id) };
+  /* ---------- context detection & thread binding ---------- */
+  function isElOpen(id) {
+    const el = $(id);
+    return !!(el && !el.hidden && el.classList.contains('open'));
+  }
+
+  function cleanText(id) {
+    const el = $(id);
+    return el ? String(el.textContent || '').trim() : '';
+  }
+
+  function detectContext() {
+    const h = typeof currentHost !== 'undefined' && currentHost && currentHost.id ? currentHost : null;
     const page = typeof currentSideNav === 'string' ? currentSideNav : '';
-    if (page === 'kube') return { scope_type: 'cluster', scope_id: 0 };
-    if (page === 'docker') return { scope_type: 'docker', scope_id: 0 };
-    if (page === 'ansible') return { scope_type: 'ansible', scope_id: 0 };
-    if (page === 'terraform') return { scope_type: 'terraform', scope_id: 0 };
-    return { scope_type: 'global', scope_id: 0 };
+    let ctx = null;
+
+    if (isElOpen('dockerInspectModal')) {
+      const name = cleanText('dockerInspectTitle') || 'container';
+      ctx = { type: 'docker', scope_type: h ? 'host' : 'docker', scope_id: h ? Number(h.id) : 0, icon: 'container', label: t('ag_ctx_docker') + ': ' + name, target: name };
+    } else if (isElOpen('dockerLogsModal')) {
+      const raw = cleanText('dockerLogsTitle');
+      const m = raw.match(/:\s*([^@]+)/);
+      const name = (m ? m[1] : raw).trim() || 'container';
+      ctx = { type: 'docker', scope_type: h ? 'host' : 'docker', scope_id: h ? Number(h.id) : 0, icon: 'container', label: t('ag_ctx_docker') + ': ' + name, target: name };
+    } else if (isElOpen('kubeLogsModal')) {
+      const pod = cleanText('kubeLogsTitle') || 'pod';
+      const kid = typeof selectedKubeHostId !== 'undefined' && selectedKubeHostId ? Number(selectedKubeHostId) : 0;
+      const st = kid < 0 ? 'cluster' : (kid > 0 ? 'host' : 'cluster');
+      const sid = kid < 0 ? -kid : (kid > 0 ? kid : 0);
+      ctx = { type: 'kube_pod', scope_type: st, scope_id: sid, icon: 'boxes', label: t('ag_ctx_pod') + ': ' + pod, target: pod };
+    } else if (isElOpen('hostDetailModal') && h) {
+      const name = h.name || ('#' + h.id);
+      if (typeof window.S !== 'undefined' && window.S && window.S.currentTab === 'docker') {
+        ctx = { type: 'docker', scope_type: 'host', scope_id: Number(h.id), icon: 'container', label: t('ag_ctx_docker') + ': ' + name, target: name };
+      } else {
+        ctx = { type: 'host', scope_type: 'host', scope_id: Number(h.id), icon: 'server', label: t('ag_ctx_host') + ': ' + name, target: name };
+      }
+    } else if (page === 'kube') {
+      const kid = typeof selectedKubeHostId !== 'undefined' && selectedKubeHostId ? Number(selectedKubeHostId) : 0;
+      let label = t('ag_ctx_kube') + ': Fleet';
+      let target = 'Kubernetes Fleet';
+      let st = 'cluster';
+      let sid = 0;
+      if (kid < 0) {
+        sid = -kid;
+        const cl = (typeof kubeClusters !== 'undefined' ? kubeClusters : []).find((c) => c.id === sid);
+        target = cl ? cl.name : ('Cluster #' + sid);
+        label = t('ag_ctx_kube') + ': ' + target;
+      } else if (kid > 0) {
+        st = 'host';
+        sid = kid;
+        const kh = (typeof allRawHosts !== 'undefined' ? allRawHosts : []).find((x) => Number(x.id) === sid);
+        target = kh ? kh.name : ('Host #' + sid);
+        label = t('ag_ctx_kube') + ': ' + target;
+      }
+      ctx = { type: 'kube', scope_type: st, scope_id: sid, icon: 'boxes', label, target };
+    } else if (page === 'docker') {
+      ctx = { type: 'docker', scope_type: 'docker', scope_id: 0, icon: 'container', label: t('ag_ctx_docker') + ': Fleet', target: 'Docker Fleet' };
+    } else if (page === 'ansible') {
+      const open = isElOpen('ansDrawerRoot');
+      const title = open ? cleanText('ansDrawerTitle') : '';
+      const target = title || 'Ansible';
+      ctx = { type: 'ansible', scope_type: 'ansible', scope_id: 0, icon: 'ansible', label: title ? t('ag_ctx_ansible') + ': ' + title : t('ag_ctx_ansible'), target };
+    } else if (page === 'terraform') {
+      const open = isElOpen('tfDrawerRoot');
+      const title = open ? cleanText('tfDrawerTitle') : '';
+      const target = title || 'Terraform';
+      ctx = { type: 'terraform', scope_type: 'terraform', scope_id: 0, icon: 'terraform', label: title ? t('ag_ctx_terraform') + ': ' + title : t('ag_ctx_terraform'), target };
+    } else {
+      ctx = { type: 'global', scope_type: 'global', scope_id: 0, icon: 'globe', label: t('ag_ctx_global'), target: 'Fleet' };
+    }
+    ctx.sig = [ctx.type, ctx.scope_type, ctx.scope_id, ctx.label].join('|');
+    return ctx;
+  }
+
+  function scope() {
+    const ctx = S.ctx || detectContext();
+    return { scope_type: ctx.scope_type, scope_id: ctx.scope_id };
+  }
+
+  function chipsForContext(ctx) {
+    const vars = { target: ctx.target, id: ctx.scope_id };
+    if (ctx.type === 'host') {
+      return [
+        { label: t('ag_chip_explain'), prompt: fill(t('ag_qp_host_explain'), vars) },
+        { label: t('ag_chip_diagnose'), prompt: fill(t('ag_qp_host_diag'), vars) },
+        { label: t('ag_chip_fix'), prompt: fill(t('ag_qp_host_fix'), vars) }
+      ];
+    }
+    if (ctx.type === 'kube' || ctx.type === 'kube_pod') {
+      return [
+        { label: t('ag_chip_explain'), prompt: fill(t('ag_qp_kube_explain'), vars) },
+        { label: t('ag_chip_diagnose'), prompt: fill(t('ag_qp_kube_diag'), vars) },
+        { label: t('ag_chip_fix'), prompt: fill(t('ag_qp_kube_fix'), vars) }
+      ];
+    }
+    if (ctx.type === 'docker') {
+      return [
+        { label: t('ag_chip_explain'), prompt: fill(t('ag_qp_docker_explain'), vars) },
+        { label: t('ag_chip_diagnose'), prompt: fill(t('ag_qp_docker_diag'), vars) },
+        { label: t('ag_chip_fix'), prompt: fill(t('ag_qp_docker_fix'), vars) }
+      ];
+    }
+    if (ctx.type === 'ansible') {
+      return [
+        { label: t('ag_chip_explain'), prompt: fill(t('ag_qp_ansible_explain'), vars) },
+        { label: t('ag_chip_diagnose'), prompt: fill(t('ag_qp_ansible_diag'), vars) },
+        { label: t('ag_chip_fix'), prompt: fill(t('ag_qp_ansible_fix'), vars) }
+      ];
+    }
+    if (ctx.type === 'terraform') {
+      return [
+        { label: t('ag_chip_drift'), prompt: fill(t('ag_qp_tf_drift'), vars) },
+        { label: t('ag_chip_explain'), prompt: fill(t('ag_qp_tf_explain'), vars) },
+        { label: t('ag_chip_fix'), prompt: fill(t('ag_qp_tf_fix'), vars) }
+      ];
+    }
+    return [
+      { label: t('ag_chip_diagnose'), prompt: fill(t('ag_qp_global_diag'), vars) },
+      { label: t('ag_chip_explain'), prompt: fill(t('ag_qp_global_explain'), vars) },
+      { label: t('ag_chip_fix'), prompt: fill(t('ag_qp_global_fix'), vars) }
+    ];
+  }
+
+  function renderContextBar() {
+    const bar = $('agentCtxBar'), pill = $('agentCtxPill'), chipsEl = $('agentChips');
+    if (!bar || !pill || !chipsEl) return;
+    const ctx = S.ctx || detectContext();
+    pill.innerHTML = `${svgIcon(ctx.icon || 'globe', 'icon-sm')} <span>${esc(ctx.label)}</span>`;
+    pill.title = ctx.label;
+    bar.style.display = S.enabled ? 'flex' : 'none';
+    const chips = chipsForContext(ctx);
+    chipsEl.innerHTML = chips.map((c, idx) =>
+      `<button type="button" class="ag-chip" data-chip-idx="${idx}" ${S.busy ? 'disabled' : ''}>${esc(c.label)}</button>`
+    ).join('');
+    chipsEl.querySelectorAll('.ag-chip').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const item = chips[Number(btn.dataset.chipIdx)];
+        if (item) AG.ask(item.prompt);
+      });
+    });
+  }
+
+  async function bindThreadForScope(scopeType, scopeID) {
+    const key = scopeType + ':' + scopeID;
+    S.scope = key;
+    const r = await api('/api/agent/threads?scope_type=' + encodeURIComponent(scopeType) + '&scope_id=' + Number(scopeID || 0)).catch(() => null);
+    if ((S.ctx ? S.ctx.scope_type + ':' + S.ctx.scope_id : '') !== key) return;
+    const th = r && r.ok ? (r.data.threads || [])[0] : null;
+    if (!th) {
+      S.thread = 0;
+      S.msgs = [];
+      renderLog();
+      return;
+    }
+    S.thread = th.id;
+    const d = await api('/api/agent/threads/' + th.id).catch(() => null);
+    if ((S.ctx ? S.ctx.scope_type + ':' + S.ctx.scope_id : '') !== key) return;
+    if (!d || !d.ok) return;
+    const restored = [];
+    for (const m of d.data.messages || []) {
+      if (m.role === 'user') restored.push({ role: 'user', text: m.content });
+      else if (m.role === 'assistant' && m.content) restored.push({ role: 'bot', text: m.content });
+      else if (m.role === 'tool') restored.push({ role: 'tool', text: (m.tool_name || 'tool'), status: m.is_error ? 'error' : 'done', id: m.tool_call_id });
+    }
+    S.msgs = restored;
+    renderLog();
+  }
+
+  function syncContext() {
+    const next = detectContext();
+    const prevScope = S.ctx ? (S.ctx.scope_type + ':' + S.ctx.scope_id) : '';
+    const changed = !S.ctx || S.ctx.sig !== next.sig;
+    if (!changed) return;
+    S.ctx = next;
+    renderContextBar();
+    const newScope = next.scope_type + ':' + next.scope_id;
+    if (S.enabled && !S.busy && prevScope && newScope !== prevScope) {
+      if (S.skipAutoLoadForScope !== newScope) {
+        S.skipAutoLoadForScope = '';
+        bindThreadForScope(next.scope_type, next.scope_id);
+      }
+    }
   }
 
   // Hydrate paints the stored conversation once per page load; a new chat skips it.
   async function hydrate() {
     if (S.hydrated) return;
     S.hydrated = true;
+    S.ctx = detectContext();
+    renderContextBar();
     const r = await api('/api/agent/threads?session=' + encodeURIComponent(S.session)).catch(() => null);
     const th = r && r.ok ? (r.data.threads || [])[0] : null;
-    if (!th) return;
+    if (!th) {
+      await bindThreadForScope(S.ctx.scope_type, S.ctx.scope_id);
+      return;
+    }
     S.thread = th.id;
     S.scope = th.scope_type + ':' + th.scope_id;
     const d = await api('/api/agent/threads/' + th.id).catch(() => null);
@@ -135,11 +368,17 @@
     root.innerHTML = `
       <button id="agentFab" type="button" title="${esc(t('ag_title'))}" aria-label="${esc(t('ag_title'))}" onclick="AG.toggle()">${svgIcon('bot')}<span class="ag-badge" id="agentBadge"></span></button>
       <div id="agentPanel" role="dialog" aria-label="${esc(t('ag_title'))}">
+        <div class="ag-resizer" id="agentResizer" role="separator" aria-orientation="vertical" aria-label="${esc(t('ag_resize_panel'))}"></div>
         <div class="ag-head">${svgIcon('bot', 'icon-sm')}<span>${esc(t('ag_title'))}</span><span class="ag-sp"></span>
           <button class="btn btn-sm btn-ghost" onclick="AG.newChat()">${esc(t('ag_new'))}</button>
+          <button class="btn btn-sm btn-icon btn-ghost" id="agentDockToggle" onclick="AG.toggleDock()"></button>
           <button class="btn btn-sm btn-icon btn-ghost" id="agentExpand" onclick="AG.expand()"></button>
           <button class="btn btn-sm btn-icon btn-ghost" aria-label="${esc(t('ag_close'))}" onclick="AG.toggle(false)">${svgIcon('x', 'icon-sm')}</button></div>
         <div class="ag-log" id="agentLog"></div>
+        <div class="ag-ctx-bar" id="agentCtxBar" style="display:none;">
+          <div class="ag-ctx-row"><span class="ag-ctx-pill" id="agentCtxPill"></span></div>
+          <div class="ag-chips" id="agentChips"></div>
+        </div>
         <form class="ag-form" onsubmit="AG.submit(event)">
           <textarea id="agentInput" rows="1" placeholder="${esc(t('ag_ph'))}" onkeydown="AG.key(event)"></textarea>
           <button class="btn btn-primary btn-sm" id="agentSend" type="submit">${svgIcon('send', 'icon-sm')}</button>
@@ -148,9 +387,12 @@
       <div id="agentApprovals"></div>`;
     while (root.firstChild) document.body.appendChild(root.firstChild);
     S.fab = storedPos() || defaultPos();
+    S.ctx = detectContext();
     renderLog();
+    renderContextBar();
     paintPanel();
     wirePlacement();
+    wireResizer();
   }
 
   function renderLog() {
@@ -178,25 +420,74 @@
     if (!logFrame) logFrame = requestAnimationFrame(() => { logFrame = 0; renderLog(); });
   }
 
+  function triggerLayoutReflow() {
+    try { window.dispatchEvent(new Event('resize')); } catch (_) {}
+    if (typeof window.refitActiveTab === 'function') {
+      try { window.refitActiveTab(); } catch (_) {}
+    }
+    if (window.codeEditor && typeof window.codeEditor.refresh === 'function') {
+      try { window.codeEditor.refresh(); } catch (_) {}
+    }
+    document.querySelectorAll('.CodeMirror').forEach((el) => {
+      if (el.CodeMirror && typeof el.CodeMirror.refresh === 'function') {
+        try { el.CodeMirror.refresh(); } catch (_) {}
+      }
+    });
+  }
+
+  function scheduleLayoutReflow() {
+    triggerLayoutReflow();
+    if (S.reflowTimer) clearTimeout(S.reflowTimer);
+    S.reflowTimer = setTimeout(() => {
+      S.reflowTimer = null;
+      triggerLayoutReflow();
+    }, 220);
+  }
+
   AG.toggle = function (force) {
     // A drag ends with a click on the bubble/header; that click must not toggle the chat.
     if (S.suppressToggle && force === undefined) { S.suppressToggle = false; return; }
     S.open = force === undefined ? !S.open : !!force;
+    if (S.open) syncContext();
     paintPanel();
+    scheduleLayoutReflow();
     if (S.open) setTimeout(() => $('agentInput') && $('agentInput').focus(), 30);
   };
 
-  // Panel classes and the expand button follow S, so a panel rebuilt by a language switch keeps its state.
+  AG.toggleDock = function (force) {
+    S.docked = force === undefined ? !S.docked : !!force;
+    localStorage.setItem(MODE_KEY, S.docked ? 'docked' : 'floating');
+    paintPanel();
+    scheduleLayoutReflow();
+  };
+
+  // Panel classes and the expand/dock buttons follow S, so a panel rebuilt by a language switch keeps its state.
   function paintPanel() {
     const panel = $('agentPanel');
     if (!panel) return;
+    const vw = document.documentElement.clientWidth || window.innerWidth;
+    const dockW = clampNum(S.dockWidth || DOCK_DEFAULT_W, DOCK_MIN_W, Math.max(DOCK_MIN_W, Math.floor(vw * 0.65)));
+    document.documentElement.style.setProperty('--agent-dock-width', dockW + 'px');
     panel.classList.toggle('open', S.open);
-    panel.classList.toggle('ag-expanded', S.expanded);
+    panel.classList.toggle('ag-docked', S.docked);
+    panel.classList.toggle('ag-expanded', !S.docked && S.expanded);
+    document.body.classList.toggle('ag-docked-open', !!(S.open && S.docked));
+    const dockBtn = $('agentDockToggle');
+    if (dockBtn) {
+      const dockLabel = t(S.docked ? 'ag_float' : 'ag_dock');
+      dockBtn.innerHTML = svgIcon(S.docked ? 'layers' : 'columns-2', 'icon-sm');
+      dockBtn.title = dockLabel;
+      dockBtn.setAttribute('aria-label', dockLabel);
+      dockBtn.setAttribute('aria-pressed', S.docked ? 'true' : 'false');
+    }
     const label = t(S.expanded ? 'ag_collapse' : 'ag_expand');
     const btn = $('agentExpand');
-    btn.innerHTML = svgIcon(S.expanded ? 'minimize-2' : 'maximize-2', 'icon-sm');
-    btn.title = label;
-    btn.setAttribute('aria-label', label);
+    if (btn) {
+      btn.style.display = S.docked ? 'none' : '';
+      btn.innerHTML = svgIcon(S.expanded ? 'minimize-2' : 'maximize-2', 'icon-sm');
+      btn.title = label;
+      btn.setAttribute('aria-label', label);
+    }
     applyLayout();
   }
 
@@ -236,6 +527,19 @@
     // so the two never overlap while the chat is open.
     const band = appr && S.open ? appr.offsetHeight : 0;
     const reserve = band ? band + GAP : 0;
+    if (S.docked) {
+      panel.style.maxHeight = '';
+      panel.style.left = '';
+      panel.style.top = '';
+      if (appr) {
+        const dockW = clampNum(S.dockWidth || DOCK_DEFAULT_W, DOCK_MIN_W, Math.max(DOCK_MIN_W, Math.floor(vw * 0.65)));
+        const ax = S.open ? clampNum(vw - dockW - GAP - aw, PAD, vw - aw - PAD) : clampNum(S.fab.x + FAB - aw, PAD, vw - aw - PAD);
+        const ay = S.open ? clampNum(vh - 36 - band - GAP, PAD, vh - band - PAD) : clampNum(S.fab.y - GAP - band, PAD, vh - band - PAD);
+        appr.style.left = Math.round(ax) + 'px';
+        appr.style.top = Math.round(ay) + 'px';
+      }
+      return;
+    }
     // Width/height from the target state (see #agentPanel in 00-agent.css), not the box: the box is mid-transition.
     const w = Math.min(S.expanded ? 960 : 420, vw - PAD * 2);
     const above = S.fab.y - GAP - PAD, below = vh - (S.fab.y + FAB) - GAP - PAD;
@@ -289,24 +593,63 @@
     handle.addEventListener('pointercancel', up);
   }
 
+  function wireResizer() {
+    const resizer = $('agentResizer');
+    const panel = $('agentPanel');
+    if (!resizer || !panel) return;
+    resizer.addEventListener('pointerdown', (e) => {
+      if (e.button > 0 || !S.docked) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const startX = e.clientX;
+      const startW = panel.getBoundingClientRect().width || S.dockWidth || DOCK_DEFAULT_W;
+      panel.classList.add('ag-resizing');
+      document.body.classList.add('ag-docked-resizing');
+      if (resizer.setPointerCapture) resizer.setPointerCapture(e.pointerId);
+      const move = (ev) => {
+        const vw = document.documentElement.clientWidth || window.innerWidth;
+        const maxW = Math.max(DOCK_MIN_W, Math.floor(vw * 0.65));
+        const w = clampNum(Math.round(startW + (startX - ev.clientX)), DOCK_MIN_W, maxW);
+        S.dockWidth = w;
+        document.documentElement.style.setProperty('--agent-dock-width', w + 'px');
+        applyLayout();
+        triggerLayoutReflow();
+      };
+      const up = () => {
+        resizer.removeEventListener('pointermove', move);
+        resizer.removeEventListener('pointerup', up);
+        resizer.removeEventListener('pointercancel', up);
+        panel.classList.remove('ag-resizing');
+        document.body.classList.remove('ag-docked-resizing');
+        localStorage.setItem(DOCK_W_KEY, String(S.dockWidth));
+        scheduleLayoutReflow();
+      };
+      resizer.addEventListener('pointermove', move);
+      resizer.addEventListener('pointerup', up);
+      resizer.addEventListener('pointercancel', up);
+    });
+  }
+
   function wirePlacement() {
     const fab = $('agentFab'), head = document.querySelector('#agentPanel .ag-head');
     fab.addEventListener('pointerdown', dragFrom);
     if (head) head.addEventListener('pointerdown', (e) => {
+      if (S.docked) return;
       if (e.target.closest && e.target.closest('button, a, input, textarea, select')) return;
       dragFrom(e);
     });
     if (S.wired) return;
     S.wired = true;
     window.addEventListener('resize', applyLayout);
-    // Click outside the widget closes the chat; Capture phase so page handlers that swallow events cannot keep it open.
+    // Click outside the widget closes the floating chat; docked side-panel stays open for split-view workflow.
     document.addEventListener('pointerdown', (e) => {
-      if (!S.open || !e.target.closest) return;
+      if (!S.open || S.docked || !e.target.closest) return;
       if (e.target.closest('#agentPanel, #agentFab, #agentApprovals')) return;
       AG.toggle(false);
     }, true);
+    document.addEventListener('click', () => { setTimeout(syncContext, 60); }, true);
     document.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape' || !S.open) return;
+      if (e.key !== 'Escape' || !S.open || S.docked) return;
       if (document.querySelector('.modal.open')) return; // the modal stack owns Escape while a modal is on top
       AG.toggle(false);
     });
@@ -318,7 +661,9 @@
     S.msgs = [];
     S.session = newSession();
     S.thread = 0;
-    S.scope = '';
+    const sc = scope();
+    S.scope = sc.scope_type + ':' + sc.scope_id;
+    S.skipAutoLoadForScope = S.scope;
     S.busy = false;
     setBusy(false);
     renderLog();
@@ -331,9 +676,11 @@
   function setBusy(b) {
     S.busy = b;
     const btn = $('agentSend');
-    if (!btn) return;
-    btn.innerHTML = b ? svgIcon('square', 'icon-sm') : svgIcon('send', 'icon-sm');
-    btn.title = b ? t('ag_stop') : t('ag_send');
+    if (btn) {
+      btn.innerHTML = b ? svgIcon('square', 'icon-sm') : svgIcon('send', 'icon-sm');
+      btn.title = b ? t('ag_stop') : t('ag_send');
+    }
+    document.querySelectorAll('#agentChips .ag-chip').forEach((c) => { c.disabled = !!b; });
   }
 
   AG.submit = function (e) {
@@ -363,11 +710,14 @@
     setBusy(true);
     S.abort = new AbortController();
     try {
+      S.skipAutoLoadForScope = '';
       const sc = scope(), key = sc.scope_type + ':' + sc.scope_id;
       const res = await fetch('/api/agent/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: S.abort.signal,
         body: JSON.stringify({ message: text, session_id: S.session, thread_id: S.scope === key ? S.thread : 0,
-          page: typeof currentSideNav === 'string' ? currentSideNav : '', host_id: sc.scope_type === 'host' ? sc.scope_id : 0 })
+          page: typeof currentSideNav === 'string' ? currentSideNav : '',
+          host_id: sc.scope_type === 'host' ? sc.scope_id : 0,
+          cluster_id: sc.scope_type === 'cluster' ? sc.scope_id : 0 })
       });
       // The server names the thread it used; the panel binds to it so the next turn continues it.
       const bound = Number(res.headers.get('X-Agent-Thread')) || 0;
@@ -483,8 +833,14 @@
     S.enabled = !!(r && r.ok && r.data.enabled);
     document.querySelectorAll('.ag-ask-btn').forEach((b) => { b.style.display = S.enabled ? '' : 'none'; });
     if (S.timer) { clearInterval(S.timer); S.timer = null; }
-    if (S.enabled) S.timer = setInterval(pollApprovals, 2500);
+    if (S.ctxTimer) { clearInterval(S.ctxTimer); S.ctxTimer = null; }
+    if (S.enabled) {
+      S.timer = setInterval(pollApprovals, 2500);
+      S.ctxTimer = setInterval(syncContext, 1000);
+    }
     if (!S.enabled) { AG.toggle(false); $('agentApprovals').innerHTML = ''; }
+    S.ctx = detectContext();
+    renderContextBar();
     renderLog();
     if (S.enabled) hydrate();
   }
