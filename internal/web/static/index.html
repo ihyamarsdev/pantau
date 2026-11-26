@@ -4020,6 +4020,9 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
             <button id="btnKubeDetectClusters" class="btn btn-sm header-btn" onclick="detectKubeClusters()" title="Detect clusters" data-i18n-title="kube_btn_detect_clusters" style="height:34px;display:inline-flex;align-items:center;gap:6px;">
               <svg class="icon icon-sm"><use href="#i-search"/></svg> <span data-i18n="kube_btn_detect_clusters">Detect clusters</span>
             </button>
+            <button id="btnKubeCliManager" class="btn btn-sm header-btn" onclick="openKubeCliModal()" title="kubectl CLI" data-i18n-title="kube_cli_btn" style="height:34px;display:inline-flex;align-items:center;gap:6px;">
+              <svg class="icon icon-sm"><use href="#i-terminal"/></svg> <span data-i18n="kube_cli_btn">kubectl CLI</span> <span id="kubeCliChip" class="badge" style="display:none;"></span>
+            </button>
             <button id="btnKubeRefresh" class="btn btn-sm header-btn" onclick="refreshKubeCurrentTab()" title="Refresh" data-i18n-title="refresh" style="height:34px;display:inline-flex;align-items:center;gap:6px;">
               <svg class="icon icon-sm"><use href="#i-refresh-cw"/></svg> <span data-i18n="refresh">Refresh</span>
             </button>
@@ -4343,6 +4346,56 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
     <div class="modal-footer">
       <button class="btn btn-sm" onclick="closeModal('kubeScaleModal')" data-i18n="cancel">Cancel</button>
       <button class="btn btn-sm btn-primary" id="kubeScaleSubmitBtn" onclick="submitKubeScale()"><span data-i18n="kube_btn_scale">Scale</span></button>
+    </div>
+  </div>
+</div>
+
+<div id="kubeCliModal" role="dialog" aria-modal="true" class="modal">
+  <div class="modal-content modal-dialog" style="max-width:640px;">
+    <div class="modal-header">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <svg class="icon icon-sm" style="color:var(--accent-text);"><use href="#i-terminal"/></svg>
+        <h3 style="font-size:var(--fs-md);margin:0;" data-i18n="kube_cli_title">kubectl CLI</h3>
+      </div>
+      <button aria-label="Close" title="Close" class="btn btn-icon btn-sm btn-ghost" onclick="closeModal('kubeCliModal')"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body" style="padding:16px 20px;display:flex;flex-direction:column;gap:18px;">
+      <div style="font-size:var(--fs-sm);color:var(--text-muted);" data-i18n="kube_cli_scope">This kubectl runs External Cluster operations (EKS, GKE, AKS, kubeconfig) and kubeconfig validation on the Pantau server. k3s and RKE2 hosts keep the kubectl of each host. Checking versions is read-only.</div>
+
+      <section style="display:flex;flex-direction:column;gap:10px;">
+        <h4 style="margin:0;font-size:var(--fs-sm);font-weight:600;" data-i18n="kube_cli_active">Active binary</h4>
+        <div id="kubeCliStatus" role="status" aria-live="polite" style="font-size:var(--fs-sm);"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-sm" id="kubeCliCheckBtn" onclick="checkKubeCli()" style="display:inline-flex;align-items:center;gap:6px;">
+            <svg class="icon icon-sm"><use href="#i-refresh-cw"/></svg> <span data-i18n="kube_cli_check">Check for updates</span>
+          </button>
+          <button class="btn btn-sm btn-primary" id="kubeCliUpdateBtn" onclick="installKubeCli('')" style="display:none;align-items:center;gap:6px;">
+            <svg class="icon icon-sm"><use href="#i-download"/></svg> <span id="kubeCliUpdateLabel"></span>
+          </button>
+        </div>
+      </section>
+
+      <section style="display:flex;flex-direction:column;gap:10px;">
+        <h4 style="margin:0;font-size:var(--fs-sm);font-weight:600;" data-i18n="kube_cli_switch">Switch version</h4>
+        <select id="kubeCliVersionSelect" class="form-input" style="width:100%;box-sizing:border-box;" onchange="document.getElementById('kubeCliVersionInput').value=this.value" aria-label="Pick a version"></select>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input type="text" id="kubeCliVersionInput" class="form-input" maxlength="20" spellcheck="false" placeholder="1.29.12" data-i18n-placeholder="kube_cli_custom_ph" aria-label="Version" style="flex:1;min-width:140px;" />
+          <button class="btn btn-sm btn-primary" id="kubeCliSwitchBtn" onclick="switchKubeCli()" data-i18n="kube_cli_apply">Install / Switch</button>
+        </div>
+      </section>
+
+      <section style="display:flex;flex-direction:column;gap:10px;">
+        <h4 style="margin:0;font-size:var(--fs-sm);font-weight:600;" data-i18n="kube_cli_cached">Cached versions</h4>
+        <div id="kubeCliVersionList" style="font-size:var(--fs-sm);"></div>
+        <div>
+          <button class="btn btn-sm" id="kubeCliSystemBtn" onclick="revertKubeCliToSystem()" data-i18n="kube_cli_use_system">Use system kubectl</button>
+        </div>
+      </section>
+
+      <pre id="kubeCliInstallLog" hidden style="margin:0;max-height:180px;overflow:auto;white-space:pre-wrap;font-family:var(--font-mono, monospace);font-size:var(--fs-xs);background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius-md);padding:10px;"></pre>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-sm" onclick="closeModal('kubeCliModal')" data-i18n="close">Close</button>
     </div>
   </div>
 </div>

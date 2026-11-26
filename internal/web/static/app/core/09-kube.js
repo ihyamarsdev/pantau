@@ -2212,4 +2212,270 @@ async function deleteKubeCluster(clusterHostId) {
   }
 }
 
-export { saveKubeWorkspaces, kubeApiBase, kubeWsParam, kubeHostClusterName, kubeTargetInfo, kubeSameTarget, renderKubeWorkspaces, closeKubeWorkspace, kubeProviderLabel, loadKubeClusters, handleKubeEnvelope, getSelectedKubeMode, updateKubeModeChip, findHostForKubeNode, detectKubeClusters, formatKubeMemory, kubeAge, kubeEmptyHtml, populateKubeHostSelect, updateKubeHostPickerBtn, toggleKubeHostPicker, closeKubeHostPicker, onKubeHostPickerBtnKeydown, onKubeHostPickerKeydown, updateKubePickerHighlight, renderKubeHostPickerList, pickKubeHost, onSelectKubeHost, loadKubeNamespaces, renderKubeRefreshStatus, switchKubeTab, onKubeNamespaceChange, refreshKubeCurrentTab, loadKubeTabData, kubeFetchTab, loadKubeNodes, loadKubeWorkloads, kubePodIsProblem, onKubePodsFilterChange, renderKubePodsTable, loadKubePods, loadKubeServices, onKubeEventsFilterChange, renderKubeEventsTable, loadKubeEvents, loadKubeGenericResource, openKubeGenericMenu, loadKubeApply, onKubeApplyYamlInput, clearKubeApply, submitKubeDiff, kubeBusy, kubeAction, kubeGetOutput, submitKubeApply, openKubeNodeMenu, openKubeWorkloadMenu, openKubePodMenu, openKubeServiceMenu, openKubeScaleModal, submitKubeScale, kubeDeletePod, kubeDescribe, promptKubeContainer, submitKubeContainerChoice, kubePodExec, stopKubeLogs, openKubeLogs, onKubeLogsParamChange, connectKubeLogsStream, copyKubeLogs, kubeAutoRefreshIntervalSec, stopKubeAutorefresh, restartKubeAutorefresh, openKubeYamlEditor, initKubeYamlEditor, onKubeYamlEditorInput, submitKubeYamlDiff, submitKubeYamlApply, setKubeLogsCount, appendKubeLogText, onKubeLogsFilterInput, openKubeWorkloadLogs, openKubeDrain, renderKubeDrainPreview, confirmKubeDrain, showToastDrainUncordon, setKubeClusterError, openKubeClusterModal, loadKubeClusterFile, loadKubeClusterContexts, onKubeClusterContextChange, submitKubeClusterModal, editKubeCurrentCluster, currentKubeHostClusterId, openKubeHostClusterModal, submitKubeHostClusterModal, deleteKubeCluster };
+/* kubectl CLI manager: the kubectl External Cluster operations run with. Checking versions only reads.
+ * Installing, switching, reverting and removing change the server's kubectl, so each one asks first. */
+const kubeCli = { data: null, busy: false };
+const KUBE_CLI_VERSION_RE = /^\d+\.\d+\.\d+$/;
+
+function openKubeCliModal() {
+  openModal('kubeCliModal');
+  checkKubeCli();
+}
+
+async function kubeCliRequest(method, url, body) {
+  const res = await fetch(url, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined,
+    credentials: 'same-origin',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+  return data;
+}
+
+// checkKubeCli reads the update check. A failed request is a failed check, never "up to date".
+async function checkKubeCli() {
+  if (kubeCli.busy) return;
+  kubeCli.busy = true;
+  renderKubeCli();
+  try {
+    kubeCli.data = await kubeCliRequest('GET', '/api/kube/cli/update-check');
+  } catch (e) {
+    kubeCli.data = { status: 'error', error: e.message, managed_versions: [], channels: [] };
+  } finally {
+    kubeCli.busy = false;
+    renderKubeCli();
+  }
+}
+
+function renderKubeCli() {
+  const busy = kubeCli.busy;
+  const d = kubeCli.data;
+  const chip = document.getElementById('kubeCliChip');
+  if (chip) {
+    const text = d && d.installed ? 'kubectl ' + d.installed : '';
+    chip.textContent = text;
+    chip.style.display = text ? '' : 'none';
+  }
+  const status = document.getElementById('kubeCliStatus');
+  if (!status) return;
+
+  const list = document.getElementById('kubeCliVersionList');
+  if (list && !list.dataset.wired) {
+    list.dataset.wired = '1';
+    list.addEventListener('click', onKubeCliListClick);
+  }
+  const setDisabled = (id, off) => { const el = document.getElementById(id); if (el) el.disabled = off; };
+  setDisabled('kubeCliCheckBtn', busy);
+  setDisabled('kubeCliSwitchBtn', busy);
+
+  if (!d) {
+    status.innerHTML = busy ? '<span class="text-muted">' + escapeHtml(t('kube_cli_checking', 'Checking...')) + '</span>' : '';
+    setDisabled('kubeCliSystemBtn', true);
+    return;
+  }
+
+  const labels = {
+    update: ['badge-warning', 'kube_cli_status_update', 'Update available'],
+    current: ['badge-healthy', 'kube_cli_status_current', 'Up to date'],
+    error: ['badge-danger', 'kube_cli_status_error', 'Check failed'],
+  };
+  const [cls, key, fallback] = labels[d.status] || ['badge-danger', 'kube_cli_status_unknown', 'Version unknown'];
+  const source = { managed: t('kube_cli_source_managed', 'Managed'), system: t('kube_cli_source_system', 'System') }[d.source]
+    || t('kube_cli_source_missing', 'Missing');
+  const row = (label, value) => '<div style="display:flex;gap:8px;flex-wrap:wrap;"><span class="text-muted" style="min-width:110px;">' + escapeHtml(label) +
+    '</span><span style="font-family:var(--font-mono, monospace);word-break:break-all;">' + escapeHtml(value || '—') + '</span></div>';
+  const err = d.error ? '<div style="color:var(--danger);margin-top:4px;">' + escapeHtml(d.error) + '</div>' : '';
+  const release = d.release_url ? '<div style="margin-top:4px;"><a href="' + escapeHtml(d.release_url) +
+    '" target="_blank" rel="noopener noreferrer">' + escapeHtml(t('kube_cli_release', 'Release notes')) + '</a></div>' : '';
+  status.innerHTML = '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">' +
+    '<b style="font-family:var(--font-mono, monospace);">kubectl ' + escapeHtml(d.installed || '—') + '</b>' +
+    '<span class="badge ' + cls + '">' + escapeHtml(t(key, fallback)) + '</span>' +
+    '<span class="badge">' + escapeHtml(source) + '</span></div>' +
+    row(t('kube_cli_latest', 'Latest'), d.latest) +
+    row(t('kube_cli_path', 'Path'), d.path) +
+    row(t('kube_cli_system', 'System copy'), d.system_installed) + err + release;
+
+  const up = document.getElementById('kubeCliUpdateBtn');
+  if (up) {
+    up.style.display = d.status === 'update' && d.latest ? 'inline-flex' : 'none';
+    up.disabled = busy;
+    const lbl = document.getElementById('kubeCliUpdateLabel');
+    if (lbl) lbl.textContent = t('kube_cli_update_to', 'Update to {v}').replace('{v}', d.latest || '');
+  }
+
+  const sel = document.getElementById('kubeCliVersionSelect');
+  if (sel) {
+    const seen = new Set();
+    const opts = [];
+    (d.channels || []).forEach(c => {
+      if (seen.has(c.latest)) return;
+      seen.add(c.latest);
+      opts.push('<option value="' + escapeHtml(c.latest) + '">' + escapeHtml(c.latest + ' (' + c.minor + '.x)') + '</option>');
+    });
+    (d.managed_versions || []).forEach(v => {
+      if (seen.has(v)) return;
+      seen.add(v);
+      opts.push('<option value="' + escapeHtml(v) + '">' + escapeHtml(v + ' [' + t('kube_cli_cached_tag', 'cached') + ']') + '</option>');
+    });
+    sel.innerHTML = '<option value="">' + escapeHtml(t('kube_cli_pick', 'Pick a version...')) + '</option>' + opts.join('');
+    sel.disabled = busy;
+  }
+
+  if (list) {
+    const versions = d.managed_versions || [];
+    list.innerHTML = versions.length
+      ? versions.map(v => {
+        const active = v === d.active_managed_version;
+        return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--card-border);">' +
+          '<span style="font-family:var(--font-mono, monospace);">' + escapeHtml(v) + '</span>' +
+          (active ? '<span class="badge badge-healthy">' + escapeHtml(t('kube_cli_active_badge', 'Active')) + '</span>' : '') +
+          '<span style="flex:1;"></span>' +
+          (active ? '' : '<button class="btn btn-sm" data-kube-cli-activate="' + escapeHtml(v) + '"' + (busy ? ' disabled' : '') + '>' +
+            escapeHtml(t('kube_cli_activate', 'Activate')) + '</button>') +
+          '<button class="btn btn-sm btn-ghost" data-kube-cli-remove="' + escapeHtml(v) + '" title="' + escapeHtml(t('kube_cli_remove', 'Remove')) +
+          '" aria-label="' + escapeHtml(t('kube_cli_remove', 'Remove')) + '"' + (active || busy ? ' disabled' : '') + '>' +
+          '<svg class="icon icon-sm"><use href="#i-trash-2"/></svg></button></div>';
+      }).join('')
+      : '<div class="text-muted">' + escapeHtml(t('kube_cli_none', 'No cached versions yet.')) + '</div>';
+  }
+
+  // The system copy is only a revert target while a managed version is in use.
+  setDisabled('kubeCliSystemBtn', busy || !(d.source === 'managed' && d.system_installed));
+}
+
+function onKubeCliListClick(e) {
+  const act = e.target.closest('[data-kube-cli-activate]');
+  if (act) { switchKubeCli(act.dataset.kubeCliActivate); return; }
+  const rm = e.target.closest('[data-kube-cli-remove]');
+  if (rm) deleteKubeCli(rm.dataset.kubeCliRemove);
+}
+
+// kubeCliStream runs an install or a switch. The server streams its steps as NDJSON.
+async function kubeCliStream(url, body) {
+  const out = document.getElementById('kubeCliInstallLog');
+  if (out) { out.hidden = false; out.textContent = ''; }
+  kubeCli.busy = true;
+  renderKubeCli();
+  let error = '';
+  try {
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), credentials: 'same-origin' });
+    if (!(res.headers.get('content-type') || '').includes('application/x-ndjson')) {
+      const d = await res.json().catch(() => ({}));
+      error = d.error || t('kube_cli_failed', 'kubectl change failed');
+    } else {
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      const take = (line) => {
+        let m;
+        try { m = JSON.parse(line); } catch (e) { return; }
+        if (m.log && out) { out.textContent += m.log; out.scrollTop = out.scrollHeight; }
+        if (m.done) error = m.error || '';
+      };
+      for (;;) {
+        const r = await reader.read();
+        if (r.done) break;
+        buf += dec.decode(r.value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf('\n')) >= 0) { take(buf.slice(0, nl)); buf = buf.slice(nl + 1); }
+      }
+      if (buf.trim()) take(buf);
+    }
+  } catch (e) { error = e.message; }
+
+  if (error) {
+    if (out) out.textContent += '\n' + error;
+    showToast(t('kube_cli_failed', 'kubectl change failed') + ': ' + error, 'error', 6000);
+  } else {
+    showToast(t('kube_cli_done', 'kubectl updated'), 'success');
+  }
+  kubeCli.busy = false;
+  await checkKubeCli();
+  return !error;
+}
+
+// installKubeCli downloads and activates a release. Without a version it is the newest stable one.
+async function installKubeCli(version) {
+  if (kubeCli.busy) return;
+  const target = version || (kubeCli.data && kubeCli.data.latest) || '';
+  const ok = await showConfirm({
+    title: t('kube_cli_confirm_update_title', 'Update kubectl?'),
+    message: t('kube_cli_confirm_update_msg', 'Download kubectl {v}, verify its checksum, and make it the one External Cluster operations use. The system copy is not changed.').replace('{v}', target || 'latest'),
+    confirmText: t('kube_cli_apply', 'Install / Switch'),
+    danger: false,
+  });
+  if (!ok) return;
+  await kubeCliStream('/api/kube/cli/install', target ? { version: target } : {});
+}
+
+// switchKubeCli pins a version typed in the field, picked in the list, or chosen from the cache.
+async function switchKubeCli(explicit) {
+  if (kubeCli.busy) return;
+  const input = document.getElementById('kubeCliVersionInput');
+  const sel = document.getElementById('kubeCliVersionSelect');
+  const version = String(explicit || (input && input.value) || (sel && sel.value) || '').trim().replace(/^v/i, '');
+  if (!KUBE_CLI_VERSION_RE.test(version)) {
+    showToast(t('kube_cli_invalid', 'Enter a version such as 1.31.4.'), 'warning');
+    return;
+  }
+  const ok = await showConfirm({
+    title: t('kube_cli_confirm_switch_title', 'Switch kubectl?'),
+    message: t('kube_cli_confirm_switch_msg', 'External Cluster operations will use kubectl {v} from now on. A version that is not cached is downloaded and verified first.').replace('{v}', version),
+    confirmText: t('kube_cli_apply', 'Install / Switch'),
+    danger: false,
+  });
+  if (!ok) return;
+  await kubeCliStream('/api/kube/cli/switch', { version });
+}
+
+async function revertKubeCliToSystem() {
+  if (kubeCli.busy) return;
+  if (!(kubeCli.data && kubeCli.data.system_installed)) {
+    showToast(t('kube_cli_no_system', 'No system kubectl is installed, so there is nothing to revert to.'), 'warning');
+    return;
+  }
+  const ok = await showConfirm({
+    title: t('kube_cli_confirm_system_title', 'Use system kubectl?'),
+    message: t('kube_cli_confirm_system_msg', 'External Cluster operations will use the system copy of kubectl again. The cached versions are kept.'),
+    confirmText: t('kube_cli_use_system', 'Use system kubectl'),
+    danger: false,
+  });
+  if (!ok) return;
+  kubeCli.busy = true;
+  renderKubeCli();
+  try {
+    await kubeCliRequest('POST', '/api/kube/cli/switch', { mode: 'system' });
+    showToast(t('kube_cli_reverted', 'Now using the system kubectl'), 'success');
+  } catch (e) {
+    showToast(t('kube_cli_failed', 'kubectl change failed') + ': ' + e.message, 'error', 6000);
+  } finally {
+    kubeCli.busy = false;
+  }
+  await checkKubeCli();
+}
+
+async function deleteKubeCli(version) {
+  if (kubeCli.busy) return;
+  const ok = await showConfirm({
+    title: t('kube_cli_confirm_remove_title', 'Remove cached kubectl?'),
+    message: t('kube_cli_confirm_remove_msg', 'Remove kubectl {v} from the cache. It can be downloaded again later.').replace('{v}', version),
+    confirmText: t('kube_cli_remove', 'Remove'),
+    danger: true,
+  });
+  if (!ok) return;
+  kubeCli.busy = true;
+  renderKubeCli();
+  try {
+    await kubeCliRequest('DELETE', '/api/kube/cli/versions/' + encodeURIComponent(version));
+    showToast(t('kube_cli_removed', 'Cached version removed'), 'success');
+  } catch (e) {
+    showToast(t('kube_cli_failed', 'kubectl change failed') + ': ' + e.message, 'error', 6000);
+  } finally {
+    kubeCli.busy = false;
+  }
+  await checkKubeCli();
+}
+
+export { saveKubeWorkspaces, kubeApiBase, kubeWsParam, kubeHostClusterName, kubeTargetInfo, kubeSameTarget, renderKubeWorkspaces, closeKubeWorkspace, kubeProviderLabel, loadKubeClusters, handleKubeEnvelope, getSelectedKubeMode, updateKubeModeChip, findHostForKubeNode, detectKubeClusters, formatKubeMemory, kubeAge, kubeEmptyHtml, populateKubeHostSelect, updateKubeHostPickerBtn, toggleKubeHostPicker, closeKubeHostPicker, onKubeHostPickerBtnKeydown, onKubeHostPickerKeydown, updateKubePickerHighlight, renderKubeHostPickerList, pickKubeHost, onSelectKubeHost, loadKubeNamespaces, renderKubeRefreshStatus, switchKubeTab, onKubeNamespaceChange, refreshKubeCurrentTab, loadKubeTabData, kubeFetchTab, loadKubeNodes, loadKubeWorkloads, kubePodIsProblem, onKubePodsFilterChange, renderKubePodsTable, loadKubePods, loadKubeServices, onKubeEventsFilterChange, renderKubeEventsTable, loadKubeEvents, loadKubeGenericResource, openKubeGenericMenu, loadKubeApply, onKubeApplyYamlInput, clearKubeApply, submitKubeDiff, kubeBusy, kubeAction, kubeGetOutput, submitKubeApply, openKubeNodeMenu, openKubeWorkloadMenu, openKubePodMenu, openKubeServiceMenu, openKubeScaleModal, submitKubeScale, kubeDeletePod, kubeDescribe, promptKubeContainer, submitKubeContainerChoice, kubePodExec, stopKubeLogs, openKubeLogs, onKubeLogsParamChange, connectKubeLogsStream, copyKubeLogs, kubeAutoRefreshIntervalSec, stopKubeAutorefresh, restartKubeAutorefresh, openKubeYamlEditor, initKubeYamlEditor, onKubeYamlEditorInput, submitKubeYamlDiff, submitKubeYamlApply, setKubeLogsCount, appendKubeLogText, onKubeLogsFilterInput, openKubeWorkloadLogs, openKubeDrain, renderKubeDrainPreview, confirmKubeDrain, showToastDrainUncordon, setKubeClusterError, openKubeClusterModal, loadKubeClusterFile, loadKubeClusterContexts, onKubeClusterContextChange, submitKubeClusterModal, editKubeCurrentCluster, currentKubeHostClusterId, openKubeHostClusterModal, submitKubeHostClusterModal, deleteKubeCluster, openKubeCliModal, checkKubeCli, installKubeCli, switchKubeCli, revertKubeCliToSystem };
