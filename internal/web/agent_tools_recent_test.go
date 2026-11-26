@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"pantau/internal/cloudflare"
+	"pantau/internal/gwupdate"
 	"pantau/internal/store"
 )
 
@@ -253,6 +254,19 @@ func TestAgentGatewayCLI(t *testing.T) {
 	out, isErr = callTool(t, srv, "gateway_cli", `{"target":"all"}`)
 	if isErr || !strings.Contains(out, `"target":"ansible"`) {
 		t.Fatalf("all: %s", out)
+	}
+
+	// kubectl is checked against its own upstream; the test points it at a closed port so no network is used.
+	oldKube := gwupdate.KubectlBaseURL
+	gwupdate.KubectlBaseURL = "http://127.0.0.1:1"
+	defer func() { gwupdate.KubectlBaseURL = oldKube }()
+	out, isErr = callTool(t, srv, "gateway_cli", `{"target":"kubectl"}`)
+	if isErr || !strings.Contains(out, `"target":"kubectl"`) {
+		t.Fatalf("kubectl: %s", out)
+	}
+	out, isErr = callTool(t, srv, "gateway_cli", `{"target":"all"}`)
+	if isErr || !strings.Contains(out, `"target":"kubectl"`) {
+		t.Fatalf("all must carry kubectl too: %s", out)
 	}
 
 	if out, isErr := callTool(t, srv, "gateway_cli", `{"target":"helm"}`); !isErr || !strings.Contains(out, "must be one of") {

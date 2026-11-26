@@ -26,10 +26,10 @@ var recentTools = []agentTool{
 		InputSchema: schema(hostReq, map[string]interface{}{"host_id": pHost, "what": map[string]interface{}{"type": "string", "enum": []string{"status", "probe"}, "description": "default status"}}), run: toolVPNHostStatus},
 	{Name: "pkg_updates", Description: "The stored Package Update Check of a host (ADR 0078, no SSH): which installed packages have a newer version, how many updates are security ones, whether a reboot is required, how old the package metadata is, and how long ago the check ran. checked:false means it never ran: run it with check=true (one per minute per host, max 60 s). Nothing is installed; applying updates is pkg_action.",
 		InputSchema: schema(hostReq, map[string]interface{}{"host_id": pHost, "check": map[string]interface{}{"type": "boolean", "description": "run the read-only check now instead of reading the stored result"}}), run: toolPkgUpdates},
-	{Name: "gateway_cli", Description: "Gateway CLI Update (ADR 0080/0081) for the CLIs behind the Ansible Gate and the Terraform Gate on the Pantau server: the installed version of each, the newest upstream release, and whether an update is available. target all (the default) checks ansible and every Terraform binary found; ansible, terraform or tofu checks one. Read-only and no Gate needs to be on: nothing is installed and install is not offered here.",
-		InputSchema: schema(nil, map[string]interface{}{"target": map[string]interface{}{"type": "string", "enum": []string{"all", "ansible", "terraform", "tofu"}, "description": "default all"}}), run: toolGatewayCLI},
-	{Name: "gateway_cli_install", Description: "Install a newer Gateway CLI (ADR 0081) on the Pantau server: target ansible, terraform or tofu, optionally a specific version (default: the newest upstream release). The download is verified against the upstream checksum and installed in Pantau's managed directory, never /usr/bin. This is a destructive infrastructure change: it always waits for explicit operator approval, is never auto-approved and is never covered by a session grant. Read gateway_cli first to see what is available.", gate: gateInfra,
-		InputSchema: schema([]string{"target"}, map[string]interface{}{"target": map[string]interface{}{"type": "string", "enum": []string{"ansible", "terraform", "tofu"}}, "version": map[string]interface{}{"type": "string", "description": "version to install, default the latest upstream release"}}), run: toolGatewayCLIInstall},
+	{Name: "gateway_cli", Description: "Gateway CLI Update (ADR 0080/0081) for the CLIs behind the Ansible Gate and the Terraform Gate on the Pantau server, and for kubectl: the installed version of each, the newest upstream release, and whether an update is available. target all (the default) checks ansible, every Terraform binary found and kubectl; ansible, terraform, tofu or kubectl checks one. kubectl is the one External Cluster operations run with (not the kubectl of a k3s or RKE2 host). Read-only and no Gate needs to be on: nothing is installed and install is not offered here.",
+		InputSchema: schema(nil, map[string]interface{}{"target": map[string]interface{}{"type": "string", "enum": []string{"all", "ansible", "terraform", "tofu", "kubectl"}, "description": "default all"}}), run: toolGatewayCLI},
+	{Name: "gateway_cli_install", Description: "Install a newer Gateway CLI (ADR 0081) on the Pantau server: target ansible, terraform, tofu or kubectl, optionally a specific version (default: the newest upstream release). For kubectl the version is also the one External Cluster operations switch to, so it can be pinned to match a cluster's version. The download is verified against the upstream checksum and installed in Pantau's managed directory, never /usr/bin. This is a destructive infrastructure change: it always waits for explicit operator approval, is never auto-approved and is never covered by a session grant. Read gateway_cli first to see what is available.", gate: gateInfra,
+		InputSchema: schema([]string{"target"}, map[string]interface{}{"target": map[string]interface{}{"type": "string", "enum": []string{"ansible", "terraform", "tofu", "kubectl"}}, "version": map[string]interface{}{"type": "string", "description": "version to install, default the latest upstream release"}}), run: toolGatewayCLIInstall},
 }
 
 func toolVPNNetworks(s *Server, r *http.Request, args map[string]interface{}) (string, error) {
@@ -163,6 +163,12 @@ func toolGatewayCLI(s *Server, r *http.Request, args map[string]interface{}) (st
 			return "", err
 		}
 		return jsonText(map[string]interface{}{"results": []interface{}{m}})
+	case "kubectl":
+		m, err := s.loopJSON(r.Context(), http.MethodGet, "/api/kube/cli/update-check", nil)
+		if err != nil {
+			return "", err
+		}
+		return jsonText(map[string]interface{}{"results": []interface{}{m}})
 	case "terraform", "tofu", "all":
 		m, err := s.loopJSON(r.Context(), http.MethodGet, "/api/terraform/update-check", nil)
 		if err != nil {
@@ -174,7 +180,12 @@ func toolGatewayCLI(s *Server, r *http.Request, args map[string]interface{}) (st
 			if err != nil {
 				return "", err
 			}
+			kube, err := s.loopJSON(r.Context(), http.MethodGet, "/api/kube/cli/update-check", nil)
+			if err != nil {
+				return "", err
+			}
 			results = append([]interface{}{ans}, results...)
+			results = append(results, kube)
 		} else {
 			kept := make([]interface{}, 0, 1)
 			for _, it := range results {
@@ -256,8 +267,8 @@ func toolVPNHostStatus(s *Server, r *http.Request, args map[string]interface{}) 
 // handler answers an NDJSON stream; the final {"done":true[,"error":...]} frame is the outcome.
 func toolGatewayCLIInstall(s *Server, r *http.Request, args map[string]interface{}) (string, error) {
 	target := argStr(args, "target")
-	if target != "ansible" && target != "terraform" && target != "tofu" {
-		return "", fmt.Errorf("target must be ansible, terraform or tofu")
+	if target != "ansible" && target != "terraform" && target != "tofu" && target != "kubectl" {
+		return "", fmt.Errorf("target must be ansible, terraform, tofu or kubectl")
 	}
 	body := map[string]string{"target": target}
 	if v := argStr(args, "version"); v != "" {
@@ -269,8 +280,13 @@ func toolGatewayCLIInstall(s *Server, r *http.Request, args map[string]interface
 		return "", err
 	}
 	path := "/api/ansible/install"
-	if target == "terraform" || target == "tofu" {
+	switch target {
+	case "terraform", "tofu":
 		path = "/api/terraform/install"
+	case "kubectl":
+		// The kubectl endpoint takes the version alone; the target names the CLI in the path.
+		path = "/api/kube/cli/install"
+		delete(body, "target")
 	}
 	code, b := s.loopback(r.Context(), http.MethodPost, path, body)
 	if code/100 != 2 {
