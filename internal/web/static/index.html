@@ -5294,6 +5294,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         <label class="form-label" data-i18n="ssh_auth_key">SSH Authentication Key</label>
         <select id="hostKeyId" onchange="onHostKeySelectChange()">
           <option value="0" data-i18n="ssh_key_global">Global key (default)</option>
+          <option value="agent" data-i18n="ssh_key_agent_opt">Local SSH Agent</option>
           <option value="custom" data-i18n="ssh_key_custom_opt">Custom key (paste manually)</option>
         </select>
       </div>
@@ -5305,6 +5306,14 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
       <div class="form-group" id="hostCustomKeyGroup" style="display: none;">
         <label class="form-label" data-i18n="custom_key">Custom SSH Private Key</label>
         <textarea id="hostCustomKey" rows="2" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" data-i18n-placeholder="custom_key_ph" style="font-family: var(--font-mono); font-size: var(--fs-xs);"></textarea>
+      </div>
+      <div class="form-group" id="hostAgentGroup" style="display: none;">
+        <label class="form-label" for="hostAgentFingerprint" data-i18n="ssh_agent_fp">Agent key</label>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <select id="hostAgentFingerprint" style="flex: 1;"></select>
+          <span id="hostAgentStatus" class="badge" data-i18n="ssh_agent_checking">Checking SSH_AUTH_SOCK...</span>
+        </div>
+        <span class="form-hint" data-i18n="ssh_agent_hint">Signs with a key from your local ssh-agent. No fallback to the Global key: if the agent is down or the key is missing, the connection fails.</span>
       </div>
       <div class="form-group">
         <label class="form-label" data-i18n="host_group">Host Group</label>

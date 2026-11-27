@@ -65,9 +65,8 @@ func Run(ctx context.Context, spec RunSpec, log io.Writer) (exitCode int, err er
 	}
 	for alias, tid := range aliasMap {
 		t := targetByID[tid]
-		if strings.TrimSpace(t.PrivateKey) != "" {
+		if content := t.keyMaterial(); content != "" {
 			kp := filepath.Join(keysDir, alias+".key")
-			content := strings.TrimSpace(t.PrivateKey) + "\n"
 			if err := os.WriteFile(kp, []byte(content), 0600); err != nil {
 				return 0, fmt.Errorf("failed to write key file: %w", err)
 			}
@@ -197,7 +196,7 @@ func Run(ctx context.Context, spec RunSpec, log io.Writer) (exitCode int, err er
 
 	cmd := exec.Command(binPath, args...)
 	cmd.Dir = runDir
-	cmd.Env = cleanEnv
+	cmd.Env = append(cleanEnv, agentEnv(spec.Targets)...)
 	if log != nil {
 		cmd.Stdout = log
 		cmd.Stderr = log

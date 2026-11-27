@@ -253,7 +253,7 @@ func (s *Server) SetVPNManager(m *vpnnet.Manager) {
 
 // hostTarget builds the dial target for a Host, resolving its VPN path (nil path means direct dialing).
 func (s *Server) hostTarget(h *store.Host) (sshrunner.Target, error) {
-	t := sshrunner.Target{Host: h.Host, Port: h.Port, User: h.User, LegacySSH: h.AllowLegacySSH}
+	t := sshrunner.Target{Host: h.Host, Port: h.Port, User: h.User, Agent: h.SSHAgent, AgentFingerprint: h.SSHAgentFingerprint, LegacySSH: h.AllowLegacySSH}
 	if s.vpnMgr == nil || h.NetworkID == 0 {
 		return t, nil
 	}
@@ -401,6 +401,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/hosts/", s.authMiddleware(s.handleHostDetailRoute))
 
 	// SSH Keys
+	s.mux.HandleFunc("/api/ssh-agent", s.authMiddleware(s.handleSSHAgent))
 	s.mux.HandleFunc("/api/ssh-keys", s.authMiddleware(s.handleSSHKeys))
 	s.mux.HandleFunc("/api/ssh-keys/", s.authMiddleware(s.handleSSHKeyDetail))
 
@@ -1113,6 +1114,10 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error()})
 			return
 		}
+		if err := validSSHAgentSelection(&h); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error()})
+			return
+		}
 		var libKey *store.SSHKey
 		if h.KeyID > 0 {
 			var err error
@@ -1381,6 +1386,10 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if err := s.validNetworkID(h.NetworkID); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error()})
+				return
+			}
+			if err := validSSHAgentSelection(&h); err != nil {
 				writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error()})
 				return
 			}

@@ -119,11 +119,12 @@ func RunAdhoc(ctx context.Context, spec AdhocSpec, log io.Writer) (int, error) {
 	}
 	for alias, tid := range aliasMap {
 		t := targetByID[tid]
-		if strings.TrimSpace(t.PrivateKey) == "" {
+		content := t.keyMaterial()
+		if content == "" {
 			continue
 		}
 		kp := filepath.Join(keysDir, alias+".key")
-		if err := os.WriteFile(kp, []byte(strings.TrimSpace(t.PrivateKey)+"\n"), 0600); err != nil {
+		if err := os.WriteFile(kp, []byte(content), 0600); err != nil {
 			return 0, fmt.Errorf("failed to write key file: %w", err)
 		}
 		_ = os.Chmod(kp, 0600)
@@ -198,7 +199,7 @@ func RunAdhoc(ctx context.Context, spec AdhocSpec, log io.Writer) (int, error) {
 
 	cmd := exec.Command(binPath, args...)
 	cmd.Dir = workDir
-	cmd.Env = cleanEnv
+	cmd.Env = append(cleanEnv, agentEnv(spec.Targets)...)
 	if log != nil {
 		cmd.Stdout = log
 		cmd.Stderr = log

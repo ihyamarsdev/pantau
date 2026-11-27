@@ -168,27 +168,47 @@ type Target struct {
 	Port int
 	User string
 	Key  string
-	Net  *vpnnet.Path
+	// Agent authenticates with the local ssh-agent instead of Key; AgentFingerprint selects one agent key.
+	Agent            bool
+	AgentFingerprint string
+	// AgentSocket overrides SSH_AUTH_SOCK (other agents, tests). Empty uses the process environment.
+	AgentSocket string
+	Net         *vpnnet.Path
 	// LegacySSH enables CentOS 5/6-era algorithms (3DES/CBC, SHA-1 KEX, ssh-dss) for this host only.
 	LegacySSH bool
 }
 
 func Connect(t Target, timeout time.Duration) (*LiveSSHRunner, error) {
-	host, port, user, privateKeyPEM := t.Host, t.Port, t.User, t.Key
+	return ConnectContext(context.Background(), t, timeout)
+}
+
+// ConnectContext dials the Host. Cancelling ctx aborts the agent lookup, the TCP dial and the handshake.
+// Fail-closed: an agent Host that cannot authenticate with its own key never falls back to another key.
+func ConnectContext(ctx context.Context, t Target, timeout time.Duration) (*LiveSSHRunner, error) {
+	host, port, user := t.Host, t.Port, t.User
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
 
-	signers, err := parseAllPrivateKeys([]byte(privateKeyPEM))
-	if err != nil {
-		return nil, fmt.Errorf("parse private key: %w", err)
+	var auth ssh.AuthMethod
+	if t.Agent {
+		a, agentConn, err := agentAuth(ctx, t)
+		if err != nil {
+			return nil, fmt.Errorf("ssh agent auth for %s: %w", host, err)
+		}
+		defer agentConn.Close()
+		auth = a
+	} else {
+		signers, err := parseAllPrivateKeys([]byte(t.Key))
+		if err != nil {
+			return nil, fmt.Errorf("parse private key: %w", err)
+		}
+		auth = ssh.PublicKeys(signers...)
 	}
 
 	config := &ssh.ClientConfig{
 		User: user,
-		Auth: []ssh.AuthMethod{
-			ssh.PublicKeys(signers...),
-		},
+		Auth: []ssh.AuthMethod{auth},
 		// ponytail: TOFU (Trust On First Use) provides seamless first-time connection while guarding against MITM.
 		HostKeyCallback: TOFUHostKeyCallback(),
 		Timeout:         timeout,
@@ -196,7 +216,7 @@ func Connect(t Target, timeout time.Duration) (*LiveSSHRunner, error) {
 	configureSSH(config, t.LegacySSH)
 
 	addr := fmt.Sprintf("%s:%d", host, port)
-	client, err := dialSSH(addr, t.Net, config, timeout)
+	client, err := dialSSH(ctx, addr, t.Net, config, timeout)
 	if err != nil {
 		return nil, fmt.Errorf("dial ssh %s: %w", addr, withLegacySSHHint(err, t.LegacySSH))
 	}
@@ -205,13 +225,16 @@ func Connect(t Target, timeout time.Duration) (*LiveSSHRunner, error) {
 }
 
 // ponytail: ssh.Dial's Timeout only bounds the TCP dial, not the SSH handshake; bound both.
-func dialSSH(addr string, path *vpnnet.Path, config *ssh.ClientConfig, timeout time.Duration) (*ssh.Client, error) {
-	conn, err := dialTCP(addr, path, timeout)
+func dialSSH(ctx context.Context, addr string, path *vpnnet.Path, config *ssh.ClientConfig, timeout time.Duration) (*ssh.Client, error) {
+	conn, err := dialTCP(ctx, addr, path, timeout)
 	if err != nil {
 		return nil, err
 	}
+	// Cancellation during the handshake closes the socket, which fails the handshake at once.
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
 	conn.SetDeadline(time.Now().Add(timeout))
 	c, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
+	stop() // a live session must not die because ctx ends later
 	if err != nil {
 		conn.Close()
 		return nil, err
@@ -223,15 +246,15 @@ func dialSSH(addr string, path *vpnnet.Path, config *ssh.ClientConfig, timeout t
 // dialTCP retries a timed-out connect on a fresh connection: some routes drop every SYN of one flow
 // while a new connection (new source port) succeeds at once, so a reachable host must not be marked down.
 // Refused/unreachable errors fail immediately; a dead host now costs 4 × min(timeout, 4s) instead of timeout.
-func dialTCP(addr string, path *vpnnet.Path, timeout time.Duration) (net.Conn, error) {
+func dialTCP(ctx context.Context, addr string, path *vpnnet.Path, timeout time.Duration) (net.Conn, error) {
 	attempt := min(timeout, 4*time.Second) // 4s still covers the SYN retransmits at 1s and 3s
 	var err error
 	// A mesh VPN usually resolves peer names through its own DNS, which the OS resolver does not know about.
 	dialAddr := addr
 	if path != nil {
 		if host, port, splitErr := net.SplitHostPort(addr); splitErr == nil && net.ParseIP(host) == nil {
-			ctx, cancel := context.WithTimeout(context.Background(), attempt)
-			ips, resolveErr := path.Resolve(ctx, host)
+			rctx, cancel := context.WithTimeout(ctx, attempt)
+			ips, resolveErr := path.Resolve(rctx, host)
 			cancel()
 			if resolveErr == nil && len(ips) > 0 {
 				dialAddr = net.JoinHostPort(ips[0], port)
@@ -239,12 +262,13 @@ func dialTCP(addr string, path *vpnnet.Path, timeout time.Duration) (net.Conn, e
 		}
 	}
 	dial := func(timeout time.Duration) (net.Conn, error) {
-		if path == nil {
-			return net.DialTimeout("tcp", dialAddr, timeout)
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		dctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
-		return path.DialContext(ctx, "tcp", dialAddr)
+		if path == nil {
+			var d net.Dialer
+			return d.DialContext(dctx, "tcp", dialAddr)
+		}
+		return path.DialContext(dctx, "tcp", dialAddr)
 	}
 	conn, err := dialRetry(dial, attempt, path != nil)
 	if err != nil && path != nil && (isTimeoutErr(err) || isRouteErr(err) || errors.Is(err, vpnnet.ErrInterfaceNotExists)) {
@@ -361,7 +385,7 @@ func DefaultKeyProvisioner(t Target, password, pubKey string) error {
 	configureSSH(config, t.LegacySSH)
 
 	addr := fmt.Sprintf("%s:%d", host, port)
-	client, err := dialSSH(addr, t.Net, config, 8*time.Second)
+	client, err := dialSSH(context.Background(), addr, t.Net, config, 8*time.Second)
 	if err != nil {
 		return fmt.Errorf("ssh password authentication failed: %w", withLegacySSHHint(err, t.LegacySSH))
 	}

@@ -106,6 +106,10 @@ type Target struct {
 	User       string
 	Group      string // Host Group (boleh kosong)
 	PrivateKey string // PEM efektif (store.ResolveHostPrivateKey)
+	// SSHAgent authenticates through the local ssh-agent. AgentPublicKey, when set, pins the one agent key
+	// (authorized_keys line); the private key never leaves the agent.
+	SSHAgent       bool
+	AgentPublicKey string
 }
 
 type RunSpec struct {

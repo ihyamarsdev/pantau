@@ -30,11 +30,12 @@ func sanitizeGroupName(raw string) string {
 }
 
 type hostEntry struct {
-	AnsibleHost         string `json:"ansible_host"`
-	AnsiblePort         int    `json:"ansible_port,omitempty"`
-	AnsibleUser         string `json:"ansible_user,omitempty"`
-	AnsibleSSHKeyFile   string `json:"ansible_ssh_private_key_file,omitempty"`
-	AnsiblePythonInterp string `json:"ansible_python_interpreter"`
+	AnsibleHost          string `json:"ansible_host"`
+	AnsiblePort          int    `json:"ansible_port,omitempty"`
+	AnsibleUser          string `json:"ansible_user,omitempty"`
+	AnsibleSSHKeyFile    string `json:"ansible_ssh_private_key_file,omitempty"`
+	AnsibleSSHCommonArgs string `json:"ansible_ssh_common_args,omitempty"`
+	AnsiblePythonInterp  string `json:"ansible_python_interpreter"`
 }
 
 type groupEntry struct {
@@ -75,7 +76,7 @@ func InventoryJSON(targets []Target, keyPath func(alias string) string) (inv []b
 		aliases[alias] = t.ID
 
 		var keyFile string
-		if keyPath != nil && strings.TrimSpace(t.PrivateKey) != "" {
+		if keyPath != nil && t.keyMaterial() != "" {
 			keyFile = keyPath(alias)
 		}
 
@@ -85,6 +86,10 @@ func InventoryJSON(targets []Target, keyPath func(alias string) string) (inv []b
 			AnsibleUser:         t.User,
 			AnsibleSSHKeyFile:   keyFile,
 			AnsiblePythonInterp: "auto_silent",
+		}
+		if t.AgentPublicKey != "" {
+			// Only the pinned agent key may be offered: other keys in the agent must not authenticate this Host.
+			entry.AnsibleSSHCommonArgs = "-o IdentitiesOnly=yes"
 		}
 
 		if strings.TrimSpace(t.Group) != "" {

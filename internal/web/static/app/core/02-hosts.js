@@ -960,7 +960,7 @@ document.addEventListener('click', function(e) {
   }
 });
 
-async function populateHostKeySelect(selectedKeyId = 0, isCustom = false) {
+async function populateHostKeySelect(selectedKeyId = 0, isCustom = false, isAgent = false) {
   const sel = document.getElementById('hostKeyId');
   if (!sel) return;
 
@@ -969,10 +969,13 @@ async function populateHostKeySelect(selectedKeyId = 0, isCustom = false) {
     (keys || []).forEach(k => {
       html += `<option value="${k.id}">${escapeHtml(k.name)}</option>`;
     });
+    html += `<option value="agent">${t('ssh_key_agent_opt', 'Local SSH Agent')}</option>`;
     html += `<option value="custom">${t('ssh_key_custom_opt', 'Custom key (paste manually)')}</option>`;
     sel.innerHTML = html;
 
-    if (isCustom) {
+    if (isAgent) {
+      sel.value = 'agent';
+    } else if (isCustom) {
       sel.value = 'custom';
     } else if (selectedKeyId && (keys || []).some(k => k.id === selectedKeyId)) {
       sel.value = String(selectedKeyId);
@@ -1252,6 +1255,40 @@ function onHostKeySelectChange() {
   const group = document.getElementById('hostCustomKeyGroup');
   if (!sel || !group) return;
   group.style.display = sel.value === 'custom' ? 'block' : 'none';
+  const agentGroup = document.getElementById('hostAgentGroup');
+  if (agentGroup) {
+    agentGroup.style.display = sel.value === 'agent' ? 'flex' : 'none';
+    if (sel.value === 'agent') loadSSHAgentStatus();
+  }
+}
+
+// loadSSHAgentStatus asks Pantau whether SSH_AUTH_SOCK answers and lists the agent's key fingerprints.
+async function loadSSHAgentStatus() {
+  const sel = document.getElementById('hostAgentFingerprint');
+  const badge = document.getElementById('hostAgentStatus');
+  if (!sel || !badge) return;
+  const current = sel.dataset.current || '';
+  let data = { available: false, keys: [] };
+  try {
+    const res = await fetch('/api/ssh-agent');
+    if (res.ok) data = await res.json();
+  } catch (err) {
+    console.error('Failed to load ssh agent status:', err);
+  }
+  const keys = data.keys || [];
+  let html = `<option value="">${t('ssh_agent_fp_any', 'Any key in the agent')}</option>`;
+  keys.forEach(k => {
+    html += `<option value="${escapeHtml(k.fingerprint)}">${escapeHtml(k.type)} ${escapeHtml(k.fingerprint)}</option>`;
+  });
+  if (current && !keys.some(k => k.fingerprint === current)) {
+    html += `<option value="${escapeHtml(current)}">${escapeHtml(current)}</option>`;
+  }
+  sel.innerHTML = html;
+  sel.value = current;
+  badge.className = 'badge ' + (data.available ? 'badge-healthy' : 'badge-danger');
+  badge.textContent = data.available
+    ? t('ssh_agent_ok', 'SSH_AUTH_SOCK detected')
+    : t('ssh_agent_down', 'SSH_AUTH_SOCK not reachable');
 }
 
 function openAddHostModal() {
@@ -1275,6 +1312,7 @@ function openAddHostModal() {
   if (testBtn) testBtn.style.display = 'none';
   updateGroupSuggestions();
   document.getElementById('passGroup').style.display = 'flex';
+  document.getElementById('hostAgentFingerprint').dataset.current = '';
   populateHostKeySelect(0, false);
   openModal('hostModal');
 }
@@ -1298,13 +1336,14 @@ function openEditHostModal(hostId) {
   const kmEdit = document.getElementById('hostKubeMode');
   if (kmEdit) kmEdit.value = h.kube_mode || 'full';
   setLegacySSH(!!h.allow_legacy_ssh);
+  document.getElementById('hostAgentFingerprint').dataset.current = h.ssh_agent_fingerprint || '';
   populateHostNetworkSelect(h.network_id || 0);
   document.getElementById('passGroup').style.display = 'none';
   const testBtn = document.getElementById('btnTestHostInModal');
   if (testBtn) testBtn.style.display = 'inline-flex';
   updateGroupSuggestions();
   const hasCustom = !!h.has_custom_key;
-  populateHostKeySelect(h.key_id || 0, hasCustom);
+  populateHostKeySelect(h.key_id || 0, hasCustom, !!h.ssh_agent);
   openModal('hostModal');
 }
 
@@ -1339,9 +1378,10 @@ async function saveHost() {
   const selectedKey = document.getElementById('hostKeyId')?.value || '0';
   let keyId = 0;
   let customKey = '';
+  const useAgent = selectedKey === 'agent';
   if (selectedKey === 'custom') {
     customKey = document.getElementById('hostCustomKey')?.value || '';
-  } else {
+  } else if (!useAgent) {
     keyId = parseInt(selectedKey, 10) || 0;
   }
   const payload = {
@@ -1358,6 +1398,8 @@ async function saveHost() {
     kube_mode: document.getElementById('hostKubeMode')?.value || 'full',
     allow_legacy_ssh: !!document.getElementById('hostLegacySSH')?.checked,
     network_id: parseInt(document.getElementById('hostNetwork')?.value, 10) || 0,
+    ssh_agent: useAgent,
+    ssh_agent_fingerprint: useAgent ? (document.getElementById('hostAgentFingerprint')?.value || '') : '',
   };
   if (id && selectedKey === 'custom' && !customKey.trim()) {
     // the API never returns the stored key; blank + keep flag leaves it unchanged

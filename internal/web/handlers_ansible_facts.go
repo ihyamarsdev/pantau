@@ -96,12 +96,12 @@ func (s *Server) gatherHostFacts(w http.ResponseWriter, r *http.Request, hostID 
 		factsGatherMu.Unlock()
 	}()
 
-	privKey, err := s.db.ResolveHostPrivateKey(host)
+	privKey, agentPub, err := ansibleKeyFields(s.db, host)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("failed to resolve private key for host %s: %v", host.Name, err)})
 		return
 	}
-	target := ansible.Target{ID: host.ID, Name: host.Name, Address: host.Host, Port: host.Port, User: host.User, Group: host.GroupName, PrivateKey: privKey}
+	target := ansible.Target{ID: host.ID, Name: host.Name, Address: host.Host, Port: host.Port, User: host.User, Group: host.GroupName, PrivateKey: privKey, SSHAgent: host.SSHAgent, AgentPublicKey: agentPub}
 	cfg, _ := s.db.GetSetting(ansibleConfigSetting) // galat dibiarkan: config kosong berarti default ansible
 
 	gather := s.factsGather

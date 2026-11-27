@@ -52,12 +52,13 @@ func (s *Server) resolveAdhocTargets(hostIDs []int64, group string) ([]ansible.T
 
 	targets := make([]ansible.Target, 0, len(targetMap))
 	for _, h := range targetMap {
-		privKey, err := s.db.ResolveHostPrivateKey(h)
+		privKey, agentPub, err := ansibleKeyFields(s.db, h)
 		if err != nil {
 			return nil, launchErr(http.StatusBadRequest, "failed to resolve private key for host %s: %v", h.Name, err)
 		}
 		targets = append(targets, ansible.Target{
 			ID: h.ID, Name: h.Name, Address: h.Host, Port: h.Port, User: h.User, Group: h.GroupName, PrivateKey: privKey,
+			SSHAgent: h.SSHAgent, AgentPublicKey: agentPub,
 		})
 	}
 	return targets, nil

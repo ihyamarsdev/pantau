@@ -61,9 +61,9 @@ func GatherFacts(ctx context.Context, t Target, cfg, libDir string, log io.Write
 	for a := range aliasMap {
 		alias = a
 	}
-	if strings.TrimSpace(t.PrivateKey) != "" {
+	if content := t.keyMaterial(); content != "" {
 		kp := filepath.Join(keysDir, alias+".key")
-		if err := os.WriteFile(kp, []byte(strings.TrimSpace(t.PrivateKey)+"\n"), 0600); err != nil {
+		if err := os.WriteFile(kp, []byte(content), 0600); err != nil {
 			return nil, fmt.Errorf("failed to write key file: %w", err)
 		}
 	}
@@ -109,7 +109,7 @@ func GatherFacts(ctx context.Context, t Target, cfg, libDir string, log io.Write
 	var out bytes.Buffer
 	cmd := exec.Command(binPath, alias, "-i", invPath, "-m", "setup")
 	cmd.Dir = workDir
-	cmd.Env = cleanEnv
+	cmd.Env = append(cleanEnv, agentEnv([]Target{t})...)
 	cmd.Stdout = &out
 	stderr := &tailWriter{}
 	if log != nil {

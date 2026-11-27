@@ -1,6 +1,7 @@
 package sshrunner
 
 import (
+	"context"
 	"errors"
 	"net"
 	"os"
@@ -78,7 +79,7 @@ func TestDialRetry_RouteError(t *testing.T) {
 // A missing tunnel interface (the VPN went down mid-plan) is a path failure: the Host keeps its last
 // state and is reported stale, not down.
 func TestDialTCPMissingTunnelInterfaceIsNetworkUnavailable(t *testing.T) {
-	_, err := dialTCP("10.0.0.1:22", &vpnnet.Path{Name: "gone", Iface: "pantau-no-such-iface0"}, 200*time.Millisecond)
+	_, err := dialTCP(context.Background(), "10.0.0.1:22", &vpnnet.Path{Name: "gone", Iface: "pantau-no-such-iface0"}, 200*time.Millisecond)
 	if !errors.Is(err, ErrNetworkUnavailable) {
 		t.Fatalf("expected ErrNetworkUnavailable, got %v", err)
 	}

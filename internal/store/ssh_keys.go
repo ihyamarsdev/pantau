@@ -145,6 +145,10 @@ func (d *DB) ResolveHostPrivateKey(h *Host) (string, error) {
 	if h == nil {
 		return "", errors.New("host is nil")
 	}
+	// Agent hosts have no key here: sshrunner signs through the agent and never falls back to the Global key.
+	if h.SSHAgent {
+		return "", nil
+	}
 	if h.KeyID > 0 {
 		key, err := d.GetSSHKey(h.KeyID)
 		if err != nil {
