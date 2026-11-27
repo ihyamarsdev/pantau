@@ -102,6 +102,7 @@ type Server struct {
 	tunnelRunners     sync.Map          // hostID -> *tunnelRunnerEntry
 	tunnelPort        int               // dedicated loopback port for the tunnel origin (0 = disabled)
 	portFwd           *portForwardManager
+	mcpForced         bool
 	inspectAllMu      sync.Mutex
 	loginScanMu       sync.Mutex
 	dbBackupActive    sync.Map
@@ -560,6 +561,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/netdiag/stream", s.authMiddleware(s.handleNetDiagStream))
 
 	s.registerPortForwardRoutes()
+	s.registerMCPRoutes()
 	s.registerFleetSearchRoutes()
 	s.registerDiskUsageRoutes()
 	s.registerDomainRoutes()

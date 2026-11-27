@@ -46,6 +46,7 @@ function switchSettingsTab(tab) {
   if (panelNetworks) panelNetworks.style.display = tab === 'networks' ? 'flex' : 'none';
   if (tab === 'networks') loadVpnNetworks();
   if (tab === 'agent' && window.AG) window.AG.loadSettings();
+  if (tab === 'agent') loadMCPSettings();
 
   if (tab === 'keys') {
     loadSSHKeys();
@@ -1339,4 +1340,86 @@ async function loadTransfers() {
   }
 }
 
-export { switchSettingsTab, copyPubKey, loadSSHKeys, renderSSHKeys, addSSHKey, deleteSSHKey, handleSSHKeyFileSelect, checkForUpdates, applySelfUpdate, restartPantau, openSettingsModal, load2FASettings, start2FASetup, cancel2FASetup, confirmEnable2FA, disable2FA, copy2FASecret, copy2FARecoveryCodes, download2FARecoveryCodes, saveSettings, testNotification, changePassword, saveGitHubBackupSettings, syncGitHubNow, exportSnapshotPrompt, submitSnapshotExport, openRestoreModal, switchRestoreTab, doRestoreFromGitHub, doRestoreFromFile, doStartFresh, checkFreshStatus, formatBytes, openTransferDialog, submitTransfer, loadS3Accounts, renderS3Accounts, editS3Account, cancelS3Form, saveS3Account, deleteS3Account, testS3Account, updateS3UploadDest, openS3UploadDialog, submitS3Upload, openTransfersModal, cancelTransfer, switchTransfersTab, loadTransfers };
+// MCP: a read-only local server for AI clients. The token is shown once, when it is generated or rotated.
+let mcpLastToken = '';
+
+async function loadMCPSettings() {
+  const box = document.getElementById('mcpSettingsCard');
+  if (!box) return;
+  let st = { enabled: false, forced: false, token_set: false };
+  try {
+    const res = await fetch('/api/mcp');
+    if (res.ok) st = await res.json();
+  } catch (err) {
+    console.error('Failed to load MCP settings:', err);
+  }
+  renderMCPCard(box, st);
+}
+
+function renderMCPCard(box, st) {
+  const url = window.location.origin + '/mcp';
+  const tokenLine = mcpLastToken
+    ? escapeHtml(mcpLastToken)
+    : (st.token_set ? escapeHtml(t('mcp_token_hidden', 'Token is set. It is hidden: rotate to get a new one.')) : escapeHtml(t('mcp_token_none', 'No token yet. Generate one to connect a client.')));
+  const snippet = JSON.stringify({
+    mcpServers: { pantau: { type: 'http', url, headers: { Authorization: 'Bearer ' + (mcpLastToken || '<MCP_TOKEN>') } } }
+  }, null, 2);
+  box.innerHTML = `
+    <div class="card" style="padding: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+        <div>
+          <div style="font-weight: 600;">${escapeHtml(t('mcp_title', 'MCP server (read-only)'))}</div>
+          <div class="form-hint">${escapeHtml(t('mcp_intro', 'Lets a local AI client read Pantau: hosts, drift, Kubernetes, Docker, security findings, IaC runs and vault key names. It cannot change anything. Loopback clients with the token only.'))}</div>
+        </div>
+        <label style="display: flex; align-items: center; gap: 6px; white-space: nowrap;">
+          <input type="checkbox" id="mcpEnabledToggle" ${st.enabled ? 'checked' : ''} ${st.forced ? 'disabled' : ''} onchange="toggleMCPEnabled(this.checked)" />
+          <span>${escapeHtml(t('mcp_enable', 'Enabled'))}</span>
+        </label>
+      </div>
+      ${st.forced ? `<div class="form-hint" style="margin-top: 8px;">${escapeHtml(t('mcp_forced', 'Enabled by the -mcp flag at startup.'))}</div>` : ''}
+      <div style="display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap;">
+        <span class="mono" style="font-size: var(--fs-xs); word-break: break-all;">${tokenLine}</span>
+        <button class="btn btn-sm" onclick="rotateMCPToken()">${escapeHtml(st.token_set ? t('mcp_rotate', 'Rotate token') : t('mcp_generate', 'Generate token'))}</button>
+      </div>
+      <div class="form-hint" style="margin-top: 12px;">${escapeHtml(t('mcp_snippet_hint', 'Add this to your MCP client configuration (for example Claude Code or Cursor):'))}</div>
+      <pre class="mono" id="mcpSnippet" style="font-size: var(--fs-xs); white-space: pre-wrap; word-break: break-all; margin: 8px 0;">${escapeHtml(snippet)}</pre>
+      <button class="btn btn-sm" onclick="copyMCPSnippet()">${escapeHtml(t('mcp_copy_snippet', 'Copy configuration'))}</button>
+    </div>`;
+}
+
+async function toggleMCPEnabled(enabled) {
+  try {
+    const res = await fetch('/api/mcp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled })
+    });
+    if (!res.ok) throw new Error('status ' + res.status);
+    showToast(t(enabled ? 'mcp_enabled_toast' : 'mcp_disabled_toast', enabled ? 'MCP server enabled' : 'MCP server disabled'), 'success');
+  } catch (err) {
+    showToast(t('mcp_failed', 'MCP setting failed'), 'error');
+  }
+  loadMCPSettings();
+}
+
+async function rotateMCPToken() {
+  try {
+    const res = await fetch('/api/mcp/token', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.token) throw new Error(data.error || 'status ' + res.status);
+    mcpLastToken = data.token;
+    showToast(t('mcp_token_once', 'Copy the token now: it is shown only once.'), 'success');
+  } catch (err) {
+    showToast(t('mcp_failed', 'MCP setting failed'), 'error');
+  }
+  loadMCPSettings();
+}
+
+async function copyMCPSnippet() {
+  const el = document.getElementById('mcpSnippet');
+  if (!el) return;
+  await copyTextToClipboard(el.textContent);
+  showToast(t('mcp_copied', 'Configuration copied'), 'success');
+}
+
+export { loadMCPSettings, toggleMCPEnabled, rotateMCPToken, copyMCPSnippet, switchSettingsTab, copyPubKey, loadSSHKeys, renderSSHKeys, addSSHKey, deleteSSHKey, handleSSHKeyFileSelect, checkForUpdates, applySelfUpdate, restartPantau, openSettingsModal, load2FASettings, start2FASetup, cancel2FASetup, confirmEnable2FA, disable2FA, copy2FASecret, copy2FARecoveryCodes, download2FARecoveryCodes, saveSettings, testNotification, changePassword, saveGitHubBackupSettings, syncGitHubNow, exportSnapshotPrompt, submitSnapshotExport, openRestoreModal, switchRestoreTab, doRestoreFromGitHub, doRestoreFromFile, doStartFresh, checkFreshStatus, formatBytes, openTransferDialog, submitTransfer, loadS3Accounts, renderS3Accounts, editS3Account, cancelS3Form, saveS3Account, deleteS3Account, testS3Account, updateS3UploadDest, openS3UploadDialog, submitS3Upload, openTransfersModal, cancelTransfer, switchTransfersTab, loadTransfers };

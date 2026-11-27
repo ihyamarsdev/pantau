@@ -248,6 +248,7 @@ func main() {
 	listenFlag := flag.String("listen", "127.0.0.1", "HTTP server bind address (IP address or localhost) [env: PANTAU_LISTEN]")
 	tunnelPortFlag := flag.Int("tunnel-port", 0, "Remote Web Port Tunnel port, a separate origin from the UI (default: first free port after -port)")
 	forwardPortsFlag := flag.String("forward-ports", "15000-15019", "Local port range for SSH port forwarding to this computer (e.g. 15000-15019); empty or 0 disables [env: PANTAU_FORWARD_PORTS]")
+	mcpFlag := flag.Bool("mcp", false, "Serve the read-only MCP server at /mcp for loopback clients with the MCP token (off by default)")
 
 	dbFlag := flag.String("db", "pantau.db", "SQLite database file path")
 	openBrowserFlag := flag.Bool("open", runtime.GOOS == "windows", "Open default browser on start")
@@ -412,6 +413,9 @@ func main() {
 
 	sshrunner.SetHostKeyStore(db) // trusted SSH host keys survive restarts
 	server := web.NewServer(db, ins, dispatcher)
+	if *mcpFlag {
+		server.SetMCPEnabled(true)
+	}
 	server.SetVersion(ver)
 	server.SetSnapshotManager(snapshotMgr)
 	server.SetUpdaterManager(updaterMgr)
