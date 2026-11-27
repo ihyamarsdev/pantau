@@ -134,8 +134,23 @@ func TestMCPProtocol(t *testing.T) {
 		}},
 		{name: "tools/list has exactly the read-only tools", body: `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`, status: 200, check: func(t *testing.T, m map[string]any) {
 			tools := m["result"].(map[string]any)["tools"].([]any)
-			if len(tools) != len(mcpTools) || len(tools) != 7 {
-				t.Fatalf("tools = %d, want 7", len(tools))
+			want := map[string]bool{
+				"pantau_list_hosts": true, "pantau_get_host_detail": true, "pantau_get_k8s_overview": true,
+				"pantau_get_docker_overview": true, "pantau_get_devsecops_findings": true,
+				"pantau_get_iac_runs": true, "pantau_list_vault_keys": true,
+				"pantau_diagnose_k8s_pod": true, "pantau_diagnose_docker": true, "pantau_diagnose_iac": true,
+			}
+			got := map[string]bool{}
+			for _, raw := range tools {
+				got[raw.(map[string]any)["name"].(string)] = true
+			}
+			if len(got) != len(want) || len(tools) != len(mcpTools) {
+				t.Fatalf("tools = %d (registry %d), want %d", len(tools), len(mcpTools), len(want))
+			}
+			for name := range want {
+				if !got[name] {
+					t.Errorf("tools/list is missing %s", name)
+				}
 			}
 		}},
 		{name: "unknown method", body: `{"jsonrpc":"2.0","id":3,"method":"resources/list"}`, status: 200, wantCode: rpcMethodNotFound},

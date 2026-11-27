@@ -38,8 +38,8 @@ var mcpTools = []mcpTool{
 	},
 	{
 		Name:        "pantau_get_k8s_overview",
-		Description: "Registered Kubernetes clusters (external kubeconfig clusters and k3s/RKE2 hosts) with their mode and identity. Live node and pod status is not cached and is not included.",
-		InputSchema: mcpSchema(map[string]any{}),
+		Description: "Registered Kubernetes clusters (external kubeconfig clusters and k3s/RKE2 hosts) with their mode and identity. With include_live=true, adds a live read-only summary per cluster: node Ready state and unhealthy pods (CrashLoopBackOff, OOMKilled, Pending, Failed). Each live query has a 10-second limit; a cluster that is offline or slow reports live_error and the rest still return.",
+		InputSchema: mcpSchema(map[string]any{"include_live": map[string]any{"type": "boolean", "description": "Query each cluster live (10s limit per cluster)"}}),
 		run:         mcpGetK8sOverview,
 	},
 	{
@@ -236,7 +236,7 @@ func mcpGetHostDetail(s *Server, _ context.Context, args map[string]any) (any, e
 	}, nil
 }
 
-func mcpGetK8sOverview(s *Server, _ context.Context, _ map[string]any) (any, error) {
+func mcpGetK8sOverview(s *Server, ctx context.Context, args map[string]any) (any, error) {
 	clusters, err := s.db.ListKubeClusters()
 	if err != nil {
 		return nil, err
@@ -246,11 +246,13 @@ func mcpGetK8sOverview(s *Server, _ context.Context, _ map[string]any) (any, err
 		return nil, err
 	}
 	type clusterRow struct {
-		ID       int64  `json:"id"`
-		Name     string `json:"name"`
-		Provider string `json:"provider"`
-		Server   string `json:"server"`
-		Mode     string `json:"kube_mode"`
+		ID        int64                        `json:"id"`
+		Name      string                       `json:"name"`
+		Provider  string                       `json:"provider"`
+		Server    string                       `json:"server"`
+		Mode      string                       `json:"kube_mode"`
+		Live      *inspector.KubeClusterHealth `json:"live,omitempty"`
+		LiveError string                       `json:"live_error,omitempty"`
 	}
 	type hostRow struct {
 		ID        int64  `json:"id"`
@@ -262,8 +264,16 @@ func mcpGetK8sOverview(s *Server, _ context.Context, _ map[string]any) (any, err
 		Clusters []clusterRow `json:"clusters"`
 		Hosts    []hostRow    `json:"host_clusters"`
 	}{Clusters: []clusterRow{}, Hosts: []hostRow{}}
+	var live map[int64]mcpLiveResult
+	if v, _ := args["include_live"].(bool); v {
+		live = mcpClusterLive(ctx, s, clusters)
+	}
 	for _, c := range clusters {
-		out.Clusters = append(out.Clusters, clusterRow{ID: c.ID, Name: c.Name, Provider: c.Provider, Server: c.Server, Mode: c.KubeMode})
+		row := clusterRow{ID: c.ID, Name: c.Name, Provider: c.Provider, Server: c.Server, Mode: c.KubeMode}
+		if r, ok := live[c.ID]; ok {
+			row.Live, row.LiveError = r.health, r.errText
+		}
+		out.Clusters = append(out.Clusters, row)
 	}
 	for _, h := range hosts {
 		if h.KubeClusterID != "" {
