@@ -11,6 +11,7 @@ import (
 )
 
 func TestDiagnoseToolsRegisteredAndReadOnly(t *testing.T) {
+	t.Parallel()
 	want := []string{
 		"k8s_diagnose_pod",
 		"docker_diagnose_container",
@@ -43,6 +44,7 @@ func TestDiagnoseToolsRegisteredAndReadOnly(t *testing.T) {
 }
 
 func TestTerraformAnalyzePlanToolAndRedaction(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _ := setupTerraformTestServer(t)
 	_ = db.SetSetting("agent_enabled", "1")
 	_ = db.SetTerraformEnabled(true)
@@ -93,6 +95,7 @@ func TestTerraformAnalyzePlanToolAndRedaction(t *testing.T) {
 }
 
 func TestAnsibleDiagnoseRunTool(t *testing.T) {
+	t.Parallel()
 	srv, _ := setupAnsibleTestServer(t)
 	_ = srv.db.SetSetting("agent_enabled", "1")
 	_ = srv.db.SetAnsibleEnabled(true)
@@ -133,6 +136,7 @@ func TestAnsibleDiagnoseRunTool(t *testing.T) {
 }
 
 func TestKubeApplyDryRunGate(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	srv.inspector = inspector.New(db, nil, nil)

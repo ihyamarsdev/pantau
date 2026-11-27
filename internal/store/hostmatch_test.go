@@ -5,6 +5,7 @@ import "testing"
 // Operators type host names loosely. The normalizer must make "macmini 4", "macmini-4" and
 // "MacMini_4" the same key, while keeping digits and not merging distinct hosts.
 func TestNormalizeHostName(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"macmini-4":   "macmini-4",
 		"macmini 4":   "macmini-4",
@@ -21,6 +22,7 @@ func TestNormalizeHostName(t *testing.T) {
 
 // The exact bug: a question with a space must find the host stored with a hyphen.
 func TestHostNameMatchesLooseSeparators(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		question string
 		name     string

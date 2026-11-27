@@ -10,6 +10,7 @@ import (
 )
 
 func TestAnsiblePlaybookListCarriesLastRunSummary(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 
@@ -48,6 +49,7 @@ func TestAnsiblePlaybookListCarriesLastRunSummary(t *testing.T) {
 }
 
 func TestAnsibleRunsListFilters(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 	a, _ := srv.db.CreateAnsiblePlaybook(&store.AnsiblePlaybook{Name: "a", Content: "- hosts: all\n"})

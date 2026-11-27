@@ -9,6 +9,7 @@ import (
 )
 
 func TestOutputLinkInject(t *testing.T) {
+	t.Parallel()
 	srv, _ := setupTerraformTestDataServer(t)
 	cons := linkTestWS(t, srv, "cons", false)
 	src := linkTestWS(t, srv, "src", true)

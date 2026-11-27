@@ -22,7 +22,7 @@ type importTestEnv struct {
 
 func newImportTestEnv(t *testing.T) *importTestEnv {
 	t.Helper()
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,6 +72,7 @@ func mustJSON(t *testing.T, v interface{}) string {
 }
 
 func TestImportEndpointsRequireAuth(t *testing.T) {
+	t.Parallel()
 	e := newImportTestEnv(t)
 	for _, c := range []struct{ method, path string }{
 		{"POST", "/api/hosts/import/preview"},
@@ -85,6 +86,7 @@ func TestImportEndpointsRequireAuth(t *testing.T) {
 }
 
 func TestImportPreviewFlagsDuplicates(t *testing.T) {
+	t.Parallel()
 	e := newImportTestEnv(t)
 	if _, err := e.db.CreateHost(&store.Host{Name: "Existing Box", Host: "10.0.0.1", Port: 22, User: "root"}); err != nil {
 		t.Fatal(err)
@@ -129,6 +131,7 @@ func TestImportPreviewFlagsDuplicates(t *testing.T) {
 }
 
 func TestImportPreviewRejectsEmptyContent(t *testing.T) {
+	t.Parallel()
 	e := newImportTestEnv(t)
 	if w := e.do("POST", "/api/hosts/import/preview", `{"content":"  \n"}`, true); w.Code != http.StatusBadRequest {
 		t.Errorf("empty content = %d, want 400", w.Code)
@@ -164,6 +167,7 @@ func TestImportPreviewReadsServerSSHConfig(t *testing.T) {
 }
 
 func TestImportCommitCreatesHostsWithDefaultsAndSkipsDuplicates(t *testing.T) {
+	t.Parallel()
 	e := newImportTestEnv(t)
 	if _, err := e.db.CreateHost(&store.Host{Name: "Existing", Host: "10.0.0.1", Port: 22, User: "root"}); err != nil {
 		t.Fatal(err)
@@ -234,6 +238,7 @@ func TestImportCommitCreatesHostsWithDefaultsAndSkipsDuplicates(t *testing.T) {
 }
 
 func TestHostGroupsBulkAssignAndRollback(t *testing.T) {
+	t.Parallel()
 	e := newImportTestEnv(t)
 	a, _ := e.db.CreateHost(&store.Host{Name: "a", Host: "10.0.0.1", Port: 22, User: "root", GroupName: "Old"})
 	b, _ := e.db.CreateHost(&store.Host{Name: "b", Host: "10.0.0.2", Port: 22, User: "root"})
@@ -273,6 +278,7 @@ func TestHostGroupsBulkAssignAndRollback(t *testing.T) {
 }
 
 func TestImportCommitAppliesTheChosenLibraryKey(t *testing.T) {
+	t.Parallel()
 	e := newImportTestEnv(t)
 	keyID, err := e.db.CreateSSHKey(&store.SSHKey{Name: "deploy", PrivateKey: "PRIV", PublicKey: "ssh-ed25519 AAAA", Fingerprint: "SHA256:x"})
 	if err != nil {
@@ -309,6 +315,7 @@ func TestImportCommitAppliesTheChosenLibraryKey(t *testing.T) {
 }
 
 func TestHostGroupRenameMovesHostsAndScheduleTargets(t *testing.T) {
+	t.Parallel()
 	e := newImportTestEnv(t)
 	mk := func(name, group string) {
 		id, err := e.db.CreateHost(&store.Host{Name: name, Host: "10.2.0." + name, Port: 22, User: "root"})

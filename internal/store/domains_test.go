@@ -25,6 +25,7 @@ func domainsHost(t *testing.T, db *DB, name string) int64 {
 }
 
 func TestReplaceWebScanStoresAndReplaces(t *testing.T) {
+	t.Parallel()
 	db := domainsDB(t)
 	hostID := domainsHost(t, db, "alpha")
 
@@ -81,6 +82,7 @@ func TestReplaceWebScanStoresAndReplaces(t *testing.T) {
 }
 
 func TestGetWebScanUnknownHost(t *testing.T) {
+	t.Parallel()
 	db := domainsDB(t)
 	scan, ok, err := db.GetWebScan(42)
 	if err != nil {
@@ -92,6 +94,7 @@ func TestGetWebScanUnknownHost(t *testing.T) {
 }
 
 func TestListHostDomainSummariesAndCounts(t *testing.T) {
+	t.Parallel()
 	db := domainsDB(t)
 	scanned := domainsHost(t, db, "alpha")
 	_ = domainsHost(t, db, "beta")
@@ -136,6 +139,7 @@ func TestListHostDomainSummariesAndCounts(t *testing.T) {
 }
 
 func TestListHostDomainsSortedByDomainThenHost(t *testing.T) {
+	t.Parallel()
 	db := domainsDB(t)
 	h1 := domainsHost(t, db, "alpha")
 	h2 := domainsHost(t, db, "beta")
@@ -164,6 +168,7 @@ func TestListHostDomainsSortedByDomainThenHost(t *testing.T) {
 }
 
 func TestSearchFleetDomains(t *testing.T) {
+	t.Parallel()
 	db := domainsDB(t)
 	h1 := domainsHost(t, db, "alpha")
 	h2 := domainsHost(t, db, "beta")

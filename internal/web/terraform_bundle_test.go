@@ -32,6 +32,7 @@ func terraformJSBundle(t *testing.T) string {
 }
 
 func TestTerraformBundleServing(t *testing.T) {
+	t.Parallel()
 	srv := NewServer(nil, nil, nil)
 	for _, tc := range []struct{ path, ctype string }{
 		{"/app/terraform.js", "javascript"},
@@ -67,6 +68,7 @@ func TestTerraformBundleServing(t *testing.T) {
 }
 
 func TestTerraformBundleContract(t *testing.T) {
+	t.Parallel()
 	js := terraformJSBundle(t)
 	css := terraformBundle(t)
 
@@ -148,6 +150,7 @@ func TestTerraformBundleContract(t *testing.T) {
 }
 
 func TestTerraformBundleSyntax(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is required for the JavaScript syntax check")

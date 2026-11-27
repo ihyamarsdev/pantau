@@ -11,6 +11,7 @@ import (
 )
 
 func TestCloudflareAccounts_CRUD(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -157,6 +158,7 @@ func TestCloudflareAccounts_CRUD(t *testing.T) {
 }
 
 func TestCloudflareAccount_JSONMarshalOmitsToken(t *testing.T) {
+	t.Parallel()
 	acc := &store.CloudflareAccount{
 		ID:        1,
 		Name:      "test-account",
@@ -176,6 +178,7 @@ func TestCloudflareAccount_JSONMarshalOmitsToken(t *testing.T) {
 }
 
 func TestCloudflareAccounts_SnapshotRoundTrip(t *testing.T) {
+	t.Parallel()
 	db1, cleanup1 := setupTestDB(t)
 	defer cleanup1()
 

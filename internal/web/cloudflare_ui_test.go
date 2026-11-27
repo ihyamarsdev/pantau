@@ -8,6 +8,7 @@ import (
 )
 
 func TestCloudflareUIInIndexHTML(t *testing.T) {
+	t.Parallel()
 	ui := uiSourceForTest(t)
 
 	// 1. Verify navigation entry in side panel

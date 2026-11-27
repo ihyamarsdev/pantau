@@ -8,6 +8,7 @@ import (
 )
 
 func TestOutputLinkCRUDAndDeleteCleanup(t *testing.T) {
+	t.Parallel()
 	db, err := store.Open(filepath.Join(t.TempDir(), "l.db"))
 	if err != nil {
 		t.Fatal(err)

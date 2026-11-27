@@ -29,7 +29,7 @@ func writeFakeKubectlScript(t *testing.T, scriptContent string) {
 }
 
 func setupClusterTestServer(t *testing.T) (*Server, func(*http.Request)) {
-	dbPath := filepath.Join(t.TempDir(), "test_clusters.db")
+	dbPath := testDBCopy(t)
 	db, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatalf("failed to init test db: %v", err)

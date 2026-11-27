@@ -11,6 +11,7 @@ import (
 )
 
 func TestAgentMemoryToolsAndPrompt(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = db.SetSetting("agent_enabled", "1")
@@ -61,6 +62,7 @@ func TestAgentMemoryToolsAndPrompt(t *testing.T) {
 }
 
 func TestAgentMemoryPromptRespectsBudget(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	for i := range 40 {
@@ -73,6 +75,7 @@ func TestAgentMemoryPromptRespectsBudget(t *testing.T) {
 }
 
 func TestAgentMemoryAPI(t *testing.T) {
+	t.Parallel()
 	srv, _, cleanup := setupTestServer(t)
 	defer cleanup()
 	token := "memory_api_token"
@@ -113,6 +116,7 @@ func TestAgentMemoryAPI(t *testing.T) {
 // The operator can file a note under a domain or a cluster too, not only under a host: the panel offers the
 // same scopes the agent uses.
 func TestAgentMemoryAPIScopes(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	token := "memory_scope_token"
@@ -152,6 +156,7 @@ func TestAgentMemoryAPIScopes(t *testing.T) {
 // A note can be filed under a domain or a cluster, and the prompt carries only the notes the question is about
 // instead of the whole table.
 func TestAgentMemoryScopedToolsAndRecall(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = db.SetSetting("agent_enabled", "1")
@@ -212,6 +217,7 @@ func TestAgentMemoryScopedToolsAndRecall(t *testing.T) {
 // The prompt lists the stored inventory the question mentions, so the agent does not have to call fleet_search
 // for the first fact.
 func TestAgentMemoryPromptCarriesFleetFacts(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = db.SetSetting("agent_enabled", "1")

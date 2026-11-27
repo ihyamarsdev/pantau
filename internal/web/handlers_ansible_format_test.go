@@ -8,6 +8,7 @@ import (
 )
 
 func TestAnsiblePlaybookFormatHandler(t *testing.T) {
+	t.Parallel()
 	env := newAnsibleEnv(t)
 	play := "- hosts: web\n  tasks:\n    - debug: msg=hi\n"
 	rec := doRequest(t, env.srv, env.auth, http.MethodPost, "/api/ansible/playbooks/format", map[string]string{"content": play})

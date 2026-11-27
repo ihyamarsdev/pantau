@@ -11,6 +11,7 @@ import (
 )
 
 func TestTerraformWorkspace_UniqueNameNocase(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -39,6 +40,7 @@ func TestTerraformWorkspace_UniqueNameNocase(t *testing.T) {
 }
 
 func TestTerraformWorkspace_AtomicLockContention(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -90,6 +92,7 @@ func TestTerraformWorkspace_AtomicLockContention(t *testing.T) {
 }
 
 func TestTerraformVariables_EffectivePrecedence(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -176,6 +179,7 @@ func TestTerraformVariables_EffectivePrecedence(t *testing.T) {
 }
 
 func TestTerraformPruning_RunsAndStateVersions(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -282,6 +286,7 @@ func TestTerraformPruning_RunsAndStateVersions(t *testing.T) {
 }
 
 func TestTerraformSensitiveFields_NeverJSONMarshalled(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -363,6 +368,7 @@ func TestTerraformSensitiveFields_NeverJSONMarshalled(t *testing.T) {
 }
 
 func TestTerraformWorkspace_DeleteCascadesAll(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -414,6 +420,7 @@ func TestTerraformWorkspace_DeleteCascadesAll(t *testing.T) {
 }
 
 func TestTerraformRun_MarkInterrupted(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -455,6 +462,7 @@ func TestTerraformRun_MarkInterrupted(t *testing.T) {
 }
 
 func TestTerraformSnapshot_RoundTrip(t *testing.T) {
+	t.Parallel()
 	db1, cleanup1 := setupTestDB(t)
 	defer cleanup1()
 

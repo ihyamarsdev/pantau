@@ -66,6 +66,7 @@ func regJSON(t *testing.T, w *httptest.ResponseRecorder, code int) map[string]an
 }
 
 func TestRegistrySettingsEndpoints(t *testing.T) {
+	t.Parallel()
 	srv, db, _, auth := setupTerraformTestServer(t)
 	do := func(method, url string, body any) *httptest.ResponseRecorder {
 		return doTFReq(t, srv, auth, method, url, body)
@@ -103,6 +104,7 @@ func TestRegistrySettingsEndpoints(t *testing.T) {
 }
 
 func TestRegistrySettingsTestEndpoint(t *testing.T) {
+	t.Parallel()
 	_, _, do := regEnv(t)
 	m := regJSON(t, do("POST", "/api/terraform/registry/settings/test", nil), 200)
 	if m["ok"] != true || m["error"] != nil {
@@ -122,6 +124,7 @@ func TestRegistrySettingsTestEndpoint(t *testing.T) {
 }
 
 func TestRegistryBrowseEndpoints(t *testing.T) {
+	t.Parallel()
 	_, _, do := regEnv(t)
 	m := regJSON(t, do("GET", "/api/terraform/registry/modules?q=vpc&provider=aws&limit=500", nil), 200)
 	if mods := m["modules"].([]any); len(mods) != 1 || m["next_offset"] != float64(50) || m["total_hint"] != float64(1) {
@@ -156,6 +159,7 @@ func TestRegistryBrowseEndpoints(t *testing.T) {
 }
 
 func TestRegistryBrowseErrors(t *testing.T) {
+	t.Parallel()
 	_, _, do := regEnv(t)
 	regJSON(t, do("GET", "/api/terraform/registry/modules/ns/nope/aws", nil), 404)
 	regJSON(t, do("GET", "/api/terraform/registry/modules/ns/a%20b/aws", nil), 400)

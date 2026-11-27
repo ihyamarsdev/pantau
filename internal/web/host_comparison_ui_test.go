@@ -6,6 +6,7 @@ import (
 )
 
 func TestHostComparisonUIInIndexHTML(t *testing.T) {
+	t.Parallel()
 	html := uiSourceForTest(t)
 
 	// 1. Verify header button btnHeaderCompare exists with proper icon and onclick handler
@@ -116,6 +117,7 @@ func TestHostComparisonUIInIndexHTML(t *testing.T) {
 }
 
 func TestCopyComparisonMarkdownClipboardInsecureContextFallback(t *testing.T) {
+	t.Parallel()
 	ui := uiSourceForTest(t)
 
 	// In non-secure contexts (HTTP over LAN IP, e.g. http://192.168.x.x:8080),

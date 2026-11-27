@@ -23,6 +23,7 @@ users:
 `
 
 func TestTFCloudImport(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupTerraformTestDataServer(t)
 	const cfToken = "CF-API-TOKEN-SECRET-9"
 	cfID, err := srv.db.CreateCloudflareAccount(&store.CloudflareAccount{Name: "cf1", AccountID: "acc-7", APIToken: cfToken})
@@ -96,6 +97,7 @@ func TestTFCloudImport(t *testing.T) {
 }
 
 func TestTFCloudBuildRunConfigPlainAndAssumeRole(t *testing.T) {
+	t.Parallel()
 	srv, _ := setupTerraformTestDataServer(t)
 	db := srv.db
 	old := resolveCloudEnv

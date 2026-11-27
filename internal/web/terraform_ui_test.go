@@ -11,6 +11,7 @@ import (
 // #sectionTerraform in index.html is a clean mount point and the legacy core/12-terraform.js
 // plus inline markup/dialogs are removed.
 func TestTerraformSectionIsMountedByBundle(t *testing.T) {
+	t.Parallel()
 	html := string(embeddedHTML)
 	fullUI := uiSourceForTest(t)
 

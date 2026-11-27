@@ -39,6 +39,7 @@ func setupCFFake(t *testing.T, acct store.CloudflareAccount) (*Server, func(*htt
 }
 
 func TestCloudflareAccessRulesEndpoints(t *testing.T) {
+	t.Parallel()
 	srv, authReq, id := setupCFFake(t, store.CloudflareAccount{Name: "acc"})
 	const zid, rid = "0123456789abcdef0123456789abcdef", "fedcba9876543210fedcba9876543210"
 	base := fmt.Sprintf("/api/cloudflare/accounts/%d/zones/%s/access-rules", id, zid)
@@ -87,6 +88,7 @@ func TestCloudflareAccessRulesEndpoints(t *testing.T) {
 }
 
 func TestCloudflareDNSExportEndpoint(t *testing.T) {
+	t.Parallel()
 	srv, authReq, id := setupCFFake(t, store.CloudflareAccount{Name: "acc"})
 	const zid = "0123456789abcdef0123456789abcdef"
 
@@ -106,6 +108,7 @@ func TestCloudflareDNSExportEndpoint(t *testing.T) {
 }
 
 func TestCloudflareTunnelsEndpoint(t *testing.T) {
+	t.Parallel()
 	// The Cloudflare account id is stored with the account ...
 	srv, authReq, id := setupCFFake(t, store.CloudflareAccount{Name: "with-id", AccountID: cfFakeAccountID})
 	w := cfDo(srv, authReq, http.MethodGet, fmt.Sprintf("/api/cloudflare/accounts/%d/tunnels", id), "")
@@ -125,6 +128,7 @@ func TestCloudflareTunnelsEndpoint(t *testing.T) {
 }
 
 func TestCloudflareForbiddenIsFlagged(t *testing.T) {
+	t.Parallel()
 	srv, authReq := setupCFTestServer(t)
 	denied := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)

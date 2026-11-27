@@ -11,6 +11,7 @@ import (
 )
 
 func TestAnsiblePlaybook_GitSourceAndTokenHandling(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -65,6 +66,7 @@ func TestAnsiblePlaybook_GitSourceAndTokenHandling(t *testing.T) {
 }
 
 func TestAnsibleRun_TriggerAndCommit(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 	pid, _ := db.CreateAnsiblePlaybook(&store.AnsiblePlaybook{Name: "p", Content: "x"})
@@ -87,6 +89,7 @@ func TestAnsibleRun_TriggerAndCommit(t *testing.T) {
 }
 
 func TestAnsibleSchedule_CRUDFireAndCascade(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 	pid, _ := db.CreateAnsiblePlaybook(&store.AnsiblePlaybook{Name: "nightly", Content: "x"})

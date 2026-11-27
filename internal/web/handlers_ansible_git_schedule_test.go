@@ -27,6 +27,7 @@ func gitPlaybookBody(extra map[string]interface{}) map[string]interface{} {
 }
 
 func TestAnsibleGitPlaybookValidationAndTokenSecrecy(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 
@@ -87,6 +88,7 @@ func TestAnsibleGitPlaybookValidationAndTokenSecrecy(t *testing.T) {
 }
 
 func TestAnsibleGitRunUsesRepoSourceAndRecordsCommit(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 	hid, _ := srv.db.CreateHost(&store.Host{Name: "h1", Host: "10.0.0.1", Port: 22, User: "root", CustomKey: "KEY"})
@@ -152,6 +154,7 @@ func scheduleBody(pid int64, hostIDs []int64, over map[string]interface{}) map[s
 }
 
 func TestAnsibleScheduleCRUDAndValidation(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 	hid, _ := srv.db.CreateHost(&store.Host{Name: "h1", Host: "10.0.0.1", Port: 22, User: "root", CustomKey: "KEY", GroupName: "web"})
@@ -224,6 +227,7 @@ func TestAnsibleScheduleCRUDAndValidation(t *testing.T) {
 }
 
 func TestAnsibleSchedulerTick(t *testing.T) {
+	t.Parallel()
 	srv, _ := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 	hid, _ := srv.db.CreateHost(&store.Host{Name: "h1", Host: "10.0.0.1", Port: 22, User: "root", CustomKey: "KEY"})

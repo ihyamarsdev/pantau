@@ -6,6 +6,7 @@ import (
 )
 
 func TestTerminalLinkAndTunnelUIInIndexHTML(t *testing.T) {
+	t.Parallel()
 	html := string(embeddedHTML)
 	js := coreJSSource(t)
 	ui := html + js

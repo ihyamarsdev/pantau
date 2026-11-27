@@ -72,6 +72,7 @@ func filesTestServer(t *testing.T) (call func(method, action string, query url.V
 
 // The editor saves its whole buffer back, so a file over 2 MiB must be refused instead of silently truncated.
 func TestFileReadRefusesFilesTheEditorCannotHold(t *testing.T) {
+	t.Parallel()
 	call, _ := filesTestServer(t)
 	dir := t.TempDir()
 
@@ -108,6 +109,7 @@ func TestFileReadRefusesFilesTheEditorCannotHold(t *testing.T) {
 
 // Delete used to answer "deleted" whatever happened: a folder with content stayed and the UI said it was gone.
 func TestFileDeleteReportsWhatHappened(t *testing.T) {
+	t.Parallel()
 	call, _ := filesTestServer(t)
 	dir := t.TempDir()
 	del := func(p string, recursive bool) *httptest.ResponseRecorder {
@@ -163,6 +165,7 @@ func TestFileDeleteReportsWhatHappened(t *testing.T) {
 
 // When the source size cannot be measured the disk-space guard cannot run: refuse instead of copying blind.
 func TestFileDuplicateFailsClosedWhenSizeUnknown(t *testing.T) {
+	t.Parallel()
 	call, runner := filesTestServer(t)
 	dir := t.TempDir()
 	src := filepath.Join(dir, "src")
@@ -205,6 +208,7 @@ func (b *blockingPipeRunner) Close() error {
 
 // A browser that goes away must not leave tar running on the host.
 func TestPipeWithLimitStopsWhenClientLeaves(t *testing.T) {
+	t.Parallel()
 	r := &blockingPipeRunner{MockRunner: sshrunner.NewMockRunner(), closed: make(chan struct{})}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)

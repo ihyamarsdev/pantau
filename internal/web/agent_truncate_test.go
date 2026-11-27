@@ -11,6 +11,7 @@ import (
 // keeps the beginning and the end and knows how to fetch the rest.
 
 func TestTruncateToolResultKeepsHeadAndTail(t *testing.T) {
+	t.Parallel()
 	head := strings.Repeat("H", agentToolResultMax)
 	tail := strings.Repeat("T", 5000)
 	long := head + strings.Repeat("M", 5000) + tail
@@ -39,6 +40,7 @@ func TestTruncateToolResultKeepsHeadAndTail(t *testing.T) {
 }
 
 func TestTruncateToolResultSmallResultUntouched(t *testing.T) {
+	t.Parallel()
 	small := "drwxr-xr-x  2 root root 4096 Jan 1 00:00 bin"
 	if got := truncateToolResult("list_dir", small); got != small {
 		t.Fatalf("a small result must pass through unchanged: %q", got)
@@ -48,6 +50,7 @@ func TestTruncateToolResultSmallResultUntouched(t *testing.T) {
 // Every tool a model can call must leave the result either whole or announced. A tool without a registered
 // hint still gets a usable notice, so a new tool cannot silently truncate.
 func TestTruncateToolResultUnknownToolGetsGenericHint(t *testing.T) {
+	t.Parallel()
 	got := truncateToolResult("some_new_tool", strings.Repeat("x", agentToolResultMax+1))
 	if !strings.Contains(got, "tool result truncated") || !strings.Contains(got, "narrow the call") {
 		t.Fatalf("an unknown tool must get the generic hint: %s", got[:400])
@@ -57,6 +60,7 @@ func TestTruncateToolResultUnknownToolGetsGenericHint(t *testing.T) {
 // A registered tool that grows a hint must name the tool that actually reads it; the map is the contract the
 // truncation relies on, so a key that is not a tool name is dead weight.
 func TestToolResultHintsNameRegisteredTools(t *testing.T) {
+	t.Parallel()
 	for name := range toolResultHints {
 		if findAgentTool(name) == nil {
 			t.Errorf("toolResultHints names %q, which is not a registered tool", name)
@@ -67,6 +71,7 @@ func TestToolResultHintsNameRegisteredTools(t *testing.T) {
 // Old tool results are trimmed before a model call: the model already acted on them, so the middle is not
 // worth the tokens. The newest ones stay whole, because the model is still reading them.
 func TestShrinkOldToolResultsKeepsNewest(t *testing.T) {
+	t.Parallel()
 	big := strings.Repeat("L", agentStaleBytes+500)
 	msgs := []llmMessage{{Role: llmRoleUser, Text: "go"}}
 	for i := range agentStaleKeep + 3 {
@@ -110,6 +115,7 @@ func TestShrinkOldToolResultsKeepsNewest(t *testing.T) {
 }
 
 func TestShrinkOldToolResultsShortHistoryUntouched(t *testing.T) {
+	t.Parallel()
 	msgs := []llmMessage{
 		{Role: llmRoleUser, Text: "u"},
 		{Role: llmRoleTool, Text: strings.Repeat("x", agentStaleBytes+1)},
@@ -163,6 +169,7 @@ func TestCallAgentToolDoesNotCutBeforeTruncation(t *testing.T) {
 // A host list is foundational: trimming an old list_hosts result to 2 KB would silently drop the hosts at
 // the end, so a later turn could not see that a host like "macmini-4" exists. Keep these results whole.
 func TestShrinkOldToolResultsKeepsHostLists(t *testing.T) {
+	t.Parallel()
 	big := strings.Repeat("H", agentStaleBytes+500)
 	msgs := []llmMessage{{Role: llmRoleUser, Text: "go"}}
 	for i := range agentStaleKeep + 2 {

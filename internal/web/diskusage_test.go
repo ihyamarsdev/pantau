@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -25,7 +24,7 @@ func setupDiskUsageServer(t *testing.T, runner *sshrunner.MockRunner) (*Server, 
 	}
 	t.Cleanup(func() { os.RemoveAll(tmpDir) })
 
-	db, err := store.Open(filepath.Join(tmpDir, "pantau.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}

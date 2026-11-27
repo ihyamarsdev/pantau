@@ -25,7 +25,7 @@ import (
 func setupReposTestServer(t *testing.T) (*Server, func(*http.Request)) {
 	t.Helper()
 	dir := t.TempDir()
-	db, err := store.Open(filepath.Join(dir, "test_repos.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatalf("failed to init test db: %v", err)
 	}
@@ -75,6 +75,7 @@ func newReposServer(t *testing.T) (*Server, func(method, url string, body interf
 }
 
 func TestReposValidation(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupReposTestServer(t)
 
 	for name, body := range map[string]map[string]interface{}{
@@ -94,6 +95,7 @@ func TestReposValidation(t *testing.T) {
 }
 
 func TestReposLifecycle(t *testing.T) {
+	t.Parallel()
 	_, call, bare := newReposServer(t)
 
 	code, repo := cloneRepo(t, call, map[string]interface{}{
@@ -207,6 +209,7 @@ func TestReposLifecycle(t *testing.T) {
 }
 
 func TestRepoFolderSetting(t *testing.T) {
+	t.Parallel()
 	_, call, _ := newReposServer(t)
 	if code, _ := call(http.MethodPut, "/api/repos/folder", map[string]string{"folder": "relative/dir"}); code != http.StatusBadRequest {
 		t.Errorf("relative folder: got %d, want 400", code)
@@ -261,6 +264,7 @@ func cloneRepo(t *testing.T, call repoCall, body map[string]interface{}) (int, m
 }
 
 func TestRepoCloneJobProgressCancelAndRedaction(t *testing.T) {
+	t.Parallel()
 	srv, call, _ := newReposServer(t)
 	srv.repoClone = func(ctx context.Context, g ansible.GitSource, dir string, log io.Writer) (string, string, error) {
 		fmt.Fprint(log, "Cloning into 'x'...\nReceiving objects:  50%\rReceiving objects: 100%\n")
@@ -303,6 +307,7 @@ func TestRepoCloneJobProgressCancelAndRedaction(t *testing.T) {
 }
 
 func TestRepoFoldersGroupRepositoriesAndMoveThem(t *testing.T) {
+	t.Parallel()
 	srv, call, _ := newReposServer(t)
 	base := srv.reposDir
 	create := func(name, group string) map[string]interface{} {
@@ -379,6 +384,7 @@ func TestRepoFoldersGroupRepositoriesAndMoveThem(t *testing.T) {
 }
 
 func TestRepoBranchesListSwitchCreateAndDelete(t *testing.T) {
+	t.Parallel()
 	_, call, bare := newReposServer(t)
 	code, repo := cloneRepo(t, call, map[string]interface{}{"url": "https://h.example/o/branches.git"})
 	if code != http.StatusCreated {
@@ -465,6 +471,7 @@ func TestRepoBranchesListSwitchCreateAndDelete(t *testing.T) {
 }
 
 func TestRepoCopyToHost(t *testing.T) {
+	t.Parallel()
 	srv, call, _ := newReposServer(t)
 	mock := sshrunner.NewMockRunner()
 	srv.SetTransferManager(transfer.NewManager(srv.db, func(sshrunner.Target) (sshrunner.Runner, error) { return mock, nil }))

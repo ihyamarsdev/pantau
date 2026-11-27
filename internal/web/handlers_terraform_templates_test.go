@@ -8,6 +8,7 @@ import (
 )
 
 func TestTerraformTemplates_Endpoint(t *testing.T) {
+	t.Parallel()
 	srv, authReq := setupTerraformCatalogTestServer(t)
 	get := func(method string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, "/api/terraform/templates", nil)

@@ -2,7 +2,6 @@ package store_test
 
 import (
 	"errors"
-	"os"
 	"testing"
 	"time"
 
@@ -11,27 +10,15 @@ import (
 
 func setupTestDB(t *testing.T) (*store.DB, func()) {
 	t.Helper()
-	tmp, err := os.CreateTemp("", "pantau_store_test_*.db")
+	db, err := store.Open(store.TemplateCopy(t))
 	if err != nil {
-		t.Fatalf("create temp db: %v", err)
-	}
-	tmpPath := tmp.Name()
-	tmp.Close()
-
-	db, err := store.Open(tmpPath)
-	if err != nil {
-		os.Remove(tmpPath)
 		t.Fatalf("open db: %v", err)
 	}
-
-	cleanup := func() {
-		db.Close()
-		os.Remove(tmpPath)
-	}
-	return db, cleanup
+	return db, func() { db.Close() }
 }
 
 func TestKubeClusters_CRUD(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -205,6 +192,7 @@ func TestKubeClusters_CRUD(t *testing.T) {
 }
 
 func TestKubeClusters_KubeModeValidation(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -237,6 +225,7 @@ func TestKubeClusters_KubeModeValidation(t *testing.T) {
 }
 
 func TestKubeClusters_SnapshotRoundTrip(t *testing.T) {
+	t.Parallel()
 	db1, cleanup1 := setupTestDB(t)
 	defer cleanup1()
 

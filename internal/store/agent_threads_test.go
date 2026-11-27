@@ -3,14 +3,13 @@ package store
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func openTestDB(t *testing.T) *DB {
 	t.Helper()
-	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,6 +19,7 @@ func openTestDB(t *testing.T) *DB {
 
 // The schema migration creates both tables with the columns the history needs, on a fresh database.
 func TestAgentThreadSchema(t *testing.T) {
+	t.Parallel()
 	db := openTestDB(t)
 	cols := func(table string) map[string]bool {
 		rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, table)
@@ -54,6 +54,7 @@ func TestAgentThreadSchema(t *testing.T) {
 }
 
 func TestAgentThreadCRUD(t *testing.T) {
+	t.Parallel()
 	db := openTestDB(t)
 
 	th, err := db.CreateAgentThread("host", 7, "sess-a", "")
@@ -150,6 +151,7 @@ func TestAgentThreadCRUD(t *testing.T) {
 // The rolling pruning keeps the newest messages of a thread, and the stored history always starts at a user
 // message so a resumed conversation is a valid provider history.
 func TestAgentMessagesPruned(t *testing.T) {
+	t.Parallel()
 	db := openTestDB(t)
 	th, err := db.CreateAgentThread("global", 0, "s", "")
 	if err != nil {
@@ -186,6 +188,7 @@ func TestAgentMessagesPruned(t *testing.T) {
 // The chat history is local and re-creatable: a System Snapshot must not carry it, so a restore on another
 // instance cannot overwrite that instance's conversations.
 func TestAgentThreadsOutOfSnapshot(t *testing.T) {
+	t.Parallel()
 	db := openTestDB(t)
 	th, err := db.CreateAgentThread("host", 1, "s", "secret topic")
 	if err != nil {
@@ -208,6 +211,7 @@ func TestAgentThreadsOutOfSnapshot(t *testing.T) {
 }
 
 func TestAgentThreadsPruned(t *testing.T) {
+	t.Parallel()
 	db := openTestDB(t)
 	var oldest int64
 	for i := range AgentThreadMax + 10 {

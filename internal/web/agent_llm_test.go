@@ -139,6 +139,7 @@ data: {"type":"message_stop"}
 // ---------------------------------------------------------------- Anthropic
 
 func TestLLMAnthropicTextStream(t *testing.T) {
+	t.Parallel()
 	cap := &llmCapture{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cap.record(r)
@@ -208,6 +209,7 @@ func TestLLMAnthropicTextStream(t *testing.T) {
 }
 
 func TestLLMAnthropicMaxTokensOverride(t *testing.T) {
+	t.Parallel()
 	cap := &llmCapture{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cap.record(r)
@@ -224,6 +226,7 @@ func TestLLMAnthropicMaxTokensOverride(t *testing.T) {
 }
 
 func TestLLMAnthropicToolCallRequestAndStream(t *testing.T) {
+	t.Parallel()
 	cap := &llmCapture{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cap.record(r)
@@ -324,6 +327,7 @@ func TestLLMAnthropicToolCallRequestAndStream(t *testing.T) {
 }
 
 func TestLLMAnthropicMultipleToolCalls(t *testing.T) {
+	t.Parallel()
 	stream := `event: content_block_start
 data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_a","name":"a"}}
 
@@ -361,6 +365,7 @@ data: {"type":"message_stop"}
 }
 
 func TestLLMAnthropicErrorStatusKeepsProviderMessage(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		io.WriteString(w, `{"type":"error","error":{"type":"invalid_request_error","message":"max_tokens is too large"}}`)
@@ -384,6 +389,7 @@ func TestLLMAnthropicErrorStatusKeepsProviderMessage(t *testing.T) {
 }
 
 func TestLLMAnthropicErrorBodyIsClipped(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		io.WriteString(w, strings.Repeat("x", 2000))
@@ -484,6 +490,7 @@ func TestLLMAnthropicNoRetryOn400(t *testing.T) {
 }
 
 func TestLLMAnthropicContextCancel(t *testing.T) {
+	t.Parallel()
 	started := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -539,6 +546,7 @@ data: [DONE]
 `
 
 func TestLLMOpenAITextStream(t *testing.T) {
+	t.Parallel()
 	cap := &llmCapture{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cap.record(r)
@@ -599,6 +607,7 @@ func TestLLMOpenAITextStream(t *testing.T) {
 }
 
 func TestLLMOpenAIEmptyKeyHasNoAuthHeader(t *testing.T) {
+	t.Parallel()
 	cap := &llmCapture{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cap.record(r)
@@ -615,6 +624,7 @@ func TestLLMOpenAIEmptyKeyHasNoAuthHeader(t *testing.T) {
 }
 
 func TestLLMOpenAIToolCallStream(t *testing.T) {
+	t.Parallel()
 	stream := `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_abc","type":"function","function":{"name":"systemd_detail","arguments":""}}]}}]}
 
 data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"unit\":"}}]}}]}
@@ -693,6 +703,7 @@ data: [DONE]
 }
 
 func TestLLMOpenAIToolCallWithoutID(t *testing.T) {
+	t.Parallel()
 	stream := `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"noop","arguments":"{}"}}]}}]}
 
 data: [DONE]
@@ -716,6 +727,7 @@ data: [DONE]
 }
 
 func TestLLMOpenAIMultipleToolCalls(t *testing.T) {
+	t.Parallel()
 	stream := `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_a","function":{"name":"a","arguments":"{\"x\":1}"}},{"index":1,"id":"call_b","function":{"name":"b","arguments":"{\"y\":2}"}}]}}]}
 
 data: [DONE]
@@ -742,6 +754,7 @@ data: [DONE]
 }
 
 func TestLLMOpenAIErrorStatus(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		io.WriteString(w, `{"error":{"message":"invalid api key","type":"auth"}}`)
@@ -762,6 +775,7 @@ func TestLLMOpenAIErrorStatus(t *testing.T) {
 }
 
 func TestLLMOpenAIErrorObjectMidStream(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		llmSSEWrite(w, "data: {\"error\":{\"message\":\"model overloaded\"}}\n\n")
 	}))
@@ -823,6 +837,7 @@ func TestLLMOpenAINoRetryOn400(t *testing.T) {
 }
 
 func TestLLMOpenAIContextCancel(t *testing.T) {
+	t.Parallel()
 	started := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -868,6 +883,7 @@ func TestLLMOpenAIStalledStream(t *testing.T) {
 // ---------------------------------------------------------------- base URLs and provider
 
 func TestLLMBaseURLNormalisation(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		provider string
 		base     string
@@ -898,6 +914,7 @@ func TestLLMBaseURLNormalisation(t *testing.T) {
 }
 
 func TestLLMDefaultBaseURLs(t *testing.T) {
+	t.Parallel()
 	a, _ := newLLMClient("anthropic", "", "k")
 	if got := a.(llmBackend).endpoint(); got != "https://api.anthropic.com/v1/messages" {
 		t.Errorf("anthropic default endpoint = %q", got)
@@ -909,6 +926,7 @@ func TestLLMDefaultBaseURLs(t *testing.T) {
 }
 
 func TestLLMUnknownProvider(t *testing.T) {
+	t.Parallel()
 	if _, err := newLLMClient("gemini", "https://x", "k"); err == nil {
 		t.Fatal("want an error for an unknown provider")
 	}
@@ -950,6 +968,7 @@ func TestLLMOpenAINoRetryAfterDelta(t *testing.T) {
 
 // An answer without text and without tool calls is not an error of this layer.
 func TestLLMEmptyResponseIsNoError(t *testing.T) {
+	t.Parallel()
 	asrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		llmSSEWrite(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":1}}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
 	}))
@@ -979,6 +998,7 @@ func TestLLMEmptyResponseIsNoError(t *testing.T) {
 
 // Many gateways close the stream after a chunk with a finish_reason and never send [DONE].
 func TestLLMOpenAIFinishReasonWithoutDone(t *testing.T) {
+	t.Parallel()
 	stream := `data: {"choices":[{"delta":{"content":"Hello"},"finish_reason":null}]}
 
 data: {"choices":[{"delta":{"content":" world"},"finish_reason":"stop"}]}
@@ -1003,6 +1023,7 @@ data: {"choices":[{"delta":{"content":" world"},"finish_reason":"stop"}]}
 }
 
 func TestLLMOpenAIFinishReasonWithUsageAfterIt(t *testing.T) {
+	t.Parallel()
 	stream := `data: {"choices":[{"delta":{"content":"Hi"},"finish_reason":"stop"}]}
 
 data: {"choices":[],"usage":{"prompt_tokens":9,"completion_tokens":3}}
@@ -1026,6 +1047,7 @@ data: {"choices":[],"usage":{"prompt_tokens":9,"completion_tokens":3}}
 }
 
 func TestLLMOpenAIFinishReasonWithToolCall(t *testing.T) {
+	t.Parallel()
 	stream := `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_x","function":{"name":"noop","arguments":"{}"}}]},"finish_reason":null}]}
 
 data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}
@@ -1050,6 +1072,7 @@ data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}
 
 // A stream that ends in the middle of the text without a finish_reason is still truncated.
 func TestLLMOpenAITruncatedWithoutFinishReason(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		llmSSEWrite(w, "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"},\"finish_reason\":null}]}\n\n")
 	}))

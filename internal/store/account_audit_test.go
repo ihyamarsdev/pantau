@@ -2,19 +2,19 @@ package store
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 )
 
 func TestAccountAuditStore(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-accountaudit-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := Open(filepath.Join(tmpDir, "test.db"))
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}

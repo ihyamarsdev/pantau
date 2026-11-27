@@ -38,6 +38,7 @@ func ansibleBundle(t *testing.T) string {
 }
 
 func TestAnsibleSectionIsMountedByBundle(t *testing.T) {
+	t.Parallel()
 	html := uiSourceForTest(t)
 	for _, want := range []string{
 		`id="sectionAnsible"`, `/app/ansible.css`, `/app/ansible.js`, `id="navItemAnsible"`, `switchSideNav('ansible')`,
@@ -59,6 +60,7 @@ func TestAnsibleSectionIsMountedByBundle(t *testing.T) {
 }
 
 func TestAnsibleBundleServing(t *testing.T) {
+	t.Parallel()
 	srv := NewServer(nil, nil, nil)
 	for _, tc := range []struct{ path, ctype string }{
 		{"/app/ansible.js", "javascript"},
@@ -94,6 +96,7 @@ func TestAnsibleBundleServing(t *testing.T) {
 }
 
 func TestAnsibleBundleContract(t *testing.T) {
+	t.Parallel()
 	js := ansibleBundle(t)
 
 	// Tabs registered by the modules and the panel/tab id scheme the shell derives from them.
@@ -169,6 +172,7 @@ func uniqueStrings(in []string) []string {
 }
 
 func TestAnsibleBundleSyntax(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is required for the JavaScript syntax check")

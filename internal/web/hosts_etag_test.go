@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -15,7 +14,8 @@ import (
 )
 
 func TestHostsETagAndGzip(t *testing.T) {
-	db, err := store.Open(filepath.Join(t.TempDir(), "test_hosts_etag.db"))
+	t.Parallel()
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}

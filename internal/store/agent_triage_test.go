@@ -2,13 +2,13 @@ package store
 
 import (
 	"database/sql"
-	"path/filepath"
 	"testing"
 	"time"
 )
 
 func TestTriageResultPersistenceAndSignatureCache(t *testing.T) {
-	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	t.Parallel()
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,8 @@ func TestTriageResultPersistenceAndSignatureCache(t *testing.T) {
 }
 
 func TestTriageBudgetAccumulatesPerDay(t *testing.T) {
-	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	t.Parallel()
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +81,8 @@ func TestTriageBudgetAccumulatesPerDay(t *testing.T) {
 }
 
 func TestBriefingUpsertPerDay(t *testing.T) {
-	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	t.Parallel()
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +119,8 @@ func TestBriefingUpsertPerDay(t *testing.T) {
 }
 
 func TestAgentTriageMigrationIdempotent(t *testing.T) {
-	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	t.Parallel()
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}

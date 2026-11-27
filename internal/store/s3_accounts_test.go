@@ -8,6 +8,7 @@ import (
 )
 
 func TestS3Accounts_CRUD(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -40,6 +41,7 @@ func TestS3Accounts_CRUD(t *testing.T) {
 
 // A database (or snapshot) from the single-account version keeps its credentials as an account named "Default".
 func TestS3Accounts_MigratesLegacySettings(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 	for k, v := range map[string]string{
@@ -66,6 +68,7 @@ func TestS3Accounts_MigratesLegacySettings(t *testing.T) {
 }
 
 func TestS3Accounts_SurviveSnapshotRoundTrip(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 	_, _ = db.CreateS3Account(&store.S3Account{Name: "a", Bucket: "b1", AccessKey: "ak", SecretKey: "sk1"})

@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"pantau/internal/inspector"
@@ -19,7 +18,7 @@ func setupSettingsTestServer(t *testing.T) (*Server, *store.DB, func()) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		os.RemoveAll(tmpDir)
 		t.Fatal(err)
@@ -36,6 +35,7 @@ func setupSettingsTestServer(t *testing.T) (*Server, *store.DB, func()) {
 }
 
 func TestSettings_SecretHandlingAndRoundTrip(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupSettingsTestServer(t)
 	defer cleanup()
 
@@ -152,6 +152,7 @@ func TestSettings_SecretHandlingAndRoundTrip(t *testing.T) {
 }
 
 func TestSettings_URLValidation(t *testing.T) {
+	t.Parallel()
 	srv, _, cleanup := setupSettingsTestServer(t)
 	defer cleanup()
 
@@ -197,6 +198,7 @@ func TestSettings_URLValidation(t *testing.T) {
 
 // TestSettings_IacGateRoundTrip checks that the opt-in IaC gate is off by default and can be switched on.
 func TestSettings_IacGateRoundTrip(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupSettingsTestServer(t)
 	defer cleanup()
 

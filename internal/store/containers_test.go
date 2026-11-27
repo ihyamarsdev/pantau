@@ -5,6 +5,7 @@ import (
 )
 
 func TestReplaceHostContainersReplacesAndCascades(t *testing.T) {
+	t.Parallel()
 	db := fleetSearchDB(t)
 	h1 := fleetSearchHost(t, db, "alpha", "")
 
@@ -40,6 +41,7 @@ func TestReplaceHostContainersReplacesAndCascades(t *testing.T) {
 }
 
 func TestSearchFleetHostContainerImages(t *testing.T) {
+	t.Parallel()
 	db := fleetSearchDB(t)
 	h1 := fleetSearchHost(t, db, "alpha", "prod")
 	h2 := fleetSearchHost(t, db, "beta", "prod")
@@ -81,6 +83,7 @@ func TestSearchFleetHostContainerImages(t *testing.T) {
 }
 
 func TestSearchFleetHostContainerWildcardsAreLiteral(t *testing.T) {
+	t.Parallel()
 	db := fleetSearchDB(t)
 	h1 := fleetSearchHost(t, db, "alpha", "")
 	if err := db.ReplaceHostContainers(h1, []HostContainer{

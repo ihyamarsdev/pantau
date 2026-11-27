@@ -2,12 +2,12 @@ package store
 
 import (
 	"fmt"
-	"path/filepath"
 	"testing"
 )
 
 func TestIncidentRetention(t *testing.T) {
-	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	t.Parallel()
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,8 @@ func TestIncidentRetention(t *testing.T) {
 }
 
 func TestAlertRetentionKeepsUnacknowledged(t *testing.T) {
-	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	t.Parallel()
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}

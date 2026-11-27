@@ -14,6 +14,7 @@ import (
 )
 
 func TestLogsStreamAuthAndSSE(t *testing.T) {
+	t.Parallel()
 	broadcaster := logger.NewBroadcaster(10)
 	logger.SetDefaultBroadcaster(broadcaster)
 

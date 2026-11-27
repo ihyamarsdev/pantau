@@ -17,6 +17,7 @@ func vaultValues(t *testing.T, db *DB) []string {
 
 // A snapshot restores the vault rows together with the master key, so every secret still decrypts.
 func TestSnapshotRestoresVaultSecretsWithMasterKey(t *testing.T) {
+	t.Parallel()
 	src := newVaultTestDB(t)
 	if _, err := src.CreateVaultSecret(&vault.Secret{SecretMeta: vault.SecretMeta{Key: "DB_PASS", Scope: vault.ScopeGlobal}, Value: "s3cret"}); err != nil {
 		t.Fatal(err)
@@ -44,6 +45,7 @@ func TestSnapshotRestoresVaultSecretsWithMasterKey(t *testing.T) {
 
 // A legacy snapshot (no vault section) must not replace the local master key under local secrets.
 func TestLegacySnapshotKeepsLocalMasterKey(t *testing.T) {
+	t.Parallel()
 	src := newVaultTestDB(t)
 	if _, err := src.CreateVaultSecret(&vault.Secret{SecretMeta: vault.SecretMeta{Key: "A", Scope: vault.ScopeGlobal}, Value: "from-src"}); err != nil {
 		t.Fatal(err)
@@ -68,6 +70,7 @@ func TestLegacySnapshotKeepsLocalMasterKey(t *testing.T) {
 
 // A section that cannot be read must fail the export, not produce a snapshot missing that section.
 func TestSnapshotExportFailsWhenASectionCannotBeRead(t *testing.T) {
+	t.Parallel()
 	db := newVaultTestDB(t)
 	if _, err := db.Exec(`DROP TABLE ssh_keys`); err != nil {
 		t.Fatal(err)

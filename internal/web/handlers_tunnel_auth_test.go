@@ -15,6 +15,7 @@ func codeOf(h http.HandlerFunc, r *http.Request) int {
 }
 
 func TestTunnelAuth_RejectsSessionAndOtherTunnelCookies(t *testing.T) {
+	t.Parallel()
 	s := &Server{}
 	h := s.tunnelAuth(okHandler)
 
@@ -41,6 +42,7 @@ func TestTunnelAuth_RejectsSessionAndOtherTunnelCookies(t *testing.T) {
 }
 
 func TestTunnelRedirect_RefusesCrossSiteAndIssuesScopedCookie(t *testing.T) {
+	t.Parallel()
 	s := &Server{tunnelPort: 9999}
 
 	r := httptest.NewRequest("GET", "/api/tunnel/7/2375/", nil)

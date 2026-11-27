@@ -18,6 +18,7 @@ func findGroup(res *FleetSearchResult, kind string) *FleetSearchGroup {
 }
 
 func TestSearchFleetFolders(t *testing.T) {
+	t.Parallel()
 	db := fleetSearchDB(t)
 	fleetSearchHost(t, db, "alpha", "Production")
 	fleetSearchHost(t, db, "beta", "Production")
@@ -46,6 +47,7 @@ func TestSearchFleetFolders(t *testing.T) {
 }
 
 func TestSearchFleetHostAttributes(t *testing.T) {
+	t.Parallel()
 	db := fleetSearchDB(t)
 	id := fleetSearchHost(t, db, "web-01", "prod")
 	if err := db.UpdateHostInspection(&Host{
@@ -72,6 +74,7 @@ func TestSearchFleetHostAttributes(t *testing.T) {
 }
 
 func TestSearchFleetPortsAndServices(t *testing.T) {
+	t.Parallel()
 	db := fleetSearchDB(t)
 	id := fleetSearchHost(t, db, "alpha", "")
 	if err := db.UpdateHostInspection(&Host{
@@ -110,6 +113,7 @@ func TestSearchFleetPortsAndServices(t *testing.T) {
 }
 
 func TestSearchFleetInfraAndAutomation(t *testing.T) {
+	t.Parallel()
 	db := fleetSearchDB(t)
 
 	if _, err := db.CreateKubeCluster(&KubeCluster{Name: "prod-eu", Context: "ctx-eu", Server: "https://kube.example", Provider: "eks"}); err != nil {
@@ -162,6 +166,7 @@ func TestSearchFleetInfraAndAutomation(t *testing.T) {
 }
 
 func TestSearchFleetSecurityAndInventory(t *testing.T) {
+	t.Parallel()
 	db := fleetSearchDB(t)
 	h := fleetSearchHost(t, db, "alpha", "")
 
@@ -221,6 +226,7 @@ func TestSearchFleetSecurityAndInventory(t *testing.T) {
 }
 
 func TestSearchFleetRanking(t *testing.T) {
+	t.Parallel()
 	db := fleetSearchDB(t)
 	for _, name := range []string{"nginx-exporter", "mynginx", "nginx", "notnginx"} {
 		hostID := fleetSearchHost(t, db, name, "")
@@ -244,6 +250,7 @@ func TestSearchFleetRanking(t *testing.T) {
 }
 
 func TestSearchFleetPrefixNarrowsKind(t *testing.T) {
+	t.Parallel()
 	db := fleetSearchDB(t)
 	h := fleetSearchHost(t, db, "alpha", "prod")
 	if err := db.ReplaceHostPackages(h, []*HostPackage{{HostID: h, Name: "openssl", Version: "1"}}); err != nil {
@@ -272,6 +279,7 @@ func TestSearchFleetPrefixNarrowsKind(t *testing.T) {
 }
 
 func TestFleetKindValid(t *testing.T) {
+	t.Parallel()
 	if !FleetKindValid(FleetSearchAll) || !FleetKindValid(FleetSearchFolder) || FleetKindValid("nope") {
 		t.Fatal("kind validation is wrong")
 	}

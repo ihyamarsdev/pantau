@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,7 +12,7 @@ import (
 
 func dockerOverviewServer(t *testing.T) (*Server, *http.Cookie, *store.DB) {
 	t.Helper()
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -25,6 +24,7 @@ func dockerOverviewServer(t *testing.T) (*Server, *http.Cookie, *store.DB) {
 }
 
 func TestDockerOverviewRequiresAuth(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := dockerOverviewServer(t)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, httptest.NewRequest("GET", "/api/docker/overview", nil))
@@ -34,6 +34,7 @@ func TestDockerOverviewRequiresAuth(t *testing.T) {
 }
 
 func TestDockerOverviewEndpoint(t *testing.T) {
+	t.Parallel()
 	srv, cookie, db := dockerOverviewServer(t)
 	h, err := db.CreateHost(&store.Host{Name: "web-1", Host: "10.0.0.1", GroupName: "prod"})
 	if err != nil {

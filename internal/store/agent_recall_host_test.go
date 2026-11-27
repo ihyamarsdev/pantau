@@ -10,6 +10,7 @@ import (
 // ("adakah host macmini 4"). RecallContext must surface it as a host fact even when the question is
 // made of stopwords and no memory note matches.
 func TestRecallContextFindsHostWithLooseSeparator(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 	if _, err := db.CreateHost(&store.Host{Name: "macmini-4", Host: "10.0.0.4", Port: 22, User: "root"}); err != nil {

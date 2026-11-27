@@ -9,6 +9,7 @@ import (
 )
 
 func TestAgentFingerprintPrompt_InjectsJSONAndSyntaxRules(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	if srv.inspector == nil {

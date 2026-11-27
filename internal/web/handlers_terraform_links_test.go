@@ -55,6 +55,7 @@ func lk(v string, src int64, out string) linkItem {
 }
 
 func TestOutputLinkHandlerValidation(t *testing.T) {
+	t.Parallel()
 	srv, _ := setupTerraformTestDataServer(t)
 	a := linkTestWS(t, srv, "a", false)
 	b := linkTestWS(t, srv, "b", true)
@@ -106,6 +107,7 @@ func TestOutputLinkHandlerValidation(t *testing.T) {
 }
 
 func TestOutputLinkHandlerGet(t *testing.T) {
+	t.Parallel()
 	srv, _ := setupTerraformTestDataServer(t)
 	a := linkTestWS(t, srv, "a", true)
 	b := linkTestWS(t, srv, "b", true)

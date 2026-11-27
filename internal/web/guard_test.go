@@ -7,6 +7,7 @@ import (
 )
 
 func TestGuard(t *testing.T) {
+	t.Parallel()
 	handler := Guard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))

@@ -10,6 +10,7 @@ import (
 )
 
 func TestAgentMemory_ScopeDedupeAndLimits(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 	h1, _ := db.CreateHost(&store.Host{Name: "a", Host: "10.0.0.1", Port: 22, User: "root"})
@@ -76,6 +77,7 @@ func TestAgentMemory_ScopeDedupeAndLimits(t *testing.T) {
 }
 
 func TestAgentMemory_SnapshotRoundTrip(t *testing.T) {
+	t.Parallel()
 	src, c1 := setupTestDB(t)
 	defer c1()
 	h, _ := src.CreateHost(&store.Host{Name: "a", Host: "10.0.0.1", Port: 22, User: "root"})
@@ -123,6 +125,7 @@ func TestAgentMemory_SnapshotRoundTrip(t *testing.T) {
 // A note carries one scope: a host, a cluster or a domain. Two at once is an error, and the domain spelling
 // is normalised so "Security" and "security" are one bucket.
 func TestAgentMemory_ScopedToClusterAndDomain(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 	h, _ := db.CreateHost(&store.Host{Name: "a", Host: "10.0.0.1", Port: 22, User: "root"})
@@ -202,6 +205,7 @@ func TestAgentMemory_ScopedToClusterAndDomain(t *testing.T) {
 
 // Recall returns the notes a question is about, best first, and never the notes of another host.
 func TestRecallAgentMemory_PicksRelevantNotes(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 	h1, _ := db.CreateHost(&store.Host{Name: "db-1", Host: "10.0.0.1", Port: 22, User: "root"})
@@ -249,6 +253,7 @@ func TestRecallAgentMemory_PicksRelevantNotes(t *testing.T) {
 // The fleet search bridge turns a question into inventory facts, so the prompt gets a summary instead of the
 // whole inventory.
 func TestRecallContext_SummarisesStoredInventory(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 	old := time.Now().Add(-time.Hour)
@@ -296,6 +301,7 @@ func TestRecallContext_SummarisesStoredInventory(t *testing.T) {
 // A question names more than one thing, and only one of them is in the inventory. The fact must still come:
 // a fleet search that demands every word to match would answer nothing for "nginx on alpha".
 func TestRecallContext_MultiWordQuestionStillFindsInventory(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 	id, err := db.CreateHost(&store.Host{Name: "alpha", Host: "10.0.0.9", Port: 22, User: "root"})

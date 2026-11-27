@@ -42,6 +42,7 @@ func boolStr(b bool) string {
 
 // Every new tool must be registered with a schema, a description and a name the model can call.
 func TestIacToolsRegistered(t *testing.T) {
+	t.Parallel()
 	want := []string{
 		"ansible_playbook_action", "ansible_schedule_action", "ansible_resources",
 		"tf_workspace_action", "tf_run_action", "tf_workspace_data", "tf_catalog",
@@ -73,6 +74,7 @@ func TestIacToolsRegistered(t *testing.T) {
 
 // A wrong action or a missing argument is an error and changes nothing.
 func TestIacToolValidation(t *testing.T) {
+	t.Parallel()
 	srv, _ := setupAnsibleTestServer(t)
 	_ = srv.db.SetSetting("agent_enabled", "1")
 	_ = srv.db.SetAnsibleEnabled(true)
@@ -99,6 +101,7 @@ func TestIacToolValidation(t *testing.T) {
 
 // Every mutating action waits for an approval card, and a denial runs nothing.
 func TestIacMutationsAskAndDenial(t *testing.T) {
+	t.Parallel()
 	srv, _ := setupAnsibleTestServer(t)
 	_ = srv.db.SetSetting("agent_enabled", "1")
 	_ = srv.db.SetAnsibleEnabled(true)
@@ -132,6 +135,7 @@ func TestIacMutationsAskAndDenial(t *testing.T) {
 
 // A gate-3 action is never auto-approved and never covered by a session grant.
 func TestIacGate3NeverAutoOrGranted(t *testing.T) {
+	t.Parallel()
 	srv, _ := setupAnsibleTestServer(t)
 	db := srv.db
 	_ = db.SetSetting("agent_enabled", "1")
@@ -159,6 +163,7 @@ func TestIacGate3NeverAutoOrGranted(t *testing.T) {
 
 // The happy path of the Ansible playbook and schedule tools, through the real handlers.
 func TestIacAnsiblePlaybookAndSchedule(t *testing.T) {
+	t.Parallel()
 	srv, _ := setupAnsibleTestServer(t)
 	_ = srv.db.SetSetting("agent_enabled", "1")
 	_ = srv.db.SetAnsibleEnabled(true)
@@ -235,6 +240,7 @@ func TestIacAnsiblePlaybookAndSchedule(t *testing.T) {
 
 // The Terraform workspace tools: create, lock, unlock and the refusal of a locked workspace.
 func TestIacTerraformWorkspace(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _ := setupTerraformTestServer(t)
 	_ = db.SetSetting("agent_enabled", "1")
 	_ = db.SetTerraformEnabled(true)
@@ -317,6 +323,7 @@ func dbWorkspaceID(t *testing.T, srv *Server, name string) int64 {
 
 // The Terraform state read tool returns the workspace state without a secret.
 func TestIacTerraformStateRead(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _ := setupTerraformTestServer(t)
 	_ = db.SetSetting("agent_enabled", "1")
 	_ = db.SetTerraformEnabled(true)
@@ -338,6 +345,7 @@ func TestIacTerraformStateRead(t *testing.T) {
 
 // A sensitive variable value never comes back to the model.
 func TestIacNoSecretInResults(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _ := setupTerraformTestServer(t)
 	_ = db.SetSetting("agent_enabled", "1")
 	_ = db.SetTerraformEnabled(true)
@@ -363,6 +371,7 @@ func TestIacNoSecretInResults(t *testing.T) {
 
 // The Kubernetes cluster tool: rename and delete of a registered cluster, and the refusal of an unknown one.
 func TestIacKubeClusterAction(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = db.SetSetting("agent_enabled", "1")
@@ -407,6 +416,7 @@ func TestIacKubeClusterAction(t *testing.T) {
 
 // The repository tool refuses a token (a secret never crosses the model) and clones with an SSH key.
 func TestIacRepoAction(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = db.SetSetting("agent_enabled", "1")
@@ -429,6 +439,7 @@ func TestIacRepoAction(t *testing.T) {
 
 // The Ansible resources tool reads the status and the config, and writes an asset.
 func TestIacAnsibleResources(t *testing.T) {
+	t.Parallel()
 	srv, _ := setupAnsibleTestServer(t)
 	_ = srv.db.SetSetting("agent_enabled", "1")
 	_ = srv.db.SetAnsibleEnabled(true)
@@ -461,6 +472,7 @@ func TestIacAnsibleResources(t *testing.T) {
 
 // The Terraform catalog tool lists the policies and creates one.
 func TestIacTerraformCatalog(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _ := setupTerraformTestServer(t)
 	_ = db.SetSetting("agent_enabled", "1")
 	_ = db.SetTerraformEnabled(true)
@@ -484,6 +496,7 @@ func TestIacTerraformCatalog(t *testing.T) {
 
 // The Docker Hub tool and the update check are reads: they never ask the operator.
 func TestIacDockerHubAndUpdateCheck(t *testing.T) {
+	t.Parallel()
 	srv, _, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = srv.db.SetSetting("agent_enabled", "1")
@@ -502,6 +515,7 @@ func TestIacDockerHubAndUpdateCheck(t *testing.T) {
 
 // The tool result of a catalog list is valid JSON, so the model can read it.
 func TestIacToolResultIsJSON(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _ := setupTerraformTestServer(t)
 	_ = db.SetSetting("agent_enabled", "1")
 	_ = db.SetTerraformEnabled(true)
@@ -520,6 +534,7 @@ func TestIacToolResultIsJSON(t *testing.T) {
 
 // The new Terraform actions ask the operator and refuse a bad argument before anything runs.
 func TestIacTerraformDriftAndStateImport(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _ := setupTerraformTestServer(t)
 	_ = db.SetSetting("agent_enabled", "1")
 	_ = db.SetTerraformEnabled(true)
@@ -550,6 +565,7 @@ func TestIacTerraformDriftAndStateImport(t *testing.T) {
 
 // The ad-hoc Ansible command asks the operator and refuses an empty target selection.
 func TestIacAnsibleAdhoc(t *testing.T) {
+	t.Parallel()
 	if _, _, err := ansible.Available(); err != nil {
 		t.Skip("ansible is required: the ad-hoc tool answers 409 without it")
 	}

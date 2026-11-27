@@ -2,12 +2,12 @@ package store
 
 import (
 	"encoding/json"
-	"path/filepath"
 	"testing"
 	"time"
 )
 
 func TestScoreSecurityPosture(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		b     SecurityBreakdown
@@ -33,7 +33,8 @@ func TestScoreSecurityPosture(t *testing.T) {
 }
 
 func TestGetSecurityOverviewAggregatesFleet(t *testing.T) {
-	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	t.Parallel()
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +140,8 @@ func TestGetSecurityOverviewAggregatesFleet(t *testing.T) {
 }
 
 func TestGetSecurityOverviewScopeFilters(t *testing.T) {
-	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	t.Parallel()
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}

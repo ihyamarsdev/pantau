@@ -92,6 +92,7 @@ func waitAdhocFinished(t *testing.T, srv *Server, id int64) map[string]interface
 }
 
 func TestAnsibleAdhocGateDisabled(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	if rec := doRequest(t, srv, auth, http.MethodGet, "/api/ansible/adhoc", nil); rec.Code != http.StatusConflict {
 		t.Fatalf("GET adhoc with gate disabled = %d, want 409", rec.Code)
@@ -105,6 +106,7 @@ func TestAnsibleAdhocGateDisabled(t *testing.T) {
 }
 
 func TestAnsibleAdhocRequiresAuth(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := setupAdhocTestServer(t)
 	if rec := doRequest(t, srv, nil, http.MethodGet, "/api/ansible/adhoc", nil); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated adhoc = %d, want 401", rec.Code)
@@ -112,6 +114,7 @@ func TestAnsibleAdhocRequiresAuth(t *testing.T) {
 }
 
 func TestAnsibleAdhocCreateRunAndStreamLog(t *testing.T) {
+	t.Parallel()
 	srv, auth, fake := setupAdhocTestServer(t)
 	hostID := createAdhocHost(t, srv, "web-1", "web")
 
@@ -210,6 +213,7 @@ func TestAnsibleAdhocCreateRunAndStreamLog(t *testing.T) {
 }
 
 func TestAnsibleAdhocValidation(t *testing.T) {
+	t.Parallel()
 	srv, auth, fake := setupAdhocTestServer(t)
 	hostID := createAdhocHost(t, srv, "web-1", "")
 
@@ -240,6 +244,7 @@ func TestAnsibleAdhocValidation(t *testing.T) {
 }
 
 func TestAnsibleAdhocGroupSelection(t *testing.T) {
+	t.Parallel()
 	srv, auth, fake := setupAdhocTestServer(t)
 	createAdhocHost(t, srv, "web-1", "web")
 	createAdhocHost(t, srv, "web-2", "web")
@@ -261,6 +266,7 @@ func TestAnsibleAdhocGroupSelection(t *testing.T) {
 }
 
 func TestAnsibleAdhocCancelActiveRun(t *testing.T) {
+	t.Parallel()
 	srv, auth, _ := setupAdhocTestServer(t)
 	hostID := createAdhocHost(t, srv, "web-1", "")
 
@@ -300,6 +306,7 @@ func TestAnsibleAdhocCancelActiveRun(t *testing.T) {
 }
 
 func TestAnsibleAdhocRunnerErrorMarksFailed(t *testing.T) {
+	t.Parallel()
 	srv, auth, fake := setupAdhocTestServer(t)
 	hostID := createAdhocHost(t, srv, "web-1", "")
 	fake.err = fmt.Errorf("ansible executable not found")
@@ -327,6 +334,7 @@ func TestAnsibleAdhocRunnerErrorMarksFailed(t *testing.T) {
 }
 
 func TestAnsibleAdhocConcurrencyLimit(t *testing.T) {
+	t.Parallel()
 	srv, auth, _ := setupAdhocTestServer(t)
 	hostID := createAdhocHost(t, srv, "web-1", "")
 

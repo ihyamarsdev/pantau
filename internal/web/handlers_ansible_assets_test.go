@@ -43,6 +43,7 @@ func listAssets(t *testing.T, srv *Server, auth func(*http.Request), kind string
 }
 
 func TestAnsibleAssetsGateAndAuth(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	if rec := doRequest(t, srv, nil, http.MethodGet, "/api/ansible/assets", nil); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated: %d", rec.Code)
@@ -56,6 +57,7 @@ func TestAnsibleAssetsGateAndAuth(t *testing.T) {
 }
 
 func TestAnsibleAssetsCRUD(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 
@@ -104,6 +106,7 @@ func TestAnsibleAssetsCRUD(t *testing.T) {
 }
 
 func TestAnsibleAssetsValidation(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 
@@ -131,6 +134,7 @@ func TestAnsibleAssetsValidation(t *testing.T) {
 }
 
 func TestAnsibleAssetsTotalLimit(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 
@@ -151,6 +155,7 @@ func TestAnsibleAssetsTotalLimit(t *testing.T) {
 }
 
 func TestAnsibleRunReceivesAssets(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 	hid, _ := srv.db.CreateHost(&store.Host{Name: "h1", Host: "10.0.0.1", Port: 22, User: "root", CustomKey: "KEY"})

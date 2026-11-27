@@ -8,6 +8,7 @@ import (
 )
 
 func TestAnsibleAssets_CRUDAndUpsert(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -47,6 +48,7 @@ func TestAnsibleAssets_CRUDAndUpsert(t *testing.T) {
 }
 
 func TestAnsibleAssets_SnapshotRoundtrip(t *testing.T) {
+	t.Parallel()
 	src, cleanup1 := setupTestDB(t)
 	defer cleanup1()
 	_ = src.SaveAnsibleAsset("template", "a/b.j2", []byte("{{ x }}"))

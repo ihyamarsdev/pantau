@@ -3,6 +3,7 @@ package store
 import "testing"
 
 func TestTrustedHostKeysInsertGetDelete(t *testing.T) {
+	t.Parallel()
 	db := newVaultTestDB(t)
 	addr := "10.0.0.5:22"
 

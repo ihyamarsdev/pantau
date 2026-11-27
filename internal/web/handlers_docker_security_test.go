@@ -14,6 +14,7 @@ import (
 )
 
 func TestIsCVECode(t *testing.T) {
+	t.Parallel()
 	for _, id := range []string{"CVE-2024-0001", "CVE-2026-8932"} {
 		if !isCVECode(id) {
 			t.Errorf("%q must be a CVE id", id)
@@ -27,6 +28,7 @@ func TestIsCVECode(t *testing.T) {
 }
 
 func TestDockerSecCVEs(t *testing.T) {
+	t.Parallel()
 	scan := &store.DockerSecurityScan{
 		Vulns: []store.DockerImageVuln{
 			{ID: "CVE-2024-0001"},
@@ -64,6 +66,7 @@ func dockerSecTestScan(t *testing.T, db *store.DB, hostID int64, subject string,
 // The exploit intelligence leaves the Pantau server, so it must never run inside the endpoint that answers
 // the stored results: that one reads the database only. The intelligence has its own endpoint.
 func TestDockerSecuritySummaryNeverLooksUpIntel(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _, authReq := setupSecurityTestServer(t)
 	var hits int
 	feeds := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -122,6 +125,7 @@ func TestDockerSecuritySummaryNeverLooksUpIntel(t *testing.T) {
 
 // The intelligence endpoint does the lookup, and answers null when the feature is off or there is no CVE.
 func TestDockerSecurityIntelEndpoint(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _, authReq := setupSecurityTestServer(t)
 	var hits int
 	feeds := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -181,6 +185,7 @@ func TestDockerSecurityIntelEndpoint(t *testing.T) {
 // A scan of an image with thousands of vulnerabilities shows up in the stored results: the scan is
 // parsed, stored and listed back, with its counts.
 func TestDockerSecuritySummaryShowsManyVulnsScan(t *testing.T) {
+	t.Parallel()
 	srv, db, ins, mock, authReq := setupSecurityTestServer(t)
 	var b strings.Builder
 	b.WriteString(`{"SchemaVersion":2,"ArtifactName":"nginx:1.25","Results":[`)
@@ -250,6 +255,7 @@ func TestDockerSecuritySummaryShowsManyVulnsScan(t *testing.T) {
 // The audit and the image scans are split by kind: the audit is one row, the images are the rest.
 // Every image scan carries its counts and its scanned_at, even a failed one.
 func TestDockerSecuritySummarySplitsTheKinds(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _, authReq := setupSecurityTestServer(t)
 	hostID, err := db.CreateHost(&store.Host{Name: "web-1", Host: "10.0.0.1", Port: 22, User: "root"})
 	if err != nil {

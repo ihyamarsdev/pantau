@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -16,7 +15,7 @@ import (
 
 func setupTerraformCatalogTestServer(t *testing.T) (*Server, func(*http.Request)) {
 	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "test_tf_catalog.db")
+	dbPath := testDBCopy(t)
 	db, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatalf("failed to init test db: %v", err)
@@ -79,6 +78,7 @@ func doCatalogRequest(t *testing.T, srv *Server, authReq func(*http.Request), me
 }
 
 func TestTerraformPolicy_ValidationAndGate(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupTerraformCatalogTestServer(t)
 
 	// 1. Policy validation error -> 400
@@ -135,6 +135,7 @@ func TestTerraformPolicy_ValidationAndGate(t *testing.T) {
 }
 
 func TestTerraformModule_VersionAddWithInlineFilesAndDuplicate(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupTerraformCatalogTestServer(t)
 
 	// Create module

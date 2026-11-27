@@ -10,6 +10,7 @@ import (
 
 // A failed apply that already wrote state must keep that state, so the next plan does not rebuild from an old copy.
 func TestTerraformFailedApplyKeepsPartialState(t *testing.T) {
+	t.Parallel()
 	partialState := []byte(`{"version":4,"serial":7,"lineage":"l","resources":[{"type":"terraform_data","name":"made"}]}`)
 	failingApplier := func(ctx context.Context, spec terraform.ApplySpec, log io.Writer) (*terraform.ApplyResult, error) {
 		_, _ = io.WriteString(log, "Error: boom\n")
@@ -38,6 +39,7 @@ func TestTerraformFailedApplyKeepsPartialState(t *testing.T) {
 
 // A second apply of the same run is refused while the first is still running.
 func TestTerraformSecondApplyOfSameRunRefused(t *testing.T) {
+	t.Parallel()
 	release := make(chan struct{})
 	slowApplier := func(ctx context.Context, spec terraform.ApplySpec, log io.Writer) (*terraform.ApplyResult, error) {
 		<-release

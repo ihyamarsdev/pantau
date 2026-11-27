@@ -7,6 +7,7 @@ import (
 )
 
 func TestFileManagerActionButtonsGrid(t *testing.T) {
+	t.Parallel()
 	html := string(embeddedHTML)
 
 	// Check action-grid CSS rule
@@ -68,6 +69,7 @@ func TestFileManagerActionButtonsGrid(t *testing.T) {
 }
 
 func TestFileManagerDuplicateAndEditorMaximizeUI(t *testing.T) {
+	t.Parallel()
 	html := uiSourceForTest(t)
 
 	// Check Duplicate Modal and functions
@@ -144,6 +146,7 @@ func TestFileManagerDuplicateAndEditorMaximizeUI(t *testing.T) {
 }
 
 func TestFileManagerDownloadButton(t *testing.T) {
+	t.Parallel()
 	html := string(embeddedHTML)
 
 	// Check that a.btn or .btn has text-decoration: none to prevent underline glitch on link buttons
@@ -164,6 +167,7 @@ func TestFileManagerDownloadButton(t *testing.T) {
 }
 
 func TestFileManagerPinsAndGlobalBookmarksUI(t *testing.T) {
+	t.Parallel()
 	html := uiSourceForTest(t)
 
 	// Check elements

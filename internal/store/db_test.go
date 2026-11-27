@@ -13,16 +13,20 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/crypto/ssh"
 )
 
 func TestDualBucketAutoPruningAndFilteredRuns(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-store-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := Open(filepath.Join(tmpDir, "test.db"))
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,13 +104,14 @@ func TestDualBucketAutoPruningAndFilteredRuns(t *testing.T) {
 }
 
 func TestAlertAcknowledgmentOperations(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-alert-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := Open(filepath.Join(tmpDir, "test.db"))
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,13 +159,14 @@ func TestAlertAcknowledgmentOperations(t *testing.T) {
 }
 
 func TestHostDiskIOStorage(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-disk-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := Open(filepath.Join(tmpDir, "test.db"))
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,13 +210,14 @@ func TestHostDiskIOStorage(t *testing.T) {
 }
 
 func TestHostPackagesAndProcessTelemetry(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-store-pkgs-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := Open(filepath.Join(tmpDir, "test.db"))
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,13 +287,14 @@ func TestHostPackagesAndProcessTelemetry(t *testing.T) {
 }
 
 func TestFilePinsCRUD(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-pins-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := Open(filepath.Join(tmpDir, "test.db"))
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -379,13 +387,14 @@ func TestFilePinsCRUD(t *testing.T) {
 	}
 }
 func TestSSHKeyLibraryCRUD(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-keylib-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := Open(filepath.Join(tmpDir, "test.db"))
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -516,13 +525,14 @@ func TestSSHKeyLibraryCRUD(t *testing.T) {
 }
 
 func TestResolveHostPrivateKeyPrecedence(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-resolve-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := Open(filepath.Join(tmpDir, "test.db"))
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -604,6 +614,7 @@ func TestResolveHostPrivateKeyPrecedence(t *testing.T) {
 }
 
 func TestParseSSHPrivateKey(t *testing.T) {
+	t.Parallel()
 	// 1. Valid RSA Key
 	privPEM, _, err := GenerateRSAKeyPair(2048)
 	if err != nil {
@@ -647,6 +658,7 @@ func TestParseSSHPrivateKey(t *testing.T) {
 }
 
 func TestSnapshotRoundTripWithSSHKeys(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-snap-test-*")
 	if err != nil {
 		t.Fatal(err)
@@ -782,6 +794,7 @@ func TestSnapshotRoundTripWithSSHKeys(t *testing.T) {
 }
 
 func TestKubeClusterIDAndModeStore(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-kube-db-test-*")
 	if err != nil {
 		t.Fatal(err)
@@ -843,7 +856,8 @@ func TestKubeClusterIDAndModeStore(t *testing.T) {
 // A deleted or disabled rule must not keep showing as Drift: the Host Detail banner reads actual_items, which
 // used to outlive the rule.
 func TestRuleRemovalPrunesActualItems(t *testing.T) {
-	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	t.Parallel()
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -918,6 +932,7 @@ func TestRuleRemovalPrunesActualItems(t *testing.T) {
 }
 
 func TestOpenRestrictsDBFilePermissions(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("unix file modes only")
 	}
@@ -949,5 +964,40 @@ func TestOpenRestrictsDBFilePermissions(t *testing.T) {
 		if perm := info.Mode().Perm(); perm != 0600 {
 			t.Fatalf("%s mode = %o, want 600", p, perm)
 		}
+	}
+}
+
+// TestOpenUsesProductionKeyParams is the one test that pays the full production key cost on purpose:
+// every other test copies the template database, so this is what keeps Open's real parameters covered.
+func TestOpenUsesProductionKeyParams(t *testing.T) {
+	t.Parallel()
+	db, err := Open(filepath.Join(t.TempDir(), "prod.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	hash, err := db.GetSetting("admin_password_hash")
+	if err != nil {
+		t.Fatalf("read admin hash: %v", err)
+	}
+	if cost, err := bcrypt.Cost([]byte(hash)); err != nil || cost != bcrypt.DefaultCost {
+		t.Errorf("admin hash cost = %d (err %v), want bcrypt.DefaultCost %d", cost, err, bcrypt.DefaultCost)
+	}
+
+	privPEM, err := db.GetSetting("ssh_private_key")
+	if err != nil {
+		t.Fatalf("read ssh key: %v", err)
+	}
+	key, err := ssh.ParseRawPrivateKey([]byte(privPEM))
+	if err != nil {
+		t.Fatalf("parse ssh key: %v", err)
+	}
+	rsaKey, ok := key.(*rsa.PrivateKey)
+	if !ok {
+		t.Fatalf("ssh key type %T, want *rsa.PrivateKey", key)
+	}
+	if bits := rsaKey.N.BitLen(); bits != 4096 {
+		t.Errorf("ssh key size = %d bits, want 4096", bits)
 	}
 }

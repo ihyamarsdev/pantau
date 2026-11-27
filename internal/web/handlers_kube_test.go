@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,7 +21,7 @@ import (
 )
 
 func setupKubeTestServer(t *testing.T) (*Server, func(*http.Request)) {
-	dbPath := filepath.Join(t.TempDir(), "test_kube.db")
+	dbPath := testDBCopy(t)
 	db, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatalf("failed to init test db: %v", err)
@@ -46,6 +45,7 @@ func setupKubeTestServer(t *testing.T) (*Server, func(*http.Request)) {
 }
 
 func TestKubeHandlersValidation(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupKubeTestServer(t)
 
 	// 1. Invalid namespace in workloads query returns 400
@@ -163,6 +163,7 @@ func TestKubeHandlersValidation(t *testing.T) {
 }
 
 func TestWSKubeLogsValidation(t *testing.T) {
+	t.Parallel()
 	srv, _ := setupKubeTestServer(t)
 	token := "kube_test_token"
 	ts := httptest.NewServer(srv.mux)
@@ -201,6 +202,7 @@ func TestWSKubeLogsValidation(t *testing.T) {
 }
 
 func TestSelectKubeCandidateHostsOrder(t *testing.T) {
+	t.Parallel()
 	primary := &store.Host{
 		ID:            10,
 		Name:          "Primary-Degraded",
@@ -249,6 +251,7 @@ func TestSelectKubeCandidateHostsOrder(t *testing.T) {
 }
 
 func TestPTYRegexPositiveNegative(t *testing.T) {
+	t.Parallel()
 	positives := []string{
 		"kubectl exec -it pod-1 -- bash",
 		"kc exec my-pod -- sh",
@@ -282,6 +285,7 @@ func TestPTYRegexPositiveNegative(t *testing.T) {
 }
 
 func TestKubeModeMatrix(t *testing.T) {
+	t.Parallel()
 	modes := []string{"full", "no-exec", "read-only"}
 
 	for _, mode := range modes {
@@ -371,6 +375,7 @@ func TestKubeModeMatrix(t *testing.T) {
 }
 
 func TestWSTerminalKubeModePolicy(t *testing.T) {
+	t.Parallel()
 	srv, _ := setupKubeTestServer(t)
 	token := "kube_test_token"
 	ts := httptest.NewServer(srv.mux)
@@ -409,7 +414,8 @@ func TestWSTerminalKubeModePolicy(t *testing.T) {
 }
 
 func TestKubeFailoverReadAndWriteRules(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "test_kube_failover.db")
+	t.Parallel()
+	dbPath := testDBCopy(t)
 	db, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
@@ -551,6 +557,7 @@ func TestKubeFailoverReadAndWriteRules(t *testing.T) {
 }
 
 func TestHostCreateUpdateKubeModeValidation(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupKubeTestServer(t)
 
 	// 1. POST /api/hosts with invalid kube_mode -> 400
@@ -611,7 +618,8 @@ func TestHostCreateUpdateKubeModeValidation(t *testing.T) {
 // TestKubeRunReadFailoverBudget verifies the failover loop stops trying candidates once
 // the overall budget is spent instead of stacking per-candidate exec timeouts.
 func TestKubeRunReadFailoverBudget(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "test_kube_budget.db")
+	t.Parallel()
+	dbPath := testDBCopy(t)
 	db, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatalf("failed to init test db: %v", err)

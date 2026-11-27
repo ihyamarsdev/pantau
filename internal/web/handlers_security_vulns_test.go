@@ -27,6 +27,7 @@ func createVulnTestHost(t *testing.T, db *store.DB, name, ip, osInfo string) int
 // The known-vulnerability check sends package names and versions to a public service, so it stays
 // off until the administrator opts in; while off nothing leaves the server.
 func TestSecurityVulnsIsOptIn(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _, authReq := setupSecurityTestServer(t)
 	var hits int
 	feed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -85,6 +86,7 @@ func TestSecurityVulnsIsOptIn(t *testing.T) {
 
 // A host whose release has no OSV data is reported as not assessed, never as a clean list.
 func TestSecurityVulnsUnsupportedRelease(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _, authReq := setupSecurityTestServer(t)
 	feed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("the feed must not be contacted for an unsupported release")
@@ -120,6 +122,7 @@ func TestSecurityVulnsUnsupportedRelease(t *testing.T) {
 
 // An empty inventory means the host was never scanned: not assessed, not "clean".
 func TestSecurityVulnsEmptyInventory(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _, authReq := setupSecurityTestServer(t)
 	hostID := createVulnTestHost(t, db, "empty", "10.0.0.13", "Alpine Linux v3.18")
 	if err := db.SetSetting(osvEnabledSetting, "1"); err != nil {
@@ -141,6 +144,7 @@ func TestSecurityVulnsEmptyInventory(t *testing.T) {
 
 // A feed failure is reported as an error, never as an empty (read as clean) list.
 func TestSecurityVulnsFeedFailure(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _, authReq := setupSecurityTestServer(t)
 	feed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "boom", http.StatusInternalServerError)
@@ -174,6 +178,7 @@ func TestSecurityVulnsFeedFailure(t *testing.T) {
 
 // The findings of the feed reach the API with the fixed version and the CVEs.
 func TestSecurityVulnsReportsFindings(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _, authReq := setupSecurityTestServer(t)
 	feed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/querybatch" {

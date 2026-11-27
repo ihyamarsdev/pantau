@@ -11,6 +11,7 @@ import (
 )
 
 func TestAgentCheckArgs(t *testing.T) {
+	t.Parallel()
 	sc := schema([]string{"host_id", "action"}, map[string]interface{}{"host_id": pHost, "tail": map[string]interface{}{"type": "integer"},
 		"action": map[string]interface{}{"type": "string", "enum": []string{"start", "stop"}}, "force": map[string]interface{}{"type": "boolean"}})
 	for args, want := range map[string]string{
@@ -44,6 +45,7 @@ func jsonMap(t *testing.T, s string) map[string]interface{} {
 
 // A tool that forgets agentGate must not be able to change anything through the UI handlers.
 func TestAgentLoopbackRefusesUngatedChange(t *testing.T) {
+	t.Parallel()
 	srv, _, cleanup := setupTestServer(t)
 	defer cleanup()
 	if code, _ := srv.loopback(t.Context(), http.MethodPost, "/api/alerts/ack-all", nil); code != http.StatusForbidden {
@@ -55,6 +57,7 @@ func TestAgentLoopbackRefusesUngatedChange(t *testing.T) {
 }
 
 func TestAgentHostTools(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = db.SetSetting("agent_enabled", "1")
@@ -96,6 +99,7 @@ func TestAgentHostTools(t *testing.T) {
 
 // The approval card shows the whole action, so one that cannot be shown is refused instead of cut.
 func TestAgentGateRefusesOversizedSummary(t *testing.T) {
+	t.Parallel()
 	srv, _, cleanup := setupTestServer(t)
 	defer cleanup()
 	err := srv.agentGateAs(approvalReq(), 0, "Ansible", "ansible_run", strings.Repeat("x", agentSummaryMax+1), gateInfra)
@@ -105,6 +109,7 @@ func TestAgentGateRefusesOversizedSummary(t *testing.T) {
 }
 
 func TestAgentCannotTouchOperatorNotes(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = db.SetSetting("agent_enabled", "1")
@@ -128,6 +133,7 @@ func TestAgentCannotTouchOperatorNotes(t *testing.T) {
 
 // list_hosts is tab-separated: a name with a tab or line break must stay one cell of one row.
 func TestAgentListHostsRows(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = db.SetSetting("agent_enabled", "1")
@@ -147,6 +153,7 @@ func TestAgentListHostsRows(t *testing.T) {
 
 // Several units are one request: one approval card naming all of them, and nothing asked when one is invalid.
 func TestAgentSystemdActionBatch(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = db.SetSetting("agent_enabled", "1")
@@ -175,6 +182,7 @@ func TestAgentSystemdActionBatch(t *testing.T) {
 }
 
 func TestAgentSystemdRows(t *testing.T) {
+	t.Parallel()
 	svcs := []inspector.SystemdService{
 		{Name: "nginx.service", Load: "loaded", Active: "active", Sub: "running", Enabled: "enabled", Description: "A high performance web server"},
 		{Name: "php8.2-fpm.service", Load: "loaded", Active: "failed", Sub: "failed", Enabled: "enabled", Description: "The PHP FastCGI Process Manager"},

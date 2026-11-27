@@ -18,6 +18,7 @@ func agentTurn(srv *Server, session, message string) *httptest.ResponseRecorder 
 
 // A conversation survives a restart: the stored thread is read back and the model sees the earlier turns.
 func TestAgentHistorySurvivesRestart(t *testing.T) {
+	t.Parallel()
 	f := &fakeLLM{results: []llmResult{{Text: "first answer"}}}
 	srv, db := nativeAgent(t, f)
 
@@ -67,6 +68,7 @@ func TestAgentHistorySurvivesRestart(t *testing.T) {
 
 // A tool result is redacted before it is stored, while a vault placeholder stays a placeholder.
 func TestAgentHistoryRedaction(t *testing.T) {
+	t.Parallel()
 	secret := "API_TOKEN=supersecret123"
 	if got := agentRedactText("run " + secret); strings.Contains(got, "supersecret123") || !strings.Contains(got, "[REDACTED]") {
 		t.Fatalf("a secret assignment must be redacted: %q", got)
@@ -122,6 +124,7 @@ func TestAgentHistoryRedaction(t *testing.T) {
 
 // A long tool result is clipped for storage, so one log dump cannot grow the database without bound.
 func TestAgentStoredToolClipped(t *testing.T) {
+	t.Parallel()
 	long := strings.Repeat("x", agentStoredToolMax+500)
 	m := agentMessageFromLLM(llmMessage{Role: llmRoleTool, ToolCallID: "c", ToolName: "docker_logs", Text: long})
 	if len(m.Content) >= len(long) {
@@ -139,6 +142,7 @@ func TestAgentStoredToolClipped(t *testing.T) {
 
 // The scope of a new thread follows the resource the chat is opened from.
 func TestAgentScopeFor(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		page     string
 		host     int64
@@ -162,6 +166,7 @@ func TestAgentScopeFor(t *testing.T) {
 }
 
 func TestAgentThreadEndpoints(t *testing.T) {
+	t.Parallel()
 	srv, _, cleanup := setupTestServer(t)
 	defer cleanup()
 
@@ -239,6 +244,7 @@ func jsonNum(n int64) string {
 
 // The redaction runs through the same guard the tools use, so a private key block never lands in the database.
 func TestAgentStoredPrivateKeyRedacted(t *testing.T) {
+	t.Parallel()
 	key := "-----BEGIN PRIVATE KEY-----\nMIIabc\n-----END PRIVATE KEY-----"
 	got := agentRedactText("cat id_rsa: " + key)
 	if strings.Contains(got, "MIIabc") {

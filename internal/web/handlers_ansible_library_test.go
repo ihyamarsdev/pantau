@@ -321,6 +321,7 @@ func TestAnsibleLibraryAndConfigGating(t *testing.T) {
 }
 
 func TestAnsibleConfigAPI(t *testing.T) {
+	t.Parallel()
 	env := newAnsibleEnv(t)
 	type cfgResponse struct {
 		Content         string   `json:"content"`

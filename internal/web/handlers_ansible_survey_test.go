@@ -41,6 +41,7 @@ func bodyOf(t *testing.T, rec *httptest.ResponseRecorder) map[string]interface{}
 }
 
 func TestAnsibleSurveyCRUD(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 	id := createPlaybook(t, srv, "Survey PB", "")
@@ -88,6 +89,7 @@ func TestAnsibleSurveyCRUD(t *testing.T) {
 }
 
 func TestAnsibleSurveyGateOff(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	id := createPlaybook(t, srv, "Gate PB", "")
 
@@ -104,6 +106,7 @@ func TestAnsibleSurveyGateOff(t *testing.T) {
 }
 
 func TestAnsibleSurveyLaunchMerge(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 	hid, _ := srv.db.CreateHost(&store.Host{Name: "web-1", Host: "10.0.0.1", Port: 22, User: "root", CustomKey: "KEY"})
@@ -208,6 +211,7 @@ func containsSub(s, sub string) bool {
 }
 
 func TestAnsibleGitSyncRejectsInline(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 	id := createPlaybook(t, srv, "Inline PB", "")
@@ -218,6 +222,7 @@ func TestAnsibleGitSyncRejectsInline(t *testing.T) {
 }
 
 func TestAnsibleGitSyncRecordsResult(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 

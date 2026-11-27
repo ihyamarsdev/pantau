@@ -13,6 +13,7 @@ import (
 )
 
 func TestDomainRouterToolSubsets(t *testing.T) {
+	t.Parallel()
 	has := func(specs []llmToolSpec, name string) bool {
 		for _, s := range specs {
 			if s.Name == name {
@@ -80,6 +81,7 @@ func TestDomainRouterToolSubsets(t *testing.T) {
 }
 
 func TestRouteAgentDomainIntentAndContext(t *testing.T) {
+	t.Parallel()
 	srv, _ := nativeAgent(t, &fakeLLM{})
 	c := srv.agentConfig()
 
@@ -111,6 +113,7 @@ func TestRouteAgentDomainIntentAndContext(t *testing.T) {
 }
 
 func TestDynamicSkillPromptAndScopedMemory(t *testing.T) {
+	t.Parallel()
 	// Default SOUL with a concrete domain uses the compact core + domain skill prompt, saving tokens.
 	k8sPrompt := agentSystemPromptFor(defaultAgentSoul, domainKubernetes)
 	if len(k8sPrompt) >= len(defaultAgentSoul) {
@@ -147,6 +150,7 @@ func TestDynamicSkillPromptAndScopedMemory(t *testing.T) {
 }
 
 func TestModelTieringFallbackAndSettingsSecurity(t *testing.T) {
+	t.Parallel()
 	// 1. Empty FastModel falls back completely to primary Reasoning Model.
 	baseCfg := agentCfg{
 		Provider: "anthropic",
@@ -226,6 +230,7 @@ func TestModelTieringFallbackAndSettingsSecurity(t *testing.T) {
 }
 
 func TestFastModelUsedForCompactionAndThreadTitle(t *testing.T) {
+	t.Parallel()
 	f := &fakeLLM{results: []llmResult{
 		{Text: "Compacted summary"},
 		{Text: "Nginx Service Crash Investigation"},
@@ -271,6 +276,7 @@ func TestFastModelUsedForCompactionAndThreadTitle(t *testing.T) {
 }
 
 func TestAnthropicToolPromptCachingHeader(t *testing.T) {
+	t.Parallel()
 	cl := &anthropicLLM{base: "https://api.anthropic.com/v1", key: "sk-test"}
 	raw, err := cl.body(llmRequest{
 		Model:    "claude-sonnet-4-6",

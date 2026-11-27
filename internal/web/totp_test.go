@@ -6,6 +6,7 @@ import (
 )
 
 func TestTOTPFlow(t *testing.T) {
+	t.Parallel()
 	secret, err := GenerateTOTPSecret()
 	if err != nil {
 		t.Fatalf("GenerateTOTPSecret failed: %v", err)

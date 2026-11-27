@@ -20,7 +20,7 @@ func iacTestServer(t *testing.T) (*Server, *store.DB, *http.Cookie, func()) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,6 +59,7 @@ func iacDo(t *testing.T, srv *Server, cookie *http.Cookie, method, path string, 
 
 // TestIacScanEndpointScansInlineWorkspace checks the scan endpoint and the fleet summary.
 func TestIacScanEndpointScansInlineWorkspace(t *testing.T) {
+	t.Parallel()
 	srv, db, cookie, cleanup := iacTestServer(t)
 	defer cleanup()
 
@@ -113,6 +114,7 @@ func TestIacScanEndpointScansInlineWorkspace(t *testing.T) {
 
 // TestIacGateBlocksAnsibleRun checks the gate: 409 with findings_summary when it is on, and no change when it is off.
 func TestIacGateBlocksAnsibleRun(t *testing.T) {
+	t.Parallel()
 	srv, db, cookie, cleanup := iacTestServer(t)
 	defer cleanup()
 	srv.ansibleAvail = func() (string, string, error) {
@@ -169,6 +171,7 @@ func TestIacGateBlocksAnsibleRun(t *testing.T) {
 
 // TestIacGateOffChangesNothing checks that the default settings do not block a Terraform apply.
 func TestIacGateOffChangesNothing(t *testing.T) {
+	t.Parallel()
 	srv, db, cookie, cleanup := iacTestServer(t)
 	defer cleanup()
 	if err := db.SetTerraformEnabled(true); err != nil {

@@ -19,6 +19,7 @@ import (
 
 // TestAgentRecentToolsRegistered: every tool is registered with an object schema and a description.
 func TestAgentRecentToolsRegistered(t *testing.T) {
+	t.Parallel()
 	want := []string{"cf_dns_export", "cf_token_verify", "vpn_networks", "vpn_network_action", "pkg_updates", "gateway_cli", "repo_branch"}
 	have := map[string]agentTool{}
 	for _, tl := range agentTools {
@@ -50,6 +51,7 @@ func TestAgentRecentToolsRegistered(t *testing.T) {
 // TestAgentCloudflareExportAndVerify: the zone file comes back as text, and a token is verified without ever
 // being shown.
 func TestAgentCloudflareExportAndVerify(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = db.SetSetting("agent_enabled", "1")
@@ -96,6 +98,7 @@ func TestAgentCloudflareExportAndVerify(t *testing.T) {
 // TestAgentVPNNetworks: the three reads, the host count of a network, the redacted config and the refusal
 // of an unknown what.
 func TestAgentVPNNetworks(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = db.SetSetting("agent_enabled", "1")
@@ -153,6 +156,7 @@ func TestAgentVPNNetworks(t *testing.T) {
 // TestAgentVPNNetworkAction: probe is a read that needs no manager (graceful when one is absent); the schema
 // refuses unknown actions and a missing id before any request. No real VPN is needed for these read paths.
 func TestAgentVPNNetworkAction(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = db.SetSetting("agent_enabled", "1")
@@ -185,6 +189,7 @@ func TestAgentVPNNetworkAction(t *testing.T) {
 // TestAgentPkgUpdates: the stored result is read without approval, the check asks first, and the list is
 // cut while the counts stay.
 func TestAgentPkgUpdates(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = db.SetSetting("agent_enabled", "1")
@@ -277,6 +282,7 @@ func TestAgentGatewayCLI(t *testing.T) {
 // TestAgentRepoBranch: the branch listing, a create and a switch, and the refusal of a delete of an
 // unmerged branch. A real clone is needed, so it is built from a bare repository on disk.
 func TestAgentRepoBranch(t *testing.T) {
+	t.Parallel()
 	bare := createTestBareRepo(t)
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()

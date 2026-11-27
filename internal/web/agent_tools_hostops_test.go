@@ -98,6 +98,7 @@ func copyPath(src, dst string) error {
 
 // The host runtime tools must be registered, with an object schema and a description.
 func TestAgentHostOpsToolsListed(t *testing.T) {
+	t.Parallel()
 	want := []string{"docker_container_action", "docker_run", "docker_image_action", "docker_volume_action",
 		"docker_network_action", "docker_prune", "docker_stack_deploy", "pkg_action", "file_action",
 		"file_upload_text", "transfer_action", "transfer_jobs", "domain_config_remove"}
@@ -125,6 +126,7 @@ func TestAgentHostOpsToolsListed(t *testing.T) {
 
 // A wrong argument is an error and changes nothing: no approval card, no SSH command.
 func TestAgentHostOpsValidation(t *testing.T) {
+	t.Parallel()
 	srv, db, runner, hostID := hostOpsServer(t)
 	defer db.Close()
 	_ = db.SetSetting("agent_approval", "auto") // a gate-1 action must not block the test
@@ -165,6 +167,7 @@ func TestAgentHostOpsValidation(t *testing.T) {
 
 // Every destructive action waits for the operator, even in auto mode, and a denial runs nothing.
 func TestAgentHostOpsDestructiveActionsAsk(t *testing.T) {
+	t.Parallel()
 	srv, db, runner, hostID := hostOpsServer(t)
 	defer db.Close()
 	_ = db.SetSetting("agent_approval", "auto") // auto skips gate 1 only
@@ -198,6 +201,7 @@ func TestAgentHostOpsDestructiveActionsAsk(t *testing.T) {
 
 // The File Manager writes through the UI handler, so a protected path is refused (and nothing is asked).
 func TestAgentHostOpsFileWriteRefusesProtectedPath(t *testing.T) {
+	t.Parallel()
 	srv, db, _, hostID := hostOpsServer(t)
 	defer db.Close()
 	h := itoa(hostID)
@@ -215,6 +219,7 @@ func TestAgentHostOpsFileWriteRefusesProtectedPath(t *testing.T) {
 
 // The File Manager write, duplicate, delete and chmod run through the real handler: the file really changes.
 func TestAgentHostOpsFileActions(t *testing.T) {
+	t.Parallel()
 	srv, db, runner, hostID := hostOpsServer(t)
 	defer db.Close()
 	_ = db.SetSetting("agent_approval", "auto")
@@ -278,6 +283,7 @@ func TestAgentHostOpsFileActions(t *testing.T) {
 
 // The Docker container actions reach the host and the destructive ones ask first.
 func TestAgentHostOpsDockerContainerAction(t *testing.T) {
+	t.Parallel()
 	srv, db, runner, hostID := hostOpsServer(t)
 	defer db.Close()
 	_ = db.SetSetting("agent_approval", "auto")
@@ -309,6 +315,7 @@ func TestAgentHostOpsDockerContainerAction(t *testing.T) {
 
 // The S3 upload names an account the operator stored: the secret key never crosses the model.
 func TestAgentHostOpsS3Upload(t *testing.T) {
+	t.Parallel()
 	srv, db, _, hostID := hostOpsServer(t)
 	defer db.Close()
 	_ = db.SetSetting("agent_approval", "auto")
@@ -337,6 +344,7 @@ func TestAgentHostOpsS3Upload(t *testing.T) {
 
 // The package change asks first and never carries a secret.
 func TestAgentHostOpsPkgAction(t *testing.T) {
+	t.Parallel()
 	srv, db, runner, hostID := hostOpsServer(t)
 	defer db.Close()
 	h := itoa(hostID)
@@ -383,6 +391,7 @@ func ranCommand(runner *sshrunner.MockRunner, fragment string) bool {
 
 // The transfer jobs are readable and a new transfer is a job the operator can follow.
 func TestAgentHostOpsTransferJobs(t *testing.T) {
+	t.Parallel()
 	srv, db, runner, hostID := hostOpsServer(t)
 	defer db.Close()
 	_ = db.SetSetting("agent_approval", "auto")
@@ -410,6 +419,7 @@ func TestAgentHostOpsTransferJobs(t *testing.T) {
 
 // The host runtime tools must be mentioned in the SOUL, or the agent never uses them.
 func TestAgentHostOpsSoulMentionsTools(t *testing.T) {
+	t.Parallel()
 	for _, n := range []string{"docker_container_action", "docker_run", "docker_image_action", "docker_volume_action",
 		"docker_network_action", "docker_prune", "docker_stack_deploy", "pkg_action", "file_action",
 		"file_upload_text", "transfer_action", "transfer_jobs", "domain_config_remove"} {
@@ -421,6 +431,7 @@ func TestAgentHostOpsSoulMentionsTools(t *testing.T) {
 
 // The package change must not run longer than the tool timeout allows.
 func TestAgentHostOpsPkgTimeoutIsBounded(t *testing.T) {
+	t.Parallel()
 	if agentExecTimeout > 15*time.Minute {
 		t.Fatalf("the package tool timeout (%v) must stay inside the agent tool timeout (%v)", 15*time.Minute, agentExecTimeout)
 	}

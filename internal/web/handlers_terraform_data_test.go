@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -16,7 +15,7 @@ import (
 
 func setupTerraformTestDataServer(t *testing.T) (*Server, func(*http.Request)) {
 	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "test_tf_data.db")
+	dbPath := testDBCopy(t)
 	db, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatalf("failed to init test db: %v", err)
@@ -105,6 +104,7 @@ func splitClean(p string) []string {
 }
 
 func TestTerraformVariables_SensitiveAndEffective(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupTerraformTestDataServer(t)
 
 	// Create workspace
@@ -207,6 +207,7 @@ func TestTerraformVariables_SensitiveAndEffective(t *testing.T) {
 }
 
 func TestTerraformState_ImportVersionsDiffRollback(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupTerraformTestDataServer(t)
 
 	ws := &store.TFWorkspace{Name: "ws-state-test"}

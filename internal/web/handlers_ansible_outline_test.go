@@ -11,6 +11,7 @@ import (
 )
 
 func TestAnsibleOutlineComposeRoundTrip(t *testing.T) {
+	t.Parallel()
 	env := newAnsibleEnv(t)
 	play := "- name: p\n  hosts: all\n  roles:\n    - common\n  tasks:\n    - debug: msg=hi\n"
 	rec := doRequest(t, env.srv, env.auth, http.MethodPost, "/api/ansible/playbooks/outline", map[string]string{"content": play})

@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -27,7 +26,7 @@ func setupSecurityTestServer(t *testing.T) (*Server, *store.DB, *inspector.Inspe
 	}
 	t.Cleanup(func() { os.RemoveAll(tmpDir) })
 
-	dbPath := filepath.Join(tmpDir, "pantau.db")
+	dbPath := testDBCopy(t)
 	db, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
@@ -59,6 +58,7 @@ func setupSecurityTestServer(t *testing.T) (*Server, *store.DB, *inspector.Inspe
 // Exploit intelligence leaves the Pantau server, so nothing is downloaded until the administrator opts in; once
 // enabled the Security tab response carries KEV/EPSS for the scan's CVEs.
 func TestSecurityIntelIsOptIn(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _, authReq := setupSecurityTestServer(t)
 	var hits int
 	feeds := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -106,6 +106,7 @@ func TestSecurityIntelIsOptIn(t *testing.T) {
 }
 
 func TestSecurityAPI_UnknownHost(t *testing.T) {
+	t.Parallel()
 	srv, _, _, _, authReq := setupSecurityTestServer(t)
 
 	// GET unknown host -> 404
@@ -128,6 +129,7 @@ func TestSecurityAPI_UnknownHost(t *testing.T) {
 }
 
 func TestSecurityAPI_GetUnscanned(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _, authReq := setupSecurityTestServer(t)
 
 	hostID, err := db.CreateHost(&store.Host{
@@ -162,6 +164,7 @@ func TestSecurityAPI_GetUnscanned(t *testing.T) {
 }
 
 func TestSecurityAPI_GetScanned(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _, authReq := setupSecurityTestServer(t)
 
 	hostID, err := db.CreateHost(&store.Host{
@@ -247,6 +250,7 @@ func TestSecurityAPI_GetScanned(t *testing.T) {
 }
 
 func TestSecurityAPI_PostScan_Cooldown(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _, authReq := setupSecurityTestServer(t)
 
 	hostID, err := db.CreateHost(&store.Host{
@@ -291,6 +295,7 @@ func TestSecurityAPI_PostScan_Cooldown(t *testing.T) {
 }
 
 func TestSecurityAPI_PostScan_NilInspector(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _, authReq := setupSecurityTestServer(t)
 	srv.inspector = nil
 
@@ -315,6 +320,7 @@ func TestSecurityAPI_PostScan_NilInspector(t *testing.T) {
 }
 
 func TestSecurityAPI_PostScan_Success(t *testing.T) {
+	t.Parallel()
 	srv, db, _, mockRunner, authReq := setupSecurityTestServer(t)
 
 	// Set up mock runner output for security scan commands
@@ -371,6 +377,7 @@ func TestSecurityAPI_PostScan_Success(t *testing.T) {
 }
 
 func TestSecurityAPI_PostScan_InProgress_409(t *testing.T) {
+	t.Parallel()
 	srv, db, _, mockRunner, authReq := setupSecurityTestServer(t)
 
 	hostID, err := db.CreateHost(&store.Host{
@@ -431,6 +438,7 @@ func TestSecurityAPI_PostScan_InProgress_409(t *testing.T) {
 }
 
 func TestSecuritySettings(t *testing.T) {
+	t.Parallel()
 	srv, _, _, _, authReq := setupSecurityTestServer(t)
 
 	// 1. Default GET: security_scan_interval_hours should be "24"
@@ -498,6 +506,7 @@ func TestSecuritySettings(t *testing.T) {
 }
 
 func TestSecurityAPI_Firewall(t *testing.T) {
+	t.Parallel()
 	srv, db, _, mock, authReq := setupSecurityTestServer(t)
 	hostID, err := db.CreateHost(&store.Host{Name: "fw", Host: "10.0.0.9", Port: 22, User: "root"})
 	if err != nil {

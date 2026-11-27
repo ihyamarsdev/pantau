@@ -25,6 +25,7 @@ func mustCloudAccount(t *testing.T, db *store.DB, name string) *store.TFCloudAcc
 }
 
 func TestTFCloudAccount_CRUD(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -84,6 +85,7 @@ func TestTFCloudAccount_CRUD(t *testing.T) {
 }
 
 func TestTFCloudAccount_VerifyStoredAndResetOnUpdate(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 	a := mustCloudAccount(t, db, "acme")
@@ -106,6 +108,7 @@ func TestTFCloudAccount_VerifyStoredAndResetOnUpdate(t *testing.T) {
 }
 
 func TestTFCloudAccount_JSONOmitsFields(t *testing.T) {
+	t.Parallel()
 	data, err := json.Marshal(&store.TFCloudAccount{Name: "x", Fields: map[string]string{"token": "super-secret-tok"}})
 	if err != nil {
 		t.Fatal(err)
@@ -116,6 +119,7 @@ func TestTFCloudAccount_JSONOmitsFields(t *testing.T) {
 }
 
 func TestTFWorkspace_CloudAccountIDs(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 	a, b := mustCloudAccount(t, db, "a"), mustCloudAccount(t, db, "b")
@@ -168,6 +172,7 @@ func TestTFWorkspace_CloudAccountIDs(t *testing.T) {
 }
 
 func TestTFCloudAccount_DeleteUnlinksAndCount(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 	a, b := mustCloudAccount(t, db, "a"), mustCloudAccount(t, db, "b")
@@ -197,6 +202,7 @@ func TestTFCloudAccount_DeleteUnlinksAndCount(t *testing.T) {
 }
 
 func TestTFCloudAccount_SnapshotRoundTrip(t *testing.T) {
+	t.Parallel()
 	db1, cleanup1 := setupTestDB(t)
 	defer cleanup1()
 	a := mustCloudAccount(t, db1, "prod-aws")
@@ -234,6 +240,7 @@ func TestTFCloudAccount_SnapshotRoundTrip(t *testing.T) {
 }
 
 func TestTFCloudAccount_RestoreOldSnapshot(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 	mustCloudAccount(t, db, "stale")
@@ -257,6 +264,7 @@ func TestTFCloudAccount_RestoreOldSnapshot(t *testing.T) {
 }
 
 func TestTFCloudAccount_MigrationIdempotentOnLegacyDB(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "legacy.db")
 	db, err := store.Open(path)
 	if err != nil {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -18,7 +17,7 @@ import (
 
 func setupCFTestServer(t *testing.T) (*Server, func(*http.Request)) {
 	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "test_cf.db")
+	dbPath := testDBCopy(t)
 	db, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatalf("failed to init test db: %v", err)
@@ -282,6 +281,7 @@ func fakeCloudflareServer(t *testing.T, verifyOk bool) *httptest.Server {
 }
 
 func TestCloudflareAuthRejected(t *testing.T) {
+	t.Parallel()
 	srv, _ := setupCFTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/cloudflare/accounts", nil)
@@ -294,6 +294,7 @@ func TestCloudflareAuthRejected(t *testing.T) {
 }
 
 func TestCloudflareAccountLifecycleAndSecurity(t *testing.T) {
+	t.Parallel()
 	srv, authReq := setupCFTestServer(t)
 	fakeCF := fakeCloudflareServer(t, true)
 	defer fakeCF.Close()
@@ -444,6 +445,7 @@ func TestCloudflareAccountLifecycleAndSecurity(t *testing.T) {
 }
 
 func TestCloudflareProxyEndpoints(t *testing.T) {
+	t.Parallel()
 	srv, authReq := setupCFTestServer(t)
 	fakeCF := fakeCloudflareServer(t, true)
 	defer fakeCF.Close()

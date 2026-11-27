@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +18,7 @@ import (
 )
 
 func TestNetDiagStreamAuthAndValidation(t *testing.T) {
+	t.Parallel()
 	srv := &Server{}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/netdiag/stream", srv.authMiddleware(srv.handleNetDiagStream))
@@ -81,6 +81,7 @@ func TestNetDiagStreamAuthAndValidation(t *testing.T) {
 }
 
 func TestNetDiagUIInIndexHTML(t *testing.T) {
+	t.Parallel()
 	srv := NewServer(nil, nil, nil)
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
@@ -151,13 +152,14 @@ func TestNetDiagUIInIndexHTML(t *testing.T) {
 }
 
 func TestNetDiagExecutionFlowWithMockRunner(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-netdiag-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}

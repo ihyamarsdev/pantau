@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -22,7 +21,7 @@ import (
 
 func setupAnsibleTestServer(t *testing.T) (*Server, func(*http.Request)) {
 	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "test_ansible.db")
+	dbPath := testDBCopy(t)
 	db, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatalf("failed to init test db: %v", err)
@@ -82,6 +81,7 @@ func doRequest(t *testing.T, srv *Server, authReq func(*http.Request), method, u
 
 // 1. Unauthenticated request rejected
 func TestAnsibleUnauthenticated(t *testing.T) {
+	t.Parallel()
 	srv, _ := setupAnsibleTestServer(t)
 	rec := doRequest(t, srv, nil, http.MethodGet, "/api/ansible/status", nil)
 	if rec.Code != http.StatusUnauthorized {
@@ -91,6 +91,7 @@ func TestAnsibleUnauthenticated(t *testing.T) {
 
 // 2. Gate disabled -> 409
 func TestAnsibleGateDisabled(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 
 	// Gate is disabled by default
@@ -115,6 +116,7 @@ func TestAnsibleGateDisabled(t *testing.T) {
 
 // 3. Enable fails when unavailable
 func TestAnsibleEnableFailsWhenUnavailable(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 
 	// Mock unavailable binary
@@ -130,6 +132,7 @@ func TestAnsibleEnableFailsWhenUnavailable(t *testing.T) {
 
 // 4. Playbook CRUD + duplicate name 409
 func TestAnsiblePlaybookCRUD(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 
@@ -190,6 +193,7 @@ func TestAnsiblePlaybookCRUD(t *testing.T) {
 
 // 5. Run happy path -> poll log with offsets until finished + assert final status success
 func TestAnsibleRunHappyPathAndLogPoll(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 
@@ -284,6 +288,7 @@ func TestAnsibleRunHappyPathAndLogPoll(t *testing.T) {
 
 // 6. Non-zero exit code -> status failed
 func TestAnsibleRunNonZeroExit(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 
@@ -306,16 +311,15 @@ func TestAnsibleRunNonZeroExit(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &runRes)
 	runID := runRes["run"].ID
 
-	// Wait for completion
-	time.Sleep(100 * time.Millisecond)
-	r, _ := srv.db.GetAnsibleRun(runID)
-	if r.Status != "failed" || *r.ExitCode != 2 {
+	r := waitRunFinished(t, srv, runID)
+	if r.Status != "failed" || r.ExitCode == nil || *r.ExitCode != 2 {
 		t.Fatalf("expected status=failed exit=2, got status=%s exit=%v", r.Status, r.ExitCode)
 	}
 }
 
 // 7. Cancel -> cancelled and fake sees ctx cancel
 func TestAnsibleRunCancel(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 
@@ -367,6 +371,7 @@ func TestAnsibleRunCancel(t *testing.T) {
 
 // 8. Second run on same playbook while running -> 409
 func TestAnsibleRunSecondOnSamePlaybook409(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 
@@ -401,6 +406,7 @@ func TestAnsibleRunSecondOnSamePlaybook409(t *testing.T) {
 
 // 9. 4th concurrent run -> 429
 func TestAnsibleRunMaxConcurrency429(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 
@@ -439,6 +445,7 @@ func TestAnsibleRunMaxConcurrency429(t *testing.T) {
 
 // 10. Run with no targets -> 400 (syntax mode allowed)
 func TestAnsibleRunNoTargets(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 
@@ -462,6 +469,7 @@ func TestAnsibleRunNoTargets(t *testing.T) {
 
 // 11. Unknown host id -> 400
 func TestAnsibleRunUnknownHostID(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 
@@ -477,6 +485,7 @@ func TestAnsibleRunUnknownHostID(t *testing.T) {
 
 // 12. Group targeting resolves hosts
 func TestAnsibleRunGroupTargeting(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 
@@ -513,6 +522,7 @@ func TestAnsibleRunGroupTargeting(t *testing.T) {
 
 // 13. Extra_vars override precedence
 func TestAnsibleRunExtraVarsPrecedence(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 
@@ -561,6 +571,7 @@ func TestAnsibleRunExtraVarsPrecedence(t *testing.T) {
 
 // 14. Log offset beyond length -> empty data
 func TestAnsibleRunLogOffsetBeyondLength(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 
@@ -595,6 +606,7 @@ func TestAnsibleRunLogOffsetBeyondLength(t *testing.T) {
 
 // 15. Log of finished run read from DB after manager forgets it
 func TestAnsibleRunLogReadFromDBAfterManagerForgets(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 
@@ -614,8 +626,10 @@ func TestAnsibleRunLogReadFromDBAfterManagerForgets(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &runRes)
 	runID := runRes["run"].ID
 
-	// Wait for execution to finish and goroutine cleanup
-	time.Sleep(50 * time.Millisecond)
+	// Bounded wait for the run goroutine to clean up; a fixed sleep flakes under load.
+	for deadline := time.Now().Add(5 * time.Second); srv.ansibleMgr.HasActiveRun(runID) && time.Now().Before(deadline); {
+		time.Sleep(5 * time.Millisecond)
+	}
 
 	// Ensure manager no longer has active run
 	if srv.ansibleMgr.HasActiveRun(runID) {
@@ -637,6 +651,7 @@ func TestAnsibleRunLogReadFromDBAfterManagerForgets(t *testing.T) {
 
 // 16. Deleting playbook with active run -> 409
 func TestAnsibleDeletePlaybookWithActiveRun409(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 
@@ -666,6 +681,7 @@ func TestAnsibleDeletePlaybookWithActiveRun409(t *testing.T) {
 
 // 17. Private key content never appears in any response body
 func TestAnsiblePrivateKeyNeverExposed(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 
@@ -719,6 +735,7 @@ const realRecapLog = "\x1b[0;33mchanged: [web-01]\x1b[0m\n\n" +
 	"\x1b[0;33mweb-01\x1b[0m                     : \x1b[0;32mok=3   \x1b[0m \x1b[0;33mchanged=1   \x1b[0m unreachable=0    failed=0    \x1b[0;36mskipped=1   \x1b[0m rescued=0    \x1b[1;35mignored=0   \x1b[0m\n"
 
 func TestAnsibleRunLimitVerbosityAndRecap(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 

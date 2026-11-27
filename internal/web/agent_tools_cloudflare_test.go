@@ -34,6 +34,7 @@ func decideNext(t *testing.T, srv *Server, approve bool) string {
 }
 
 func TestAgentCloudflareTools(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = db.SetSetting("agent_enabled", "1")

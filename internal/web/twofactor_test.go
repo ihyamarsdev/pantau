@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +19,7 @@ func setupTestServer(t *testing.T) (*Server, *store.DB, func()) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	dbPath := filepath.Join(tmpDir, "test.db")
+	dbPath := testDBCopy(t)
 	db, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
@@ -43,6 +42,7 @@ func setupTestServer(t *testing.T) (*Server, *store.DB, func()) {
 }
 
 func Test2FAFullLifecycle(t *testing.T) {
+	t.Parallel()
 	srv, _, cleanup := setupTestServer(t)
 	defer cleanup()
 

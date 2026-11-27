@@ -11,6 +11,7 @@ import (
 )
 
 func TestAnsibleGateSettings(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -37,6 +38,7 @@ func TestAnsibleGateSettings(t *testing.T) {
 }
 
 func TestAnsiblePlaybook_CRUDAndUniqueName(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -142,6 +144,7 @@ func TestAnsiblePlaybook_CRUDAndUniqueName(t *testing.T) {
 }
 
 func TestAnsiblePlaybook_ListOmitsContentAndReflectsLastStatus(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -254,6 +257,7 @@ func TestAnsiblePlaybook_ListOmitsContentAndReflectsLastStatus(t *testing.T) {
 }
 
 func TestAnsibleRun_LifecycleAndLogNeverInJSON(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -376,6 +380,7 @@ func TestAnsibleRun_LifecycleAndLogNeverInJSON(t *testing.T) {
 }
 
 func TestAnsibleRun_PruningSemantic(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -459,6 +464,7 @@ func TestAnsibleRun_PruningSemantic(t *testing.T) {
 }
 
 func TestAnsibleRun_MarkInterrupted(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -521,6 +527,7 @@ func TestAnsibleRun_MarkInterrupted(t *testing.T) {
 }
 
 func TestAnsiblePlaybook_DeleteCascadesRuns(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -559,6 +566,7 @@ func TestAnsiblePlaybook_DeleteCascadesRuns(t *testing.T) {
 }
 
 func TestAnsiblePlaybooks_SnapshotRoundtripAndLegacy(t *testing.T) {
+	t.Parallel()
 	db1, cleanup1 := setupTestDB(t)
 	defer cleanup1()
 

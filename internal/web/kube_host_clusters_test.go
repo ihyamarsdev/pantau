@@ -9,6 +9,7 @@ import (
 )
 
 func TestKubeHostClusterRenameAndAgentByName(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = db.SetSetting("agent_enabled", "1")

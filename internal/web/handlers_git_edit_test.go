@@ -75,6 +75,7 @@ func setupLocalBareSeam(srv *Server) {
 }
 
 func TestAnsibleGitEditHandlers(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	setupLocalBareSeam(srv)
 
@@ -263,6 +264,7 @@ func TestAnsibleGitEditHandlers(t *testing.T) {
 }
 
 func TestTerraformGitEditHandlers(t *testing.T) {
+	t.Parallel()
 	srv, db, _, auth := setupTerraformTestServer(t)
 	setupLocalBareSeam(srv)
 
@@ -387,6 +389,7 @@ func TestTerraformGitEditHandlers(t *testing.T) {
 // Status codes follow the error type, never the message text: a clone failure whose text happens to contain
 // "invalid" (a host such as example.invalid) is a gateway problem, not a bad request.
 func TestWriteGitErrorMapsByType(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		err  error
 		want int

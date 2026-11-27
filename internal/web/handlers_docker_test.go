@@ -13,6 +13,7 @@ import (
 
 // Output must reach the client while the operation is still running, and the outcome is the final marker line.
 func TestDockerStreamResultFlushesBeforeOperationEnds(t *testing.T) {
+	t.Parallel()
 	proceed := make(chan struct{})
 	done := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -45,6 +46,7 @@ func TestDockerStreamResultFlushesBeforeOperationEnds(t *testing.T) {
 
 // Input rejected before anything ran keeps the JSON error contract.
 func TestDockerStreamResultRejectionIsJSON(t *testing.T) {
+	t.Parallel()
 	w := httptest.NewRecorder()
 	dockerStreamResult(w, func(io.Writer) error { return inspector.ErrDockerInvalid })
 	if w.Code != http.StatusBadRequest || !strings.HasPrefix(w.Header().Get("Content-Type"), "application/json") {

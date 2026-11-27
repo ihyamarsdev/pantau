@@ -29,6 +29,7 @@ func fakeRegistryServer(t *testing.T) *httptest.Server {
 }
 
 func TestRegistryCheckInline(t *testing.T) {
+	t.Parallel()
 	reg := fakeRegistryServer(t)
 	srv, auth, id := newToolsWS(t, "inline", map[string]string{
 		"main.tf": "module \"vpc\" {\n  source  = \"a/vpc/aws\"\n  version = \"~> 5.0\"\n}\n" +
@@ -81,6 +82,7 @@ func TestRegistryCheckInline(t *testing.T) {
 }
 
 func TestRegistryCheckGitUnsupported(t *testing.T) {
+	t.Parallel()
 	srv, auth, id := newToolsWS(t, "git", nil)
 	rec := doTFReq(t, srv, auth, http.MethodGet, toolsURL(id, "registry/check"), nil)
 	var out struct {

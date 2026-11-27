@@ -14,6 +14,7 @@ import (
 )
 
 func TestKubeDrainPreviewModeAndValidation(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupKubeTestServer(t)
 	hID, err := srv.db.CreateHost(&store.Host{
 		Name: "DrainHost", Host: "10.0.0.1", Port: 22, User: "root", KubeMode: "read-only",
@@ -57,6 +58,7 @@ func TestKubeDrainPreviewModeAndValidation(t *testing.T) {
 }
 
 func TestWSKubeLogsWorkloadValidation(t *testing.T) {
+	t.Parallel()
 	srv, _ := setupKubeTestServer(t)
 	token := "kube_test_token"
 	ts := httptest.NewServer(srv.mux)
@@ -115,6 +117,7 @@ func TestWSKubeLogsWorkloadValidation(t *testing.T) {
 }
 
 func TestKubeYAMLRouteValidation(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupKubeTestServer(t)
 
 	// Secret rejected 400 before any command is built.
@@ -137,6 +140,7 @@ func TestKubeYAMLRouteValidation(t *testing.T) {
 }
 
 func TestKubeModeEnforcementMatrixFull(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupKubeTestServer(t)
 	hID, err := srv.db.CreateHost(&store.Host{
 		Name: "ROHost", Host: "10.0.0.1", Port: 22, User: "root", KubeMode: "read-only",

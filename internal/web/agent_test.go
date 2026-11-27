@@ -23,6 +23,7 @@ func callTool(t *testing.T, srv *Server, name, args string) (string, bool) {
 // Every tool the model may call must have an object schema and a description, and the internal gate
 // field must stay out of the specs.
 func TestAgentToolSpecs(t *testing.T) {
+	t.Parallel()
 	specs := agentToolSpecs()
 	if len(specs) != len(agentTools) {
 		t.Fatalf("one spec per tool expected: %d vs %d", len(specs), len(agentTools))
@@ -44,6 +45,7 @@ func TestAgentToolSpecs(t *testing.T) {
 }
 
 func TestAgentToolValidation(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = db.SetSetting("agent_enabled", "1")
@@ -74,6 +76,7 @@ func TestAgentToolValidation(t *testing.T) {
 }
 
 func TestAgentSecretPathRe(t *testing.T) {
+	t.Parallel()
 	for _, p := range []string{"/etc/shadow", "/etc/sudoers.d/x", "/root/.ssh/id_ed25519", "/home/a/.ssh/authorized_keys", "/srv/app/.env", "/etc/ssl/private/site.key", "/home/a/.aws/credentials", "/home/a/.docker/config.json",
 		"/srv/app/.env.production", "/root/.kube/config", "/etc/rancher/k3s/k3s.yaml", "/etc/kubernetes/admin.conf", "/proc/1234/environ", "/etc/wireguard/wg0.conf", "/root/.my.cnf"} {
 		if !agentSecretPathRe.MatchString(p) {
@@ -90,6 +93,7 @@ func TestAgentSecretPathRe(t *testing.T) {
 func approvalReq() *http.Request { return httptest.NewRequest(http.MethodPost, "/api/agent/chat", nil) }
 
 func TestAgentApprovalFlow(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 
@@ -136,6 +140,7 @@ func TestAgentApprovalFlow(t *testing.T) {
 }
 
 func TestAgentSettingsKeyIsWriteOnly(t *testing.T) {
+	t.Parallel()
 	srv, _, cleanup := setupTestServer(t)
 	defer cleanup()
 	post := func(body string) int {
@@ -162,6 +167,7 @@ func TestAgentSettingsKeyIsWriteOnly(t *testing.T) {
 
 // Without a provider the chat must point the operator at the settings instead of failing somewhere else.
 func TestAgentChatNeedsProvider(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = db.SetSetting("agent_enabled", "1")
@@ -178,6 +184,7 @@ func TestAgentChatNeedsProvider(t *testing.T) {
 }
 
 func TestAgentSessionGrantScope(t *testing.T) {
+	t.Parallel()
 	srv, _, cleanup := setupTestServer(t)
 	defer cleanup()
 

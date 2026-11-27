@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -18,8 +17,7 @@ import (
 // setupFIMServer builds a server whose SSH runner answers with a fixed manifest.
 func setupFIMServer(t *testing.T, manifest string) (*Server, *store.DB, func(*http.Request)) {
 	t.Helper()
-	tmpDir := t.TempDir()
-	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatalf("failed to create db: %v", err)
 	}
@@ -42,6 +40,7 @@ func setupFIMServer(t *testing.T, manifest string) (*Server, *store.DB, func(*ht
 const fimManifest = "FIM:OK /etc/passwd aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nFIM:DONE\n"
 
 func TestFIMRuleValidation(t *testing.T) {
+	t.Parallel()
 	srv, db, authReq := setupFIMServer(t, fimManifest)
 	hID, err := db.CreateHost(&store.Host{Name: "Test", Host: "192.168.1.10", User: "root", Port: 22})
 	if err != nil {
@@ -80,6 +79,7 @@ func TestFIMRuleValidation(t *testing.T) {
 }
 
 func TestFIMBaselineEndpointPreviewsWithoutSaving(t *testing.T) {
+	t.Parallel()
 	srv, db, authReq := setupFIMServer(t, fimManifest)
 	hID, _ := db.CreateHost(&store.Host{Name: "Test", Host: "192.168.1.10", User: "root", Port: 22})
 

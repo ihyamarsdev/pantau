@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +19,7 @@ import (
 )
 
 func TestBuildBulkCommand(t *testing.T) {
+	t.Parallel()
 	cmd := BuildBulkCommand("uptime; uname -a", false)
 	if !strings.Contains(cmd, "uptime; uname -a") {
 		t.Errorf("expected command in plain script: %s", cmd)
@@ -39,7 +39,7 @@ func TestBuildBulkCommand(t *testing.T) {
 
 func setupBulkTestServer(t *testing.T, runner *sshrunner.MockRunner) (*Server, *store.DB) {
 	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "test_bulk.db")
+	dbPath := testDBCopy(t)
 	db, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
@@ -65,6 +65,7 @@ func createBulkAuthCookie(srv *Server) *http.Cookie {
 }
 
 func TestExecBulkEndpointValidation(t *testing.T) {
+	t.Parallel()
 	runner := sshrunner.NewMockRunner()
 	srv, db := setupBulkTestServer(t, runner)
 	authCookie := createBulkAuthCookie(srv)
@@ -135,6 +136,7 @@ func TestExecBulkEndpointValidation(t *testing.T) {
 }
 
 func TestExecBulkExecutionAndStream(t *testing.T) {
+	t.Parallel()
 	runner := sshrunner.NewMockRunner()
 	runner.DefaultExec = func(cmd string) (string, string, int, error) {
 		return "Linux test 6.1.0\n", "", 0, nil
@@ -212,6 +214,7 @@ func TestExecBulkExecutionAndStream(t *testing.T) {
 }
 
 func TestExecBulkOutputTruncation64KB(t *testing.T) {
+	t.Parallel()
 	runner := sshrunner.NewMockRunner()
 	hugeOutput := strings.Repeat("X", 70*1024)
 	runner.DefaultExec = func(cmd string) (string, string, int, error) {
@@ -252,6 +255,7 @@ func TestExecBulkOutputTruncation64KB(t *testing.T) {
 }
 
 func TestUpgradePreviewAndWSEndpoint(t *testing.T) {
+	t.Parallel()
 	runner := sshrunner.NewMockRunner()
 	runner.DefaultExec = func(cmd string) (string, string, int, error) {
 		if strings.Contains(cmd, "===OS_RELEASE===") {

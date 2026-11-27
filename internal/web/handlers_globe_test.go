@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,7 +15,7 @@ import (
 
 func globeTestServer(t *testing.T) (*Server, *http.Cookie) {
 	t.Helper()
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -28,6 +27,7 @@ func globeTestServer(t *testing.T) (*Server, *http.Cookie) {
 }
 
 func TestGlobeRequiresAuth(t *testing.T) {
+	t.Parallel()
 	srv, _ := globeTestServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/network-radar/globe", nil)
 	w := httptest.NewRecorder()
@@ -38,6 +38,7 @@ func TestGlobeRequiresAuth(t *testing.T) {
 }
 
 func TestGlobeRejectsPost(t *testing.T) {
+	t.Parallel()
 	srv, cookie := globeTestServer(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/network-radar/globe", nil)
 	req.AddCookie(cookie)
@@ -49,6 +50,7 @@ func TestGlobeRejectsPost(t *testing.T) {
 }
 
 func TestGlobeReturnsNodesAndLinks(t *testing.T) {
+	t.Parallel()
 	srv, cookie := globeTestServer(t)
 	db := srv.db
 	id, err := db.CreateHost(&store.Host{Name: "web", Host: "203.0.113.10", Status: "healthy"})
@@ -87,6 +89,7 @@ func TestGlobeReturnsNodesAndLinks(t *testing.T) {
 }
 
 func TestGlobeSetGeoOverride(t *testing.T) {
+	t.Parallel()
 	srv, cookie := globeTestServer(t)
 	id, err := srv.db.CreateHost(&store.Host{Name: "airgap", Host: "10.0.0.5"})
 	if err != nil {

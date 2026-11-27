@@ -13,6 +13,7 @@ import (
 // The browser endpoints map Docker Hub answers to HTTP statuses the UI can explain: bad input never leaves
 // Pantau (400), a missing repository is 404, a rate limit stays 429, anything else upstream is 502.
 func TestDockerHubEndpoints(t *testing.T) {
+	t.Parallel()
 	var upstream []string
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstream = append(upstream, r.URL.Path)

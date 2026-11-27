@@ -18,6 +18,7 @@ import (
 )
 
 func TestAnsibleUploadLimits(t *testing.T) {
+	t.Parallel()
 	t.Run("file count", func(t *testing.T) {
 		files := make([]ansibleImportFile, ansible.MaxBundleFiles+1)
 		for i := range files {
@@ -76,6 +77,7 @@ func TestAnsibleUploadLimits(t *testing.T) {
 }
 
 func TestAnsibleUploadNativeMultipart(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is required for native FormData serialization")

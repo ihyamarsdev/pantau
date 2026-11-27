@@ -23,7 +23,7 @@ import (
 func setupTerraformTestServer(t *testing.T) (*Server, *store.DB, string, func(*http.Request)) {
 	t.Helper()
 	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "test_tf.db")
+	dbPath := testDBCopy(t)
 	db, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatalf("failed to init test db: %v", err)
@@ -70,6 +70,7 @@ func doTFReq(t *testing.T, srv *Server, authReq func(*http.Request), method, url
 
 // 1. Unauthenticated request rejected
 func TestTerraformUnauthenticated(t *testing.T) {
+	t.Parallel()
 	srv, _, _, _ := setupTerraformTestServer(t)
 	rec := doTFReq(t, srv, nil, http.MethodGet, "/api/terraform/workspaces", nil)
 	if rec.Code != http.StatusUnauthorized {
@@ -79,6 +80,7 @@ func TestTerraformUnauthenticated(t *testing.T) {
 
 // 2. Gate disabled -> 403 {"error":"terraform is disabled"}
 func TestTerraformGateDisabled(t *testing.T) {
+	t.Parallel()
 	srv, _, _, auth := setupTerraformTestServer(t)
 
 	// Gate is disabled by default
@@ -116,6 +118,7 @@ func TestTerraformGateDisabled(t *testing.T) {
 
 // 3. Workspace CRUD + duplicate name conflict + manual lock / unlock / force-unlock
 func TestTerraformWorkspaceLifecycle(t *testing.T) {
+	t.Parallel()
 	srv, _, _, auth := setupTerraformTestServer(t)
 	_ = doTFReq(t, srv, auth, http.MethodPut, "/api/terraform/status", map[string]bool{"enabled": true})
 
@@ -212,6 +215,7 @@ func TestTerraformWorkspaceLifecycle(t *testing.T) {
 
 // 4. Mocked Run pipeline: plan -> awaiting_approval -> policy/cost -> apply -> applied
 func TestTerraformRunPipelineMocked(t *testing.T) {
+	t.Parallel()
 	srv, db, tfDataRoot, auth := setupTerraformTestServer(t)
 	_ = doTFReq(t, srv, auth, http.MethodPut, "/api/terraform/status", map[string]bool{"enabled": true})
 
@@ -370,6 +374,7 @@ func TestTerraformRunPipelineMocked(t *testing.T) {
 
 // 5. Public webhook trigger (bypasses authMiddleware)
 func TestTerraformWebhookEndpoint(t *testing.T) {
+	t.Parallel()
 	srv, db, tfDataRoot, _ := setupTerraformTestServer(t)
 
 	// Create a workspace directly in DB
@@ -421,6 +426,7 @@ func TestTerraformWebhookEndpoint(t *testing.T) {
 
 // 6. Real integration test with /usr/bin/terraform if installed
 func TestTerraformIntegrationReal(t *testing.T) {
+	t.Parallel()
 	tfPath, err := exec.LookPath("terraform")
 	if err != nil {
 		t.Skip("terraform not installed in PATH, skipping real smoke integration test")

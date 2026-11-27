@@ -8,6 +8,7 @@ import (
 )
 
 func TestAnsibleAdhocRuns_CRUD(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -58,6 +59,7 @@ func TestAnsibleAdhocRuns_CRUD(t *testing.T) {
 }
 
 func TestAnsibleAdhocRuns_PruneAndInterrupt(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -103,6 +105,7 @@ func TestAnsibleAdhocRuns_PruneAndInterrupt(t *testing.T) {
 }
 
 func TestAnsibleHostFacts_Upsert(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 

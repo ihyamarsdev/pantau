@@ -9,6 +9,7 @@ import (
 )
 
 func TestTerraformRunsFeedEndpoint(t *testing.T) {
+	t.Parallel()
 	srv, db, _, auth := setupTerraformTestServer(t)
 	_ = doTFReq(t, srv, auth, http.MethodPut, "/api/terraform/status", map[string]bool{"enabled": true})
 

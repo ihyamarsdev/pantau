@@ -37,6 +37,7 @@ func skipNoTF(t *testing.T) {
 }
 
 func TestTFToolsDetectVariables(t *testing.T) {
+	t.Parallel()
 	srv, auth, id := newToolsWS(t, "inline", map[string]string{
 		"variables.tf": "variable \"region\" { default = \"eu\" }\nvariable \"name\" {\n  type = string\n  sensitive = true\n}\n",
 	})
@@ -77,6 +78,7 @@ func TestTFToolsDetectVariables(t *testing.T) {
 }
 
 func TestTFToolsDetectGitUnsupported(t *testing.T) {
+	t.Parallel()
 	srv, auth, id := newToolsWS(t, "git", nil)
 	rec := doTFReq(t, srv, auth, http.MethodGet, toolsURL(id, "variables/detect"), nil)
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"supported":false`) || !strings.Contains(rec.Body.String(), `"variables":[]`) {
@@ -85,6 +87,7 @@ func TestTFToolsDetectGitUnsupported(t *testing.T) {
 }
 
 func TestTFToolsFmt(t *testing.T) {
+	t.Parallel()
 	skipNoTF(t)
 	srv, auth, id := newToolsWS(t, "inline", map[string]string{})
 	rec := doTFReq(t, srv, auth, http.MethodPost, toolsURL(id, "tools/fmt"), map[string]any{"files": map[string]string{
@@ -112,6 +115,7 @@ func TestTFToolsFmt(t *testing.T) {
 }
 
 func TestTFToolsGitRejected(t *testing.T) {
+	t.Parallel()
 	srv, auth, id := newToolsWS(t, "git", nil)
 	for _, p := range []string{"tools/fmt", "tools/validate"} {
 		rec := doTFReq(t, srv, auth, http.MethodPost, toolsURL(id, p), map[string]any{"files": map[string]string{"a.tf": ""}})
@@ -127,6 +131,7 @@ func TestTFToolsGitRejected(t *testing.T) {
 }
 
 func TestTFToolsValidate(t *testing.T) {
+	t.Parallel()
 	skipNoTF(t)
 	srv, auth, id := newToolsWS(t, "inline", map[string]string{})
 	post := func(content string) (ok bool, diags []map[string]any, initErr string) {
@@ -154,6 +159,7 @@ func TestTFToolsValidate(t *testing.T) {
 }
 
 func TestTFToolsValidateBusy(t *testing.T) {
+	t.Parallel()
 	srv, auth, id := newToolsWS(t, "inline", map[string]string{})
 	tfValidateSem <- struct{}{}
 	tfValidateSem <- struct{}{}

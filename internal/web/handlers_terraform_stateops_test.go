@@ -40,6 +40,7 @@ func stateOpsPost(t *testing.T, srv *Server, auth func(*http.Request), id int64,
 }
 
 func TestStateOpsRequestValidation(t *testing.T) {
+	t.Parallel()
 	srv, auth, _, id := stateOpsEnv(t, map[string]string{"main.tf": ""})
 	for name, body := range map[string]map[string]string{
 		"bad op":        {"op": "taint", "address": "a.b"},
@@ -66,6 +67,7 @@ func TestStateOpsRequestValidation(t *testing.T) {
 }
 
 func TestStateOpsLockHandling(t *testing.T) {
+	t.Parallel()
 	srv, auth, mgr, id := stateOpsEnv(t, map[string]string{"main.tf": ""})
 	body := map[string]string{"op": "rm", "address": "a.b"}
 
@@ -105,6 +107,7 @@ func TestStateOpsLockHandling(t *testing.T) {
 }
 
 func TestStateOpsRealRmMv(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("terraform"); err != nil {
 		t.Skip("terraform not installed")
 	}

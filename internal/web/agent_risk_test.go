@@ -8,6 +8,7 @@ import (
 // controlled mutations are mutating_safe; shell, firewall, drain, Terraform apply/destroy and file
 // deletion are destructive and require the human approval token.
 func TestRiskTierOfTool(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		tool string
 		args map[string]interface{}
@@ -36,6 +37,7 @@ func TestRiskTierOfTool(t *testing.T) {
 // A shell tool whose concrete command is destructive is classified as destructive even though the tool
 // itself is the generic exec_command.
 func TestRiskTierOfDestructiveShellCommand(t *testing.T) {
+	t.Parallel()
 	if got := riskTierOfTool("exec_command", map[string]interface{}{"command": "rm -rf /var/log"}); got != riskDestructive {
 		t.Fatalf("a destructive shell command must be destructive, got %s", got)
 	}
@@ -44,6 +46,7 @@ func TestRiskTierOfDestructiveShellCommand(t *testing.T) {
 // The descriptive domain names resolve to the same tool slices as the short aliases, so enabling a
 // domain by its module name loads exactly one module's tools (plus core/meta).
 func TestCanonicalDomainAliases(t *testing.T) {
+	t.Parallel()
 	cases := map[string]toolDomain{
 		"compute_systemd":        domainHost,
 		"docker_kubernetes":      domainInfra,
@@ -73,6 +76,7 @@ func TestCanonicalDomainAliases(t *testing.T) {
 
 // The two new ADR 0075-0081 parity tools are registered and reachable in their domains.
 func TestRecentParityToolsRegistered(t *testing.T) {
+	t.Parallel()
 	for _, name := range []string{"vpn_host_status", "gateway_cli_install"} {
 		if findAgentTool(name) == nil {
 			t.Errorf("%s must be registered", name)

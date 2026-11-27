@@ -19,7 +19,6 @@ import (
 	"pantau/internal/sshrunner"
 	"pantau/internal/store"
 	"pantau/internal/updater"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -31,6 +30,7 @@ import (
 )
 
 func TestIsProtectedPathString(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		path      string
 		protected bool
@@ -85,6 +85,7 @@ func TestIsProtectedPathString(t *testing.T) {
 }
 
 func TestFormatPresetExecution(t *testing.T) {
+	t.Parallel()
 	// 1. Simple command
 	cmd1 := formatPresetExecution("htop", false)
 	if !strings.Contains(cmd1, "command -v htop") || !strings.Contains(cmd1, "Binary 'htop' not found") {
@@ -105,13 +106,14 @@ func TestFormatPresetExecution(t *testing.T) {
 }
 
 func TestTerminalPresetsAPI(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	dbPath := filepath.Join(tmpDir, "pantau.db")
+	dbPath := testDBCopy(t)
 	db, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
@@ -195,6 +197,7 @@ func TestTerminalPresetsAPI(t *testing.T) {
 }
 
 func TestShellStaticHTML(t *testing.T) {
+	t.Parallel()
 	html := string(embeddedHTML)
 	ui := html + "\n" + coreJSSource(t)
 	requiredStrings := []string{
@@ -273,13 +276,14 @@ func TestShellStaticHTML(t *testing.T) {
 }
 
 func TestServerSetVersion(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-ver-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,13 +310,14 @@ func TestServerSetVersion(t *testing.T) {
 }
 
 func TestAirgappedSelfContainedAssets(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-airgap-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,6 +399,7 @@ func TestAirgappedSelfContainedAssets(t *testing.T) {
 }
 
 func TestGlobalTerminalDockWebAssets(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	srv := NewServer(nil, nil, nil)
@@ -508,6 +514,7 @@ func TestGlobalTerminalDockWebAssets(t *testing.T) {
 }
 
 func TestHandleDocs(t *testing.T) {
+	t.Parallel()
 	mockDocs := fstest.MapFS{
 		"README.md":             &fstest.MapFile{Data: []byte("# Pantau\n\nEnglish Overview")},
 		"README.id.md":          &fstest.MapFile{Data: []byte("# Pantau\n\nRingkasan Bahasa Indonesia")},
@@ -595,6 +602,7 @@ func TestHandleDocs(t *testing.T) {
 }
 
 func TestDocumentationModalUI(t *testing.T) {
+	t.Parallel()
 	html := uiSourceForTest(t)
 
 	// Check Workspace Modal container and elements
@@ -622,6 +630,7 @@ func TestDocumentationModalUI(t *testing.T) {
 }
 
 func TestTerminalFontConfigurationUI(t *testing.T) {
+	t.Parallel()
 	html := uiSourceForTest(t)
 
 	mustContain := []string{
@@ -645,6 +654,7 @@ func TestTerminalFontConfigurationUI(t *testing.T) {
 }
 
 func TestIndexGzipAndETagRevalidation(t *testing.T) {
+	t.Parallel()
 	srv := NewServer(nil, nil, nil)
 
 	// 1. Raw request without Accept-Encoding: gzip
@@ -729,6 +739,7 @@ func TestIndexGzipAndETagRevalidation(t *testing.T) {
 }
 
 func TestFavicon(t *testing.T) {
+	t.Parallel()
 	srv := NewServer(nil, nil, nil)
 	req := httptest.NewRequest("GET", "/favicon.ico", nil)
 	w := httptest.NewRecorder()
@@ -746,6 +757,7 @@ func TestFavicon(t *testing.T) {
 }
 
 func TestUpdateEndpointsAndUI(t *testing.T) {
+	t.Parallel()
 	srv := NewServer(nil, nil, nil)
 
 	// 1. Verify UI elements exist in rendered HTML
@@ -824,13 +836,14 @@ func TestUpdateEndpointsAndUI(t *testing.T) {
 }
 
 func TestSettingsModalLayout(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-settings-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -863,13 +876,14 @@ func TestSettingsModalLayout(t *testing.T) {
 }
 
 func TestPresetModalAndModalStacking(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-preset-modal-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -919,13 +933,14 @@ func TestPresetModalAndModalStacking(t *testing.T) {
 }
 
 func TestInspectHost_CooldownAndInFlight(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-web-ins-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1022,13 +1037,14 @@ func TestInspectHost_CooldownAndInFlight(t *testing.T) {
 }
 
 func TestInspectAll_CooldownAndInFlight(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-web-ins-all-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1112,6 +1128,7 @@ func TestInspectAll_CooldownAndInFlight(t *testing.T) {
 }
 
 func TestFileManagerFilterAndSortUI(t *testing.T) {
+	t.Parallel()
 	html := uiSourceForTest(t)
 
 	requiredUIElements := []string{
@@ -1155,13 +1172,14 @@ func TestFileManagerFilterAndSortUI(t *testing.T) {
 }
 
 func TestAlertAckAllAndRunsFilter(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-web-alerts-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1253,13 +1271,14 @@ func TestAlertAckAllAndRunsFilter(t *testing.T) {
 }
 
 func TestCommissionDate_RoutesAndRecalculate(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-comm-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1428,6 +1447,7 @@ func TestCommissionDate_RoutesAndRecalculate(t *testing.T) {
 }
 
 func TestWorkspaceShelfAndSmartResumeUI(t *testing.T) {
+	t.Parallel()
 	html := uiSourceForTest(t)
 
 	requiredUIElements := []string{
@@ -1473,6 +1493,7 @@ func TestWorkspaceShelfAndSmartResumeUI(t *testing.T) {
 }
 
 func TestWorkspaceModalMaximizeAndTerminalFromPath(t *testing.T) {
+	t.Parallel()
 	html := uiSourceForTest(t)
 
 	// 1. Check Workspace Modal Maximize UI elements & CSS
@@ -1559,7 +1580,7 @@ func TestWorkspaceModalMaximizeAndTerminalFromPath(t *testing.T) {
 	}
 
 	// 6. Test handleWSTerminal invalid host_id and invalid host error
-	tmpDB := filepath.Join(t.TempDir(), "test.db")
+	tmpDB := testDBCopy(t)
 	db, err := store.Open(tmpDB)
 	if err != nil {
 		t.Fatal(err)
@@ -1616,7 +1637,8 @@ func TestWorkspaceModalMaximizeAndTerminalFromPath(t *testing.T) {
 }
 
 func TestFileDuplicationRoutingAndValidation(t *testing.T) {
-	tmpDB := filepath.Join(t.TempDir(), "test.db")
+	t.Parallel()
+	tmpDB := testDBCopy(t)
 	db, err := store.Open(tmpDB)
 	if err != nil {
 		t.Fatal(err)
@@ -1676,13 +1698,14 @@ func TestFileDuplicationRoutingAndValidation(t *testing.T) {
 }
 
 func TestHostPackagesAPI(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-web-pkg-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1737,13 +1760,14 @@ func TestHostPackagesAPI(t *testing.T) {
 }
 
 func TestFilePinsAPI(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-web-pins-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1848,13 +1872,14 @@ func TestFilePinsAPI(t *testing.T) {
 	}
 }
 func TestSSHKeysAPI(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-web-sshkeys-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2063,13 +2088,14 @@ func TestSSHKeysAPI(t *testing.T) {
 }
 
 func TestSSHKeyProvisioningWithLibraryKey(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-web-prov-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2188,8 +2214,8 @@ func TestSSHKeyProvisioningWithLibraryKey(t *testing.T) {
 }
 
 func TestGlobeCacheInvalidatedOnInspectAndAck(t *testing.T) {
-	tmpDir := t.TempDir()
-	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	t.Parallel()
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2302,13 +2328,14 @@ func TestGlobeCacheInvalidatedOnInspectAndAck(t *testing.T) {
 }
 
 func TestWSTerminal_ClosesRunnerOnDisconnect(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-term-leak-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2383,13 +2410,14 @@ func TestWSTerminal_ClosesRunnerOnDisconnect(t *testing.T) {
 }
 
 func TestWSDockerLogs_ClosesRunnerOnDisconnect(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-logs-leak-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,6 +8,7 @@ import (
 )
 
 func TestTFAuditAppendListTrim(t *testing.T) {
+	t.Parallel()
 	db, err := Open(filepath.Join(t.TempDir(), "a.db"))
 	if err != nil {
 		t.Fatal(err)

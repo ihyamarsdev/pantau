@@ -6,6 +6,7 @@ import (
 )
 
 func TestTerminalClipboardBridgeInIndexHTML(t *testing.T) {
+	t.Parallel()
 	js := coreJSSource(t)
 
 	// 1. Must define clipboard helper with fallback for non-secure HTTP contexts
@@ -61,6 +62,7 @@ func TestTerminalClipboardBridgeInIndexHTML(t *testing.T) {
 }
 
 func TestCtrlVDoesNotSuppressNativePasteEvent(t *testing.T) {
+	t.Parallel()
 	js := coreJSSource(t)
 
 	// Check that container paste listener uses capture phase (true)
@@ -78,6 +80,7 @@ func TestCtrlVDoesNotSuppressNativePasteEvent(t *testing.T) {
 }
 
 func TestMultilinePasteSingleLineFlattening(t *testing.T) {
+	t.Parallel()
 	js := coreJSSource(t)
 	html := string(embeddedHTML)
 

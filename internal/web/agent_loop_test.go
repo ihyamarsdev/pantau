@@ -102,6 +102,7 @@ func sseFrames(body string) []string {
 }
 
 func TestAgentLoopTextOnlyTurn(t *testing.T) {
+	t.Parallel()
 	f := &fakeLLM{results: []llmResult{{Text: "nginx is up"}}}
 	srv, _ := nativeAgent(t, f)
 
@@ -132,6 +133,7 @@ func TestAgentLoopTextOnlyTurn(t *testing.T) {
 }
 
 func TestAgentLoopToolRoundTrip(t *testing.T) {
+	t.Parallel()
 	f := &fakeLLM{results: []llmResult{
 		{Text: "let me look", ToolCalls: []llmToolCall{{ID: "c1", Name: "list_hosts", Args: "{}"}}},
 		{Text: "one host"},
@@ -165,6 +167,7 @@ func TestAgentLoopToolRoundTrip(t *testing.T) {
 }
 
 func TestAgentLoopToolErrorContinues(t *testing.T) {
+	t.Parallel()
 	f := &fakeLLM{results: []llmResult{
 		{ToolCalls: []llmToolCall{{ID: "c1", Name: "read_file", Args: `{"host_id":1,"path":"etc/passwd"}`}}},
 		{Text: "I could not read it"},
@@ -190,6 +193,7 @@ func TestAgentLoopToolErrorContinues(t *testing.T) {
 }
 
 func TestAgentLoopInvalidToolJSON(t *testing.T) {
+	t.Parallel()
 	f := &fakeLLM{results: []llmResult{
 		{ToolCalls: []llmToolCall{{ID: "c1", Name: "list_hosts", Args: "{not json"}}},
 		{Text: "sorry"},
@@ -211,6 +215,7 @@ func TestAgentLoopInvalidToolJSON(t *testing.T) {
 }
 
 func TestAgentLoopUnknownToolIsAnError(t *testing.T) {
+	t.Parallel()
 	f := &fakeLLM{results: []llmResult{
 		{ToolCalls: []llmToolCall{{ID: "c1", Name: "drop_database", Args: "{}"}}},
 		{Text: "I cannot do that"},
@@ -225,6 +230,7 @@ func TestAgentLoopUnknownToolIsAnError(t *testing.T) {
 }
 
 func TestAgentLoopStepLimit(t *testing.T) {
+	t.Parallel()
 	f := &fakeLLM{}
 	for range agentMaxSteps + 5 {
 		f.results = append(f.results, llmResult{ToolCalls: []llmToolCall{{ID: "c", Name: "list_hosts", Args: "{}"}}})
@@ -245,6 +251,7 @@ func TestAgentLoopStepLimit(t *testing.T) {
 }
 
 func TestAgentLoopContextCancelRollsHistoryBack(t *testing.T) {
+	t.Parallel()
 	f := &fakeLLM{results: []llmResult{
 		{Text: "first answer"},
 	}}
@@ -314,6 +321,7 @@ func hasToolPair(msgs []llmMessage, id string) bool {
 // TestAgentLoopKeepsDoneToolAfterProviderFailure: the provider fails on the second model call, after a tool
 // ran. The next turn must still know that the tool ran, or it would repeat the action.
 func TestAgentLoopKeepsDoneToolAfterProviderFailure(t *testing.T) {
+	t.Parallel()
 	f := &fakeLLM{results: []llmResult{
 		{ToolCalls: []llmToolCall{{ID: "c1", Name: "list_hosts", Args: "{}"}}},
 		{Text: "never reached"},
@@ -406,6 +414,7 @@ func (c *cancellingLLM) Stream(ctx context.Context, req llmRequest, onText func(
 }
 
 func TestAgentLoopConcurrentTurnIsRefused(t *testing.T) {
+	t.Parallel()
 	release := make(chan struct{})
 	started := make(chan struct{})
 	srv, _ := nativeAgent(t, &fakeLLM{})
@@ -443,6 +452,7 @@ func (b *blockingLLM) Stream(ctx context.Context, req llmRequest, onText func(st
 }
 
 func TestAgentLoopHistoryKeepsTurns(t *testing.T) {
+	t.Parallel()
 	f := &fakeLLM{results: []llmResult{{Text: "a"}, {Text: "b"}, {Text: "c"}}}
 	srv, _ := nativeAgent(t, f)
 	for _, m := range []string{"one", "two", "three"} {
@@ -460,6 +470,7 @@ func TestAgentLoopHistoryKeepsTurns(t *testing.T) {
 }
 
 func TestAgentCompactCutNeverSplitsToolPairs(t *testing.T) {
+	t.Parallel()
 	msgs := []llmMessage{
 		{Role: llmRoleUser, Text: "u1"},
 		{Role: llmRoleAssistant, ToolCalls: []llmToolCall{{ID: "c1", Name: "list_hosts"}}},
@@ -501,6 +512,7 @@ func TestAgentCompactCutNeverSplitsToolPairs(t *testing.T) {
 }
 
 func TestAgentLoopCompactionHappens(t *testing.T) {
+	t.Parallel()
 	f := &fakeLLM{results: []llmResult{
 		{Text: "a1"},
 		{Text: "a2"},
@@ -530,6 +542,7 @@ func TestAgentLoopCompactionHappens(t *testing.T) {
 }
 
 func TestAgentLoopCompactionFailureKeepsHistory(t *testing.T) {
+	t.Parallel()
 	f := &fakeLLM{results: []llmResult{
 		{Text: "a1"},
 		{Text: "a2"},
@@ -553,6 +566,7 @@ func TestAgentLoopCompactionFailureKeepsHistory(t *testing.T) {
 // TestAgentLoopCompactionWithoutUsage covers providers that report no token usage: the prompt size is then
 // estimated, so a long history is compacted anyway.
 func TestAgentLoopCompactionWithoutUsage(t *testing.T) {
+	t.Parallel()
 	f := &fakeLLM{results: []llmResult{
 		{Text: "a1", ToolCalls: []llmToolCall{{ID: "c1", Name: "list_hosts", Args: "{}"}}},
 		{Text: "the summary"},
@@ -589,6 +603,7 @@ func TestAgentLoopCompactionWithoutUsage(t *testing.T) {
 // TestAgentLoopCompactsAtTurnStart: a long text-only exchange never reaches a tool batch, so the next turn
 // must compact before its first model call.
 func TestAgentLoopCompactsAtTurnStart(t *testing.T) {
+	t.Parallel()
 	f := &fakeLLM{results: []llmResult{
 		{Text: "the summary"},
 		{Text: "the answer"},
@@ -625,6 +640,7 @@ func TestAgentLoopCompactsAtTurnStart(t *testing.T) {
 // TestAgentChatNativeOverHTTP drives the whole path with the real provider client against a fake OpenAI
 // endpoint: the settings, the chat handler and the stream format.
 func TestAgentChatNativeOverHTTP(t *testing.T) {
+	t.Parallel()
 	var gotAuth, gotBody string
 	calls := 0
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -676,6 +692,7 @@ func TestAgentChatNativeOverHTTP(t *testing.T) {
 }
 
 func TestAgentPromptTokensEstimate(t *testing.T) {
+	t.Parallel()
 	msgs := []llmMessage{{Role: llmRoleUser, Text: strings.Repeat("y", 300)}}
 	if got := agentPromptTokens("system", msgs, 4242); got != 4242 {
 		t.Fatalf("the reported usage wins: %d", got)
@@ -686,6 +703,7 @@ func TestAgentPromptTokensEstimate(t *testing.T) {
 }
 
 func TestAgentConvEviction(t *testing.T) {
+	t.Parallel()
 	srv, _, cleanup := setupTestServer(t)
 	defer cleanup()
 
@@ -733,6 +751,7 @@ func TestAgentConvEviction(t *testing.T) {
 }
 
 func TestAgentSettingsNativeRoundTrip(t *testing.T) {
+	t.Parallel()
 	srv, _, cleanup := setupTestServer(t)
 	defer cleanup()
 
@@ -771,6 +790,7 @@ func TestAgentSettingsNativeRoundTrip(t *testing.T) {
 }
 
 func TestAgentTestEndpointNative(t *testing.T) {
+	t.Parallel()
 	f := &fakeLLM{results: []llmResult{{Text: "pong"}}}
 	srv, _ := nativeAgent(t, f)
 
@@ -799,6 +819,7 @@ func TestAgentTestEndpointNative(t *testing.T) {
 }
 
 func TestAgentChatNativeNeedsModelAndKey(t *testing.T) {
+	t.Parallel()
 	f := &fakeLLM{results: []llmResult{{Text: "hi"}}}
 	srv, db := nativeAgent(t, f)
 	_ = db.SetSetting("agent_llm_model", "")
@@ -817,6 +838,7 @@ func TestAgentChatNativeNeedsModelAndKey(t *testing.T) {
 
 // TestAgentLoopGate2WaitsForApproval drives a gate-2 tool through the approval endpoints.
 func TestAgentLoopGate2WaitsForApproval(t *testing.T) {
+	t.Parallel()
 	for _, approve := range []bool{true, false} {
 		f := &fakeLLM{results: []llmResult{
 			{ToolCalls: []llmToolCall{{ID: "c1", Name: "exec_command", Args: `{"host_id":1,"command":"uptime"}`}}},
@@ -872,6 +894,7 @@ func TestAgentLoopGate2WaitsForApproval(t *testing.T) {
 // Domain-aware filtering: a page context narrows the tools, an empty context keeps all of them, and a
 // set_tool_domain meta-tool widens the domain for the next model call in the same turn.
 func TestAgentDomainFiltering(t *testing.T) {
+	t.Parallel()
 	has := func(specs []llmToolSpec, name string) bool {
 		for _, s := range specs {
 			if s.Name == name {
@@ -904,6 +927,7 @@ func TestAgentDomainFiltering(t *testing.T) {
 }
 
 func TestAgentMetaToolCrossDomainFallback(t *testing.T) {
+	t.Parallel()
 	f := &fakeLLM{results: []llmResult{
 		{Text: "looking", ToolCalls: []llmToolCall{{ID: "c1", Name: "find_tools", Args: `{"query":"dns record"}`}}},
 		{Text: "switching", ToolCalls: []llmToolCall{{ID: "c2", Name: "set_tool_domain", Args: `{"domain":"network"}`}}},

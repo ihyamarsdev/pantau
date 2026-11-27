@@ -24,6 +24,7 @@ func tfScheduleRuns(t *testing.T, db *store.DB, wsID int64) []store.TFRun {
 }
 
 func TestSchedulerPlanTickCreatesScheduleRunWhenOverdue(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _, _ := tfEnv(t, changesPlanner, okApplier)
 	id := tfMkWS(t, db, "sched", "dev", false)
 	ws, _ := db.GetTFWorkspace(id)
@@ -47,6 +48,7 @@ func TestSchedulerPlanTickCreatesScheduleRunWhenOverdue(t *testing.T) {
 }
 
 func TestSchedulerPlanTickRespectsIntervalGateLockAndActiveRun(t *testing.T) {
+	t.Parallel()
 	srv, db, mgr, _, _ := tfEnv(t, changesPlanner, okApplier)
 	setInterval := func(id int64, n int) {
 		ws, _ := db.GetTFWorkspace(id)
@@ -106,6 +108,7 @@ func tfApplyDecision(t *testing.T, db *store.DB, runID int64) *store.TFRun {
 }
 
 func TestAutoApplyAppliesCleanPlanWithChanges(t *testing.T) {
+	t.Parallel()
 	_, db, mgr, ev, _ := tfEnv(t, changesPlanner, okApplier)
 	_ = db.SetSetting("tf_notify_events", "awaiting_approval,applied")
 	id := tfMkWS(t, db, "auto", "staging", true)
@@ -122,6 +125,7 @@ func TestAutoApplyAppliesCleanPlanWithChanges(t *testing.T) {
 }
 
 func TestAutoApplySkippedOnPolicyWarningAndFailure(t *testing.T) {
+	t.Parallel()
 	_, db, mgr, _, _ := tfEnv(t, changesPlanner, okApplier)
 	id := tfMkWS(t, db, "pol", "dev", true)
 	pid, err := db.CreateTFPolicy(&store.TFPolicy{Name: "no-td", Kind: "deny_resource_types", Params: `{"types":["terraform_data"]}`, Enforcement: "soft", Enabled: true, WorkspaceID: id})
@@ -146,6 +150,7 @@ func TestAutoApplySkippedOnPolicyWarningAndFailure(t *testing.T) {
 }
 
 func TestAutoApplyIgnoredWhenEnvironmentBecomesProduction(t *testing.T) {
+	t.Parallel()
 	_, db, mgr, _, _ := tfEnv(t, changesPlanner, okApplier)
 	id := tfMkWS(t, db, "later-prod", "dev", true)
 	ws, _ := db.GetTFWorkspace(id)
@@ -162,6 +167,7 @@ func TestAutoApplyIgnoredWhenEnvironmentBecomesProduction(t *testing.T) {
 }
 
 func TestAutoApplyOnlyForPlanRuns(t *testing.T) {
+	t.Parallel()
 	_, db, mgr, _, _ := tfEnv(t, changesPlanner, okApplier)
 	id := tfMkWS(t, db, "destroyer", "dev", true)
 	ws, _ := db.GetTFWorkspace(id)
@@ -179,6 +185,7 @@ func TestAutoApplyOnlyForPlanRuns(t *testing.T) {
 }
 
 func TestAutoApplyNeverForWebhookTrigger(t *testing.T) {
+	t.Parallel()
 	_, db, mgr, _, _ := tfEnv(t, changesPlanner, okApplier)
 	for _, tc := range []struct{ trigger, want string }{{"webhook", "awaiting_approval"}, {"schedule", "applied"}} {
 		id := tfMkWS(t, db, "trig-"+tc.trigger, "dev", true)

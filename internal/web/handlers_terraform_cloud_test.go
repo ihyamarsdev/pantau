@@ -30,6 +30,7 @@ func awsBody(name, secret string) map[string]interface{} {
 }
 
 func TestTFCloudAccounts_CreateListNoLeak(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupTerraformTestDataServer(t)
 
 	code, created, raw := cloudDo(t, srv, auth, http.MethodPost, "/api/terraform/cloud-accounts", awsBody("prod-aws", cloudTestSecret))
@@ -79,6 +80,7 @@ func TestTFCloudAccounts_CreateListNoLeak(t *testing.T) {
 }
 
 func TestTFCloudAccounts_CreateValidation(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupTerraformTestDataServer(t)
 
 	cases := []struct {
@@ -103,6 +105,7 @@ func TestTFCloudAccounts_CreateValidation(t *testing.T) {
 }
 
 func TestTFCloudAccounts_UpdateSecretKeepAndReplace(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupTerraformTestDataServer(t)
 	_, created, _ := cloudDo(t, srv, auth, http.MethodPost, "/api/terraform/cloud-accounts", awsBody("acct", cloudTestSecret))
 	id := int64(created["id"].(float64))
@@ -145,6 +148,7 @@ func TestTFCloudAccounts_UpdateSecretKeepAndReplace(t *testing.T) {
 }
 
 func TestTFCloudAccounts_DeleteUnlinksWorkspaces(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupTerraformTestDataServer(t)
 	_, created, _ := cloudDo(t, srv, auth, http.MethodPost, "/api/terraform/cloud-accounts", awsBody("acct", cloudTestSecret))
 	id := int64(created["id"].(float64))
@@ -176,6 +180,7 @@ func TestTFCloudAccounts_DeleteUnlinksWorkspaces(t *testing.T) {
 }
 
 func TestTFCloudAccounts_WorkspaceLinking(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupTerraformTestDataServer(t)
 	_, created, _ := cloudDo(t, srv, auth, http.MethodPost, "/api/terraform/cloud-accounts", awsBody("acct", cloudTestSecret))
 	id := int64(created["id"].(float64))
@@ -227,6 +232,7 @@ func TestTFCloudAccounts_WorkspaceLinking(t *testing.T) {
 }
 
 func TestTFCloudAccounts_TestEndpoint(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupTerraformTestDataServer(t)
 	_, created, _ := cloudDo(t, srv, auth, http.MethodPost, "/api/terraform/cloud-accounts", awsBody("acct", cloudTestSecret))
 	id := int64(created["id"].(float64))
@@ -273,6 +279,7 @@ func TestTFCloudAccounts_TestEndpoint(t *testing.T) {
 }
 
 func TestTFCloudAccounts_GateOff(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupTerraformTestDataServer(t)
 	if err := srv.db.SetTerraformEnabled(false); err != nil {
 		t.Fatal(err)
@@ -285,6 +292,7 @@ func TestTFCloudAccounts_GateOff(t *testing.T) {
 }
 
 func TestTFCloudAccounts_RunConfigEnv(t *testing.T) {
+	t.Parallel()
 	srv, _ := setupTerraformTestDataServer(t)
 	db := srv.db
 

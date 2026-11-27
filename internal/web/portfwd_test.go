@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -29,7 +28,7 @@ func setupPortFwdTestServer(t *testing.T, runner *sshrunner.MockRunner) (*Server
 	}
 	t.Cleanup(func() { os.RemoveAll(tmpDir) })
 
-	db, err := store.Open(filepath.Join(tmpDir, "pantau.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,6 +305,7 @@ func TestPortForwardDeleteStopsListener(t *testing.T) {
 }
 
 func TestPortForwardDisabledReturns503(t *testing.T) {
+	t.Parallel()
 	runner := sshrunner.NewMockRunner()
 	srv, _, authReq := setupPortFwdTestServer(t, runner)
 

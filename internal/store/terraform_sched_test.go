@@ -8,6 +8,7 @@ import (
 )
 
 func TestTFWorkspace_PlanIntervalAutoApplyRoundTrip(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -31,6 +32,7 @@ func TestTFWorkspace_PlanIntervalAutoApplyRoundTrip(t *testing.T) {
 }
 
 func TestTFWorkspace_PlanIntervalLastScheduledRunAt(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -55,6 +57,7 @@ func TestTFWorkspace_PlanIntervalLastScheduledRunAt(t *testing.T) {
 }
 
 func TestTFWorkspace_SnapshotRoundTripPlanAutoApplyAndLinks(t *testing.T) {
+	t.Parallel()
 	db1, cleanup1 := setupTestDB(t)
 	defer cleanup1()
 	a, _ := db1.CreateTFWorkspace(&store.TFWorkspace{Name: "consumer", Environment: "dev", PlanIntervalMinutes: 45, AutoApply: true})
@@ -88,6 +91,7 @@ func TestTFWorkspace_SnapshotRoundTripPlanAutoApplyAndLinks(t *testing.T) {
 }
 
 func TestTFWorkspace_SnapshotRestoreOldPayloadWithoutNewFields(t *testing.T) {
+	t.Parallel()
 	old := `{"terraform_workspaces":[{"id":7,"name":"legacy","binary":"terraform","source":"inline","files":"{}","tags":"[]","drift_interval_minutes":10,"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-01T00:00:00Z"}]}`
 	var p store.SnapshotPayload
 	if err := json.Unmarshal([]byte(old), &p); err != nil {

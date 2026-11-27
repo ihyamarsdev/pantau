@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,7 +12,7 @@ import (
 
 func accountAuditServer(t *testing.T) (*Server, *http.Cookie, *store.DB) {
 	t.Helper()
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -25,6 +24,7 @@ func accountAuditServer(t *testing.T) (*Server, *http.Cookie, *store.DB) {
 }
 
 func TestFleetKeysRequiresAuth(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := accountAuditServer(t)
 	req := httptest.NewRequest("GET", "/api/security/keys", nil)
 	w := httptest.NewRecorder()
@@ -35,6 +35,7 @@ func TestFleetKeysRequiresAuth(t *testing.T) {
 }
 
 func TestHostAccountAuditNotAudited(t *testing.T) {
+	t.Parallel()
 	srv, cookie, db := accountAuditServer(t)
 	hostID, err := db.CreateHost(&store.Host{Name: "srv1", Host: "10.0.0.1", Port: 22, User: "root"})
 	if err != nil {
@@ -58,6 +59,7 @@ func TestHostAccountAuditNotAudited(t *testing.T) {
 }
 
 func TestFleetKeysAggregatesHosts(t *testing.T) {
+	t.Parallel()
 	srv, cookie, db := accountAuditServer(t)
 
 	h1, err := db.CreateHost(&store.Host{Name: "web-1", Host: "10.0.0.1", Port: 22, User: "root"})

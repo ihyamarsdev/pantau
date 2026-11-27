@@ -11,7 +11,7 @@ import (
 
 func newVaultTestDB(t *testing.T) *DB {
 	t.Helper()
-	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,6 +20,7 @@ func newVaultTestDB(t *testing.T) *DB {
 }
 
 func TestVaultMasterKeyPersistsAcrossReopen(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "test.db")
 	db, err := Open(path)
 	if err != nil {
@@ -51,6 +52,7 @@ func TestVaultMasterKeyPersistsAcrossReopen(t *testing.T) {
 }
 
 func TestVaultSecretCRUDAndVersions(t *testing.T) {
+	t.Parallel()
 	db := newVaultTestDB(t)
 
 	created := &vault.Secret{
@@ -151,6 +153,7 @@ func TestVaultSecretCRUDAndVersions(t *testing.T) {
 }
 
 func TestVaultSecretNeedsRotation(t *testing.T) {
+	t.Parallel()
 	db := newVaultTestDB(t)
 
 	past := time.Now().Add(-48 * time.Hour).UTC()
@@ -195,6 +198,7 @@ func TestVaultSecretNeedsRotation(t *testing.T) {
 }
 
 func TestVaultSecretDeleteRemovesVersions(t *testing.T) {
+	t.Parallel()
 	db := newVaultTestDB(t)
 	id, err := db.CreateVaultSecret(&vault.Secret{
 		SecretMeta: vault.SecretMeta{Key: "DEL", Scope: vault.ScopeGlobal},
@@ -222,6 +226,7 @@ func TestVaultSecretDeleteRemovesVersions(t *testing.T) {
 }
 
 func TestVaultTemplateCRUD(t *testing.T) {
+	t.Parallel()
 	db := newVaultTestDB(t)
 	tpl := &vault.Template{Name: "env", Body: "TOKEN={{ vault.DEL }}"}
 	id, err := db.CreateVaultTemplate(tpl)
@@ -269,6 +274,7 @@ func TestVaultTemplateCRUD(t *testing.T) {
 }
 
 func TestVaultTargetCRUDAndSync(t *testing.T) {
+	t.Parallel()
 	db := newVaultTestDB(t)
 	target := &vault.SyncTarget{
 		Name:       "web-01",
@@ -337,6 +343,7 @@ func TestVaultTargetCRUDAndSync(t *testing.T) {
 }
 
 func TestVaultAudit(t *testing.T) {
+	t.Parallel()
 	db := newVaultTestDB(t)
 	if err := db.AddVaultAudit("secret.create", "E2E_TOKEN"); err != nil {
 		t.Fatal(err)
@@ -358,6 +365,7 @@ func TestVaultAudit(t *testing.T) {
 }
 
 func TestVaultMigrationIdempotentOnReopen(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "test.db")
 	db, err := Open(path)
 	if err != nil {

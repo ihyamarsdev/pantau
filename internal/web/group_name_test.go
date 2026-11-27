@@ -9,6 +9,7 @@ import (
 )
 
 func TestCleanGroupName(t *testing.T) {
+	t.Parallel()
 	if g, err := cleanGroupName("  Web Tier \t"); err != nil || g != "Web Tier" {
 		t.Fatalf("trim: %q, %v", g, err)
 	}
@@ -24,6 +25,7 @@ func TestCleanGroupName(t *testing.T) {
 }
 
 func TestAnsiblePlaybookGroupNameLifecycle(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	_ = srv.db.SetAnsibleEnabled(true)
 
@@ -58,6 +60,7 @@ func TestAnsiblePlaybookGroupNameLifecycle(t *testing.T) {
 }
 
 func TestTerraformWorkspaceGroupNameAndFilter(t *testing.T) {
+	t.Parallel()
 	srv, db, _, auth := setupTerraformTestServer(t)
 	_ = db.SetTerraformEnabled(true)
 

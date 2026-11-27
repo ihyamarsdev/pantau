@@ -1,14 +1,13 @@
 package store
 
 import (
-	"path/filepath"
 	"testing"
 	"time"
 )
 
 func fleetSearchDB(t *testing.T) *DB {
 	t.Helper()
-	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -26,6 +25,7 @@ func fleetSearchHost(t *testing.T, db *DB, name, group string) int64 {
 }
 
 func TestSearchFleetPackagesGroupedByItem(t *testing.T) {
+	t.Parallel()
 	db := fleetSearchDB(t)
 	h1 := fleetSearchHost(t, db, "alpha", "prod")
 	h2 := fleetSearchHost(t, db, "beta", "prod")
@@ -77,6 +77,7 @@ func TestSearchFleetPackagesGroupedByItem(t *testing.T) {
 }
 
 func TestSearchFleetCaseInsensitive(t *testing.T) {
+	t.Parallel()
 	db := fleetSearchDB(t)
 	h := fleetSearchHost(t, db, "alpha", "")
 	if err := db.ReplaceHostPackages(h, []*HostPackage{{HostID: h, Name: "OpenSSL", Version: "1.1.1"}}); err != nil {
@@ -94,6 +95,7 @@ func TestSearchFleetCaseInsensitive(t *testing.T) {
 }
 
 func TestSearchFleetWildcardsAreLiteral(t *testing.T) {
+	t.Parallel()
 	db := fleetSearchDB(t)
 	h := fleetSearchHost(t, db, "alpha", "")
 	if err := db.ReplaceHostPackages(h, []*HostPackage{{HostID: h, Name: "a_b", Version: "1"}}); err != nil {
@@ -125,6 +127,7 @@ func TestSearchFleetWildcardsAreLiteral(t *testing.T) {
 }
 
 func TestSearchFleetLimitAndTruncated(t *testing.T) {
+	t.Parallel()
 	db := fleetSearchDB(t)
 	h := fleetSearchHost(t, db, "alpha", "")
 	pkgs := []*HostPackage{
@@ -148,6 +151,7 @@ func TestSearchFleetLimitAndTruncated(t *testing.T) {
 }
 
 func TestSearchFleetContainers(t *testing.T) {
+	t.Parallel()
 	db := fleetSearchDB(t)
 	h1 := fleetSearchHost(t, db, "alpha", "")
 	h2 := fleetSearchHost(t, db, "beta", "")
@@ -189,6 +193,7 @@ func TestSearchFleetContainers(t *testing.T) {
 }
 
 func TestSearchFleetCoverageCounts(t *testing.T) {
+	t.Parallel()
 	db := fleetSearchDB(t)
 	h1 := fleetSearchHost(t, db, "alpha", "")
 	fleetSearchHost(t, db, "beta", "")

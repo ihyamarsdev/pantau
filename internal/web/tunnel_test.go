@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -27,7 +26,7 @@ func setupTunnelTestServer(t *testing.T, dialFunc func(ctx context.Context, netw
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
 
-	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
@@ -60,6 +59,7 @@ func setupTunnelTestServer(t *testing.T, dialFunc func(ctx context.Context, netw
 }
 
 func TestTunnel_AuthEnforcement(t *testing.T) {
+	t.Parallel()
 	s, _, host := setupTunnelTestServer(t, nil)
 
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/tunnel/%d/8080/", host.ID), nil)
@@ -82,6 +82,7 @@ func tunnelCap(t *testing.T, path string) *http.Cookie {
 }
 
 func TestTunnel_RouteValidation(t *testing.T) {
+	t.Parallel()
 	s, _, host := setupTunnelTestServer(t, nil)
 
 	tests := []struct {
@@ -122,6 +123,7 @@ func TestTunnel_RouteValidation(t *testing.T) {
 }
 
 func TestTunnel_SuccessfulProxyAndRedirectRewrite(t *testing.T) {
+	t.Parallel()
 	var dialedAddr string
 
 	dialFunc := func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -228,6 +230,7 @@ func TestTunnel_SuccessfulProxyAndRedirectRewrite(t *testing.T) {
 }
 
 func TestTunnel_MainOriginRedirectsToTunnelOrigin(t *testing.T) {
+	t.Parallel()
 	s, _, host := setupTunnelTestServer(t, nil)
 	token := "valid-session-token"
 	s.sessions.Store(token, time.Now().Add(1*time.Hour))
@@ -268,6 +271,7 @@ func TestTunnel_MainOriginRedirectsToTunnelOrigin(t *testing.T) {
 }
 
 func TestTunnel_IdleReaper(t *testing.T) {
+	t.Parallel()
 	mockRunner := sshrunner.NewMockRunner()
 	mockFactory := func(sshrunner.Target) (sshrunner.Runner, error) {
 		return mockRunner, nil
@@ -275,7 +279,7 @@ func TestTunnel_IdleReaper(t *testing.T) {
 
 	tmpDir, _ := os.MkdirTemp("", "pantau-reaper-test-*")
 	defer os.RemoveAll(tmpDir)
-	db, _ := store.Open(filepath.Join(tmpDir, "test.db"))
+	db, _ := store.Open(testDBCopy(t))
 	defer db.Close()
 
 	host := &store.Host{Name: "reaper-node", Host: "10.0.0.1", Port: 22, User: "root"}

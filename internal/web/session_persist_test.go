@@ -3,7 +3,6 @@ package web
 import (
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +14,8 @@ import (
 // Pantau still knows the token, so the operator is not asked for the password
 // again after an update or a reboot.
 func TestSessionSurvivesRestart(t *testing.T) {
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	t.Parallel()
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -75,7 +75,8 @@ func TestSessionSurvivesRestart(t *testing.T) {
 
 // An expired session is not restored from the database.
 func TestExpiredSessionIsDropped(t *testing.T) {
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	t.Parallel()
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

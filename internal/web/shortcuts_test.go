@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +12,7 @@ import (
 )
 
 func TestCleanShortcuts(t *testing.T) {
+	t.Parallel()
 	got, err := cleanShortcuts([]shortcut{{Name: " Grafana ", URL: " https://grafana.example.com:3000/d/1 ", Group: " Monitoring "}}, nil)
 	if err != nil {
 		t.Fatalf("valid shortcut rejected: %v", err)
@@ -52,6 +52,7 @@ func TestCleanShortcuts(t *testing.T) {
 }
 
 func TestCleanShortcutsLogin(t *testing.T) {
+	t.Parallel()
 	// A first save stores the password and fills the defaults: the site's own address as
 	// the form action, username/password as the field names.
 	got, err := cleanShortcuts([]shortcut{{
@@ -136,7 +137,7 @@ func TestCleanShortcutsLogin(t *testing.T) {
 // shortcutServer is a server with one stored shortcut that has a saved password.
 func shortcutServer(t *testing.T) (*Server, *http.Cookie, shortcut) {
 	t.Helper()
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -159,6 +160,7 @@ func shortcutServer(t *testing.T) (*Server, *http.Cookie, shortcut) {
 }
 
 func TestShortcutLoginPagePostsCredentials(t *testing.T) {
+	t.Parallel()
 	srv, cookie, sc := shortcutServer(t)
 
 	req := httptest.NewRequest("GET", shortcutLoginPath+sc.ID, nil)
@@ -188,6 +190,7 @@ func TestShortcutLoginPagePostsCredentials(t *testing.T) {
 }
 
 func TestShortcutLoginRequiresSessionAndKnownID(t *testing.T) {
+	t.Parallel()
 	srv, cookie, sc := shortcutServer(t)
 
 	req := httptest.NewRequest("GET", shortcutLoginPath+sc.ID, nil)
@@ -210,6 +213,7 @@ func TestShortcutLoginRequiresSessionAndKnownID(t *testing.T) {
 
 // The list the browser receives never carries a password, and an edit keeps it.
 func TestShortcutsAPIRedactsPassword(t *testing.T) {
+	t.Parallel()
 	srv, cookie, sc := shortcutServer(t)
 
 	req := httptest.NewRequest("GET", "/api/shortcuts", nil)

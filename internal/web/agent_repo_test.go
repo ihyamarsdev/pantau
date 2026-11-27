@@ -8,6 +8,7 @@ import (
 )
 
 func TestAgentRepoTools(t *testing.T) {
+	t.Parallel()
 	srv, call, _ := newReposServer(t)
 	_ = srv.db.SetSetting("agent_enabled", "1")
 	_ = srv.db.SetSetting("agent_approval", "auto") // gate 1 passes without a card

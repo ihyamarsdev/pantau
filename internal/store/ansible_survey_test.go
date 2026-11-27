@@ -8,6 +8,7 @@ import (
 )
 
 func TestAnsiblePlaybookSurveyAndGitSync(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -72,6 +73,7 @@ func TestAnsiblePlaybookSurveyAndGitSync(t *testing.T) {
 }
 
 func TestAnsiblePlaybookSnapshotIncludesSurvey(t *testing.T) {
+	t.Parallel()
 	src, cleanup := setupTestDB(t)
 	defer cleanup()
 

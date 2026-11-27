@@ -102,6 +102,7 @@ func tfStartRun(t *testing.T, db *store.DB, mgr *TerraformRunManager, wsID int64
 }
 
 func TestTerraformNotifyEventSettings(t *testing.T) {
+	t.Parallel()
 	if got := tfNotifyParse(""); !got["awaiting_approval"] || !got["errored"] || !got["drift"] || got["applied"] {
 		t.Fatalf("defaults: %v", got)
 	}
@@ -114,6 +115,7 @@ func TestTerraformNotifyEventSettings(t *testing.T) {
 }
 
 func TestTerraformNotifyNotificationsEndpoints(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _, auth := tfEnv(t, nil, nil)
 	read := func(rec *httptest.ResponseRecorder) map[string]bool {
 		var out struct {
@@ -159,6 +161,7 @@ func TestTerraformNotifyNotificationsEndpoints(t *testing.T) {
 }
 
 func TestTerraformNotifyAutoApplyRefusedForProduction(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _, auth := tfEnv(t, nil, nil)
 	body := map[string]any{"name": "prod-ws", "environment": " Production ", "auto_apply": true, "files": map[string]string{"main.tf": "x"}}
 	if rec := doTFReq(t, srv, auth, "POST", "/api/terraform/workspaces", body); rec.Code != 400 || !strings.Contains(rec.Body.String(), "production") {
@@ -184,6 +187,7 @@ func TestTerraformNotifyAutoApplyRefusedForProduction(t *testing.T) {
 }
 
 func TestTerraformNotifyHooksFireOncePerTransition(t *testing.T) {
+	t.Parallel()
 	srv, db, mgr, ev, _ := tfEnv(t, changesPlanner, okApplier)
 	_ = srv
 	_ = db.SetSetting("tf_notify_events", "awaiting_approval,errored,applied,drift")
@@ -207,6 +211,7 @@ func TestTerraformNotifyHooksFireOncePerTransition(t *testing.T) {
 }
 
 func TestTerraformNotifyDisabledEventIsSilent(t *testing.T) {
+	t.Parallel()
 	_, db, mgr, ev, _ := tfEnv(t, changesPlanner, okApplier)
 	_ = db.SetSetting("tf_notify_events", "errored")
 	id := tfMkWS(t, db, "quiet", "dev", false)
@@ -217,6 +222,7 @@ func TestTerraformNotifyDisabledEventIsSilent(t *testing.T) {
 }
 
 func TestTerraformNotifyErroredExcerptHasNoSecret(t *testing.T) {
+	t.Parallel()
 	const secret = "hunter2-very-secret"
 	failing := func(ctx context.Context, spec terraform.PlanSpec, log io.Writer) (*terraform.PlanResult, error) {
 		_, _ = io.WriteString(log, strings.Repeat("noise line\n", 100)+"Error: bad credentials "+secret+" rejected\n")
@@ -240,6 +246,7 @@ func TestTerraformNotifyErroredExcerptHasNoSecret(t *testing.T) {
 }
 
 func TestTerraformNotifyDriftOnlyOnTransition(t *testing.T) {
+	t.Parallel()
 	drifting := func(ctx context.Context, spec terraform.PlanSpec, log io.Writer) (*terraform.PlanResult, error) {
 		return &terraform.PlanResult{ExitCode: 2, HasChanges: true, Summary: terraform.PlanSummary{Drift: []terraform.ResourceChange{{Address: "a.b"}}}}, nil
 	}

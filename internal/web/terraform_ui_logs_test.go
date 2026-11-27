@@ -44,6 +44,7 @@ process.stdout.write(JSON.stringify({
 `
 
 func TestTerraformBundleHelpers(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is required to evaluate the bundle")

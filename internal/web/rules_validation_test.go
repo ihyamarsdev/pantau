@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -15,8 +14,8 @@ import (
 )
 
 func TestRulesValidation_HTTP_TLS_Backup(t *testing.T) {
-	tmpDir := t.TempDir()
-	db, err := store.Open(filepath.Join(tmpDir, "test.db"))
+	t.Parallel()
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatalf("failed to create db: %v", err)
 	}

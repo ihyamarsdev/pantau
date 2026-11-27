@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -34,7 +33,7 @@ http {
 // the domain scan script with the canned output.
 func domainsServer(t *testing.T, output string) (*Server, *http.Cookie, int64) {
 	t.Helper()
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -61,6 +60,7 @@ func domainsServer(t *testing.T, output string) (*Server, *http.Cookie, int64) {
 }
 
 func TestDomainsRequiresAuth(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := domainsServer(t, domainsScanOutput)
 	req := httptest.NewRequest("GET", "/api/domains", nil)
 	w := httptest.NewRecorder()
@@ -71,6 +71,7 @@ func TestDomainsRequiresAuth(t *testing.T) {
 }
 
 func TestDomainsUnknownHost(t *testing.T) {
+	t.Parallel()
 	srv, cookie, _ := domainsServer(t, domainsScanOutput)
 	req := httptest.NewRequest("GET", "/api/domains?host_id=9999", nil)
 	req.AddCookie(cookie)
@@ -82,6 +83,7 @@ func TestDomainsUnknownHost(t *testing.T) {
 }
 
 func TestDomainsNeverScannedHost(t *testing.T) {
+	t.Parallel()
 	srv, cookie, hostID := domainsServer(t, domainsScanOutput)
 	req := httptest.NewRequest("GET", "/api/domains?host_id="+itoa(hostID), nil)
 	req.AddCookie(cookie)
@@ -112,6 +114,7 @@ func TestDomainsNeverScannedHost(t *testing.T) {
 }
 
 func TestDomainsScanStoresAndReturns(t *testing.T) {
+	t.Parallel()
 	srv, cookie, hostID := domainsServer(t, domainsScanOutput)
 	body := strings.NewReader(`{"host_id":` + itoa(hostID) + `}`)
 	req := httptest.NewRequest("POST", "/api/domains/scan", body)
@@ -161,6 +164,7 @@ func TestDomainsScanStoresAndReturns(t *testing.T) {
 }
 
 func TestDomainsScanBadRequest(t *testing.T) {
+	t.Parallel()
 	srv, cookie, _ := domainsServer(t, domainsScanOutput)
 	for _, body := range []string{`not json`, `{}`, `{"host_id":0}`} {
 		req := httptest.NewRequest("POST", "/api/domains/scan", strings.NewReader(body))
@@ -174,6 +178,7 @@ func TestDomainsScanBadRequest(t *testing.T) {
 }
 
 func TestDomainsScanUnknownHost(t *testing.T) {
+	t.Parallel()
 	srv, cookie, _ := domainsServer(t, domainsScanOutput)
 	req := httptest.NewRequest("POST", "/api/domains/scan", strings.NewReader(`{"host_id":9999}`))
 	req.AddCookie(cookie)
@@ -185,6 +190,7 @@ func TestDomainsScanUnknownHost(t *testing.T) {
 }
 
 func TestDomainsFleetView(t *testing.T) {
+	t.Parallel()
 	srv, cookie, hostID := domainsServer(t, domainsScanOutput)
 	req := httptest.NewRequest("POST", "/api/domains/scan", strings.NewReader(`{"host_id":`+itoa(hostID)+`}`))
 	req.AddCookie(cookie)
@@ -235,6 +241,7 @@ func TestDomainsFleetView(t *testing.T) {
 }
 
 func TestFleetSearchKindDomain(t *testing.T) {
+	t.Parallel()
 	srv, cookie, hostID := domainsServer(t, domainsScanOutput)
 	req := httptest.NewRequest("POST", "/api/domains/scan", strings.NewReader(`{"host_id":`+itoa(hostID)+`}`))
 	req.AddCookie(cookie)

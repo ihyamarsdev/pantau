@@ -51,6 +51,7 @@ func columns(t *testing.T, db *store.DB) map[string]bool {
 }
 
 func TestImportAnsiblePlaybooksAllOrNothing(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 	a := &store.AnsiblePlaybook{Name: "A", Content: "- hosts: all\n"}
@@ -75,6 +76,7 @@ func TestImportAnsiblePlaybooksAllOrNothing(t *testing.T) {
 }
 
 func TestMigrateImportedFoldersToInline(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "legacy.db")
 	legacy, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -153,6 +155,7 @@ func TestMigrateImportedFoldersToInline(t *testing.T) {
 }
 
 func TestRestoreLegacyBundleSnapshots(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 	folder := testFolderZIP(t, map[string]string{"site.yml": "- hosts: all\n"})

@@ -36,6 +36,7 @@ func fakeUpstream(t *testing.T, version string) {
 
 // 1. The endpoint needs a session.
 func TestGatewayUpdateCheckUnauthenticated(t *testing.T) {
+	t.Parallel()
 	srv, _ := setupAnsibleTestServer(t)
 	rec := doRequest(t, srv, nil, http.MethodGet, "/api/ansible/update-check", nil)
 	if rec.Code != http.StatusUnauthorized {
@@ -161,6 +162,7 @@ func TestTerraformUpdateCheck(t *testing.T) {
 
 // 7. Only GET is allowed on both endpoints.
 func TestGatewayUpdateCheckRejectsOtherMethods(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	for _, url := range []string{"/api/ansible/update-check", "/api/terraform/update-check"} {
 		rec := doRequest(t, srv, auth, http.MethodPost, url, map[string]string{})

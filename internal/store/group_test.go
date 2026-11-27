@@ -8,6 +8,7 @@ import (
 
 // group_name is a plain label that must survive update, listing and a System Snapshot round trip.
 func TestPlaybookAndWorkspaceGroupNameRoundTrip(t *testing.T) {
+	t.Parallel()
 	db1, cleanup1 := setupTestDB(t)
 	defer cleanup1()
 
@@ -49,6 +50,7 @@ func TestPlaybookAndWorkspaceGroupNameRoundTrip(t *testing.T) {
 // Host Group names are unique regardless of letter case: a name that matches an existing group only in case takes that
 // group's spelling on create, edit and bulk assign. A host that is the only member of its group may change its case.
 func TestHostGroupNamesAreUniqueRegardlessOfCase(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 

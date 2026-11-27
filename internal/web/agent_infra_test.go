@@ -18,6 +18,7 @@ func pendingCount(srv *Server) int {
 }
 
 func TestAgentInfraToolsListed(t *testing.T) {
+	t.Parallel()
 	want := []string{"docker_inspect", "docker_info", "docker_stack_file", "docker_stack_action", "kube_targets", "kube_get", "kube_describe", "kube_logs", "kube_diff", "kube_action", "kube_apply", "ansible_playbooks", "ansible_run", "ansible_runs", "tf_workspaces", "tf_runs", "tf_plan", "tf_apply", "cf_accounts", "cf_zones", "cf_dns_list", "cf_zone_settings", "cf_dns_change", "cf_purge_cache", "cf_zone_setting_set", "cf_access_rules", "cf_access_rule_change", "cf_tunnels", "repo_list", "repo_commit", "repo_copy_to_host"}
 	have := map[string]agentTool{}
 	for _, tl := range agentTools {
@@ -46,6 +47,7 @@ func TestAgentInfraToolsListed(t *testing.T) {
 }
 
 func TestAgentInfraGateNeverAutoOrGranted(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = db.SetSetting("agent_approval", "auto")
@@ -114,6 +116,7 @@ func TestAgentInfraGateNeverAutoOrGranted(t *testing.T) {
 }
 
 func TestAgentKubeReadOnlyRefusedBeforeAsking(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = db.SetSetting("agent_enabled", "1")
@@ -141,6 +144,7 @@ func TestAgentKubeReadOnlyRefusedBeforeAsking(t *testing.T) {
 }
 
 func TestAgentTerraformGuardsAndNoWebhookToken(t *testing.T) {
+	t.Parallel()
 	srv, db, _, _ := setupTerraformTestServer(t)
 	_ = db.SetSetting("agent_enabled", "1")
 	_ = db.SetTerraformEnabled(true)
@@ -180,6 +184,7 @@ func TestAgentTerraformGuardsAndNoWebhookToken(t *testing.T) {
 }
 
 func TestAgentLoopbackLeavesNoSession(t *testing.T) {
+	t.Parallel()
 	srv, _, _, _ := setupTerraformTestServer(t)
 	before := 0
 	srv.sessions.Range(func(_, _ interface{}) bool { before++; return true })
@@ -198,6 +203,7 @@ func TestAgentLoopbackLeavesNoSession(t *testing.T) {
 }
 
 func TestRedactSecrets(t *testing.T) {
+	t.Parallel()
 	in := "DB_PASSWORD=hunter2\n  API_KEY: abc123\n- GITHUB_TOKEN=ghp_x\nPORT=8080\nimage: nginx\n"
 	out := redactSecrets(in)
 	for _, leak := range []string{"hunter2", "abc123", "ghp_x"} {
@@ -217,6 +223,7 @@ func reqJSON(method, url, body string) *http.Request {
 }
 
 func TestAgentAnsibleThroughLoopback(t *testing.T) {
+	t.Parallel()
 	srv, _ := setupAnsibleTestServer(t)
 	_ = srv.db.SetSetting("agent_enabled", "1")
 	_ = srv.db.SetAnsibleEnabled(true)
@@ -288,6 +295,7 @@ func TestAgentAnsibleThroughLoopback(t *testing.T) {
 
 // The SOUL is what teaches the agent its tools; a tool missing from it is a tool the agent will misuse or ignore.
 func TestAgentSoulMentionsEveryTool(t *testing.T) {
+	t.Parallel()
 	for _, tl := range agentTools {
 		if !strings.Contains(defaultAgentSoul, "`"+tl.Name+"`") {
 			t.Errorf("agent_soul.md does not mention tool %s", tl.Name)

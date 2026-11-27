@@ -6,7 +6,8 @@ import (
 )
 
 func TestMigrateAgentSettings(t *testing.T) {
-	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	t.Parallel()
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +47,8 @@ func TestMigrateAgentSettings(t *testing.T) {
 }
 
 func TestMigrateAgentSettingsKeepsExistingEnabled(t *testing.T) {
-	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	t.Parallel()
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +68,8 @@ func TestMigrateAgentSettingsKeepsExistingEnabled(t *testing.T) {
 }
 
 func TestMigrateAgentSettingsWithoutOldKeys(t *testing.T) {
-	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	t.Parallel()
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,6 +90,7 @@ func TestMigrateAgentSettingsWithoutOldKeys(t *testing.T) {
 // A database created before the scope columns existed gains them on the next Open, and its notes keep working:
 // the columns are additive, so an old note stays readable and a scoped one can be added afterwards.
 func TestMigrateAgentMemoryScopeColumns(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "test.db")
 	db, err := Open(path)
 	if err != nil {

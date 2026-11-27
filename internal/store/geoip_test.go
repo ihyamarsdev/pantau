@@ -1,14 +1,13 @@
 package store
 
 import (
-	"path/filepath"
 	"testing"
 	"time"
 )
 
 func openGeoTestDB(t *testing.T) *DB {
 	t.Helper()
-	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -17,6 +16,7 @@ func openGeoTestDB(t *testing.T) *DB {
 }
 
 func TestGeoIPCacheRoundTrip(t *testing.T) {
+	t.Parallel()
 	db := openGeoTestDB(t)
 	now := time.Now()
 
@@ -62,6 +62,7 @@ func TestGeoIPCacheRoundTrip(t *testing.T) {
 }
 
 func TestDeleteStaleGeoIP(t *testing.T) {
+	t.Parallel()
 	db := openGeoTestDB(t)
 	now := time.Now()
 	_ = db.UpsertGeoIP(GeoIPEntry{IP: "1.1.1.1", Source: "geoip"}, now.Add(-40*24*time.Hour))
@@ -79,6 +80,7 @@ func TestDeleteStaleGeoIP(t *testing.T) {
 }
 
 func TestHostGeoOverrideRoundTrip(t *testing.T) {
+	t.Parallel()
 	db := openGeoTestDB(t)
 	id, err := db.CreateHost(&Host{Name: "airgap", Host: "10.0.0.5"})
 	if err != nil {
@@ -97,6 +99,7 @@ func TestHostGeoOverrideRoundTrip(t *testing.T) {
 }
 
 func TestProbeResultRoundTrip(t *testing.T) {
+	t.Parallel()
 	db := openGeoTestDB(t)
 	now := time.Now()
 	p, err := db.GetProbeLatency(0, 42)

@@ -11,6 +11,7 @@ import (
 // Gate card and the Terraform Gate card. Both must show what was found and must state that the
 // check only reads.
 func TestGatewayUpdateCheckUIInBundles(t *testing.T) {
+	t.Parallel()
 	ansibleBundle := ansibleBundle(t)
 	terraformBundle := terraformJSBundle(t)
 
@@ -81,6 +82,7 @@ func TestGatewayUpdateCheckUIInBundles(t *testing.T) {
 
 // The i18n keys of the feature must exist in both languages.
 func TestGatewayUpdateCheckI18nKeys(t *testing.T) {
+	t.Parallel()
 	ansibleBundle := ansibleBundle(t)
 	terraformBundle := terraformJSBundle(t)
 
@@ -116,6 +118,7 @@ func TestGatewayUpdateCheckI18nKeys(t *testing.T) {
 
 // The endpoints must be registered on the server.
 func TestGatewayUpdateCheckRoutesRegistered(t *testing.T) {
+	t.Parallel()
 	srv, _ := setupAnsibleTestServer(t)
 	for _, url := range []string{"/api/ansible/update-check", "/api/terraform/update-check"} {
 		req := httptest.NewRequest(http.MethodGet, url, nil)
@@ -132,6 +135,7 @@ func TestGatewayUpdateCheckRoutesRegistered(t *testing.T) {
 // The update action (ADR 0081) must be reachable from both gate panels: a button that installs the
 // newer version into the directory Pantau manages, and a log that shows the steps.
 func TestGatewayCLIUpdateControlsUI(t *testing.T) {
+	t.Parallel()
 	ansibleBundle := ansibleBundle(t)
 	terraformBundle := terraformJSBundle(t)
 
@@ -165,6 +169,7 @@ func TestGatewayCLIUpdateControlsUI(t *testing.T) {
 
 // The install endpoints must be registered.
 func TestGatewayCLIInstallRoutesRegistered(t *testing.T) {
+	t.Parallel()
 	srv, _ := setupAnsibleTestServer(t)
 	for _, url := range []string{"/api/ansible/install", "/api/terraform/install"} {
 		req := httptest.NewRequest(http.MethodPost, url, nil)

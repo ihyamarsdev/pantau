@@ -6,6 +6,7 @@ import (
 )
 
 func TestUpsertActualItemsBatch(t *testing.T) {
+	t.Parallel()
 	db, err := Open(filepath.Join(t.TempDir(), "tx.db"))
 	if err != nil {
 		t.Fatal(err)

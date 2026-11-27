@@ -29,6 +29,7 @@ func s3Req(t *testing.T, srv *Server, method, path string, payload any) *httptes
 }
 
 func TestS3AccountsMultipleAndSecretIsWriteOnly(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 
@@ -90,6 +91,7 @@ func TestS3AccountsMultipleAndSecretIsWriteOnly(t *testing.T) {
 }
 
 func TestS3AccountValidation(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	for name, p := range map[string]map[string]string{
@@ -109,6 +111,7 @@ func TestS3AccountValidation(t *testing.T) {
 }
 
 func TestS3UploadRequiresAccount(t *testing.T) {
+	t.Parallel()
 	srv, _, cleanup := setupTestServer(t)
 	defer cleanup()
 	for name, body := range map[string]string{

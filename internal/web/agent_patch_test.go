@@ -11,6 +11,7 @@ import (
 )
 
 func TestAgentPatchPrepareAndApplyAnsibleAndTerraform(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 
@@ -94,6 +95,7 @@ func TestAgentPatchPrepareAndApplyAnsibleAndTerraform(t *testing.T) {
 }
 
 func TestAgentPatchGuardsProtectedAndReadOnly(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 

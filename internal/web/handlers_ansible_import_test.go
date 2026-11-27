@@ -161,6 +161,7 @@ func TestAnsibleImportCopiesPlaybooks(t *testing.T) {
 }
 
 func TestAnsibleImportRejected(t *testing.T) {
+	t.Parallel()
 	env := newAnsibleEnv(t)
 	ok := importItem{Name: "Imported", Content: "- hosts: all\n"}
 	many := make([]importItem, maxImportPlaybooks+1)
@@ -197,6 +198,7 @@ func TestAnsibleImportRejected(t *testing.T) {
 }
 
 func TestAnsibleImportAuthorizationAndRemovedBundleSource(t *testing.T) {
+	t.Parallel()
 	srv, auth := setupAnsibleTestServer(t)
 	body := map[string]interface{}{"playbooks": []importItem{{Name: "Import", Content: "- hosts: all\n"}}}
 	req := httptest.NewRequest(http.MethodPost, "/api/ansible/playbooks/import", strings.NewReader(`{}`))
@@ -237,6 +239,7 @@ func decodeOne(t *testing.T, rec *httptest.ResponseRecorder) store.AnsiblePlaybo
 }
 
 func TestAnsiblePlaybookAnalyze(t *testing.T) {
+	t.Parallel()
 	env := newAnsibleEnv(t)
 	type response struct {
 		Vars  []ansible.Var `json:"vars"`
@@ -286,6 +289,7 @@ func TestAnsiblePlaybookAnalyze(t *testing.T) {
 }
 
 func TestAnsiblePlaybookContentsOnlyForGit(t *testing.T) {
+	t.Parallel()
 	env := newAnsibleEnv(t)
 	pb := decodeOne(t, doRequest(t, env.srv, env.auth, http.MethodPost, "/api/ansible/playbooks", map[string]string{"name": "Inline", "source": "inline", "content": "- hosts: all\n"}))
 	if rec := doRequest(t, env.srv, env.auth, http.MethodGet, fmt.Sprintf("/api/ansible/playbooks/%d/contents", pb.ID), nil); rec.Code != http.StatusBadRequest {

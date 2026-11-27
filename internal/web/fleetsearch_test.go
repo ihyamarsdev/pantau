@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,7 +13,7 @@ import (
 
 func fleetSearchServer(t *testing.T) (*Server, *http.Cookie) {
 	t.Helper()
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -26,6 +25,7 @@ func fleetSearchServer(t *testing.T) (*Server, *http.Cookie) {
 }
 
 func TestFleetSearchRequiresAuth(t *testing.T) {
+	t.Parallel()
 	srv, _ := fleetSearchServer(t)
 	req := httptest.NewRequest("GET", "/api/search?q=openssl", nil)
 	w := httptest.NewRecorder()
@@ -36,6 +36,7 @@ func TestFleetSearchRequiresAuth(t *testing.T) {
 }
 
 func TestFleetSearchRejectsShortQuery(t *testing.T) {
+	t.Parallel()
 	srv, cookie := fleetSearchServer(t)
 	for _, q := range []string{"", "o", " ", "x"} {
 		req := httptest.NewRequest("GET", "/api/search?q="+url.QueryEscape(q), nil)
@@ -60,6 +61,7 @@ func TestFleetSearchRejectsShortQuery(t *testing.T) {
 }
 
 func TestFleetSearchJSONShape(t *testing.T) {
+	t.Parallel()
 	srv, cookie := fleetSearchServer(t)
 	hostID, err := srv.db.CreateHost(&store.Host{Name: "alpha", Host: "10.0.0.1", Port: 22, User: "root", GroupName: "prod"})
 	if err != nil {
@@ -124,6 +126,7 @@ func TestFleetSearchJSONShape(t *testing.T) {
 }
 
 func TestFleetSearchRejectsUnknownKind(t *testing.T) {
+	t.Parallel()
 	srv, cookie := fleetSearchServer(t)
 	req := httptest.NewRequest("GET", "/api/search?q=openssl&kind=nope", nil)
 	req.AddCookie(cookie)
@@ -135,6 +138,7 @@ func TestFleetSearchRejectsUnknownKind(t *testing.T) {
 }
 
 func TestFleetSearchFindsContainerImage(t *testing.T) {
+	t.Parallel()
 	srv, cookie := fleetSearchServer(t)
 	hostID, err := srv.db.CreateHost(&store.Host{Name: "alpha", Host: "10.0.0.1", Port: 22, User: "root", GroupName: "prod"})
 	if err != nil {

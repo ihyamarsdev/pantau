@@ -7,6 +7,7 @@ import (
 )
 
 func TestListTFRunsFeed_FiltersAndJoinsWorkspace(t *testing.T) {
+	t.Parallel()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 

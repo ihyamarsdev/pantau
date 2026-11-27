@@ -2,19 +2,19 @@ package store
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 )
 
 func TestDockerSecurityScanStore(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-docker-sec-store-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := Open(filepath.Join(tmpDir, "test.db"))
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,13 +114,14 @@ func TestDockerSecurityScanStore(t *testing.T) {
 // A scan with many vulnerabilities survives the round trip: the counts stay with the row and the
 // audit findings of an image scan stay empty.
 func TestDockerSecurityScanStoreManyVulns(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-docker-sec-many-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := Open(filepath.Join(tmpDir, "test.db"))
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,13 +171,14 @@ func TestDockerSecurityScanStoreManyVulns(t *testing.T) {
 
 // A scan without a timestamp gets one, and the caller sees it: the UI shows the time of every scan.
 func TestDockerSecurityScanStoreFillsScannedAt(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "pantau-docker-sec-time-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db, err := Open(filepath.Join(tmpDir, "test.db"))
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}

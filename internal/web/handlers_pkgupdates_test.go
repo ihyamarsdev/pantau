@@ -32,6 +32,7 @@ Inst curl [7.81.0-1ubuntu1.14] (7.81.0-1ubuntu1.15 Ubuntu:22.04/jammy-updates [a
 `
 
 func TestPackageUpdatesCheckEndpoint(t *testing.T) {
+	t.Parallel()
 	runner := sshrunner.NewMockRunner()
 	runner.DefaultExec = func(cmd string) (string, string, int, error) {
 		if strings.Contains(cmd, "===OS_RELEASE===") {
@@ -128,6 +129,7 @@ func TestPackageUpdatesCheckEndpoint(t *testing.T) {
 
 // A host whose package manager cannot be queried must not look clean: the stored check keeps the error.
 func TestPackageUpdatesCheckKeepsTheError(t *testing.T) {
+	t.Parallel()
 	runner := sshrunner.NewMockRunner()
 	runner.DefaultExec = func(cmd string) (string, string, int, error) {
 		if strings.Contains(cmd, "===OS_RELEASE===") {
@@ -161,6 +163,7 @@ func TestPackageUpdatesCheckKeepsTheError(t *testing.T) {
 
 // The cooldown is measured from the stored check, so a check older than the window is allowed again.
 func TestPackageUpdateCooldownExpires(t *testing.T) {
+	t.Parallel()
 	old := &store.PackageUpdateCheck{HostID: 1, CheckedAt: time.Now().Add(-2 * time.Minute), Supported: true}
 	if rem := pkgUpdateCooldownRemaining(old); rem != 0 {
 		t.Errorf("an expired cooldown must allow another check, got %d seconds", rem)
@@ -177,7 +180,8 @@ func TestPackageUpdateCooldownExpires(t *testing.T) {
 
 // The store keeps the last check per host and replaces it on the next one.
 func TestPackageUpdateCheckStore(t *testing.T) {
-	dbPath := t.TempDir() + "/pkgupdates.db"
+	t.Parallel()
+	dbPath := testDBCopy(t)
 	db, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
@@ -227,6 +231,7 @@ func TestPackageUpdateCheckStore(t *testing.T) {
 
 // The check endpoint must not answer for a host that does not exist.
 func TestPackageUpdatesUnknownHost(t *testing.T) {
+	t.Parallel()
 	runner := sshrunner.NewMockRunner()
 	srv, _ := setupBulkTestServer(t, runner)
 	authCookie := createBulkAuthCookie(srv)

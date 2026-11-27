@@ -37,6 +37,7 @@ const failingLog = "\nPLAY [all] ****\n\nTASK [first] ****\n\x1b[0;32mok: [db-01
 const diffLog = "\nPLAY [all] ****\n\nTASK [write file] ****\n\x1b[0;31m--- before\x1b[0m\n\x1b[0;32m+++ after: /tmp/x.txt\x1b[0m\n\x1b[0;36m@@ -0,0 +1,2 @@\x1b[0m\n\x1b[0;32m+one\x1b[0m\n\x1b[0;32m+two\x1b[0m\n\n\x1b[0;33mchanged: [web-01]\x1b[0m\n"
 
 func TestAnsibleBundleLogParsers(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is required to evaluate the bundle")

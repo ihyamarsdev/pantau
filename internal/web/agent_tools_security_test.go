@@ -14,6 +14,7 @@ import (
 )
 
 func TestAgentSecurityTools(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = db.SetSetting("agent_enabled", "1")
@@ -66,6 +67,7 @@ func TestAgentSecurityTools(t *testing.T) {
 // The docker_security tool reads the stored results and the exploit intelligence (its own endpoint now).
 // The lists stay capped.
 func TestAgentSecurityDockerTool(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = db.SetSetting("agent_enabled", "1")
@@ -96,6 +98,7 @@ func TestAgentSecurityDockerTool(t *testing.T) {
 }
 
 func TestAgentSecurityDockerToolCapsIntel(t *testing.T) {
+	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = db.SetSetting("agent_enabled", "1")

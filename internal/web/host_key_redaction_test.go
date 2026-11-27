@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -17,7 +16,8 @@ import (
 const redactionSecret = "-----BEGIN OPENSSH PRIVATE KEY-----SECRETBODY"
 
 func TestHostAPINeverReturnsCustomKey(t *testing.T) {
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	t.Parallel()
+	db, err := store.Open(testDBCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}

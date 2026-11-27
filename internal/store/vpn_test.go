@@ -8,6 +8,7 @@ import (
 // TestVPNNetworkHostBindingRoundTrip covers the state a VPN Network needs to survive: the host column,
 // the network row with its secret config, and a snapshot restore that keeps both in step.
 func TestVPNNetworkHostBindingRoundTrip(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := Open(filepath.Join(dir, "t.db"))
 	if err != nil {

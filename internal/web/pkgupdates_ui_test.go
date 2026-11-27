@@ -8,6 +8,7 @@ import (
 // The Package Update Check must be reachable from the Packages tab: a button that runs the check, a
 // panel that shows the result, and the endpoints it talks to.
 func TestPackageUpdateCheckUIInIndexHTML(t *testing.T) {
+	t.Parallel()
 	ui := uiSourceForTest(t)
 	js := coreJSSource(t)
 

@@ -25,6 +25,7 @@ func fleetServer(t *testing.T) (*Server, *store.DB, int64) {
 
 // Every tool of this area must be registered with an object schema and a description.
 func TestAgentFleetToolsListed(t *testing.T) {
+	t.Parallel()
 	want := []string{"fleet_hosts", "fleet_host_action", "fleet_host_groups", "fleet_host_import", "fleet_inspect_all",
 		"fleet_rules", "fleet_rule_action", "fleet_alerts_ack", "fleet_notes", "fleet_presets",
 		"fleet_shortcuts", "fleet_forwards", "ssh_keys", "fleet_registry",
@@ -56,6 +57,7 @@ func TestAgentFleetToolsListed(t *testing.T) {
 
 // The read tools answer from the stored data, and a name in the result is never a secret.
 func TestAgentFleetReads(t *testing.T) {
+	t.Parallel()
 	srv, db, hostID := fleetServer(t)
 	_ = db.SetSetting("telegram_token", "tg-secret-123")
 	_ = db.SetSetting("smtp_pass", "smtp-secret-456")
@@ -126,6 +128,7 @@ func TestAgentFleetReads(t *testing.T) {
 
 // A wrong argument must be an error and must change nothing.
 func TestAgentFleetValidation(t *testing.T) {
+	t.Parallel()
 	srv, db, hostID := fleetServer(t)
 	_ = db.SetSetting("agent_approval", "auto")
 
@@ -162,6 +165,7 @@ func TestAgentFleetValidation(t *testing.T) {
 
 // Every change asks the operator first; a denial runs nothing.
 func TestAgentFleetChangesAskAndDeny(t *testing.T) {
+	t.Parallel()
 	srv, db, hostID := fleetServer(t)
 	_ = db.SetSetting("agent_approval", "auto") // auto skips gate 1 only
 
@@ -213,6 +217,7 @@ func TestAgentFleetChangesAskAndDeny(t *testing.T) {
 
 // Approved changes land in the store, through the UI's own handlers.
 func TestAgentFleetChangesApproved(t *testing.T) {
+	t.Parallel()
 	srv, db, hostID := fleetServer(t)
 
 	// Host notes.
@@ -322,6 +327,7 @@ func TestAgentFleetChangesApproved(t *testing.T) {
 
 // An update must not drop the host's own SSH key: the API never returns it, so the tool keeps it.
 func TestAgentFleetHostUpdateKeepsCustomKey(t *testing.T) {
+	t.Parallel()
 	srv, db, hostID := fleetServer(t)
 	h, _ := db.GetHost(hostID)
 	h.CustomKey = "PRIVATE-KEY-MATERIAL"
@@ -343,6 +349,7 @@ func TestAgentFleetHostUpdateKeepsCustomKey(t *testing.T) {
 
 // A new host is registered with the key of the SSH Key Library, never with a key from the model.
 func TestAgentFleetHostCreate(t *testing.T) {
+	t.Parallel()
 	srv, db, _ := fleetServer(t)
 	keyID, err := db.CreateSSHKey(&store.SSHKey{Name: "deploy", PrivateKey: "p", PublicKey: "pub", Fingerprint: "SHA256:x"})
 	if err != nil {
@@ -367,6 +374,7 @@ func TestAgentFleetHostCreate(t *testing.T) {
 
 // The notification channels are listed without their secrets.
 func TestAgentFleetNotifyChannels(t *testing.T) {
+	t.Parallel()
 	srv, db, _ := fleetServer(t)
 	_ = db.SetSetting("telegram_token", "tg-secret-123")
 	_ = db.SetSetting("telegram_chat_id", "42")
@@ -385,6 +393,7 @@ func TestAgentFleetNotifyChannels(t *testing.T) {
 
 // A key that still belongs to a host is refused by the UI's own rule, and the deletion does not happen.
 func TestAgentFleetSSHKeyInUse(t *testing.T) {
+	t.Parallel()
 	srv, db, hostID := fleetServer(t)
 	keyID, err := db.CreateSSHKey(&store.SSHKey{Name: "deploy", PrivateKey: "p", PublicKey: "pub", Fingerprint: "SHA256:x"})
 	if err != nil {
@@ -408,6 +417,7 @@ func TestAgentFleetSSHKeyInUse(t *testing.T) {
 
 // The ssh-config import previews without asking and registers only after an approval.
 func TestAgentFleetHostImport(t *testing.T) {
+	t.Parallel()
 	srv, db, _ := fleetServer(t)
 	cfg := "Host web3\n  HostName 10.0.0.3\n  User deploy\n  Port 2222\n"
 	out, isErr := callTool(t, srv, "fleet_host_import", `{"action":"preview","content":"`+strings.ReplaceAll(cfg, "\n", "\\n")+`"}`)
@@ -437,6 +447,7 @@ func TestAgentFleetHostImport(t *testing.T) {
 
 // Gate 3 is never skipped by the auto mode and never covered by a session grant.
 func TestAgentFleetGate3NeverAutoOrGranted(t *testing.T) {
+	t.Parallel()
 	srv, db, hostID := fleetServer(t)
 	_ = db.SetSetting("agent_approval", "auto")
 
@@ -485,6 +496,7 @@ func fleetItoa(v int64) string { return strconv.FormatInt(v, 10) }
 
 // No tool of this area accepts a credential: the schema has no room for one.
 func TestAgentFleetNoCredentialArgument(t *testing.T) {
+	t.Parallel()
 	for _, tl := range agentTools {
 		if !strings.HasPrefix(tl.Name, "fleet_") && tl.Name != "ssh_keys" {
 			continue
