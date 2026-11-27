@@ -286,10 +286,10 @@ function hideExpiredBanner() {
   if (el) { el.hidden = true; el.innerHTML = ''; }
 }
 
-// renderTeleportSwitcher draws the sticky bar above the cluster bar of the Kubernetes tab. It runs after every
-// cluster load, so the pills, the dropdown and the badge follow the current data.
+// renderTeleportSwitcher draws the sticky bar above the workspace grid (and cluster bar) of the Kubernetes tab. It
+// runs after every cluster load, so the pills, the dropdown and the badge follow the current data.
 function renderTeleportSwitcher() {
-  const anchor = document.getElementById('kubeClusterBar');
+  const anchor = document.getElementById('kubeWorkspaceGrid') || document.getElementById('kubeClusterBar');
   if (!anchor || !anchor.parentNode) return;
   init();
   if (!document.getElementById('tpSwitcher')) {
