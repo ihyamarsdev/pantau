@@ -235,6 +235,7 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 		logger.Info("agent", "", "model call finished", "step", step+1, "model", c.Model, "domain", string(domain), "tools", len(req.Tools),
 			"prompt_size", res.InputTokens, "reply_size", res.OutputTokens, "duration_ms", time.Since(modelStart).Milliseconds(), "status", map[bool]string{true: "error", false: "success"}[err != nil])
 		if err != nil {
+			logger.Warn("agent", "llm", "model call failed: "+redactSecret(err.Error(), c.Key))
 			sse.errorEvent(redactSecret(err.Error(), c.Key))
 			return false
 		}

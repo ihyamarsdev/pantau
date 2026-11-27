@@ -1090,3 +1090,24 @@ func TestLLMOpenAITruncatedWithoutFinishReason(t *testing.T) {
 		t.Errorf("status = %d, want 0", le.Status)
 	}
 }
+
+func TestLLMErrorHTMLBodyIsSummarised(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		io.WriteString(w, `<!DOCTYPE html><html lang="en-US"><head><title>Blocked</title></head></html>`)
+	}))
+	defer srv.Close()
+	c, _ := newLLMClient("openai", srv.URL+"/v1", "k")
+	_, err := c.Stream(context.Background(), llmRequest{Model: "m"}, nil)
+	var le *llmError
+	if !errors.As(err, &le) {
+		t.Fatalf("err = %v, want *llmError", err)
+	}
+	if strings.Contains(le.Message, "<") {
+		t.Errorf("message keeps raw HTML: %q", le.Message)
+	}
+	if !strings.Contains(le.Message, "HTML page") {
+		t.Errorf("message = %q, want a short HTML summary", le.Message)
+	}
+}

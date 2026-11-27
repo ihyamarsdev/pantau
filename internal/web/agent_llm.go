@@ -267,6 +267,10 @@ func llmErrorMessage(raw []byte) string {
 			return llmClip(msg)
 		}
 	}
+	// A gateway or firewall in front of the provider often answers with an HTML page; keep it out of the UI.
+	if lower := strings.ToLower(string(raw)); strings.Contains(lower, "<!doctype html") || strings.Contains(lower, "<html") {
+		return "the answer was an HTML page, not an API reply; a gateway or firewall may be blocking the request"
+	}
 	return llmClip(strings.TrimSpace(string(raw)))
 }
 
