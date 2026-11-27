@@ -53,8 +53,9 @@ type agentToolEvent struct {
 	PlanID     string `json:"plan_id,omitempty"` // set on the done event of agent_propose_plan: the chat shows its card
 }
 
-// agentSSE writes the browser stream: text deltas, tool progress and errors.
+// agentSSE writes the browser stream: text deltas, tool progress, turn status, and errors.
 type agentSSE struct {
+	mu sync.Mutex
 	w  http.ResponseWriter
 	rc *http.ResponseController
 }
@@ -67,28 +68,112 @@ func newAgentSSE(w http.ResponseWriter) *agentSSE {
 }
 
 func (a *agentSSE) frame(prefix, payload string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	_, _ = fmt.Fprintf(a.w, "%s%s\n\n", prefix, payload)
 	_ = a.rc.Flush()
 }
 
 func (a *agentSSE) textDelta(s string) {
 	p, _ := json.Marshal(map[string]interface{}{
-		"choices": []map[string]interface{}{{"delta": map[string]string{"content": s}, "finish_reason": nil}},
+		"choices": []map[string]interface{}{{"delta": map[string]string{"content": inspector.RedactAgentSecrets(s)}, "finish_reason": nil}},
 	})
 	a.frame("data: ", string(p))
 }
 
+func (a *agentSSE) statusEvent(phase, detail string) {
+	p, _ := json.Marshal(map[string]string{
+		"phase":  phase,
+		"detail": inspector.RedactAgentSecrets(detail),
+	})
+	a.frame("event: status\ndata: ", string(p))
+}
+
+func (a *agentSSE) toolStartEvent(callID, name, domain, mode string) {
+	p, _ := json.Marshal(map[string]string{
+		"call_id": callID,
+		"name":    inspector.RedactAgentSecrets(name),
+		"domain":  domain,
+		"mode":    mode,
+	})
+	a.frame("event: tool_start\ndata: ", string(p))
+}
+
+func (a *agentSSE) toolEndEvent(callID, name string, durationMS int64, ok, cached bool) {
+	p, _ := json.Marshal(map[string]interface{}{
+		"call_id":     callID,
+		"name":        inspector.RedactAgentSecrets(name),
+		"duration_ms": durationMS,
+		"ok":          ok,
+		"cached":      cached,
+	})
+	a.frame("event: tool_end\ndata: ", string(p))
+}
+
 func (a *agentSSE) toolEvent(e agentToolEvent) {
+	e.Label = inspector.RedactAgentSecrets(e.Label)
 	p, _ := json.Marshal(e)
 	a.frame("event: agent.tool\ndata: ", string(p))
 }
 
 func (a *agentSSE) errorEvent(msg string) {
-	p, _ := json.Marshal(map[string]string{"error": msg})
+	p, _ := json.Marshal(map[string]string{"error": inspector.RedactAgentSecrets(msg)})
 	a.frame("event: agent.error\ndata: ", string(p))
 }
 
-func (a *agentSSE) done() { a.frame("data: ", "[DONE]") }
+func (a *agentSSE) cancelledEvent(reason string) {
+	p, _ := json.Marshal(map[string]string{"reason": inspector.RedactAgentSecrets(reason)})
+	a.frame("event: cancelled\ndata: ", string(p))
+}
+
+func (a *agentSSE) doneWithDuration(durationMS int64) {
+	p, _ := json.Marshal(map[string]int64{"duration_ms": durationMS})
+	a.frame("event: done\ndata: ", string(p))
+	a.frame("data: ", "[DONE]")
+}
+
+func (a *agentSSE) done() { a.doneWithDuration(0) }
+
+type agentStatusKey struct{}
+
+func agentStatusSinkFrom(ctx context.Context) func(phase, detail string) {
+	if fn, ok := ctx.Value(agentStatusKey{}).(func(string, string)); ok {
+		return fn
+	}
+	return nil
+}
+
+func (s *Server) registerAgentCancel(threadID int64, cancel context.CancelFunc) {
+	if threadID <= 0 {
+		return
+	}
+	s.agent.mu.Lock()
+	if s.agent.cancels == nil {
+		s.agent.cancels = map[int64]context.CancelFunc{}
+	}
+	s.agent.cancels[threadID] = cancel
+	s.agent.mu.Unlock()
+}
+
+func (s *Server) unregisterAgentCancel(threadID int64) {
+	if threadID <= 0 {
+		return
+	}
+	s.agent.mu.Lock()
+	delete(s.agent.cancels, threadID)
+	s.agent.mu.Unlock()
+}
+
+func (s *Server) cancelAgentThread(threadID int64) bool {
+	s.agent.mu.Lock()
+	cancel := s.agent.cancels[threadID]
+	s.agent.mu.Unlock()
+	if cancel != nil {
+		cancel()
+		return true
+	}
+	return false
+}
 
 // ---------------------------------------------------------------- conversations
 
@@ -172,15 +257,25 @@ func (s *Server) evictConvsLocked() {
 // know that it restarted a service, or it would repeat the action. The history is never left with an
 // assistant tool_use without its tool result, because that breaks every later call at the provider.
 func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg, client llmClient, conv *agentConv, message string) bool {
+	turnStart := time.Now()
 	conv.mu.Lock()
 	lastTokens := conv.lastTokens
 	domain := conv.domain
 	history := append([]llmMessage{}, conv.msgs...)
 	threadID, stored := conv.threadID, conv.stored
 	conv.mu.Unlock()
-	// The domain pointer and the per-session cwd state travel with the request so tools can widen the
-	// domain and run relative to the session's working directory (ADR 0086).
-	rctx := r.WithContext(context.WithValue(r.Context(), agentDomainKey{}, &domain))
+
+	sse := newAgentSSE(w)
+	turnCtx, turnCancel := context.WithCancel(r.Context())
+	defer turnCancel()
+	s.registerAgentCancel(threadID, turnCancel)
+	defer s.unregisterAgentCancel(threadID)
+
+	// The domain pointer, status sink, and per-session cwd state travel with the request.
+	rctx := r.WithContext(context.WithValue(turnCtx, agentDomainKey{}, &domain))
+	rctx = rctx.WithContext(context.WithValue(rctx.Context(), agentStatusKey{}, func(phase, detail string) {
+		sse.statusEvent(phase, detail)
+	}))
 	if conv.exec == nil {
 		conv.exec = inspector.NewAgentSessionState()
 	}
@@ -213,7 +308,6 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 		conv.mu.Unlock()
 	}()
 
-	sse := newAgentSSE(w)
 	// The system prompt is rebuilt every turn and never stored in the history. Dynamic skill injection keeps
 	// only the active domain's instructions and scoped memory notes, while a host fingerprint gives the model
 	// OS-correct execution context before it writes any shell command (ADR 0086).
@@ -223,21 +317,26 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 	// A long text-only exchange never reaches a tool batch, so the history is compacted here too.
 	if lastTokens > 0 && lastTokens+len(message)/3 > c.CompactTokens {
 		before := len(history)
-		history = s.compactHistory(r.Context(), client, c, history)
+		history = s.compactHistory(rctx.Context(), client, c, history)
 		rewrite = rewrite || len(history) < before
 	}
 	guard := newAgentTurnGuard(agentGuardHintAfterKubeGet, agentGuardRepeatLimit, agentGuardTotalLimit)
 	for step := range agentMaxSteps {
 		if err := rctx.Context().Err(); err != nil {
+			sse.cancelledEvent("the chat was cancelled")
 			sse.errorEvent("the chat was cancelled")
 			return false
 		}
+		sse.statusEvent("thinking", fmt.Sprintf("step %d", step+1))
 		req := llmRequest{Model: c.Model, System: system, Messages: shrinkOldToolResults(history), Tools: agentToolSpecsFor(domain)}
 		modelStart := time.Now()
 		res, err := client.Stream(rctx.Context(), req, sse.textDelta)
 		logger.Info("agent", "", "model call finished", "step", step+1, "model", c.Model, "domain", string(domain), "tools", len(req.Tools),
 			"prompt_size", res.InputTokens, "reply_size", res.OutputTokens, "duration_ms", time.Since(modelStart).Milliseconds(), "status", map[bool]string{true: "error", false: "success"}[err != nil])
 		if err != nil {
+			if rctx.Context().Err() != nil {
+				sse.cancelledEvent("the chat was cancelled")
+			}
 			logger.Warn("agent", "llm", "model call failed: "+redactSecret(err.Error(), c.Key))
 			sse.errorEvent(redactSecret(err.Error(), c.Key))
 			return false
@@ -257,7 +356,7 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 		history = append(history, llmMessage{Role: llmRoleAssistant, Text: res.Text, ToolCalls: calls})
 		if len(calls) == 0 {
 			success = true
-			sse.done()
+			sse.doneWithDuration(time.Since(turnStart).Milliseconds())
 			// Auto-generate a concise thread title on the first completed turn using the Fast/Utility model.
 			if threadID > 0 && stored == 0 && s.agent.llmFactory == nil {
 				s.maybeGenerateThreadTitle(c, threadID, message, res.Text)
@@ -270,12 +369,17 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 		for i, tc := range calls {
 			args, argErr := agentToolArgs(tc.Args)
 			tier := riskTierOfTool(tc.Name, args)
+			mode := "write"
+			if tier == riskReadOnly {
+				mode = "read_only"
+			}
 			p := agentPlanned{
 				tc: tc, args: args, argErr: argErr, label: agentToolLabel(args),
 				domain: string(agentToolDomain(tc.Name)), tier: string(tier),
 				// set_tool_domain writes the turn's shared domain, so it never runs beside another call.
 				parallel: tier == riskReadOnly && tc.Name != "set_tool_domain" && argErr == nil,
 			}
+			sse.toolStartEvent(tc.ID, tc.Name, p.domain, mode)
 			sse.toolEvent(agentToolEvent{Tool: tc.Name, Label: p.label, Status: "running", ToolCallID: tc.ID, Domain: p.domain, RiskTier: p.tier})
 			p.refuse, p.hint = guard.before(tc.Name, tier == riskReadOnly)
 			plans[i] = p
@@ -288,6 +392,7 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 					history = append(history, llmMessage{Role: llmRoleTool, ToolCallID: rest.tc.ID, Text: "not run: the chat was cancelled", IsError: true})
 				}
 				saved = append([]llmMessage{}, history...)
+				sse.cancelledEvent("the chat was cancelled")
 				sse.errorEvent("the chat was cancelled")
 				return false
 			}
@@ -297,12 +402,24 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 					end++
 				}
 			}
+			phase := "executing_tools"
+			detail := plans[i].tc.Name
+			if end-i > 1 || plans[i].tc.Name == "delegate_investigate" {
+				phase = "parallel_subagents"
+				names := make([]string, 0, end-i)
+				for _, pl := range plans[i:end] {
+					names = append(names, pl.tc.Name)
+				}
+				detail = strings.Join(names, ", ")
+			}
+			sse.statusEvent(phase, detail)
 			outs := s.execPlanned(rctx, plans[i:end])
 			for k, p := range plans[i:end] {
 				status := "done"
 				if outs[k].isErr {
 					status = "error"
 				}
+				sse.toolEndEvent(p.tc.ID, p.tc.Name, outs[k].durationMS, !outs[k].isErr, false)
 				sse.toolEvent(agentToolEvent{Tool: p.tc.Name, Label: p.label, Status: status, ToolCallID: p.tc.ID, Domain: p.domain, RiskTier: p.tier, DurationMS: outs[k].durationMS, PlanID: planIDFromResult(p.tc.Name, outs[k])})
 				// The hint follows truncation so a long result cannot cut it off.
 				history = append(history, llmMessage{Role: llmRoleTool, ToolCallID: p.tc.ID, ToolName: p.tc.Name, Text: truncateToolResult(p.tc.Name, outs[k].text) + p.hint, IsError: outs[k].isErr})

@@ -264,10 +264,25 @@ func (s *Server) handleAgentThreads(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleAgentThread: /api/agent/threads/{id} -> GET returns the thread with its messages, DELETE drops it.
+// handleAgentThread: /api/agent/threads/{id} -> GET returns the thread with its messages, DELETE drops it,
+// POST .../cancel cancels an active turn on that thread.
 func (s *Server) handleAgentThread(w http.ResponseWriter, r *http.Request) {
 	if rest, ok := strings.CutSuffix(strings.TrimPrefix(r.URL.Path, "/api/agent/threads/"), "/distill"); ok {
 		s.handleAgentDistill(w, r, queryInt64(rest))
+		return
+	}
+	if rest, ok := strings.CutSuffix(strings.TrimPrefix(r.URL.Path, "/api/agent/threads/"), "/cancel"); ok {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		id := queryInt64(rest)
+		if id <= 0 {
+			http.Error(w, "bad thread id", http.StatusBadRequest)
+			return
+		}
+		cancelled := s.cancelAgentThread(id)
+		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "cancelled": cancelled})
 		return
 	}
 	id := queryInt64(strings.TrimPrefix(r.URL.Path, "/api/agent/threads/"))

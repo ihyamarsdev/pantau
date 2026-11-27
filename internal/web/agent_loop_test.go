@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -1068,5 +1069,99 @@ func TestAgentTestEndpointFastTarget(t *testing.T) {
 	}
 	if f.callCount() != 1 {
 		t.Fatalf("one fallback call expected, got %d", f.callCount())
+	}
+}
+
+func TestAgentSSEStreamEventsAndSecretRedaction(t *testing.T) {
+	t.Parallel()
+	f := &fakeLLM{results: []llmResult{
+		{ToolCalls: []llmToolCall{{ID: "c1", Name: "list_hosts", Args: `{}`}}},
+		{Text: "Done. Authorization: Bearer supersecret123"},
+	}}
+	srv, _ := nativeAgent(t, f)
+
+	w := chatPost(srv, "sse-seq", "check hosts")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d (%s)", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	wantSeq := []string{
+		"event: status",
+		`"phase":"thinking"`,
+		"event: tool_start",
+		`"call_id":"c1"`,
+		`"name":"list_hosts"`,
+		`"phase":"executing_tools"`,
+		"event: tool_end",
+		`"ok":true`,
+		"event: done",
+		"data: [DONE]",
+	}
+	lastIdx := -1
+	for _, tok := range wantSeq {
+		idx := strings.Index(body, tok)
+		if idx < 0 {
+			t.Fatalf("missing %q in SSE stream:\n%s", tok, body)
+		}
+		if idx < lastIdx {
+			t.Fatalf("out-of-order token %q in SSE stream:\n%s", tok, body)
+		}
+		lastIdx = idx
+	}
+	if strings.Contains(body, "supersecret123") || !strings.Contains(body, "[REDACTED]") {
+		t.Fatalf("expected secret to be redacted in SSE stream: %s", body)
+	}
+}
+
+func TestAgentThreadCancelAndClientDisconnect(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		via  string // "endpoint" | "disconnect"
+	}{
+		{name: "cancel via POST /api/agent/threads/{id}/cancel", via: "endpoint"},
+		{name: "cancel via client disconnect", via: "disconnect"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			blk := &blockingLLM{release: make(chan struct{}), started: make(chan struct{})}
+			srv, _ := nativeAgent(t, &fakeLLM{})
+			srv.agent.llmFactory = func(string, string, string) (llmClient, error) { return blk, nil }
+
+			ctx, cancelReq := context.WithCancel(context.Background())
+			defer cancelReq()
+			req := httptest.NewRequest(http.MethodPost, "/api/agent/chat/stream",
+				strings.NewReader(`{"message":"slow","session_id":"cancel-`+tt.via+`"}`)).WithContext(ctx)
+			rec := httptest.NewRecorder()
+
+			done := make(chan struct{})
+			go func() {
+				srv.handleAgentChat(rec, req)
+				close(done)
+			}()
+
+			<-blk.started
+			if tt.via == "endpoint" {
+				// Poll until X-Agent-Thread is registered (no time.Sleep).
+				var threadID string
+				for threadID == "" {
+					threadID = rec.Header().Get("X-Agent-Thread")
+					runtime.Gosched()
+				}
+				cw := httptest.NewRecorder()
+				srv.handleAgentThread(cw, httptest.NewRequest(http.MethodPost, "/api/agent/threads/"+threadID+"/cancel", nil))
+				if cw.Code != http.StatusOK || !strings.Contains(cw.Body.String(), `"cancelled":true`) {
+					t.Fatalf("cancel endpoint = %d %s", cw.Code, cw.Body.String())
+				}
+			} else {
+				cancelReq()
+			}
+
+			<-done
+			if !strings.Contains(rec.Body.String(), "event: cancelled") {
+				t.Fatalf("expected event: cancelled in stream, got:\n%s", rec.Body.String())
+			}
+		})
 	}
 }

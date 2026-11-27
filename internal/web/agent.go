@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"crypto/rand"
 	_ "embed"
 	"encoding/hex"
@@ -57,6 +58,7 @@ type agentState struct {
 	grants     map[int64]agentGrant
 	convs      map[string]*agentConv                                     // chat sessions of the in-process agent
 	plans      map[string]*agentPlan                                     // proposed and running plans, in memory
+	cancels    map[int64]context.CancelFunc                              // active turn cancel funcs keyed by thread ID
 	llmFactory func(provider, baseURL, apiKey string) (llmClient, error) // nil: the real provider client
 }
 
@@ -159,6 +161,7 @@ func (s *Server) registerAgentRoutes() {
 	s.mux.HandleFunc("/api/agent/settings", s.authMiddleware(s.handleAgentSettings))
 	s.mux.HandleFunc("/api/agent/test", s.authMiddleware(s.handleAgentTest))
 	s.mux.HandleFunc("/api/agent/chat", s.authMiddleware(s.handleAgentChat))
+	s.mux.HandleFunc("/api/agent/chat/stream", s.authMiddleware(s.handleAgentChat))
 	s.mux.HandleFunc("/api/agent/approvals", s.authMiddleware(s.handleAgentApprovals))
 	s.mux.HandleFunc("/api/agent/approvals/", s.authMiddleware(s.handleAgentApprovalDecide))
 	s.mux.HandleFunc("/api/agent/plans/", s.authMiddleware(s.handleAgentPlans))
@@ -507,8 +510,14 @@ func (s *Server) agentApprove(r *http.Request, ap *agentApproval, gate int) (boo
 	}()
 	t := time.NewTimer(agentApprovalWait)
 	defer t.Stop()
+	if notify := agentStatusSinkFrom(r.Context()); notify != nil {
+		notify("waiting_approval", ap.Tool)
+	}
 	select {
 	case ok := <-ap.done:
+		if notify := agentStatusSinkFrom(r.Context()); notify != nil {
+			notify("executing_tools", ap.Tool)
+		}
 		if !ok {
 			return false, "the operator denied this action"
 		}
