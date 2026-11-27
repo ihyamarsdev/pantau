@@ -136,16 +136,25 @@ type Server struct {
 	geoResolver       *globe.Resolver
 }
 
+// htmlGzCache maps sha256(html) to its BestCompression gzip. Every NewServer re-prepares the same embedded
+// page, and BestCompression is the costliest step there, so it is computed once per distinct page per process.
+var htmlGzCache sync.Map
+
 func (s *Server) prepareHTML(raw []byte) {
 	s.htmlContent = raw
 	sum := sha256.Sum256(raw)
 	s.htmlETag = fmt.Sprintf(`"%x"`, sum[:8])
 
 	// ponytail: pre-compress HTML in-memory with BestCompression so endpoint / requires zero CPU compression work per request and optimal wire size
+	if gz, ok := htmlGzCache.Load(sum); ok {
+		s.htmlContentGz = gz.([]byte)
+		return
+	}
 	var buf bytes.Buffer
 	gw, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
 	_, _ = gw.Write(raw)
 	_ = gw.Close()
+	htmlGzCache.Store(sum, buf.Bytes())
 	s.htmlContentGz = buf.Bytes()
 }
 
