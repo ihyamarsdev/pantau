@@ -393,7 +393,15 @@ func configureSSH(config *ssh.ClientConfig, legacy bool) {
 	}
 	algos := ssh.SupportedAlgorithms() // x/crypto's list without SHA-1, CBC, 3DES and ssh-dss
 	config.Config = ssh.Config{KeyExchanges: algos.KeyExchanges, Ciphers: algos.Ciphers, MACs: algos.MACs}
-	config.HostKeyAlgorithms = algos.HostKeys
+	// x/crypto lists RSA first, so a server with RSA keys would present RSA and fail the ed25519 pins
+	// recorded by TOFU. Keep ed25519 first, as the pins were recorded with it.
+	hostKeys := []string{ssh.KeyAlgoED25519}
+	for _, alg := range algos.HostKeys {
+		if alg != ssh.KeyAlgoED25519 {
+			hostKeys = append(hostKeys, alg)
+		}
+	}
+	config.HostKeyAlgorithms = hostKeys
 }
 
 // withLegacySSHHint tells the operator how to recover when a modern-only handshake finds no shared algorithm.

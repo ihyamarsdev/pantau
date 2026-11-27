@@ -16,6 +16,28 @@ import (
 // insecureAlgos are the algorithms a modern-profile client must never offer.
 var insecureAlgos = []string{"3des-cbc", "aes128-cbc", "aes256-cbc", "diffie-hellman-group1-sha1", "ssh-dss"}
 
+// TestConfigureSSHPrefersEd25519HostKey guards TOFU pins: the client must offer ed25519 first so the
+// server presents the key that was pinned, not an RSA or ECDSA key it also holds.
+func TestConfigureSSHPrefersEd25519HostKey(t *testing.T) {
+	t.Parallel()
+	for _, legacy := range []bool{false, true} {
+		cfg := &ssh.ClientConfig{}
+		configureSSH(cfg, legacy)
+		if len(cfg.HostKeyAlgorithms) == 0 || cfg.HostKeyAlgorithms[0] != ssh.KeyAlgoED25519 {
+			t.Errorf("legacy=%v: first host key algorithm = %v, want ssh-ed25519", legacy, cfg.HostKeyAlgorithms)
+		}
+		n := 0
+		for _, alg := range cfg.HostKeyAlgorithms {
+			if alg == ssh.KeyAlgoED25519 {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Errorf("legacy=%v: ssh-ed25519 offered %d times, want once", legacy, n)
+		}
+	}
+}
+
 func TestConfigureSSHProfiles(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
