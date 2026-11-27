@@ -617,8 +617,8 @@ func TestHostCreateUpdateKubeModeValidation(t *testing.T) {
 
 // TestKubeRunReadFailoverBudget verifies the failover loop stops trying candidates once
 // the overall budget is spent instead of stacking per-candidate exec timeouts.
+// Not parallel: it shrinks the package-level kubeFailoverBudget, which parallel kube tests read.
 func TestKubeRunReadFailoverBudget(t *testing.T) {
-	t.Parallel()
 	dbPath := testDBCopy(t)
 	db, err := store.Open(dbPath)
 	if err != nil {

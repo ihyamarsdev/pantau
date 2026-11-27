@@ -158,8 +158,8 @@ func TestTFToolsValidate(t *testing.T) {
 	}
 }
 
+// Not parallel: it fills the package-level tfValidateSem, which would make parallel validate tests see 429.
 func TestTFToolsValidateBusy(t *testing.T) {
-	t.Parallel()
 	srv, auth, id := newToolsWS(t, "inline", map[string]string{})
 	tfValidateSem <- struct{}{}
 	tfValidateSem <- struct{}{}

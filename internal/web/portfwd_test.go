@@ -143,20 +143,29 @@ func TestPortForwardCarriesBytes(t *testing.T) {
 		t.Fatalf("echo = %q, want %q", buf, "hello-pg")
 	}
 
-	// The list endpoint reports the forward with its traffic counters.
-	reqList := httptest.NewRequest(http.MethodGet, "/api/forwards", nil)
-	authReq(reqList)
-	wList := httptest.NewRecorder()
-	srv.ServeHTTP(wList, reqList)
-	if wList.Code != http.StatusOK {
-		t.Fatalf("list forwards = %d", wList.Code)
-	}
+	// The proxy adds to each counter after the bytes reach the peer, so the echo can be read before the
+	// inbound counter moves. Poll the list endpoint until both directions are counted.
 	var list []portForwardJSON
-	if err := json.Unmarshal(wList.Body.Bytes(), &list); err != nil {
-		t.Fatal(err)
-	}
-	if len(list) != 1 || list[0].ID != fwd.ID {
-		t.Fatalf("list = %+v", list)
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		reqList := httptest.NewRequest(http.MethodGet, "/api/forwards", nil)
+		authReq(reqList)
+		wList := httptest.NewRecorder()
+		srv.ServeHTTP(wList, reqList)
+		if wList.Code != http.StatusOK {
+			t.Fatalf("list forwards = %d", wList.Code)
+		}
+		list = nil
+		if err := json.Unmarshal(wList.Body.Bytes(), &list); err != nil {
+			t.Fatal(err)
+		}
+		if len(list) != 1 || list[0].ID != fwd.ID {
+			t.Fatalf("list = %+v", list)
+		}
+		if (list[0].BytesIn > 0 && list[0].BytesOut > 0) || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	if list[0].BytesIn == 0 || list[0].BytesOut == 0 {
 		t.Fatalf("traffic counters not counted: %+v", list[0])
