@@ -29,7 +29,7 @@ services:
     # `tsh login` survives "docker compose up --build". A global TELEPORT_HOME env is not used: Pantau strips it so
     # each profile controls its own home.
     volumes:
-      - ./data:/app/data
+      - pantau-data:/app/data
       - ${HOME}/.ssh/config:/root/.ssh/config:ro
       - netbird-state:/var/lib/netbird # keeps the peer identity across "docker compose up --build"
     environment:
@@ -37,4 +37,5 @@ services:
       - PANTAU_DB=/app/data/pantau.db
 
 volumes:
+  pantau-data:
   netbird-state:
