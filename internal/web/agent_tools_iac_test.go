@@ -960,3 +960,124 @@ func TestTFRuns_ErroredIncludesErrorExcerpt(t *testing.T) {
 		t.Fatalf("expected ErrorExcerpt to contain the Error block, got: %q", resp.ErrorExcerpt)
 	}
 }
+
+// End-to-end simulation of the "torcons" 3-module GCP workspace flow:
+// fake LLM + mock Registry + fake terraform CLI -> <= 4 tool calls, inspects vm/google submodule,
+// and passes validate in a single tf_workspace_scaffold call.
+func TestAgentTerraformTorconsEndToEndSimulation(t *testing.T) {
+	binDir := t.TempDir()
+	fakeTF := filepath.Join(binDir, "terraform")
+	if err := os.WriteFile(fakeTF, []byte(`#!/bin/sh
+case "$1" in
+  version) echo "Terraform v1.11.0"; exit 0 ;;
+  init)
+    if [ -z "$TF_PLUGIN_CACHE_DIR" ] || [ "$TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE" != "true" ]; then
+      echo "missing plugin cache env" >&2; exit 1
+    fi
+    echo "Initializing modules..."
+    exit 0
+    ;;
+  validate)
+    echo '{"valid":true,"error_count":0,"warning_count":0,"diagnostics":[]}'
+    exit 0
+    ;;
+esac
+exit 0
+`), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	reg := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/modules/search":
+			switch r.URL.Query().Get("q") {
+			case "gcp vpc":
+				_, _ = w.Write([]byte(`{"modules":[{"id":"terraform-google-modules/network/google/10.0.0","namespace":"terraform-google-modules","name":"network","provider":"google","version":"10.0.0"}]}`))
+			case "gcp compute":
+				_, _ = w.Write([]byte(`{"modules":[{"id":"terraform-google-modules/vm/google/15.0.0","namespace":"terraform-google-modules","name":"vm","provider":"google","version":"15.0.0"}]}`))
+			case "gcp storage":
+				_, _ = w.Write([]byte(`{"modules":[{"id":"terraform-google-modules/cloud-storage/google/9.0.0","namespace":"terraform-google-modules","name":"cloud-storage","provider":"google","version":"9.0.0"}]}`))
+			default:
+				_, _ = w.Write([]byte(`{"modules":[]}`))
+			}
+		case "/v1/modules/terraform-google-modules/network/google":
+			_, _ = w.Write([]byte(`{"id":"terraform-google-modules/network/google/10.0.0","namespace":"terraform-google-modules","name":"network","provider":"google","version":"10.0.0","root":{"inputs":[{"name":"project_id","type":"string","required":true},{"name":"network_name","type":"string","required":true}],"outputs":[{"name":"subnets_self_links"}]},"submodules":[]}`))
+		case "/v1/modules/terraform-google-modules/vm/google":
+			_, _ = w.Write([]byte(`{"id":"terraform-google-modules/vm/google/15.0.0","namespace":"terraform-google-modules","name":"vm","provider":"google","version":"15.0.0","root":{"inputs":[],"outputs":[]},"submodules":[{"path":"modules/compute_instance","inputs":[{"name":"subnetwork","type":"string","required":true},{"name":"instance_template","type":"string","required":true}],"outputs":[{"name":"instances_self_links"}]}]}`))
+		case "/v1/modules/terraform-google-modules/cloud-storage/google":
+			_, _ = w.Write([]byte(`{"id":"terraform-google-modules/cloud-storage/google/9.0.0","namespace":"terraform-google-modules","name":"cloud-storage","provider":"google","version":"9.0.0","root":{"inputs":[{"name":"name","type":"string","required":true},{"name":"project_id","type":"string","required":true}],"outputs":[{"name":"bucket"}]},"submodules":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(reg.Close)
+
+	srv, db, cleanup := setupTestServer(t)
+	defer cleanup()
+	srv.tfMgr = NewTerraformRunManager(db, t.TempDir(), nil, nil)
+	_ = db.SetSetting("agent_enabled", "1")
+	_ = db.SetTerraformEnabled(true)
+	_ = db.SetSetting("agent_llm_provider", "openai")
+	_ = db.SetSetting("agent_llm_model", "test-model")
+	_ = db.SetSetting("agent_llm_api_key", "sk-test")
+	_ = db.SetSetting("tf_registry_url", reg.URL)
+
+	f := &fakeLLM{results: []llmResult{
+		{ToolCalls: []llmToolCall{{ID: "c1", Name: "tf_catalog", Args: `{"action":"registry_modules","provider":"google","queries":["gcp vpc","gcp compute","gcp storage"]}`}}},
+		{ToolCalls: []llmToolCall{{ID: "c2", Name: "tf_catalog", Args: `{"action":"inspect","module_ids":["terraform-google-modules/network/google","terraform-google-modules/vm/google","terraform-google-modules/cloud-storage/google"]}`}}},
+		{ToolCalls: []llmToolCall{{ID: "c3", Name: "tf_workspace_scaffold", Args: `{"name":"torcons","files":{"main.tf":"module \"vpc\" { source = \"terraform-google-modules/network/google\" }\nmodule \"vm\" { source = \"terraform-google-modules/vm/google//modules/compute_instance\" }\nmodule \"gcs\" { source = \"terraform-google-modules/cloud-storage/google\" }\n"},"variables":[{"key":"project_id","value":"torcons-prod","category":"terraform","sensitive":false}],"validate":true}`}}},
+		{Text: "Workspace torcons berhasil dibuat dan tervalidasi."},
+	}}
+	useFakeLLM(srv, f)
+
+	done := make(chan int, 1)
+	go func() {
+		rec := chatPostPage(srv, "s1", "buatkan workspace torcons menggunakan provider gcp dan module compute, vpc, storage", "terraform")
+		done <- rec.Code
+	}()
+	if _, ok := iacApprove(t, srv, true); !ok {
+		t.Fatal("tf_workspace_scaffold never asked for approval")
+	}
+	if code := <-done; code != http.StatusOK {
+		t.Fatalf("chat status = %d", code)
+	}
+
+	// Count total tool calls sent by LLM across all steps: must be <= 4 (here 3).
+	totalCalls := 0
+	var scaffoldToolResult string
+	var sawComputeSubmodule bool
+	for _, req := range f.calls {
+		for _, m := range req.Messages {
+			if m.Role == llmRoleTool {
+				totalCalls++
+				if strings.Contains(m.Text, "terraform-google-modules/vm/google//modules/compute_instance") {
+					sawComputeSubmodule = true
+				}
+				if strings.Contains(m.Text, `"workspace_id"`) {
+					scaffoldToolResult = m.Text
+				}
+			}
+		}
+	}
+	// Note: f.calls[last] contains all 3 tool results; count unique tool calls from steps instead:
+	totalCalls = 0
+	for i := 0; i < len(f.calls)-1; i++ {
+		// Each step in f.steps emitted 1 tool call; verify from f.calls[last] tool messages.
+	}
+	lastMsgs := f.calls[len(f.calls)-1].Messages
+	for _, m := range lastMsgs {
+		if m.Role == llmRoleTool {
+			totalCalls++
+		}
+	}
+	if totalCalls > 4 || totalCalls != 3 {
+		t.Fatalf("expected <=4 (specifically 3) tool calls, got %d", totalCalls)
+	}
+	if !sawComputeSubmodule {
+		t.Fatal("expected agent to inspect vm/google and observe modules/compute_instance before scaffolding")
+	}
+	if !strings.Contains(scaffoldToolResult, `"ok":true`) {
+		t.Fatalf("expected tf_workspace_scaffold validation.ok=true, got: %s", scaffoldToolResult)
+	}
+}

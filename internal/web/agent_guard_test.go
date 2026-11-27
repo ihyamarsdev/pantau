@@ -24,6 +24,20 @@ func TestAgentTurnGuardHintsOnFifthKubeGet(t *testing.T) {
 	}
 }
 
+func TestAgentTurnGuardHintsOnFourthTFCatalog(t *testing.T) {
+	t.Parallel()
+	g := newAgentTurnGuard(agentGuardHintAfterKubeGet, agentGuardRepeatLimit, agentGuardTotalLimit)
+	for i := 1; i <= 4; i++ {
+		refuse, hint := g.before("tf_catalog", true)
+		if refuse != "" {
+			t.Fatalf("call %d refused: %s", i, refuse)
+		}
+		if (i == 4) != strings.Contains(hint, "batch queries/module_ids") {
+			t.Errorf("call %d hint = %q", i, hint)
+		}
+	}
+}
+
 func TestAgentTurnGuardRepeatLimitOnlyForReads(t *testing.T) {
 	t.Parallel()
 	g := newAgentTurnGuard(100, 3, 100)

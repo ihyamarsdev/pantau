@@ -54,9 +54,13 @@ Use ` + "`list_hosts`" + `, ` + "`get_host_state`" + `, ` + "`list_alerts`" + `,
 - Playbook/schedule/resource mutations and ` + "`ansible_run`" + ` mode ` + "`run`" + ` always wait for explicit operator approval. Use ` + "`gateway_cli`" + ` before ` + "`gateway_cli_install`" + `.`,
 
 	domainTerraform: `## Skill: Terraform
-- Read workspaces and runs with ` + "`tf_workspaces`" + `, ` + "`tf_runs`" + `, ` + "`tf_workspace_data`" + ` (sensitive outputs/variables stay hidden), and ` + "`tf_catalog`" + ` (` + "`templates`" + ` is one index call; never call it once per template).
-- **New configuration:** use ` + "`tf_workspace_scaffold`" + ` once with all files, variables and ` + "`validate: true`" + `, not separate workspace and file calls. Never send a plaintext secret: sensitive values are ` + "`{{ vault.KEY }}`" + ` references.
-- **Preview first:** run ` + "`tf_run_action`" + ` (` + "`plan`" + `), read it with ` + "`tf_runs`" + `, and summarize added, changed, and destroyed resources before ` + "`apply`" + `. Never apply a plan that destroys unintended resources.
+- Read workspaces and runs with ` + "`tf_workspaces`" + `, ` + "`tf_runs`" + ` (errored runs include ` + "`error_excerpt`" + `), ` + "`tf_workspace_data`" + ` (sensitive outputs/variables stay hidden), and ` + "`tf_catalog`" + ` (` + "`templates`" + ` is one index call; never call it once per template).
+- **3-Step Registry Module Workflow (mandatory):**
+  1. **Discover & Inspect at once:** Call ` + "`tf_catalog`" + ` with ` + "`action: \"registry_modules\"`" + ` + batch ` + "`queries`" + ` (e.g. ` + "`[\"gcp vpc\", \"gcp vm\", \"gcp storage\"]`" + `), then ` + "`action: \"inspect\"`" + ` + ` + "`module_ids`" + ` (up to 5) to read ` + "`required_inputs`" + `, ` + "`optional_inputs`" + `, and ` + "`submodules`" + ` (e.g. ` + "`vm/google//modules/compute_instance`" + `) before writing HCL. **Never guess module arguments from memory or probe empty modules through ` + "`validate`" + `.**
+  2. **Single Scaffold + Validate:** Call ` + "`tf_workspace_scaffold`" + ` ONCE with all files, variables, and ` + "`validate: true`" + ` (never separate workspace and file calls). Never send a plaintext secret: sensitive values must be ` + "`{{ vault.KEY }}`" + ` references.
+  3. **Targeted Fix:** If ` + "`validation`" + ` reports ` + "`diagnostics`" + ` or ` + "`init_error_tail`" + `, fix directly in 1 ` + "`tf_workspace_scaffold`" + ` call without jumping to ` + "`fleet_hosts`" + ` or ` + "`find_tools`" + `.
+- **Cross-cloud mapping:** Map provider-specific requests directly to the target cloud's native service (e.g. "S3 on GCP" -> Cloud Storage / GCS ` + "`cloud-storage/google`" + `).
+- **Preview first:** Run ` + "`tf_run_action`" + ` (` + "`plan`" + `), read it with ` + "`tf_runs`" + `, and summarize added, changed, and destroyed resources before ` + "`apply`" + `. Never apply a plan that destroys unintended resources.
 - Respect locked workspaces and policy warnings; report them to the operator.`,
 
 	domainSecurity: `## Skill: Security & Auditing
