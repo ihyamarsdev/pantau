@@ -3,6 +3,7 @@ package logger
 import (
 	"bytes"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 )
@@ -160,3 +161,65 @@ func TestLogLevelFilterAndBroadcasterIsolation(t *testing.T) {
 	}
 }
 
+// TestBroadcasterConcurrentBroadcastSubscribeHistory exercises the activity-console path under -race:
+// producers, subscribers that come and go, and history readers all share one broadcaster.
+func TestBroadcasterConcurrentBroadcastSubscribeHistory(t *testing.T) {
+	t.Parallel()
+	const capacity = 16
+	b := NewBroadcaster(capacity)
+
+	var wg sync.WaitGroup
+	for p := 0; p < 4; p++ {
+		wg.Add(1)
+		go func(p int) {
+			defer wg.Done()
+			for i := 0; i < 500; i++ {
+				b.Broadcast(Event{Message: "event", Attrs: map[string]any{"producer": p, "i": i}})
+			}
+		}(p)
+	}
+	for s := 0; s < 4; s++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 50; i++ {
+				ch, unsub := b.Subscribe()
+				select {
+				case <-ch:
+				default:
+				}
+				unsub()
+			}
+		}()
+	}
+	for r := 0; r < 2; r++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 200; i++ {
+				hist := b.History()
+				if len(hist) > capacity {
+					t.Errorf("history has %d entries, cap is %d", len(hist), capacity)
+					return
+				}
+				for k := 1; k < len(hist); k++ {
+					if hist[k].ID <= hist[k-1].ID {
+						t.Errorf("history out of order: id %d after %d", hist[k].ID, hist[k-1].ID)
+						return
+					}
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	if n := len(b.History()); n != capacity {
+		t.Errorf("history length = %d, want %d after 2000 events", n, capacity)
+	}
+	b.mu.RLock()
+	subs := len(b.subscribers)
+	b.mu.RUnlock()
+	if subs != 0 {
+		t.Errorf("%d subscribers leaked after unsubscribe", subs)
+	}
+}

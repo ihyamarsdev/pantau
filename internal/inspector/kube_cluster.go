@@ -315,40 +315,9 @@ func PrepareKubeconfig(raw, contextName string) (*PreparedKubeconfig, error) {
 		return nil, kubeInvalid("no context selected or found in kubeconfig")
 	}
 
-	var server string
-	for _, c := range parsed.Clusters {
-		if c.Cluster.CertificateAuthority != "" {
-			return nil, kubeInvalid("file-path certificate-authority is not allowed; use inline certificate-authority-data")
-		}
-		if server == "" && c.Cluster.Server != "" {
-			server = c.Cluster.Server
-		}
-	}
-
-	var execCmd string
-	for _, u := range parsed.Users {
-		if u.User.ClientCertificate != "" {
-			return nil, kubeInvalid("file-path client-certificate is not allowed; use inline client-certificate-data")
-		}
-		if u.User.ClientKey != "" {
-			return nil, kubeInvalid("file-path client-key is not allowed; use inline client-key-data")
-		}
-		if u.User.TokenFile != "" {
-			return nil, kubeInvalid("file-path tokenFile is not allowed; use inline token")
-		}
-		if len(u.User.AuthProvider) > 0 {
-			return nil, kubeInvalid("auth-provider is not allowed")
-		}
-		if u.User.Exec != nil {
-			cmdName := u.User.Exec.Command
-			if strings.Contains(cmdName, "/") || strings.Contains(cmdName, "\\") {
-				return nil, kubeInvalid("exec.command path not allowed, must be bare name: %s", cmdName)
-			}
-			if !allowedExecCommands[cmdName] {
-				return nil, kubeInvalid("exec.command %q is not in the allowlist", cmdName)
-			}
-			execCmd = cmdName
-		}
+	server, execCmd, err := checkKubeconfigPolicy(parsed)
+	if err != nil {
+		return nil, err
 	}
 
 	provider := deriveProvider(execCmd, server)
@@ -359,6 +328,46 @@ func PrepareKubeconfig(raw, contextName string) (*PreparedKubeconfig, error) {
 		Server:     server,
 		Provider:   provider,
 	}, nil
+}
+
+// checkKubeconfigPolicy rejects file-path credentials, auth-provider blocks and exec plugins outside
+// allowedExecCommands. It returns the first cluster server and the exec plugin name ("" when none).
+func checkKubeconfigPolicy(parsed kubeconfigJSON) (server, execCmd string, err error) {
+	for _, c := range parsed.Clusters {
+		if c.Cluster.CertificateAuthority != "" {
+			return "", "", kubeInvalid("file-path certificate-authority is not allowed; use inline certificate-authority-data")
+		}
+		if server == "" && c.Cluster.Server != "" {
+			server = c.Cluster.Server
+		}
+	}
+
+	for _, u := range parsed.Users {
+		if u.User.ClientCertificate != "" {
+			return "", "", kubeInvalid("file-path client-certificate is not allowed; use inline client-certificate-data")
+		}
+		if u.User.ClientKey != "" {
+			return "", "", kubeInvalid("file-path client-key is not allowed; use inline client-key-data")
+		}
+		if u.User.TokenFile != "" {
+			return "", "", kubeInvalid("file-path tokenFile is not allowed; use inline token")
+		}
+		if len(u.User.AuthProvider) > 0 {
+			return "", "", kubeInvalid("auth-provider is not allowed")
+		}
+		if u.User.Exec != nil {
+			cmdName := u.User.Exec.Command
+			if strings.Contains(cmdName, "/") || strings.Contains(cmdName, "\\") {
+				return "", "", kubeInvalid("exec.command path not allowed, must be bare name: %s", cmdName)
+			}
+			if !allowedExecCommands[cmdName] {
+				return "", "", kubeInvalid("exec.command %q is not in the allowlist", cmdName)
+			}
+			execCmd = cmdName
+		}
+	}
+
+	return server, execCmd, nil
 }
 
 func deriveProvider(execCmd, server string) string {
