@@ -533,9 +533,10 @@ func TestAnsibleRunExtraVarsPrecedence(t *testing.T) {
 		ExtraVars: `{"foo":"default"}`,
 	})
 
-	var capturedSpec ansible.RunSpec
+	// The run executes on its own goroutine: it hands each spec over a channel, which orders the write before the read.
+	specs := make(chan ansible.RunSpec, 2)
 	srv.ansibleRun = func(ctx context.Context, spec ansible.RunSpec, log io.Writer) (int, error) {
-		capturedSpec = spec
+		specs <- spec
 		return 0, nil
 	}
 	srv.ansibleMgr = NewAnsibleRunManager(srv.db, srv.ansibleRun)
@@ -547,12 +548,15 @@ func TestAnsibleRunExtraVarsPrecedence(t *testing.T) {
 	if rec1.Code != http.StatusAccepted {
 		t.Fatalf("expected 202, got %d", rec1.Code)
 	}
-	// Wait for the run to finish instead of a fixed sleep: under -race the run can lag behind the request.
-	for deadline := time.Now().Add(5 * time.Second); srv.ansibleMgr.HasActiveRunForPlaybook(pid) && time.Now().Before(deadline); {
-		time.Sleep(5 * time.Millisecond)
+	if got := recvRunSpec(t, specs); got.ExtraVars != `{"foo":"default"}` {
+		t.Fatalf("expected default extra_vars, got %s", got.ExtraVars)
 	}
-	if capturedSpec.ExtraVars != `{"foo":"default"}` {
-		t.Fatalf("expected default extra_vars, got %s", capturedSpec.ExtraVars)
+	// The spec arrives before the run is marked finished; wait for that so the next launch is not refused as busy.
+	for deadline := time.Now().Add(10 * time.Second); srv.ansibleMgr.HasActiveRunForPlaybook(pid); {
+		if time.Now().After(deadline) {
+			t.Fatal("first ansible run never finished")
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 
 	// Run with override extra_vars
@@ -563,9 +567,20 @@ func TestAnsibleRunExtraVarsPrecedence(t *testing.T) {
 	if rec2.Code != http.StatusAccepted {
 		t.Fatalf("expected 202, got %d: %s", rec2.Code, rec2.Body.String())
 	}
-	time.Sleep(20 * time.Millisecond)
-	if capturedSpec.ExtraVars != `{"foo":"override"}` {
-		t.Fatalf("expected overridden extra_vars, got %s", capturedSpec.ExtraVars)
+	if got := recvRunSpec(t, specs); got.ExtraVars != `{"foo":"override"}` {
+		t.Fatalf("expected overridden extra_vars, got %s", got.ExtraVars)
+	}
+}
+
+// recvRunSpec waits for the next run spec a fake runner handed over, with a bound that only guards against a hang.
+func recvRunSpec(t *testing.T, specs <-chan ansible.RunSpec) ansible.RunSpec {
+	t.Helper()
+	select {
+	case spec := <-specs:
+		return spec
+	case <-time.After(10 * time.Second):
+		t.Fatal("the ansible run never started")
+		return ansible.RunSpec{}
 	}
 }
 
