@@ -125,7 +125,7 @@ func (m *Manager) StartTransfer(srcHostID int64, srcPath string, dstHostID int64
 
 	go m.runTransfer(ctx, job, srcHost, dstHost)
 
-	return job, nil
+	return m.snapshot(job), nil
 }
 
 // register assigns an ID, makes the job visible in the job list and returns the context that CancelTransfer cancels.
@@ -233,7 +233,7 @@ func (m *Manager) StartS3Upload(srcHostID int64, srcPath string, accountID int64
 	}
 	ctx := m.register(job)
 	go m.runS3Upload(ctx, job, srcHost, cfg, keyPrefix)
-	return job, nil
+	return m.snapshot(job), nil
 }
 
 func (m *Manager) runS3Upload(ctx context.Context, job *TransferJob, srcHost *store.Host, cfg s3.Config, keyPrefix string) {
@@ -481,13 +481,15 @@ func (m *Manager) CancelTransfer(id int64) error {
 	return nil
 }
 
+// ListJobs returns snapshots: runTransfer keeps writing the live jobs under m.mu, so callers
+// (the HTTP JSON encoder among them) must never read the live struct.
 func (m *Manager) ListJobs() []*TransferJob {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	var list []*TransferJob
 	for _, id := range m.jobOrder {
 		if j, ok := m.jobs[id]; ok {
-			list = append(list, j)
+			list = append(list, snapshotJob(j))
 		}
 	}
 	return list
@@ -496,7 +498,25 @@ func (m *Manager) ListJobs() []*TransferJob {
 func (m *Manager) GetJob(id int64) *TransferJob {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.jobs[id]
+	j, ok := m.jobs[id]
+	if !ok {
+		return nil
+	}
+	return snapshotJob(j)
+}
+
+// snapshot takes m.mu.RLock and copies the job; the copy carries no cancel handle.
+func (m *Manager) snapshot(j *TransferJob) *TransferJob {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return snapshotJob(j)
+}
+
+// snapshotJob copies a job; the caller must hold m.mu.
+func snapshotJob(j *TransferJob) *TransferJob {
+	cp := *j
+	cp.cancelFunc = nil
+	return &cp
 }
 
 type countingWriter struct {
