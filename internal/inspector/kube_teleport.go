@@ -21,13 +21,27 @@ func (ins *Inspector) TeleportAccess(c *store.KubeCluster) (kubeconfig, kubeCont
 	return ins.teleportAccess(c)
 }
 
-// isTeleportTarget reports whether hostID addresses a cluster synced from a Teleport profile.
-func (ins *Inspector) isTeleportTarget(hostID int64) bool {
+// TeleportSessionError reports that a Teleport session expired. ProfileID names the profile to log in again.
+type TeleportSessionError struct {
+	ProfileID int64
+}
+
+func (e *TeleportSessionError) Error() string {
+	return "teleport session expired: log in again for this profile"
+}
+
+func (e *TeleportSessionError) Unwrap() error { return teleport.ErrTeleportSessionExpired }
+
+// teleportProfileOf returns the Teleport profile of hostID, when hostID addresses a cluster synced from one.
+func (ins *Inspector) teleportProfileOf(hostID int64) (int64, bool) {
 	if !IsKubeClusterTarget(hostID) {
-		return false
+		return 0, false
 	}
 	c, err := ins.getClusterTarget(hostID)
-	return err == nil && c.SourceType == store.KubeSourceTeleport
+	if err != nil || c.SourceType != store.KubeSourceTeleport {
+		return 0, false
+	}
+	return c.TeleportProfileID, true
 }
 
 // teleportAccess returns the isolated kubeconfig file and the context of a Teleport cluster. A missing file
@@ -48,7 +62,7 @@ func (ins *Inspector) teleportAccess(c *store.KubeCluster) (kubeconfig, kubeCont
 	}
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
-			return "", "", fmt.Errorf("no isolated kubeconfig for this profile: %w", teleport.ErrTeleportSessionExpired)
+			return "", "", &TeleportSessionError{ProfileID: c.TeleportProfileID}
 		}
 		return "", "", fmt.Errorf("stat isolated kubeconfig: %w", err)
 	}
@@ -80,11 +94,11 @@ func (ins *Inspector) clusterRunner(c *store.KubeCluster) (sshrunner.Runner, fun
 
 // teleportExpiredError returns the expired-session error when a failed kubectl run says the Teleport certificate
 // was rejected. It returns nil for every other failure, which keeps its own message.
-func teleportExpiredError(stdout, stderr string) error {
+func teleportExpiredError(profileID int64, stdout, stderr string) error {
 	if !teleport.IsSessionExpiredOutput(stderr + "\n" + stdout) {
 		return nil
 	}
-	return fmt.Errorf("kube command: %w", teleport.ErrTeleportSessionExpired)
+	return &TeleportSessionError{ProfileID: profileID}
 }
 
 // newTeleportKubeRunner runs commands against an existing isolated kubeconfig. Close removes nothing: the file

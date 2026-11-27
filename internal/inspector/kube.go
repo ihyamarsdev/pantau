@@ -92,8 +92,10 @@ func (ins *Inspector) kubeExec(hostID int64, body string, timeout time.Duration)
 	}
 	defer runner.Close()
 	stdout, stderr, exitCode, err = runner.ExecTimeout(wrap(body), timeout)
-	if err == nil && exitCode != 0 && ins.isTeleportTarget(hostID) {
-		err = teleportExpiredError(stdout, stderr)
+	if err == nil && exitCode != 0 {
+		if profileID, ok := ins.teleportProfileOf(hostID); ok {
+			err = teleportExpiredError(profileID, stdout, stderr)
+		}
 	}
 	return stdout, stderr, exitCode, err
 }

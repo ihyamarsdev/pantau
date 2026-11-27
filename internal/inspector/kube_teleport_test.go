@@ -31,12 +31,19 @@ func TestTeleportExpiredError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			err := teleportExpiredError(tt.stdout, tt.stderr)
+			err := teleportExpiredError(7, tt.stdout, tt.stderr)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("teleportExpiredError() = %v, wantErr %v", err, tt.wantErr)
 			}
-			if tt.wantErr && !errors.Is(err, teleport.ErrTeleportSessionExpired) {
+			if !tt.wantErr {
+				return
+			}
+			if !errors.Is(err, teleport.ErrTeleportSessionExpired) {
 				t.Fatalf("error %v does not wrap ErrTeleportSessionExpired", err)
+			}
+			var se *TeleportSessionError
+			if !errors.As(err, &se) || se.ProfileID != 7 {
+				t.Fatalf("error %v does not carry profile 7", err)
 			}
 		})
 	}

@@ -106,6 +106,11 @@ func (m *Manager) tsh() (string, error) {
 	return LocateTSH(m.tshOverride, nil)
 }
 
+// TSHPath reports the tsh binary Pantau would run, or ErrTSHNotInstalled. The UI uses it to show detection status.
+func (m *Manager) TSHPath() (string, error) {
+	return m.tsh()
+}
+
 // run executes tsh with a deadline. A non-zero exit is returned as a Result, not an error.
 func (m *Manager) run(ctx context.Context, timeout time.Duration, p Profile, kubeconfig string, args ...string) (Result, error) {
 	bin, err := m.tsh()
