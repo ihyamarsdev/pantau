@@ -59,6 +59,8 @@ type Inspector struct {
 	sudoRetryAt   map[int64]time.Time
 	onInspectMu   sync.RWMutex
 	onInspectDone func(int64)
+	// teleportDir is the data directory; Teleport kubeconfigs live in its teleport/ subfolder. Set once at startup.
+	teleportDir string
 }
 
 // SetOnInspectDone registers a callback invoked after a host inspection persists its status.

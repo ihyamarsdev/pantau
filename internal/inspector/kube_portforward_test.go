@@ -12,6 +12,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"pantau/internal/teleport"
 )
 
 func TestKubeForwardTargetValidate(t *testing.T) {
@@ -160,6 +162,66 @@ func TestStartLocalKubectlForwardRejectsInvalidTarget(t *testing.T) {
 	bad := KubeForwardTarget{Kind: "service", Name: "web;rm", Namespace: "default", RemotePort: 80}
 	if _, _, err := StartLocalKubectlForward(context.Background(), "/bin/false", "cfg", bad, "127.0.0.1", "1:80"); err == nil {
 		t.Fatal("an invalid target started a process")
+	}
+}
+
+// A Teleport forward names its isolated kubeconfig and context on the kubectl argv, before the subcommand, and
+// stopping it must not remove that file.
+func TestStartTeleportKubectlForwardNamesIsolatedFileAndContext(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake kubectl is a shell script")
+	}
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args")
+	kubeconfig := filepath.Join(dir, "profile-7.yaml")
+	if err := os.WriteFile(kubeconfig, []byte("apiVersion: v1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	script := "#!/bin/sh\n" +
+		"printf '%s\\n' \"$@\" > " + shellQuoteForTest(argsFile) + "\n" +
+		"for a in \"$@\"; do\n" +
+		"  case \"$a\" in\n" +
+		"    *:*) echo \"Forwarding from 127.0.0.1:${a%%:*} -> ${a#*:}\";;\n" +
+		"  esac\n" +
+		"done\n" +
+		"exec sleep 600\n"
+	kubectl := filepath.Join(dir, "kubectl")
+	if err := os.WriteFile(kubectl, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	port := freeLocalPort(t)
+
+	target := KubeForwardTarget{Kind: "service", Name: "web", Namespace: "default", RemotePort: 80}
+	fwd, _, err := StartTeleportKubectlForward(context.Background(), kubectl, kubeconfig, "tc/prod-eu", target,
+		"127.0.0.1", strconv.Itoa(port)+":80")
+	if err != nil {
+		t.Fatalf("StartTeleportKubectlForward: %v", err)
+	}
+
+	raw, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
+	want := []string{"--kubeconfig", kubeconfig, "--context", "tc/prod-eu",
+		"port-forward", "--address", "127.0.0.1", "svc/web", strconv.Itoa(port) + ":80", "-n", "default"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("kubectl argv = %q, want %q", got, want)
+	}
+
+	fwd.Stop()
+	if _, err := os.Stat(kubeconfig); err != nil {
+		t.Fatalf("Stop removed the isolated kubeconfig: %v", err)
+	}
+}
+
+func TestStartTeleportKubectlForwardRejectsFlagLikeContext(t *testing.T) {
+	t.Parallel()
+	target := KubeForwardTarget{Kind: "service", Name: "web", Namespace: "default", RemotePort: 80}
+	_, _, err := StartTeleportKubectlForward(context.Background(), "/bin/false", "/tmp/x.yaml", "-o", target, "127.0.0.1", "1:80")
+	if !errors.Is(err, teleport.ErrInvalidInput) {
+		t.Fatalf("error = %v, want ErrInvalidInput", err)
 	}
 }
 

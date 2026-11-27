@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"pantau/internal/gwupdate"
+	"pantau/internal/teleport"
 )
 
 // forwardStartTimeout bounds how long a new kubectl port-forward may take to start listening.
@@ -92,7 +93,29 @@ func StartLocalKubectlForward(ctx context.Context, kubectlPath, kubeconfig strin
 	if err != nil {
 		return nil, "", err
 	}
-	cmd := exec.Command(kubectlPath, t.Args(bind, mapping)...)
+	return startKubectlForward(ctx, kubectlPath, cfgPath, "", cleanup, t, bind, mapping)
+}
+
+// StartTeleportKubectlForward runs kubectl port-forward against a Teleport cluster's isolated kubeconfig file.
+// The file is not copied or removed: --kubeconfig and --context name it on the argv, so the forward cannot
+// fall back to another cluster or to ~/.kube/config.
+func StartTeleportKubectlForward(ctx context.Context, kubectlPath, kubeconfigPath, kubeContext string, t KubeForwardTarget, bind, mapping string) (*KubectlForward, string, error) {
+	if err := t.Validate(); err != nil {
+		return nil, "", err
+	}
+	if err := teleport.ValidateContextName(kubeContext); err != nil {
+		return nil, "", err
+	}
+	return startKubectlForward(ctx, kubectlPath, kubeconfigPath, kubeContext, func() {}, t, bind, mapping)
+}
+
+// startKubectlForward starts kubectl. kubeContext is empty for a kubeconfig copy, which kubectl reads from KUBECONFIG.
+func startKubectlForward(ctx context.Context, kubectlPath, cfgPath, kubeContext string, cleanup func(), t KubeForwardTarget, bind, mapping string) (*KubectlForward, string, error) {
+	args := t.Args(bind, mapping)
+	if kubeContext != "" {
+		args = append([]string{"--kubeconfig", cfgPath, "--context", kubeContext}, args...)
+	}
+	cmd := exec.Command(kubectlPath, args...)
 	cmd.Env = append(os.Environ(), "PATH="+gwupdate.PrependPath(os.Getenv("PATH")), "KUBECONFIG="+cfgPath)
 	setProcessGroup(cmd)
 	stdout, err := cmd.StdoutPipe()

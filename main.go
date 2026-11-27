@@ -397,6 +397,8 @@ func main() {
 	runnerFactory := sshrunner.DefaultFactory()
 	dispatcher := notify.New(db)
 	ins := inspector.New(db, runnerFactory, dispatcher)
+	// Teleport kubeconfigs are isolated under <data>/teleport, next to the database.
+	ins.SetTeleportDataDir(filepath.Dir(dbPath))
 
 	// Start background inspection worker
 	ctx, cancel := context.WithCancel(context.Background())
