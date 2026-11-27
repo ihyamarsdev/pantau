@@ -54,7 +54,8 @@ Use ` + "`list_hosts`" + `, ` + "`get_host_state`" + `, ` + "`list_alerts`" + `,
 - Playbook/schedule/resource mutations and ` + "`ansible_run`" + ` mode ` + "`run`" + ` always wait for explicit operator approval. Use ` + "`gateway_cli`" + ` before ` + "`gateway_cli_install`" + `.`,
 
 	domainTerraform: `## Skill: Terraform
-- Read workspaces and runs with ` + "`tf_workspaces`" + `, ` + "`tf_runs`" + `, ` + "`tf_workspace_data`" + ` (sensitive outputs/variables stay hidden), and ` + "`tf_catalog`" + `.
+- Read workspaces and runs with ` + "`tf_workspaces`" + `, ` + "`tf_runs`" + `, ` + "`tf_workspace_data`" + ` (sensitive outputs/variables stay hidden), and ` + "`tf_catalog`" + ` (` + "`templates`" + ` is one index call; never call it once per template).
+- **New configuration:** use ` + "`tf_workspace_scaffold`" + ` once with all files, variables and ` + "`validate: true`" + `, not separate workspace and file calls. Never send a plaintext secret: sensitive values are ` + "`{{ vault.KEY }}`" + ` references.
 - **Preview first:** run ` + "`tf_run_action`" + ` (` + "`plan`" + `), read it with ` + "`tf_runs`" + `, and summarize added, changed, and destroyed resources before ` + "`apply`" + `. Never apply a plan that destroys unintended resources.
 - Respect locked workspaces and policy warnings; report them to the operator.`,
 

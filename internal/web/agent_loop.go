@@ -262,40 +262,50 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 			}
 			return true
 		}
-		// The calls of one batch run one after the other; a call that did not run still gets a result, so the
-		// history stays valid and the batch can be kept.
+		// Pass 1, in call order: every call is announced and the turn guard decides it. A call that does not run
+		// still gets a result, so the history stays valid and the batch can be kept.
+		plans := make([]agentPlanned, len(calls))
 		for i, tc := range calls {
+			args, argErr := agentToolArgs(tc.Args)
+			tier := riskTierOfTool(tc.Name, args)
+			p := agentPlanned{
+				tc: tc, args: args, argErr: argErr, label: agentToolLabel(args),
+				domain: string(agentToolDomain(tc.Name)), tier: string(tier),
+				// set_tool_domain writes the turn's shared domain, so it never runs beside another call.
+				parallel: tier == riskReadOnly && tc.Name != "set_tool_domain" && argErr == nil,
+			}
+			sse.toolEvent(agentToolEvent{Tool: tc.Name, Label: p.label, Status: "running", ToolCallID: tc.ID, Domain: p.domain, RiskTier: p.tier})
+			p.refuse, p.hint = guard.before(tc.Name, tier == riskReadOnly)
+			plans[i] = p
+		}
+		// Pass 2: a run of independent read-only calls executes at once (bounded); every other call runs alone,
+		// behind the approval gate where it needs one. Results are appended in call order either way.
+		for i := 0; i < len(plans); {
 			if err := rctx.Context().Err(); err != nil {
-				for _, rest := range calls[i:] {
-					history = append(history, llmMessage{Role: llmRoleTool, ToolCallID: rest.ID, Text: "not run: the chat was cancelled", IsError: true})
+				for _, rest := range plans[i:] {
+					history = append(history, llmMessage{Role: llmRoleTool, ToolCallID: rest.tc.ID, Text: "not run: the chat was cancelled", IsError: true})
 				}
 				saved = append([]llmMessage{}, history...)
 				sse.errorEvent("the chat was cancelled")
 				return false
 			}
-			args, argErr := agentToolArgs(tc.Args)
-			label := agentToolLabel(args)
-			toolDomainName := string(agentToolDomain(tc.Name))
-			riskTierName := string(riskTierOfTool(tc.Name, args))
-			sse.toolEvent(agentToolEvent{Tool: tc.Name, Label: label, Status: "running", ToolCallID: tc.ID, Domain: toolDomainName, RiskTier: riskTierName})
-			callStart := time.Now()
-			refuse, hint := guard.before(tc.Name, riskTierOfTool(tc.Name, args) == riskReadOnly)
-			text, isErr := "", true
-			switch {
-			case argErr != nil:
-				text = "the tool arguments are not valid JSON"
-			case refuse != "":
-				text = refuse
-			default:
-				text, isErr = s.callAgentTool(rctx, tc.Name, args)
+			end := i + 1
+			if plans[i].parallel {
+				for end < len(plans) && plans[end].parallel {
+					end++
+				}
 			}
-			status := "done"
-			if isErr {
-				status = "error"
+			outs := s.execPlanned(rctx, plans[i:end])
+			for k, p := range plans[i:end] {
+				status := "done"
+				if outs[k].isErr {
+					status = "error"
+				}
+				sse.toolEvent(agentToolEvent{Tool: p.tc.Name, Label: p.label, Status: status, ToolCallID: p.tc.ID, Domain: p.domain, RiskTier: p.tier, DurationMS: outs[k].durationMS})
+				// The hint follows truncation so a long result cannot cut it off.
+				history = append(history, llmMessage{Role: llmRoleTool, ToolCallID: p.tc.ID, ToolName: p.tc.Name, Text: truncateToolResult(p.tc.Name, outs[k].text) + p.hint, IsError: outs[k].isErr})
 			}
-			sse.toolEvent(agentToolEvent{Tool: tc.Name, Label: label, Status: status, ToolCallID: tc.ID, Domain: toolDomainName, RiskTier: riskTierName, DurationMS: time.Since(callStart).Milliseconds()})
-			// The hint follows truncation so a long result cannot cut it off.
-			history = append(history, llmMessage{Role: llmRoleTool, ToolCallID: tc.ID, ToolName: tc.Name, Text: truncateToolResult(tc.Name, text) + hint, IsError: isErr})
+			i = end
 		}
 		// The batch is complete: it is kept even if the turn fails later.
 		saved = append([]llmMessage{}, history...)
@@ -308,6 +318,75 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 	}
 	sse.errorEvent(fmt.Sprintf("the agent stopped after %d steps without finishing the answer", agentMaxSteps))
 	return false
+}
+
+// agentParallelReadMax bounds how many read-only tool calls of one model batch run at the same time.
+const agentParallelReadMax = 4
+
+// agentPlanned is one tool call of a model batch, decided before anything runs.
+type agentPlanned struct {
+	tc       llmToolCall
+	args     map[string]interface{}
+	argErr   error
+	label    string
+	domain   string
+	tier     string
+	refuse   string // non-empty: the guard refused the call; this is its result
+	hint     string // appended to the result of a call that runs
+	parallel bool   // a read-only call that may run beside other read-only calls
+}
+
+// agentOutcome is what one planned call produced.
+type agentOutcome struct {
+	text       string
+	isErr      bool
+	durationMS int64
+}
+
+// execPlanned runs a segment of planned calls. A segment of parallel calls runs concurrently, at most
+// agentParallelReadMax at once; the outcomes keep the order of the segment. A panicking tool becomes an error
+// result, since a panic in a worker goroutine would otherwise take the whole process down.
+func (s *Server) execPlanned(r *http.Request, seg []agentPlanned) []agentOutcome {
+	outs := make([]agentOutcome, len(seg))
+	run := func(k int) {
+		started := time.Now()
+		p := seg[k]
+		switch {
+		case p.argErr != nil:
+			outs[k] = agentOutcome{text: "the tool arguments are not valid JSON", isErr: true}
+		case p.refuse != "":
+			outs[k] = agentOutcome{text: p.refuse, isErr: true}
+		default:
+			text, isErr := s.callAgentTool(r, p.tc.Name, p.args)
+			outs[k] = agentOutcome{text: text, isErr: isErr}
+		}
+		outs[k].durationMS = time.Since(started).Milliseconds()
+	}
+	if len(seg) == 1 || !seg[0].parallel {
+		for k := range seg {
+			run(k)
+		}
+		return outs
+	}
+	sem := make(chan struct{}, agentParallelReadMax)
+	var wg sync.WaitGroup
+	for k := range seg {
+		sem <- struct{}{}
+		wg.Add(1)
+		go func(k int) {
+			defer func() {
+				if rec := recover(); rec != nil {
+					logger.Error("agent", seg[k].tc.Name, fmt.Sprintf("tool panicked: %v", rec))
+					outs[k] = agentOutcome{text: "the tool failed unexpectedly", isErr: true}
+				}
+				<-sem
+				wg.Done()
+			}()
+			run(k)
+		}(k)
+	}
+	wg.Wait()
+	return outs
 }
 
 // agentPromptTokens is the prompt size of a call. Providers that ignore stream_options report no usage, so

@@ -244,6 +244,7 @@ covers it.
   discard (a finished plan that can never be applied), apply (a finished plan in status awaiting_approval). Read
   the plan with `tf_runs` before you apply it and summarise what is added, changed and destroyed. Destroy and apply
   change real infrastructure and always ask.
+- `tf_workspace_scaffold` — one inline workspace in one call and one approval: its files, its variables and an optional `validate` (sensitive values are `{{ vault.KEY }}` references only).
 - `tf_workspace_data` — the stored data of a workspace: state, outputs (sensitive ones stay hidden), variables
   (sensitive values are never returned), versions, drift, diff, audit, and the changes: write_file, delete_file,
   set_variable, delete_variable, state_op (state rm, state mv, import), state_import (a whole state file as a new

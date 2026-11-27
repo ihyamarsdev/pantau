@@ -3,6 +3,8 @@ package web
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -491,6 +493,168 @@ func TestIacTerraformCatalog(t *testing.T) {
 	list, isErr := callTool(t, srv, "tf_catalog", `{"action":"policies"}`)
 	if isErr || !strings.Contains(list, "no-public-bucket") {
 		t.Fatalf("policy list: %s", list)
+	}
+}
+
+// create stores every metadata field in its one call, and the answer echoes them, so no follow-up update is needed.
+func TestIacTFWorkspaceCreateStoresAndEchoesMetadata(t *testing.T) {
+	t.Parallel()
+	srv, db, _, _ := setupTerraformTestServer(t)
+	_ = db.SetSetting("agent_enabled", "1")
+	_ = db.SetTerraformEnabled(true)
+
+	args := `{"action":"create","name":"meta-ws","description":"simple gcp dev","environment":"dev","group_name":"gcp","tags":["gcp","dev"],"files":{"main.tf":"variable \"x\" {}\n"}}`
+	done := make(chan string, 1)
+	go func() {
+		out, _ := callTool(t, srv, "tf_workspace_action", args)
+		done <- out
+	}()
+	if _, ok := iacApprove(t, srv, true); !ok {
+		t.Fatal("the create never became pending")
+	}
+	out := <-done
+	for _, want := range []string{"simple gcp dev", `"environment":"dev"`, `"group_name":"gcp"`, `"dev"`} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("create answer lacks %q: %s", want, out)
+		}
+	}
+	ws, err := db.GetTFWorkspace(dbWorkspaceID(t, srv, "meta-ws"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ws.Description != "simple gcp dev" || ws.Environment != "dev" || ws.GroupName != "gcp" || !strings.Contains(ws.Tags, `"dev"`) {
+		t.Fatalf("metadata not stored: %+v", ws)
+	}
+}
+
+// A refused scaffold never reaches the operator: traversal, absolute paths, plaintext secrets and the disabled
+// gate are all refused before the approval gate.
+func TestIacTFWorkspaceScaffoldRefusesBeforeApproval(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		disabled bool
+		args     string
+		want     string
+	}{
+		{"traversal", false, `{"name":"x","files":{"../evil.tf":"output \"a\" {}"}}`, "invalid file name"},
+		{"absolute", false, `{"name":"x","files":{"/etc/evil.tf":"output \"a\" {}"}}`, "invalid file name"},
+		{"plaintext secret", false, `{"name":"x","files":{"main.tf":"output \"a\" {}"},"variables":[{"key":"token","value":"s3cr3t","sensitive":true}]}`, "reference"},
+		{"gate disabled", true, `{"name":"x","files":{"main.tf":"output \"a\" {}"}}`, "disabled"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			srv, db, _, _ := setupTerraformTestServer(t)
+			_ = db.SetSetting("agent_enabled", "1")
+			_ = db.SetTerraformEnabled(!tc.disabled)
+			out, isErr := callTool(t, srv, "tf_workspace_scaffold", tc.args)
+			if !isErr || !strings.Contains(out, tc.want) {
+				t.Fatalf("want a refusal mentioning %q, got %q (error %v)", tc.want, out, isErr)
+			}
+			if n := pendingCount(srv); n != 0 {
+				t.Fatalf("a refused scaffold asked the operator (%d pending)", n)
+			}
+		})
+	}
+}
+
+// fakeTerraform puts a stub terraform on PATH: init succeeds and validate prints a clean result. It sets the
+// environment, so the test that uses it must not run in parallel.
+func fakeTerraform(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	script := "#!/bin/sh\ncase \"$1\" in\n  validate) echo '{\"valid\":true,\"error_count\":0,\"warning_count\":0,\"diagnostics\":[]}' ;;\n  *) exit 0 ;;\nesac\n"
+	if err := os.WriteFile(filepath.Join(dir, "terraform"), []byte(script), 0o700); err != nil { // #nosec G306 -- a test stub that must be executable
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+}
+
+// A scaffold writes four files, two variables and runs validation for one approval.
+func TestIacTFWorkspaceScaffoldOneApproval(t *testing.T) {
+	fakeTerraform(t)
+	srv, db, _, _ := setupTerraformTestServer(t)
+	_ = db.SetSetting("agent_enabled", "1")
+	_ = db.SetTerraformEnabled(true)
+
+	args := `{"name":"gcp-dev","environment":"dev","description":"simple gcp workspace",` +
+		`"files":{"versions.tf":"terraform {}\n","variables.tf":"variable \"region\" {}\n",` +
+		`"main.tf":"resource \"terraform_data\" \"x\" {}\n","outputs.tf":"output \"id\" { value = 1 }\n"},` +
+		`"variables":[{"key":"region","value":"asia-southeast2"},{"key":"gcp_token","value":"{{ vault.GCP_TOKEN }}","sensitive":true}],` +
+		`"validate":true}`
+	done := make(chan string, 1)
+	go func() {
+		out, _ := callTool(t, srv, "tf_workspace_scaffold", args)
+		done <- out
+	}()
+	if _, ok := iacApprove(t, srv, true); !ok {
+		t.Fatal("the scaffold never became pending")
+	}
+	out := <-done
+	if strings.Contains(out, "validate_error") || !strings.Contains(out, "outputs.tf") {
+		t.Fatalf("scaffold answer: %s", out)
+	}
+	if n := pendingCount(srv); n != 0 {
+		t.Fatalf("the scaffold asked more than once (%d still pending)", n)
+	}
+	ws, err := db.GetTFWorkspace(dbWorkspaceID(t, srv, "gcp-dev"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ws.Description != "simple gcp workspace" || ws.Environment != "dev" {
+		t.Fatalf("metadata not stored: %+v", ws)
+	}
+	if !strings.Contains(ws.Files, "outputs.tf") || !strings.Contains(ws.Files, "versions.tf") {
+		t.Fatalf("files not stored: %s", ws.Files)
+	}
+	vars, err := db.ListTFVariables(ws.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(vars) != 2 {
+		t.Fatalf("two variables expected, got %d", len(vars))
+	}
+}
+
+// The catalog index comes back in one answer, is compact, asks nobody, and the detail mode returns one template.
+func TestIacTerraformCatalogTemplateIndex(t *testing.T) {
+	t.Parallel()
+	srv, db, _, _ := setupTerraformTestServer(t)
+	_ = db.SetSetting("agent_enabled", "1")
+	_ = db.SetTerraformEnabled(true)
+
+	out, isErr := callTool(t, srv, "tf_catalog", `{"action":"templates"}`)
+	if isErr {
+		t.Fatalf("index failed: %s", out)
+	}
+	if len(out) > 3*1024 {
+		t.Fatalf("index is %d bytes, want under 3 KB", len(out))
+	}
+	var idx struct {
+		Count     int                      `json:"count"`
+		Templates []map[string]interface{} `json:"templates"`
+	}
+	if err := json.Unmarshal([]byte(out), &idx); err != nil {
+		t.Fatalf("index is not JSON: %v", err)
+	}
+	if idx.Count == 0 || idx.Count != len(idx.Templates) {
+		t.Fatalf("bad count: %d for %d entries", idx.Count, len(idx.Templates))
+	}
+	for _, key := range []string{"id", "name", "provider", "category", "summary", "tags"} {
+		if _, ok := idx.Templates[0][key]; !ok {
+			t.Fatalf("index entry lacks %q: %v", key, idx.Templates[0])
+		}
+	}
+	if strings.Contains(out, `"files"`) {
+		t.Fatal("the index must not carry template files")
+	}
+	detail, isErr := callTool(t, srv, "tf_catalog", `{"action":"templates","template_id":"hello-world"}`)
+	if isErr || !strings.Contains(detail, `"files"`) {
+		t.Fatalf("detail of one template: %s", detail)
+	}
+	if n := pendingCount(srv); n != 0 {
+		t.Fatalf("reads asked the operator (%d pending)", n)
 	}
 }
 

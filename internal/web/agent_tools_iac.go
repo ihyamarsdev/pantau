@@ -6,8 +6,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+
+	"pantau/internal/terraform"
 )
 
 // Agent tools for the orchestration features: Ansible playbooks and schedules, Terraform workspaces and their
@@ -49,10 +53,12 @@ var iacTools = []agentTool{
 		InputSchema: schema([]string{"action"}, map[string]interface{}{"action": map[string]interface{}{"type": "string", "enum": []string{"create", "update", "delete", "lock", "unlock", "force_unlock", "drift_check", "vcs_test"}}, "workspace_id": pWS, "name": str, "description": str, "environment": str, "group_name": str, "tags": map[string]interface{}{"type": "array", "items": str}, "files": map[string]interface{}{"type": "object", "description": "inline workspace files, name -> content"}, "source": map[string]interface{}{"type": "string", "enum": []string{"inline", "git"}}, "git_url": str, "git_branch": str, "git_path": str, "git_key_id": pKeyID, "drift_interval_minutes": map[string]interface{}{"type": "integer"}, "plan_interval_minutes": map[string]interface{}{"type": "integer"}, "auto_apply": map[string]interface{}{"type": "boolean"}, "reason": str}), run: toolTFWorkspaceAction},
 	{Name: "tf_run_action", Description: "Act on a Terraform run: action = plan (starts a plan; nothing is changed), refresh (refreshes the state), destroy (plans a destroy; nothing is changed yet), cancel (stops a running run), discard (drops a finished plan, so it can never be applied), apply (applies a finished plan in status awaiting_approval; comment says why). destroy and apply change real infrastructure and always wait for explicit operator approval, every time: plan first and read the result with tf_runs.", gate: gateInfra,
 		InputSchema: schema([]string{"action"}, map[string]interface{}{"action": map[string]interface{}{"type": "string", "enum": []string{"plan", "refresh", "destroy", "cancel", "discard", "apply"}}, "run_id": pRunID, "workspace_id": pWS, "comment": map[string]interface{}{"type": "string", "description": "why, at least 3 characters (apply, discard)"}, "message": str, "targets": map[string]interface{}{"type": "array", "items": str}, "replace": map[string]interface{}{"type": "array", "items": str}}), run: toolTFRunAction},
+	{Name: "tf_workspace_scaffold", Description: "Scaffold an inline Terraform workspace in ONE call and ONE approval: it creates the workspace (name) or rewrites an existing one (workspace_id) with all its files at once, sets its variables, and with validate: true runs terraform init -backend=false and terraform validate. Use this for new configurations instead of separate tf_workspace_action and tf_workspace_data calls. File names are plain names (no '..', no '/'). A sensitive variable must be a {{ vault.KEY }} reference, never a plaintext secret. The operator approves once for the whole batch; nothing is applied.",
+		InputSchema: schema([]string{"files"}, map[string]interface{}{"workspace_id": pWS, "name": str, "description": str, "environment": str, "group_name": str, "tags": map[string]interface{}{"type": "array", "items": str}, "files": map[string]interface{}{"type": "object", "description": "all files of the workspace, name -> content (e.g. versions.tf, variables.tf, main.tf, outputs.tf)"}, "variables": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "object"}, "description": "each {key, value, category: terraform|env, sensitive}; a sensitive value must be {{ vault.KEY }}"}, "validate": map[string]interface{}{"type": "boolean"}}), run: toolTFWorkspaceScaffold},
 	{Name: "tf_workspace_data", Description: "The stored data of a Terraform workspace: action = state (the resources in the state), outputs (the outputs; sensitive ones stay hidden), variables (the variables; sensitive values are never returned), versions (the saved state versions), drift (the last drift check), diff (the difference between two state versions), audit (the Terraform log), write_file or delete_file (the files of an inline workspace), set_variable or delete_variable (a variable), state_op (state rm, state mv or import: rewrites the state under the workspace lock), state_import (stores a whole state file as a new version), rollback (restores an older state version), fmt or validate (checks the files; fmt returns the formatted files, validate runs terraform validate). Every action but the reads waits for explicit operator approval, every time; a sensitive variable value must not be sent to the model.",
 		InputSchema: schema([]string{"workspace_id", "action"}, map[string]interface{}{"workspace_id": pWS, "action": map[string]interface{}{"type": "string", "enum": []string{"state", "outputs", "variables", "versions", "drift", "diff", "audit", "write_file", "delete_file", "set_variable", "delete_variable", "state_op", "state_import", "rollback", "fmt", "validate"}}, "path": str, "content": str, "files": map[string]interface{}{"type": "object", "description": "for fmt and validate: the files of the workspace"}, "key": str, "value": str, "category": map[string]interface{}{"type": "string", "enum": []string{"terraform", "env"}}, "sensitive": map[string]interface{}{"type": "boolean"}, "description": str, "op": map[string]interface{}{"type": "string", "enum": []string{"rm", "mv", "import"}}, "address": str, "to": str, "import_id": str, "version_id": map[string]interface{}{"type": "integer"}, "from_version_id": map[string]interface{}{"type": "integer", "description": "for diff: the older state version id"}, "to_version_id": map[string]interface{}{"type": "integer", "description": "for diff: the newer state version id"}, "limit": map[string]interface{}{"type": "integer"}}), run: toolTFWorkspaceData},
-	{Name: "tf_catalog", Description: "The Terraform catalog of the Pantau server: action = policies (the plan policies), modules (the private modules), varsets (the variable sets), templates (the built-in workspace templates), registry_modules or registry_providers (the public registry), status (the installed binaries), create_policy, update_policy, delete_policy (a plan policy), create_module, delete_module (a private module), create_varset, delete_varset (a variable set), varset_variables (the variables of a variable set), set_varset_variable, delete_varset_variable (one variable of a variable set), set_varset_workspaces (the workspaces a variable set applies to), cloud_accounts (the cloud accounts of the catalog; their secrets are never shown), importable_accounts (the Pantau accounts a cloud account can copy its credentials from), create_cloud_account (imports the credentials from an existing Pantau account: cloudflare or kubernetes, by id), update_cloud_account (the name, description and non-secret fields), delete_cloud_account, test_cloud_account (tests the stored credentials). Every action but the reads waits for explicit operator approval, every time.",
-		InputSchema: schema([]string{"action"}, map[string]interface{}{"action": map[string]interface{}{"type": "string", "enum": []string{"policies", "modules", "varsets", "templates", "registry_modules", "registry_providers", "status", "create_policy", "update_policy", "delete_policy", "create_module", "delete_module", "create_varset", "delete_varset", "varset_variables", "set_varset_variable", "delete_varset_variable", "set_varset_workspaces", "cloud_accounts", "importable_accounts", "create_cloud_account", "update_cloud_account", "delete_cloud_account", "test_cloud_account"}}, "policy_id": map[string]interface{}{"type": "integer"}, "module_id": map[string]interface{}{"type": "integer"}, "varset_id": map[string]interface{}{"type": "integer"}, "name": str, "description": str, "kind": str, "params": map[string]interface{}{"type": "object"}, "enforcement": str, "enabled": map[string]interface{}{"type": "boolean"}, "workspace_id": pWS, "provider": str, "global": map[string]interface{}{"type": "boolean"}, "query": str, "limit": map[string]interface{}{"type": "integer"}, "variable_id": map[string]interface{}{"type": "integer"}, "workspace_ids": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "integer"}}, "account_id": map[string]interface{}{"type": "integer"}, "import_type": map[string]interface{}{"type": "string", "enum": []string{"cloudflare", "kubernetes"}}, "import_id": map[string]interface{}{"type": "integer", "description": "the Pantau account the credentials are copied from"}}), run: toolTFCatalog},
+	{Name: "tf_catalog", Description: "The Terraform catalog of the Pantau server: action = policies (the plan policies), modules (the private modules), varsets (the variable sets), templates (the index of the built-in workspace templates in ONE call: id, name, provider, summary; optional query filters it; template_id returns the files of that one template; call it once, never once per template), registry_modules or registry_providers (the public registry), status (the installed binaries), create_policy, update_policy, delete_policy (a plan policy), create_module, delete_module (a private module), create_varset, delete_varset (a variable set), varset_variables (the variables of a variable set), set_varset_variable, delete_varset_variable (one variable of a variable set), set_varset_workspaces (the workspaces a variable set applies to), cloud_accounts (the cloud accounts of the catalog; their secrets are never shown), importable_accounts (the Pantau accounts a cloud account can copy its credentials from), create_cloud_account (imports the credentials from an existing Pantau account: cloudflare or kubernetes, by id), update_cloud_account (the name, description and non-secret fields), delete_cloud_account, test_cloud_account (tests the stored credentials). Every action but the reads waits for explicit operator approval, every time.",
+		InputSchema: schema([]string{"action"}, map[string]interface{}{"action": map[string]interface{}{"type": "string", "enum": []string{"policies", "modules", "varsets", "templates", "registry_modules", "registry_providers", "status", "create_policy", "update_policy", "delete_policy", "create_module", "delete_module", "create_varset", "delete_varset", "varset_variables", "set_varset_variable", "delete_varset_variable", "set_varset_workspaces", "cloud_accounts", "importable_accounts", "create_cloud_account", "update_cloud_account", "delete_cloud_account", "test_cloud_account"}}, "policy_id": map[string]interface{}{"type": "integer"}, "module_id": map[string]interface{}{"type": "integer"}, "varset_id": map[string]interface{}{"type": "integer"}, "name": str, "description": str, "kind": str, "params": map[string]interface{}{"type": "object"}, "enforcement": str, "enabled": map[string]interface{}{"type": "boolean"}, "workspace_id": pWS, "provider": str, "global": map[string]interface{}{"type": "boolean"}, "query": str, "template_id": map[string]interface{}{"type": "string", "description": "for templates: the id of one template, to get its files"}, "limit": map[string]interface{}{"type": "integer"}, "variable_id": map[string]interface{}{"type": "integer"}, "workspace_ids": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "integer"}}, "account_id": map[string]interface{}{"type": "integer"}, "import_type": map[string]interface{}{"type": "string", "enum": []string{"cloudflare", "kubernetes"}}, "import_id": map[string]interface{}{"type": "integer", "description": "the Pantau account the credentials are copied from"}}), run: toolTFCatalog},
 
 	// ---- Kubernetes: clusters
 	{Name: "kube_cluster_action", Description: "Manage a Kubernetes cluster in Pantau: action = rename (a new display name), set_mode (full, no-exec or read-only), delete (removes the cluster and its stored credentials; the cluster itself keeps running). A cluster can only be registered from a kubeconfig the operator already stored, so the agent never carries one: it can only rename, change the access mode or remove a cluster that is already registered. Every action waits for explicit operator approval, every time.", gate: gateInfra,
@@ -720,7 +726,8 @@ func toolTFWorkspaceAction(s *Server, r *http.Request, args map[string]interface
 			return "", err
 		}
 		ws, _ := m["workspace"].(map[string]interface{})
-		return jsonText(pick(ws, "id", "name", "environment", "source", "status", "auto_apply", "plan_interval_minutes"))
+		// The metadata is echoed back, so the model sees that create saved it and does not send an update.
+		return jsonText(pick(ws, "id", "name", "description", "environment", "group_name", "tags", "source", "status", "auto_apply", "plan_interval_minutes"))
 
 	case "update":
 		if id < 1 {
@@ -833,6 +840,151 @@ func toolTFWorkspaceAction(s *Server, r *http.Request, args map[string]interface
 		return jsonText(out)
 	}
 	return "", fmt.Errorf("unknown action %q", action)
+}
+
+// tfScaffoldVaultRef is the only form a sensitive variable may take in a scaffold: a blind reference the server
+// resolves, never the secret itself.
+var tfScaffoldVaultRef = regexp.MustCompile(`^\{\{\s*vault\.[A-Za-z_][A-Za-z0-9_]*\s*\}\}$`)
+
+// toolTFWorkspaceScaffold creates or rewrites an inline workspace with all its files, sets its variables and
+// optionally validates it, behind one approval. Every check that needs no approval runs before the gate, so a
+// refused request never bothers the operator.
+func toolTFWorkspaceScaffold(s *Server, r *http.Request, args map[string]interface{}) (string, error) {
+	if s.db == nil || !s.db.GetTerraformEnabled() {
+		return "", fmt.Errorf("terraform is disabled: an administrator must enable the Terraform gate first")
+	}
+	rawFiles, ok := args["files"].(map[string]interface{})
+	if !ok || len(rawFiles) == 0 {
+		return "", fmt.Errorf("files is required: a map of file name to content")
+	}
+	files := make(map[string]string, len(rawFiles))
+	for name, v := range rawFiles {
+		txt, ok := v.(string)
+		if !ok {
+			return "", fmt.Errorf("file %q must be a string", name)
+		}
+		files[name] = txt
+	}
+	if err := terraform.ValidateFiles(files); err != nil {
+		return "", err
+	}
+
+	vars := []map[string]interface{}{}
+	rawVars, _ := args["variables"].([]interface{})
+	for _, rv := range rawVars {
+		obj, _ := rv.(map[string]interface{})
+		key := argStr(obj, "key")
+		if key == "" {
+			return "", fmt.Errorf("every variable needs a key")
+		}
+		value, _ := obj["value"].(string)
+		sensitive, _ := obj["sensitive"].(bool)
+		if sensitive && !tfScaffoldVaultRef.MatchString(strings.TrimSpace(value)) {
+			return "", fmt.Errorf("sensitive variable %q must be a {{ vault.KEY }} reference, never a plaintext secret", key)
+		}
+		category := argStr(obj, "category")
+		if category == "" {
+			category = "terraform"
+		}
+		if category != "terraform" && category != "env" {
+			return "", fmt.Errorf("variable %q: category must be terraform or env", key)
+		}
+		vars = append(vars, map[string]interface{}{"key": key, "value": value, "category": category, "sensitive": sensitive})
+	}
+
+	id := argInt(args, "workspace_id")
+	body := tfWorkspaceBody(args)
+	body["files"] = files
+	fileNames := make([]string, 0, len(files))
+	for n := range files {
+		fileNames = append(fileNames, n)
+	}
+	sort.Strings(fileNames)
+	varNames := make([]string, 0, len(vars))
+	for _, v := range vars {
+		k := v["key"].(string)
+		if v["sensitive"].(bool) {
+			k += " (sensitive)"
+		}
+		varNames = append(varNames, k)
+	}
+
+	var method, path, summary string
+	if id > 0 {
+		name, locked, err := s.tfWorkspaceName(r.Context(), id)
+		if err != nil {
+			return "", err
+		}
+		if locked {
+			return "", fmt.Errorf("workspace %q is locked (another run is active or awaiting apply); check tf_runs", name)
+		}
+		method, path = http.MethodPut, fmt.Sprintf("/api/terraform/workspaces/%d", id)
+		summary = fmt.Sprintf("rewrite the Terraform workspace %q (id %d): files %s; variables %s", name, id, strings.Join(fileNames, ", "), strings.Join(varNames, ", "))
+	} else {
+		name := argStr(args, "name")
+		if name == "" {
+			return "", fmt.Errorf("name is required to create a workspace, or workspace_id to rewrite one")
+		}
+		method, path = http.MethodPost, "/api/terraform/workspaces"
+		summary = fmt.Sprintf("create the Terraform workspace %q: files %s; variables %s", name, strings.Join(fileNames, ", "), strings.Join(varNames, ", "))
+	}
+	if err := s.agentGateAs(r, 0, "Terraform", "tf_workspace_scaffold", summary, gateInfra); err != nil {
+		return "", err
+	}
+
+	m, err := s.loopJSON(r.Context(), method, path, body)
+	if err != nil {
+		return "", err
+	}
+	ws, _ := m["workspace"].(map[string]interface{})
+	f, _ := ws["id"].(float64)
+	wsID := int64(f)
+	if wsID < 1 {
+		return "", fmt.Errorf("the workspace was not saved")
+	}
+
+	// The variables are upserted by key: an existing key is replaced, a new one is added.
+	base := fmt.Sprintf("/api/terraform/workspaces/%d/variables", wsID)
+	existing, err := s.loopJSON(r.Context(), http.MethodGet, base, nil)
+	if err != nil {
+		return "", err
+	}
+	ids := map[string]int64{}
+	stored, _ := existing["variables"].([]interface{})
+	for _, sv := range stored {
+		obj, _ := sv.(map[string]interface{})
+		k, _ := obj["key"].(string)
+		vf, _ := obj["id"].(float64)
+		ids[k] = int64(vf)
+	}
+	for _, v := range vars {
+		key := v["key"].(string)
+		if vid, ok := ids[key]; ok {
+			_, err = s.loopJSON(r.Context(), http.MethodPut, fmt.Sprintf("%s/%d", base, vid), v)
+		} else {
+			_, err = s.loopJSON(r.Context(), http.MethodPost, base, v)
+		}
+		if err != nil {
+			return "", fmt.Errorf("variable %q: %w", key, err)
+		}
+	}
+
+	out := map[string]interface{}{
+		"workspace": pick(ws, "id", "name", "description", "environment", "group_name", "tags", "source", "status"),
+		"files":     fileNames,
+		"variables": varNames,
+	}
+	if v, _ := args["validate"].(bool); v {
+		// The validation is a dry run that changes nothing, so it needs no second approval.
+		preview := true
+		vm, verr := s.loopJSON(context.WithValue(r.Context(), gateKey{}, &preview), http.MethodPost, fmt.Sprintf("/api/terraform/workspaces/%d/tools/validate", wsID), map[string]interface{}{"files": files})
+		if verr != nil {
+			out["validate_error"] = verr.Error()
+		} else {
+			out["validate"] = clipTo(iacJSON(vm), 2000)
+		}
+	}
+	return jsonText(out)
 }
 
 func tfWorkspaceBody(args map[string]interface{}) map[string]interface{} {
@@ -1271,7 +1423,7 @@ func toolTFCatalog(s *Server, r *http.Request, args map[string]interface{}) (str
 		if err != nil {
 			return "", err
 		}
-		return jsonText(m["templates"])
+		return tfTemplateAnswer(args, m["templates"])
 	case "registry_modules":
 		q := url.Values{}
 		if v := argStr(args, "query"); v != "" {
@@ -1303,6 +1455,41 @@ func toolTFCatalog(s *Server, r *http.Request, args map[string]interface{}) (str
 		return jsonText(pick(m, "enabled", "supported", "binaries"))
 	}
 	return "", fmt.Errorf("unknown action %q", action)
+}
+
+// tfTemplateAnswer serves the templates action in one answer: the compact index of every template (filtered by
+// query), or the full files of the single template named by template_id. The index is what the model needs to
+// choose; the files are only fetched for the template it picked.
+func tfTemplateAnswer(args map[string]interface{}, templates interface{}) (string, error) {
+	list, _ := templates.([]interface{})
+	if id := argStr(args, "template_id"); id != "" {
+		for _, t := range list {
+			if obj, ok := t.(map[string]interface{}); ok && obj["id"] == id {
+				return jsonText(obj)
+			}
+		}
+		return "", fmt.Errorf("no template %q: call tf_catalog with action templates for the index", id)
+	}
+	q := strings.ToLower(argStr(args, "query"))
+	items := make([]map[string]interface{}, 0, len(list))
+	for _, t := range list {
+		obj, ok := t.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		id, _ := obj["id"].(string)
+		name, _ := obj["name"].(string)
+		provider, _ := obj["provider"].(string)
+		desc, _ := obj["description"].(string)
+		if q != "" && !strings.Contains(strings.ToLower(id+" "+name+" "+provider+" "+desc), q) {
+			continue
+		}
+		items = append(items, map[string]interface{}{
+			"id": id, "name": name, "provider": provider, "category": provider,
+			"summary": clipTo(desc, 120), "tags": []string{provider},
+		})
+	}
+	return jsonText(map[string]interface{}{"count": len(items), "templates": items})
 }
 
 func toolTFCatalogAction(s *Server, r *http.Request, args map[string]interface{}) (string, error) {

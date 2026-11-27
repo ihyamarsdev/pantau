@@ -4,6 +4,52 @@ import (
 	"testing"
 )
 
+// Multi-action infrastructure tools are classed per action: a read is read_only, every write is mutating_safe,
+// and apply or destroy is destructive. Before this, a write such as a workspace update showed as read_only.
+func TestRiskTierOfIaCActions(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		action string
+		want   agentRiskTier
+	}{
+		{"tf_workspace_action", "create", riskMutatingSafe},
+		{"tf_workspace_action", "update", riskMutatingSafe},
+		{"tf_workspace_action", "lock", riskMutatingSafe},
+		{"tf_workspace_scaffold", "", riskMutatingSafe},
+		{"tf_workspace_data", "state", riskReadOnly},
+		{"tf_workspace_data", "validate", riskReadOnly},
+		{"tf_workspace_data", "set_variable", riskMutatingSafe},
+		{"tf_workspace_data", "rollback", riskMutatingSafe},
+		{"tf_catalog", "templates", riskReadOnly},
+		{"tf_catalog", "policies", riskReadOnly},
+		{"tf_catalog", "create_policy", riskMutatingSafe},
+		{"tf_catalog", "test_cloud_account", riskMutatingSafe},
+		{"tf_run_action", "plan", riskMutatingSafe},
+		{"tf_run_action", "apply", riskDestructive},
+		{"tf_run_action", "destroy", riskDestructive},
+		{"ansible_resources", "status", riskReadOnly},
+		{"ansible_resources", "gather_facts", riskMutatingSafe},
+		{"ansible_schedule_action", "list", riskReadOnly},
+		{"ansible_schedule_action", "delete", riskMutatingSafe},
+		{"kube_cluster_action", "rename", riskMutatingSafe},
+		{"repo_action", "folder", riskMutatingSafe},
+		{"list_hosts", "", riskReadOnly},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name+"/"+tc.action, func(t *testing.T) {
+			t.Parallel()
+			args := map[string]interface{}{}
+			if tc.action != "" {
+				args["action"] = tc.action
+			}
+			if got := riskTierOfTool(tc.name, args); got != tc.want {
+				t.Fatalf("riskTierOfTool(%s, %q) = %s, want %s", tc.name, tc.action, got, tc.want)
+			}
+		})
+	}
+}
+
 // Risk-tier routing maps tools to the three strict execution tiers. Read-only tools execute immediately;
 // controlled mutations are mutating_safe; shell, firewall, drain, Terraform apply/destroy and file
 // deletion are destructive and require the human approval token.

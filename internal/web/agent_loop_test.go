@@ -132,6 +132,59 @@ func TestAgentLoopTextOnlyTurn(t *testing.T) {
 	}
 }
 
+// The read-only calls of one model batch run at the same time. Each fake tool waits on a barrier that opens only
+// when all three are running, so a sequential executor would stall and fail. The results still come back in
+// the order of the calls. The tools are registered on the shared list, so this test does not run in parallel.
+func TestAgentLoopParallelReadOnlyBatch(t *testing.T) {
+	names := []string{"test_parallel_read_a", "test_parallel_read_b", "test_parallel_read_c"}
+	var up sync.WaitGroup
+	up.Add(len(names))
+	allUp := make(chan struct{})
+	go func() { up.Wait(); close(allUp) }()
+	saved := agentTools
+	t.Cleanup(func() { agentTools = saved })
+	for i, name := range names {
+		result := fmt.Sprintf("result-%d", i)
+		agentTools = append(agentTools, agentTool{
+			Name: name, Description: "test read tool", InputSchema: schema(nil, map[string]interface{}{}),
+			run: func(_ *Server, _ *http.Request, _ map[string]interface{}) (string, error) {
+				up.Done()
+				select {
+				case <-allUp:
+					return result, nil
+				case <-time.After(5 * time.Second):
+					return "", fmt.Errorf("the read-only calls did not run at the same time")
+				}
+			},
+		})
+	}
+	f := &fakeLLM{results: []llmResult{
+		{Text: "checking", ToolCalls: []llmToolCall{
+			{ID: "ca", Name: names[0], Args: "{}"},
+			{ID: "cb", Name: names[1], Args: "{}"},
+			{ID: "cc", Name: names[2], Args: "{}"},
+		}},
+		{Text: "all three read"},
+	}}
+	srv, _ := nativeAgent(t, f)
+	chatPost(srv, "s-parallel", "read three things")
+
+	var got []llmMessage
+	for _, m := range f.call(1).Messages {
+		if m.Role == llmRoleTool {
+			got = append(got, m)
+		}
+	}
+	if len(got) != 3 {
+		t.Fatalf("three tool results expected, got %+v", got)
+	}
+	for i, id := range []string{"ca", "cb", "cc"} {
+		if got[i].ToolCallID != id || got[i].IsError || got[i].Text != fmt.Sprintf("result-%d", i) {
+			t.Fatalf("result %d out of order or failed: %+v", i, got[i])
+		}
+	}
+}
+
 func TestAgentLoopToolRoundTrip(t *testing.T) {
 	t.Parallel()
 	f := &fakeLLM{results: []llmResult{
@@ -387,9 +440,54 @@ func TestAgentLoopMidBatchCancelClosesTheBatch(t *testing.T) {
 			second = m
 		}
 	}
-	if !second.IsError || !strings.Contains(second.Text, "not run") {
-		t.Fatalf("the call that did not run must be an error result: %+v", second)
+	// Both calls are read-only, so they form one parallel segment: the second may already be running when the
+	// cancel lands. It then finishes normally; if it did not start, it is an error result that says so.
+	if second.IsError && !strings.Contains(second.Text, "not run") {
+		t.Fatalf("the second call must run or report that it did not run: %+v", second)
 	}
+}
+
+// A cancel observed after the model returns a batch refuses every call of that batch before any runs, and each
+// refused call still gets its own result.
+func TestAgentLoopCancelBeforeBatchRefusesAllCalls(t *testing.T) {
+	// Not parallel: it appends to the shared tool list.
+	var ran int
+	var mu sync.Mutex
+	name := "test_cancel_first_must_not_run"
+	agentTools = append(agentTools, agentTool{Name: name, Description: "test", InputSchema: schema(nil, map[string]interface{}{}),
+		run: func(s *Server, r *http.Request, args map[string]interface{}) (string, error) {
+			mu.Lock()
+			ran++
+			mu.Unlock()
+			return "ran", nil
+		}})
+	defer func() { agentTools = agentTools[:len(agentTools)-1] }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv, _ := nativeAgent(t, &fakeLLM{})
+	srv.agent.llmFactory = func(provider, baseURL, apiKey string) (llmClient, error) {
+		return cancelAfterBatch{cancel: cancel, calls: []llmToolCall{{ID: "c1", Name: name, Args: "{}"}, {ID: "c2", Name: name, Args: "{}"}}}, nil
+	}
+	body, _ := json.Marshal(map[string]string{"message": "do it", "session_id": "s-cancel-first"})
+	srv.handleAgentChat(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/agent/chat", strings.NewReader(string(body))).WithContext(ctx))
+
+	mu.Lock()
+	defer mu.Unlock()
+	if ran != 0 {
+		t.Fatalf("%d calls ran after the cancel was seen", ran)
+	}
+}
+
+// cancelAfterBatch answers one model call with a batch and cancels the chat while that answer is being returned.
+type cancelAfterBatch struct {
+	cancel context.CancelFunc
+	calls  []llmToolCall
+}
+
+func (c cancelAfterBatch) Stream(ctx context.Context, req llmRequest, onText func(string)) (llmResult, error) {
+	c.cancel()
+	return llmResult{ToolCalls: c.calls}, nil
 }
 
 // cancellingLLM returns one tool call and then cancels the request: the turn fails with an assistant tool_use
