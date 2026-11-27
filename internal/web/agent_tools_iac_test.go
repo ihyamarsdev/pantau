@@ -378,6 +378,7 @@ func TestIacKubeClusterAction(t *testing.T) {
 	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
+	srv.tfMgr = NewTerraformRunManager(db, t.TempDir(), nil, nil)
 	_ = db.SetSetting("agent_enabled", "1")
 	cid, err := db.CreateKubeCluster(&store.KubeCluster{Name: "prod", KubeMode: "full", Provider: "generic"})
 	if err != nil {
@@ -423,6 +424,7 @@ func TestIacRepoAction(t *testing.T) {
 	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
+	srv.tfMgr = NewTerraformRunManager(db, t.TempDir(), nil, nil)
 	_ = db.SetSetting("agent_enabled", "1")
 
 	if out, isErr := callTool(t, srv, "repo_action", `{"action":"clone","url":"https://example.com/x.git","auth":"token"}`); !isErr {
@@ -737,6 +739,7 @@ func TestIacAnsibleAdhoc(t *testing.T) {
 	}
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
+	srv.tfMgr = NewTerraformRunManager(db, t.TempDir(), nil, nil)
 	_ = db.SetSetting("agent_enabled", "1")
 	_ = db.SetAnsibleEnabled(true)
 
@@ -794,6 +797,7 @@ func TestTFCatalogBatchSearchAndInspect(t *testing.T) {
 
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
+	srv.tfMgr = NewTerraformRunManager(db, t.TempDir(), nil, nil)
 	_ = db.SetSetting("agent_enabled", "1")
 	_ = db.SetTerraformEnabled(true)
 	_ = db.SetSetting("tf_registry_url", reg.URL)
@@ -836,5 +840,123 @@ func TestTFCatalogBatchSearchAndInspect(t *testing.T) {
 	}
 	if atomic.LoadInt32(&hits) != hitsBefore {
 		t.Fatalf("invalid inspect args must not hit upstream registry")
+	}
+}
+
+func TestTFWorkspaceScaffold_PreservesVarsAndReturnsSummary(t *testing.T) {
+	t.Parallel()
+	srv, db, cleanup := setupTestServer(t)
+	defer cleanup()
+	srv.tfMgr = NewTerraformRunManager(db, t.TempDir(), nil, nil)
+	_ = db.SetSetting("agent_enabled", "1")
+	_ = db.SetTerraformEnabled(true)
+
+	// 1. Create workspace with initial variables (including a sensitive vault ref).
+	done := make(chan string, 1)
+	go func() {
+		out, _ := callTool(t, srv, "tf_workspace_scaffold", `{
+			"name": "torcons",
+			"files": {"main.tf": "variable \"project_id\" {}\n"},
+			"variables": [
+				{"key": "project_id", "value": "my-gcp-proj", "category": "terraform", "sensitive": false},
+				{"key": "gcp_creds", "value": "{{ vault.GCP_CREDS }}", "category": "env", "sensitive": true}
+			]
+		}`)
+		done <- out
+	}()
+	if _, ok := iacApprove(t, srv, true); !ok {
+		t.Fatal("initial scaffold never became pending")
+	}
+	firstOut := <-done
+	var firstResp struct {
+		WorkspaceID      int64 `json:"workspace_id"`
+		VariablesSummary struct {
+			Count     int `json:"count"`
+			Variables []struct {
+				Key       string `json:"key"`
+				Sensitive bool   `json:"sensitive"`
+			} `json:"variables"`
+		} `json:"variables_summary"`
+		FilesWritten []struct {
+			Path string `json:"path"`
+			Size int    `json:"size"`
+		} `json:"files_written"`
+	}
+	if err := json.Unmarshal([]byte(firstOut), &firstResp); err != nil || firstResp.WorkspaceID < 1 {
+		t.Fatalf("unexpected first scaffold output: err=%v out=%s", err, firstOut)
+	}
+	if firstResp.VariablesSummary.Count != 2 || len(firstResp.FilesWritten) != 1 {
+		t.Fatalf("unexpected summary: %+v", firstResp)
+	}
+	if strings.Contains(firstOut, "my-gcp-proj") {
+		t.Fatalf("variables_summary must not leak variable values: %s", firstOut)
+	}
+
+	// 2. Rewrite workspace files without passing variables -> existing variables MUST be preserved.
+	go func() {
+		out, _ := callTool(t, srv, "tf_workspace_scaffold", `{
+			"workspace_id": `+itoa(firstResp.WorkspaceID)+`,
+			"files": {"main.tf": "variable \"project_id\" {}\n", "outputs.tf": "output \"ok\" { value = true }\n"}
+		}`)
+		done <- out
+	}()
+	if _, ok := iacApprove(t, srv, true); !ok {
+		t.Fatal("second scaffold never became pending")
+	}
+	secondOut := <-done
+	var secondResp struct {
+		VariablesSummary struct {
+			Count int `json:"count"`
+		} `json:"variables_summary"`
+		FilesWritten []struct {
+			Path string `json:"path"`
+		} `json:"files_written"`
+	}
+	if err := json.Unmarshal([]byte(secondOut), &secondResp); err != nil {
+		t.Fatalf("unmarshal second scaffold: %v (%s)", err, secondOut)
+	}
+	if secondResp.VariablesSummary.Count != 2 || len(secondResp.FilesWritten) != 2 {
+		t.Fatalf("expected 2 preserved variables and 2 written files, got: %s", secondOut)
+	}
+}
+
+func TestTFRuns_ErroredIncludesErrorExcerpt(t *testing.T) {
+	t.Parallel()
+	srv, db, cleanup := setupTestServer(t)
+	defer cleanup()
+	srv.tfMgr = NewTerraformRunManager(db, t.TempDir(), nil, nil)
+	_ = db.SetSetting("agent_enabled", "1")
+	_ = db.SetTerraformEnabled(true)
+
+	wsID, err := db.CreateTFWorkspace(&store.TFWorkspace{Name: "err-ws", Source: "inline", Binary: "terraform", Files: "{}"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID, err := db.CreateTFRun(&store.TFRun{WorkspaceID: wsID, Type: "plan", Status: "errored", Message: "agent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logLines []string
+	for i := 0; i < 60; i++ {
+		logLines = append(logLines, "Initializing module "+itoa(int64(i))+"...")
+	}
+	logLines = append(logLines, "╷", "│ Error: Invalid value for input variable", "│   on main.tf line 9: subnetwork must not be empty", "╵")
+	exitCode := 1
+	if err := db.FinishTFRun(runID, "errored", &exitCode, strings.Join(logLines, "\n")); err != nil {
+		t.Fatal(err)
+	}
+
+	out, isErr := callTool(t, srv, "tf_runs", `{"run_id":`+itoa(runID)+`}`)
+	if isErr {
+		t.Fatalf("tf_runs failed: %s", out)
+	}
+	var resp struct {
+		ErrorExcerpt string `json:"error_excerpt"`
+	}
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("unmarshal tf_runs: %v (%s)", err, out)
+	}
+	if !strings.Contains(resp.ErrorExcerpt, "Error: Invalid value for input variable") {
+		t.Fatalf("expected ErrorExcerpt to contain the Error block, got: %q", resp.ErrorExcerpt)
 	}
 }

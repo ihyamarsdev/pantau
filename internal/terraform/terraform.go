@@ -81,7 +81,27 @@ var (
 	detectMu    sync.Mutex
 	detectCache []Binary
 	detectTime  time.Time
+
+	pluginCacheLocks = struct {
+		mu sync.Mutex
+		m  map[string]*sync.Mutex
+	}{m: map[string]*sync.Mutex{}}
 )
+
+// lockPluginCache serializes `terraform init` per plugin-cache directory because
+// Terraform's shared TF_PLUGIN_CACHE_DIR is not concurrency-safe during provider extraction.
+func lockPluginCache(dataRoot string) func() {
+	key := filepath.Clean(filepath.Join(dataRoot, "plugin-cache"))
+	pluginCacheLocks.mu.Lock()
+	m, ok := pluginCacheLocks.m[key]
+	if !ok {
+		m = &sync.Mutex{}
+		pluginCacheLocks.m[key] = m
+	}
+	pluginCacheLocks.mu.Unlock()
+	m.Lock()
+	return m.Unlock
+}
 
 // Detect returns availability and version for terraform and tofu.
 // Results are cached for 60s. On Windows, Err indicates it is not supported.
@@ -243,6 +263,7 @@ func (c Config) prepareEnv() []string {
 		"TF_INPUT=0",
 		"CHECKPOINT_DISABLE=1",
 		"TF_PLUGIN_CACHE_DIR=" + filepath.Join(c.DataRoot, "plugin-cache"),
+		"TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE=true",
 		"TF_DATA_DIR=" + filepath.Join(c.Root, "data"),
 	}
 

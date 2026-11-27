@@ -970,10 +970,42 @@ func toolTFWorkspaceScaffold(s *Server, r *http.Request, args map[string]interfa
 		}
 	}
 
+	// Re-read all stored variables so variables_summary reflects both new/updated and preserved variables.
+	allStored, err := s.loopJSON(r.Context(), http.MethodGet, base, nil)
+	if err != nil {
+		return "", err
+	}
+	allVars, _ := allStored["variables"].([]interface{})
+	varSummaryItems := make([]map[string]interface{}, 0, len(allVars))
+	for _, sv := range allVars {
+		obj, _ := sv.(map[string]interface{})
+		varSummaryItems = append(varSummaryItems, map[string]interface{}{
+			"key":       obj["key"],
+			"category":  obj["category"],
+			"sensitive": obj["sensitive"],
+		})
+	}
+	filesWritten := make([]map[string]interface{}, 0, len(fileNames))
+	for _, n := range fileNames {
+		filesWritten = append(filesWritten, map[string]interface{}{
+			"path": n,
+			"size": len(files[n]),
+		})
+	}
+
+	meta := pick(ws, "id", "name", "description", "environment", "group_name", "tags", "source", "status")
 	out := map[string]interface{}{
-		"workspace": pick(ws, "id", "name", "description", "environment", "group_name", "tags", "source", "status"),
-		"files":     fileNames,
-		"variables": varNames,
+		"workspace_id": wsID,
+		"name":         ws["name"],
+		"metadata":     meta,
+		"workspace":    meta,
+		"files":        fileNames,
+		"files_written": filesWritten,
+		"variables":    varNames,
+		"variables_summary": map[string]interface{}{
+			"count":     len(varSummaryItems),
+			"variables": varSummaryItems,
+		},
 	}
 	if v, _ := args["validate"].(bool); v {
 		// The validation is a dry run that changes nothing, so it needs no second approval.
@@ -982,7 +1014,7 @@ func toolTFWorkspaceScaffold(s *Server, r *http.Request, args map[string]interfa
 		if verr != nil {
 			out["validate_error"] = verr.Error()
 		} else {
-			out["validate"] = clipTo(iacJSON(vm), 2000)
+			out["validation"] = vm
 		}
 	}
 	return jsonText(out)

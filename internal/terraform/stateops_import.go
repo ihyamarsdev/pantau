@@ -64,7 +64,10 @@ func (s StateOpSpec) runImport(ctx context.Context, log io.Writer, run func(dir 
 	if err := writeBackendOverride(workDir, s.Root); err != nil {
 		return err
 	}
-	if ok, err := run(workDir, "init", "-input=false", "-no-color", "-reconfigure"); !ok {
+	unlockCache := lockPluginCache(s.DataRoot)
+	ok, err := run(workDir, "init", "-input=false", "-no-color", "-reconfigure")
+	unlockCache()
+	if !ok {
 		return err
 	}
 	_, err = run(workDir, "import", "-input=false", "-no-color", s.Address, s.ImportID)

@@ -195,6 +195,7 @@ func Plan(ctx context.Context, spec PlanSpec, log io.Writer) (*PlanResult, error
 	env := envCfg.prepareEnv()
 
 	// 1. terraform init -input=false -no-color -reconfigure (TF_DATA_DIR persists across runs)
+	unlockCache := lockPluginCache(spec.DataRoot)
 	initCmd := exec.Command(binPath, "init", "-input=false", "-no-color", "-reconfigure")
 	initCmd.Dir = workDir
 	initCmd.Env = env
@@ -202,6 +203,7 @@ func Plan(ctx context.Context, spec PlanSpec, log io.Writer) (*PlanResult, error
 	initCmd.Stderr = rLog
 
 	initExit, err := runCmd(runCtx, initCmd)
+	unlockCache()
 	if err != nil {
 		return nil, err
 	}

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"pantau/internal/inspector"
+	"pantau/internal/terraform"
 )
 
 // Agent tools for Docker, Kubernetes, Ansible and Terraform (ADR-0066).
@@ -787,6 +788,11 @@ func toolTFRuns(s *Server, r *http.Request, args map[string]interface{}) (string
 		if l, err := s.loopJSON(r.Context(), http.MethodGet, fmt.Sprintf("/api/terraform/runs/%d/log?offset=0", id), nil); err == nil {
 			data, _ := l["log"].(string)
 			out["log_tail"] = tailOf(data, logTail)
+			if st, _ := run["status"].(string); st == "errored" || st == "failed" {
+				if excerpt := terraform.ExtractErrorExcerpt(data); excerpt != "" {
+					out["error_excerpt"] = excerpt
+				}
+			}
 		}
 		return jsonText(out)
 	}
