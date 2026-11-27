@@ -88,6 +88,19 @@ body.ag-docked-open #agentFab { display: none; }
 .ag-patch-target { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); word-break: break-all; }
 .ag-patch-actions { display: flex; align-items: center; gap: 6px; margin-top: 2px; flex-wrap: wrap; }
 
+.ag-plan { margin: 8px 0; padding: 10px 12px; border: 1px solid var(--card-border); border-radius: var(--radius-sm); background: var(--surface-2); display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-xs); }
+.ag-plan-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ag-plan-goal { font-weight: 600; color: var(--text); flex: 1; min-width: 120px; }
+.ag-plan-state { color: var(--text); }
+.ag-plan-msg, .ag-plan-hint, .ag-plan-sub { color: var(--text-muted); }
+.ag-plan-steps { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 4px; }
+.ag-plan-step.ag-plan-failed { color: var(--danger, #c0392b); }
+.ag-plan-step.ag-plan-done { color: var(--text-muted); }
+.ag-plan-type { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+.ag-plan-target { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); word-break: break-all; }
+.ag-plan-result { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); white-space: pre-wrap; word-break: break-word; }
+.ag-plan-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+
 .ag-diff-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .ag-diff-meta { font-size: var(--fs-xs); color: var(--text-muted); font-family: var(--font-mono); flex: 1; }
 .ag-diff-split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; min-height: 340px; }

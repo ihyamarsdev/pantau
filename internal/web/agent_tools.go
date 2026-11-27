@@ -691,6 +691,14 @@ func (s *Server) agentGateAs(r *http.Request, hostID int64, label, tool, summary
 	if len(summary) > agentSummaryMax {
 		return fmt.Errorf("this action is too large to show the operator in full (%d bytes, max %d): split it", len(summary), agentSummaryMax)
 	}
+	// A step of an approved plan passes its one tool here: the operator approved the whole plan on its card.
+	if g, ok := planGrantFor(r, tool); ok {
+		logger.Info("agent", label, fmt.Sprintf("%s covered by approved plan %s: %s", tool, g.PlanID, summary))
+		if p, _ := r.Context().Value(gateKey{}).(*bool); p != nil {
+			*p = true
+		}
+		return nil
+	}
 	ap := &agentApproval{HostID: hostID, HostName: label, Tool: tool, Summary: summary}
 	ok, why := s.agentApprove(r, ap, gate)
 	if !ok {

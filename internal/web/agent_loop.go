@@ -50,6 +50,7 @@ type agentToolEvent struct {
 	Domain     string `json:"domain,omitempty"`
 	RiskTier   string `json:"risk_tier,omitempty"`
 	DurationMS int64  `json:"duration_ms,omitempty"`
+	PlanID     string `json:"plan_id,omitempty"` // set on the done event of agent_propose_plan: the chat shows its card
 }
 
 // agentSSE writes the browser stream: text deltas, tool progress and errors.
@@ -301,7 +302,7 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 				if outs[k].isErr {
 					status = "error"
 				}
-				sse.toolEvent(agentToolEvent{Tool: p.tc.Name, Label: p.label, Status: status, ToolCallID: p.tc.ID, Domain: p.domain, RiskTier: p.tier, DurationMS: outs[k].durationMS})
+				sse.toolEvent(agentToolEvent{Tool: p.tc.Name, Label: p.label, Status: status, ToolCallID: p.tc.ID, Domain: p.domain, RiskTier: p.tier, DurationMS: outs[k].durationMS, PlanID: planIDFromResult(p.tc.Name, outs[k])})
 				// The hint follows truncation so a long result cannot cut it off.
 				history = append(history, llmMessage{Role: llmRoleTool, ToolCallID: p.tc.ID, ToolName: p.tc.Name, Text: truncateToolResult(p.tc.Name, outs[k].text) + p.hint, IsError: outs[k].isErr})
 			}
@@ -420,6 +421,15 @@ func agentToolArgs(raw string) (map[string]interface{}, error) {
 
 // agentToolLabel is the short hint the browser shows next to a running tool.
 func agentToolLabel(args map[string]interface{}) string {
+	if tasks, ok := args["tasks"].([]interface{}); ok && len(tasks) > 0 {
+		doms := make([]string, 0, len(tasks))
+		for _, t := range tasks {
+			if obj, ok := t.(map[string]interface{}); ok {
+				doms = append(doms, argStr(obj, "domain"))
+			}
+		}
+		return clipTo(fmt.Sprintf("Investigating %d domains in parallel: %s", len(tasks), strings.Join(doms, ", ")), agentLabelMax)
+	}
 	for _, k := range []string{"unit", "container", "command", "path", "query", "host_id"} {
 		v, ok := args[k]
 		if !ok || v == nil {

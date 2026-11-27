@@ -56,6 +56,7 @@ type agentState struct {
 	pending    map[string]*agentApproval
 	grants     map[int64]agentGrant
 	convs      map[string]*agentConv                                     // chat sessions of the in-process agent
+	plans      map[string]*agentPlan                                     // proposed and running plans, in memory
 	llmFactory func(provider, baseURL, apiKey string) (llmClient, error) // nil: the real provider client
 }
 
@@ -160,6 +161,7 @@ func (s *Server) registerAgentRoutes() {
 	s.mux.HandleFunc("/api/agent/chat", s.authMiddleware(s.handleAgentChat))
 	s.mux.HandleFunc("/api/agent/approvals", s.authMiddleware(s.handleAgentApprovals))
 	s.mux.HandleFunc("/api/agent/approvals/", s.authMiddleware(s.handleAgentApprovalDecide))
+	s.mux.HandleFunc("/api/agent/plans/", s.authMiddleware(s.handleAgentPlans))
 	s.mux.HandleFunc("/api/agent/grants", s.authMiddleware(s.handleAgentGrants))
 	s.mux.HandleFunc("/api/agent/memory", s.authMiddleware(s.handleAgentMemory))
 	s.mux.HandleFunc("/api/agent/threads", s.authMiddleware(s.handleAgentThreads))

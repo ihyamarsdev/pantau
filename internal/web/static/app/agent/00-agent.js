@@ -52,6 +52,15 @@
       ag_disabled: 'The AI agent is off. Enable it in Settings → AI Agent.', ag_open_settings: 'Open AI Agent settings',
       ag_working: 'Working…', ag_stop: 'Stop',
       ag_waiting_approval: 'Waiting for your approval',
+    ag_plan_title: 'Plan', ag_plan_loading: 'Loading plan...', ag_plan_goal_label: 'Goal',
+    ag_plan_hint: 'Nothing runs until you approve. One approval covers the steps of this plan. Destructive actions are never part of a plan.',
+    ag_plan_approve: 'Approve & Execute Plan', ag_plan_reject: 'Reject', ag_plan_stop: 'Stop', ag_plan_rollback: 'Run Rollback',
+    ag_plan_rollback_steps: 'Rollback steps (run only when you click Run Rollback)',
+    ag_plan_st_proposed: 'Awaiting your approval', ag_plan_st_running: 'Running', ag_plan_st_done: 'Done',
+    ag_plan_st_failed: 'Failed', ag_plan_st_verify_failed: 'Verification failed, rollback available',
+    ag_plan_st_rolling_back: 'Rolling back', ag_plan_st_rolled_back: 'Rolled back', ag_plan_st_rollback_failed: 'Rollback failed',
+    ag_plan_st_cancelled: 'Stopped',
+    ag_plan_s_pending: 'pending', ag_plan_s_running: 'running', ag_plan_s_done: 'done', ag_plan_s_failed: 'failed', ag_plan_s_skipped: 'skipped',
       ag_appr_title: 'Agent wants to run', ag_appr_exec: 'Shell command (always needs approval)', ag_appr_infra: 'Infrastructure change (always needs approval)', ag_approve: 'Approve', ag_deny: 'Deny', ag_approve_session: 'Approve for this session', ag_session_hint: 'Approves every later change on {host} without asking (shell commands too: {shell}). Ends on New chat, Revoke or after 2 hours.', ag_grants: 'Auto-approved this session', ag_revoke: 'Revoke', ag_g_shell: 'incl. shell', ag_g_tools: 'service/container actions',
       ag_s_enable: 'Enable AI agent',
       ag_s_provider: 'LLM provider', ag_s_provider_none: 'Not configured', ag_s_provider_anthropic: 'Anthropic', ag_s_provider_openai: 'OpenAI-compatible',
@@ -123,6 +132,15 @@
       ag_disabled: 'Agen AI nonaktif. Aktifkan di Pengaturan → AI Agent.', ag_open_settings: 'Buka pengaturan AI Agent',
       ag_working: 'Bekerja…', ag_stop: 'Berhenti',
       ag_waiting_approval: 'Menunggu persetujuan Anda',
+    ag_plan_title: 'Rencana', ag_plan_loading: 'Memuat rencana...', ag_plan_goal_label: 'Tujuan',
+    ag_plan_hint: 'Tidak ada yang berjalan sebelum Anda menyetujui. Satu persetujuan mencakup langkah-langkah rencana ini. Aksi destruktif tidak pernah menjadi bagian rencana.',
+    ag_plan_approve: 'Setujui & Jalankan Rencana', ag_plan_reject: 'Tolak', ag_plan_stop: 'Hentikan', ag_plan_rollback: 'Jalankan Rollback',
+    ag_plan_rollback_steps: 'Langkah rollback (hanya berjalan saat Anda klik Jalankan Rollback)',
+    ag_plan_st_proposed: 'Menunggu persetujuan Anda', ag_plan_st_running: 'Sedang berjalan', ag_plan_st_done: 'Selesai',
+    ag_plan_st_failed: 'Gagal', ag_plan_st_verify_failed: 'Verifikasi gagal, rollback tersedia',
+    ag_plan_st_rolling_back: 'Sedang di-rollback', ag_plan_st_rolled_back: 'Sudah di-rollback', ag_plan_st_rollback_failed: 'Rollback gagal',
+    ag_plan_st_cancelled: 'Dihentikan',
+    ag_plan_s_pending: 'menunggu', ag_plan_s_running: 'berjalan', ag_plan_s_done: 'selesai', ag_plan_s_failed: 'gagal', ag_plan_s_skipped: 'dilewati',
       ag_appr_title: 'Agent ingin menjalankan', ag_appr_exec: 'Perintah shell (selalu butuh persetujuan)', ag_appr_infra: 'Perubahan infrastruktur (selalu butuh persetujuan)', ag_approve: 'Setujui', ag_deny: 'Tolak', ag_approve_session: 'Setujui untuk sesi ini', ag_session_hint: 'Menyetujui semua perubahan berikutnya di {host} tanpa bertanya (termasuk perintah shell: {shell}). Berakhir saat Chat baru, Cabut, atau setelah 2 jam.', ag_grants: 'Disetujui otomatis di sesi ini', ag_revoke: 'Cabut', ag_g_shell: 'termasuk shell', ag_g_tools: 'aksi service/container',
       ag_s_enable: 'Aktifkan agen AI',
       ag_s_provider: 'Penyedia LLM', ag_s_provider_none: 'Belum dikonfigurasi', ag_s_provider_anthropic: 'Anthropic', ag_s_provider_openai: 'OpenAI-compatible',
@@ -488,6 +506,7 @@
         const meta = [m.domain, m.risk_tier, m.duration_ms !== undefined ? m.duration_ms + 'ms' : ''].filter(Boolean).join(' · ');
         return `<div class="ag-tool ag-tool-${m.status || 'running'}${m.risk_tier === 'destructive' ? ' ag-tool-danger' : ''}">${mark} ${esc(m.text)}${meta ? ` <span style="opacity:.6;font-size:.85em;">${esc(meta)}</span>` : ''}</div>`;
       }
+      if (m.role === 'plan') return renderPlanCard(m.planId);
       if (m.role === 'error') return `<div class="ag-err">${esc(m.text)}${m.settings ? `<div style="margin-top:8px;"><button class="btn btn-sm btn-primary" onclick="AG.toggle(false); openSettingsModal('agent')">${esc(t('ag_open_settings'))}</button></div>` : ''}</div>`;
       if (!m.text) return `<div class="ag-msg ag-bot">${S.approvals.length ? SP.html(t('ag_waiting_approval'), S.apprT0) : SP.html(t('ag_working'), S.chatT0)}</div>`;
       return `<div class="ag-msg ag-bot">${md(m.text)}</div>`;
@@ -819,6 +838,11 @@
           const prev = S.msgs.findIndex((m) => m.role === 'tool' && m.id === data.toolCallId);
           if (prev >= 0 && data.status !== 'running') S.msgs[prev] = line;
           else S.msgs.splice(S.msgs.indexOf(bot) < 0 ? S.msgs.length : S.msgs.indexOf(bot), 0, line);
+          // A proposed plan shows its card right after the tool line; the card keeps itself in sync with the server.
+          if (data.plan_id && data.status !== 'running') {
+            S.msgs.splice(S.msgs.indexOf(line) + 1, 0, { role: 'plan', planId: data.plan_id });
+            refreshPlan(data.plan_id);
+          }
           // Tools that add, change or regroup hosts: the host list reloads when one finishes, not at the next 30 s poll.
           if (data.status !== 'running' && ['fleet_host_action', 'fleet_host_groups', 'fleet_host_import'].includes(data.tool) && typeof loadHosts === 'function') loadHosts();
         } else if (ev === 'agent.error') {
@@ -864,6 +888,48 @@
       }
     }
   }
+
+  /* ---------- plans ---------- */
+  // A plan card shows the steps and the buttons its state allows. The server owns the state: the card only asks
+  // for it, and polls while the plan runs. Every action is an explicit click; nothing runs on its own.
+  S.plans = S.plans || {};
+
+  function renderPlanCard(id) {
+    const p = S.plans[id];
+    if (!p) return `<div class="ag-plan"><span class="ag-plan-hint">${esc(t('ag_plan_loading'))}</span></div>`;
+    const steps = (list) => list.map((s) => `<li class="ag-plan-step ag-plan-${esc(s.status)}">
+        <span class="badge badge-unknown">${esc(t('ag_plan_s_' + s.status))}</span> <span class="ag-plan-type">${esc(s.type)}</span>
+        ${esc(s.description)}${s.target ? ` <span class="ag-plan-target">${esc(s.target)}</span>` : ''}
+        ${s.result ? `<div class="ag-plan-result">${esc(s.result)}</div>` : ''}</li>`).join('');
+    const btn = (action, label, cls) => `<button type="button" class="btn btn-sm ${cls}" onclick="AG.planAction('${esc(id)}', '${action}')">${esc(label)}</button>`;
+    const buttons = [];
+    if (p.state === 'proposed') buttons.push(btn('approve', t('ag_plan_approve'), 'btn-primary'), btn('cancel', t('ag_plan_reject'), ''));
+    if (p.state === 'running' || p.state === 'rolling_back') buttons.push(btn('cancel', t('ag_plan_stop'), ''));
+    if ((p.state === 'verify_failed' || p.state === 'failed') && (p.rollback_plan || []).length) buttons.push(btn('rollback', t('ag_plan_rollback'), 'btn-primary'));
+    const rollback = (p.rollback_plan || []).length ? `<div class="ag-plan-sub">${esc(t('ag_plan_rollback_steps'))}</div><ul class="ag-plan-steps">${steps(p.rollback_plan)}</ul>` : '';
+    return `<div class="ag-plan" data-plan-id="${esc(id)}">
+      <div class="ag-plan-head"><span class="badge badge-info">${esc(t('ag_plan_title'))}</span> <span class="ag-plan-goal">${esc(p.goal)}</span></div>
+      <div class="ag-plan-state">${esc(t('ag_plan_st_' + p.state))}${p.message ? ` — <span class="ag-plan-msg">${esc(p.message)}</span>` : ''}</div>
+      ${p.state === 'proposed' ? `<div class="ag-plan-hint">${esc(t('ag_plan_hint'))}</div>` : ''}
+      <ul class="ag-plan-steps">${steps(p.steps || [])}</ul>
+      ${rollback}
+      ${buttons.length ? `<div class="ag-plan-actions">${buttons.join('')}</div>` : ''}
+    </div>`;
+  }
+
+  async function refreshPlan(id) {
+    const r = await api('/api/agent/plans/' + encodeURIComponent(id)).catch(() => null);
+    if (!r || !r.ok || !r.data) return;
+    S.plans[id] = r.data;
+    renderLog();
+    if (r.data.state === 'running' || r.data.state === 'rolling_back') setTimeout(() => refreshPlan(id), 1500);
+  }
+
+  AG.planAction = async function (id, action) {
+    const r = await post('/api/agent/plans/' + encodeURIComponent(id) + '/' + action, {}).catch(() => null);
+    if (r && !r.ok) { S.msgs.push({ role: 'error', text: (r.data && r.data.error) || 'HTTP ' + r.status }); renderLog(); }
+    refreshPlan(id);
+  };
 
   /* ---------- approvals ---------- */
   async function pollApprovals() {
