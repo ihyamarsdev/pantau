@@ -573,6 +573,8 @@ func main() {
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
+	// Forwards own kubectl processes and SSH sessions; end them before the HTTP server goes away.
+	server.StopPortForwards()
 	_ = httpServer.Shutdown(shutdownCtx)
 	_ = tunnelServer.Shutdown(shutdownCtx)
 	fmt.Println("Pantau stopped cleanly.")

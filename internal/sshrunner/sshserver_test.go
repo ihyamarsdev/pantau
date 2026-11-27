@@ -51,20 +51,58 @@ func startTestSSHServer(t *testing.T, accepted ssh.PublicKey, forward bool) (int
 		go ssh.DiscardRequests(reqs)
 		var relays sync.WaitGroup
 		for nc := range chans {
-			if !forward || nc.ChannelType() != "direct-tcpip" {
-				_ = nc.Reject(ssh.Prohibited, "no sessions in test")
-				continue
+			switch {
+			case nc.ChannelType() == "session":
+				relays.Add(1)
+				go func() {
+					defer relays.Done()
+					serveSession(nc)
+				}()
+			case forward && nc.ChannelType() == "direct-tcpip":
+				relays.Add(1)
+				go func() {
+					defer relays.Done()
+					relayChannel(nc)
+				}()
+			default:
+				_ = nc.Reject(ssh.Prohibited, "channel type not served in test")
 			}
-			relays.Add(1)
-			go func() {
-				defer relays.Done()
-				relayChannel(nc)
-			}()
 		}
 		relays.Wait()
 		_ = sc.Close()
 	})
 	return ln.Addr().(*net.TCPAddr).Port, ended
+}
+
+// testForwardLine is what a test session's exec prints: the readiness line kubectl port-forward prints.
+const testForwardLine = "Forwarding from 127.0.0.1:4242 -> 80\n"
+
+// serveSession answers exec with testForwardLine and then holds the channel until the client closes it.
+func serveSession(nc ssh.NewChannel) {
+	ch, reqs, err := nc.Accept()
+	if err != nil {
+		return
+	}
+	var drain sync.WaitGroup
+	for req := range reqs {
+		if req.Type != "exec" {
+			if req.WantReply {
+				_ = req.Reply(false, nil)
+			}
+			continue
+		}
+		if req.WantReply {
+			_ = req.Reply(true, nil)
+		}
+		_, _ = io.WriteString(ch, testForwardLine)
+		drain.Add(1)
+		go func() {
+			defer drain.Done()
+			_, _ = io.Copy(io.Discard, ch)
+		}()
+	}
+	_ = ch.Close()
+	drain.Wait()
 }
 
 // relayChannel connects a direct-tcpip channel to its destination and copies bytes both ways until one side ends.

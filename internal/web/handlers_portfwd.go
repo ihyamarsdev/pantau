@@ -65,6 +65,12 @@ type portForward struct {
 	remotePort int
 	localPort  int
 	createdAt  time.Time
+	// kind is "ssh" for a forward through the SSH connection, "kube" for a kubectl port-forward; target names the
+	// Kubernetes resource of a kube forward.
+	kind   string
+	target string
+	// proc is the kubectl process or remote command that serves a kube forward; Stop ends it with the forward.
+	proc forwardProc
 
 	activeConns atomic.Int64
 	bytesIn     atomic.Int64
@@ -131,6 +137,10 @@ type portForwardManager struct {
 	mu       sync.Mutex
 	forwards map[int64]*portForward
 	nextID   int64
+	// kubectl overrides the kubectl binary for external clusters (tests); empty resolves the managed binary.
+	kubectl string
+	// reserved holds local ports handed to a kubectl process that binds them itself.
+	reserved map[int]bool
 }
 
 // SetPortForwardRange enables port forwarding on local ports min..max bound to
@@ -205,6 +215,7 @@ func (m *portForwardManager) create(hostID int64, remoteHost string, remotePort,
 		remotePort: remotePort,
 		localPort:  port,
 		createdAt:  time.Now().UTC(),
+		kind:       "ssh",
 		runner:     runner,
 		conns:      make(map[net.Conn]struct{}),
 		ln:         ln,
@@ -221,9 +232,15 @@ func (m *portForwardManager) create(hostID int64, remoteHost string, remotePort,
 // listen binds the requested local port, or the first free port in the range
 // when localPort is 0.
 func (m *portForwardManager) listen(localPort int) (net.Listener, int, error) {
+	// Ports reserved for a kubectl process are skipped: that process binds them itself a moment later.
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if localPort != 0 {
 		if localPort < m.min || localPort > m.max {
 			return nil, 0, fmt.Errorf("%w: %d is outside %d-%d", errFwdOutRange, localPort, m.min, m.max)
+		}
+		if m.reserved[localPort] {
+			return nil, 0, fmt.Errorf("%w: %d", errFwdBusy, localPort)
 		}
 		ln, err := net.Listen("tcp", net.JoinHostPort(m.bind, strconv.Itoa(localPort)))
 		if err != nil {
@@ -232,6 +249,9 @@ func (m *portForwardManager) listen(localPort int) (net.Listener, int, error) {
 		return ln, localPort, nil
 	}
 	for p := m.min; p <= m.max; p++ {
+		if m.reserved[p] {
+			continue
+		}
 		ln, err := net.Listen("tcp", net.JoinHostPort(m.bind, strconv.Itoa(p)))
 		if err == nil {
 			return ln, p, nil
@@ -255,6 +275,9 @@ func (m *portForwardManager) stop(id int64) bool {
 		return false
 	}
 	f.shutdown()
+	if f.kind == "kube" {
+		m.releasePort(f.localPort)
+	}
 	logger.Info("portfwd", f.hostName, fmt.Sprintf("forward stopped: local port %d", f.localPort), "forward_id", f.id)
 	return true
 }
@@ -295,6 +318,9 @@ func (f *portForward) shutdown() {
 	}
 	if runner != nil {
 		_ = runner.Close()
+	}
+	if f.proc != nil {
+		f.proc.Stop()
 	}
 }
 
@@ -420,6 +446,8 @@ type portForwardJSON struct {
 	BytesIn     int64  `json:"bytes_in"`
 	BytesOut    int64  `json:"bytes_out"`
 	LastError   string `json:"last_error"`
+	Kind        string `json:"kind"`
+	Target      string `json:"target,omitempty"`
 }
 
 func (f *portForward) toJSON() portForwardJSON {
@@ -435,6 +463,8 @@ func (f *portForward) toJSON() portForwardJSON {
 		BytesIn:     f.bytesIn.Load(),
 		BytesOut:    f.bytesOut.Load(),
 		LastError:   f.errorText(),
+		Kind:        f.kind,
+		Target:      f.target,
 	}
 }
 
@@ -442,6 +472,7 @@ func (f *portForward) toJSON() portForwardJSON {
 func (s *Server) registerPortForwardRoutes() {
 	s.mux.HandleFunc("/api/forwards", s.authMiddleware(s.handlePortForwards))
 	s.mux.HandleFunc("/api/forwards/", s.authMiddleware(s.handlePortForwardDetail))
+	s.mux.HandleFunc("/api/kube/forwards", s.authMiddleware(s.handleKubeForwards))
 }
 
 // handlePortForwards lists forwards (GET) or creates one (POST).

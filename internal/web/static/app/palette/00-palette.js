@@ -359,6 +359,23 @@
       });
     });
 
+    // Port forward to a Kubernetes Pod or Service (active cluster caches; the dialog asks for the remote port)
+    const svcs = (window.S && Array.isArray(window.S.kubeServicesCache)) ? window.S.kubeServicesCache : [];
+    [['pod', pods], ['service', svcs]].forEach(([kind, list]) => list.forEach((o) => {
+      const sc = tk.length ? scoreFields(tk, [o.name || '', o.namespace || '', 'port forward']) : 0;
+      if (tk.length && sc < 0) return;
+      if (!tk.length && items.length >= 25) return;
+      items.push({
+        kind: 'kubeportfwd', group: 'pods', icon: 'plug',
+        title: o.name,
+        sub: t('pal_kube_pf_sub', 'Port forward · {kind} · {ns}').replace('{kind}', kind).replace('{ns}', o.namespace || 'default'),
+        run: () => {
+          const nav = g('switchSideNav'); if (nav) nav('kube');
+          const open = g('openKubePortForward'); if (open) open(kind, o.namespace, o.name, '');
+        }
+      });
+    }));
+
     // Container shell (Docker containers across hosts)
     EXT.containers.forEach((c) => {
       const sc = tk.length ? scoreFields(tk, [c.name || '', c.host_name || '', c.image || '', 'container shell']) : 0;

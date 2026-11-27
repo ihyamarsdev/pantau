@@ -1352,6 +1352,12 @@ function openKubePodMenu(e, idx) {
   menuItems.push({ label: t('kube_logs', 'Pod Logs'), run: () => promptKubeContainer(p, t('kube_logs', 'Pod Logs'), c => openKubeLogs(p, c)) });
   menuItems.push({ label: t('kube_topology', 'Topology'), run: () => openKubeTopology('Pod', p.namespace, p.name) });
   menuItems.push({ label: t('kube_describe', 'Describe'), run: () => kubeDescribe('pod', p.namespace, p.name) });
+  menuItems.push({
+    label: t('kube_pf_action', 'Port Forward'),
+    disabled: isRo,
+    title: isRo ? t('kube_mode_blocked_ro', 'Disabled in Read-Only mode') : '',
+    run: () => openKubePortForward('pod', p.namespace, p.name, '')
+  });
   menuItems.push(null);
   menuItems.push({
     label: t('delete', 'Delete'),
@@ -1366,11 +1372,111 @@ function openKubePodMenu(e, idx) {
 function openKubeServiceMenu(e, idx) {
   const s = S.kubeServicesCache[idx];
   if (!s) return;
+  const ro = getSelectedKubeMode() === 'read-only';
   dockerFloatingMenu(e, 'ks_' + idx, [
     { label: t('kube_topology', 'Topology'), run: () => openKubeTopology('Service', s.namespace, s.name) },
     { label: t('kube_edit_yaml', 'Edit YAML'), run: () => openKubeYamlEditor('service', s.namespace, s.name) },
-    { label: t('kube_describe', 'Describe'), run: () => kubeDescribe('service', s.namespace, s.name) }
+    { label: t('kube_describe', 'Describe'), run: () => kubeDescribe('service', s.namespace, s.name) },
+    {
+      label: t('kube_pf_action', 'Port Forward'),
+      disabled: ro,
+      title: ro ? t('kube_mode_blocked_ro', 'Disabled in Read-Only mode') : '',
+      run: () => openKubePortForward('service', s.namespace, s.name, kubePortHint(s.ports))
+    }
   ]);
+}
+
+// kubePortHint returns the Service port kubectl forwards first: "80/TCP" and "80:30080/TCP" both give 80.
+function kubePortHint(ports) {
+  const list = Array.isArray(ports) ? ports : String(ports || '').split(',');
+  for (const p of list) {
+    const m = /^\s*(\d+)/.exec(String(p));
+    if (m) return m[1];
+  }
+  return '';
+}
+
+// openKubePortForward asks for the remote port of a Service or Pod, then starts a kubectl port-forward.
+function openKubePortForward(kind, namespace, name, portHint) {
+  const modal = ensureKubePortForwardModal();
+  modal.dataset.kind = kind;
+  modal.dataset.namespace = namespace || 'default';
+  modal.dataset.name = name;
+  document.getElementById('kubePfTitle').textContent = `${t('kube_pf_title', 'Port Forward')}: ${kind}/${name}`;
+  document.getElementById('kubePfRemotePort').value = portHint || '';
+  document.getElementById('kubePfLocalPort').value = '';
+  openModal('kubePfModal');
+}
+
+function ensureKubePortForwardModal() {
+  const existing = document.getElementById('kubePfModal');
+  if (existing) return existing;
+  const el = document.createElement('div');
+  el.id = 'kubePfModal';
+  el.className = 'modal';
+  el.innerHTML = `
+    <div class="modal-content" style="max-width: 460px;">
+      <div class="modal-header">
+        <h3 id="kubePfTitle" style="margin: 0; font-size: var(--fs-md); font-weight: 600;"></h3>
+        <button class="btn btn-sm btn-icon btn-ghost" onclick="closeModal('kubePfModal')">${svgIcon('x')}</button>
+      </div>
+      <div class="modal-body" style="padding: 16px;">
+        <div class="form-group">
+          <label class="form-label" for="kubePfRemotePort">${escapeHtml(t('kube_pf_remote_port', 'Remote port'))}</label>
+          <input type="number" id="kubePfRemotePort" class="input" min="1" max="65535" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="kubePfLocalPort">${escapeHtml(t('kube_pf_local_port', 'Local port'))}</label>
+          <input type="number" id="kubePfLocalPort" class="input" min="0" max="65535" placeholder="${escapeHtml(t('kube_pf_local_ph', 'auto (first free port)'))}" />
+        </div>
+        <div class="form-hint">${escapeHtml(t('kube_pf_hint', 'Listens on the same address as Pantau. Read-only clusters refuse port forwarding.'))}</div>
+        <div style="display: flex; justify-content: flex-end; margin-top: 12px;">
+          <button class="btn btn-sm btn-primary" id="kubePfStartBtn" onclick="submitKubePortForward()">${svgIcon('plug', 'icon-sm')} <span>${escapeHtml(t('kube_pf_start', 'Start forward'))}</span></button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  return el;
+}
+
+// submitKubePortForward starts the forward on the active host or cluster and lists it in Port Forwards.
+async function submitKubePortForward() {
+  const modal = document.getElementById('kubePfModal');
+  if (!modal) return;
+  const remotePort = parseInt(document.getElementById('kubePfRemotePort').value, 10);
+  if (!remotePort || remotePort < 1 || remotePort > 65535) {
+    showToast(t('kube_pf_bad_port', 'Remote port must be 1-65535'), 'error');
+    return;
+  }
+  const localPort = parseInt(document.getElementById('kubePfLocalPort').value, 10) || 0;
+  const btn = document.getElementById('kubePfStartBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch('/api/kube/forwards', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        target_id: S.selectedKubeHostId,
+        kind: modal.dataset.kind,
+        name: modal.dataset.name,
+        namespace: modal.dataset.namespace,
+        remote_port: remotePort,
+        local_port: localPort
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(data.error || t('kube_pf_failed', 'Port forward failed'), 'error');
+      return;
+    }
+    closeModal('kubePfModal');
+    showToast(t('kube_pf_started', 'Forward started: 127.0.0.1:{port}').replace('{port}', data.local_port), 'success');
+    if (window.PortFwd && typeof window.PortFwd.open === 'function') window.PortFwd.open(0);
+  } catch (err) {
+    showToast(t('kube_pf_failed', 'Port forward failed'), 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 function openKubeScaleModal(wl) {
@@ -2647,4 +2753,4 @@ function drawKubeTopologyEdges(edges) {
   });
 }
 
-export { saveKubeWorkspaces, kubeApiBase, kubeWsParam, kubeHostClusterName, kubeTargetInfo, kubeSameTarget, renderKubeWorkspaces, closeKubeWorkspace, kubeProviderLabel, loadKubeClusters, handleKubeEnvelope, getSelectedKubeMode, updateKubeModeChip, findHostForKubeNode, detectKubeClusters, formatKubeMemory, kubeAge, kubeEmptyHtml, populateKubeHostSelect, updateKubeHostPickerBtn, toggleKubeHostPicker, closeKubeHostPicker, onKubeHostPickerBtnKeydown, onKubeHostPickerKeydown, updateKubePickerHighlight, renderKubeHostPickerList, pickKubeHost, onSelectKubeHost, loadKubeNamespaces, renderKubeRefreshStatus, switchKubeTab, onKubeNamespaceChange, refreshKubeCurrentTab, loadKubeTabData, kubeFetchTab, loadKubeNodes, kubeWorkloadIsProblem, renderKubeWorkloadsTable, loadKubeWorkloads, kubePodIsProblem, onKubePodsFilterChange, renderKubePodsTable, loadKubePods, loadKubeServices, onKubeEventsFilterChange, renderKubeEventsTable, loadKubeEvents, loadKubeGenericResource, openKubeGenericMenu, loadKubeApply, onKubeApplyYamlInput, clearKubeApply, submitKubeDiff, kubeBusy, kubeAction, kubeGetOutput, submitKubeApply, openKubeNodeMenu, openKubeWorkloadMenu, openKubePodMenu, openKubeServiceMenu, openKubeScaleModal, submitKubeScale, kubeDeletePod, kubeDescribe, promptKubeContainer, submitKubeContainerChoice, kubePodExec, stopKubeLogs, openKubeLogs, onKubeLogsParamChange, connectKubeLogsStream, copyKubeLogs, kubeAutoRefreshIntervalSec, stopKubeAutorefresh, restartKubeAutorefresh, openKubeYamlEditor, initKubeYamlEditor, onKubeYamlEditorInput, submitKubeYamlDiff, submitKubeYamlApply, setKubeLogsCount, appendKubeLogText, onKubeLogsFilterInput, openKubeWorkloadLogs, openKubeDrain, renderKubeDrainPreview, confirmKubeDrain, showToastDrainUncordon, setKubeClusterError, openKubeClusterModal, loadKubeClusterFile, loadKubeClusterContexts, onKubeClusterContextChange, submitKubeClusterModal, editKubeCurrentCluster, currentKubeHostClusterId, openKubeHostClusterModal, submitKubeHostClusterModal, deleteKubeCluster, openKubeCliModal, checkKubeCli, installKubeCli, switchKubeCli, revertKubeCliToSystem, openKubeTopology, closeKubeTopology, renderKubeTopology, drawKubeTopologyEdges };
+export { saveKubeWorkspaces, kubeApiBase, kubeWsParam, kubeHostClusterName, kubeTargetInfo, kubeSameTarget, renderKubeWorkspaces, closeKubeWorkspace, kubeProviderLabel, loadKubeClusters, handleKubeEnvelope, getSelectedKubeMode, updateKubeModeChip, findHostForKubeNode, detectKubeClusters, formatKubeMemory, kubeAge, kubeEmptyHtml, populateKubeHostSelect, updateKubeHostPickerBtn, toggleKubeHostPicker, closeKubeHostPicker, onKubeHostPickerBtnKeydown, onKubeHostPickerKeydown, updateKubePickerHighlight, renderKubeHostPickerList, pickKubeHost, onSelectKubeHost, loadKubeNamespaces, renderKubeRefreshStatus, switchKubeTab, onKubeNamespaceChange, refreshKubeCurrentTab, loadKubeTabData, kubeFetchTab, loadKubeNodes, kubeWorkloadIsProblem, renderKubeWorkloadsTable, loadKubeWorkloads, kubePodIsProblem, onKubePodsFilterChange, renderKubePodsTable, loadKubePods, loadKubeServices, onKubeEventsFilterChange, renderKubeEventsTable, loadKubeEvents, loadKubeGenericResource, openKubeGenericMenu, loadKubeApply, onKubeApplyYamlInput, clearKubeApply, submitKubeDiff, kubeBusy, kubeAction, kubeGetOutput, submitKubeApply, openKubeNodeMenu, openKubeWorkloadMenu, openKubePodMenu, openKubeServiceMenu, openKubeScaleModal, submitKubeScale, kubeDeletePod, kubeDescribe, promptKubeContainer, submitKubeContainerChoice, kubePodExec, stopKubeLogs, openKubeLogs, onKubeLogsParamChange, connectKubeLogsStream, copyKubeLogs, kubeAutoRefreshIntervalSec, stopKubeAutorefresh, restartKubeAutorefresh, openKubeYamlEditor, initKubeYamlEditor, onKubeYamlEditorInput, submitKubeYamlDiff, submitKubeYamlApply, setKubeLogsCount, appendKubeLogText, onKubeLogsFilterInput, openKubeWorkloadLogs, openKubeDrain, renderKubeDrainPreview, confirmKubeDrain, showToastDrainUncordon, setKubeClusterError, openKubeClusterModal, loadKubeClusterFile, loadKubeClusterContexts, onKubeClusterContextChange, submitKubeClusterModal, editKubeCurrentCluster, currentKubeHostClusterId, openKubeHostClusterModal, submitKubeHostClusterModal, deleteKubeCluster, openKubeCliModal, checkKubeCli, installKubeCli, switchKubeCli, revertKubeCliToSystem, openKubeTopology, closeKubeTopology, renderKubeTopology, drawKubeTopologyEdges, openKubePortForward, submitKubePortForward };

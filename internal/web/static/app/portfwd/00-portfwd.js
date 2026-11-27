@@ -202,7 +202,7 @@
             </div>
             <div class="pf-item-meta">
               <span>${icon('server')} ${esc(f.host_name)}</span>
-              <span>${icon('plug')} ${esc(f.remote_host)}:${esc(f.remote_port)}</span>
+              <span>${f.kind === 'kube' ? `${icon('boxes')} ${esc(f.target)} :${esc(f.remote_port)}` : `${icon('plug')} ${esc(f.remote_host)}:${esc(f.remote_port)}`}</span>
               <span>${icon('activity')} ${esc(t('pf_conns'))}: ${esc(f.active_conns)}</span>
               <span>${icon('arrow-down')} ${esc(t('pf_traffic'))}: ${esc(bytes(f.bytes_in))} ${esc(t('pf_in'))} / ${esc(bytes(f.bytes_out))} ${esc(t('pf_out'))}</span>
               <span>${icon('clock')} ${esc(t('pf_created'))}: ${esc(fmtTime(f.created_at))}</span>
