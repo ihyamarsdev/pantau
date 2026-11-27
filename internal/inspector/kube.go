@@ -86,18 +86,26 @@ func (ins *Inspector) CheckKubeConnection(hostID int64) error {
 }
 
 func (ins *Inspector) kubeExec(hostID int64, body string, timeout time.Duration) (stdout, stderr string, exitCode int, err error) {
-	runner, wrap, err := ins.KubeStreamRunner(hostID)
-	if err != nil {
-		return "", "", 0, err
-	}
-	defer runner.Close()
-	stdout, stderr, exitCode, err = runner.ExecTimeout(wrap(body), timeout)
+	stdout, stderr, exitCode, err = ins.runKube(hostID, body, timeout)
 	if err == nil && exitCode != 0 {
 		if profileID, ok := ins.teleportProfileOf(hostID); ok {
 			err = teleportExpiredError(profileID, stdout, stderr)
 		}
 	}
 	return stdout, stderr, exitCode, err
+}
+
+// runKube runs one kubectl script on the target. Tests replace it through kubeExecOverride, so no SSH is needed.
+func (ins *Inspector) runKube(hostID int64, body string, timeout time.Duration) (string, string, int, error) {
+	if ins.kubeExecOverride != nil {
+		return ins.kubeExecOverride(hostID, body, timeout)
+	}
+	runner, wrap, err := ins.KubeStreamRunner(hostID)
+	if err != nil {
+		return "", "", 0, err
+	}
+	defer runner.Close()
+	return runner.ExecTimeout(wrap(body), timeout)
 }
 
 func (ins *Inspector) kubeQuery(hostID int64, body, what string, timeout time.Duration) (string, error) {

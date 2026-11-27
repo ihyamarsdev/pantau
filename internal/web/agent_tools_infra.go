@@ -58,8 +58,8 @@ var infraTools = []agentTool{
 	// ---- Kubernetes
 	{Name: "kube_targets", Description: "Kubernetes clusters by the name the operator gave them in Pantau (registered clusters and k3s/RKE2 clusters reached over SSH, one row each), with access mode (full, no-exec, read-only). Pass that name as cluster to the other kube_* tools.",
 		InputSchema: schema(nil, map[string]interface{}{}), run: toolKubeTargets},
-	{Name: "kube_get", Description: "List Kubernetes objects: what = nodes, namespaces, workloads, pods, services, events, ingresses, configmaps, pvcs, pvs, jobs or cronjobs. namespace is optional (empty = all).",
-		InputSchema: schema([]string{"what"}, map[string]interface{}{"cluster": pCluster, "target_id": pTarget, "what": map[string]interface{}{"type": "string", "enum": []string{"nodes", "namespaces", "workloads", "pods", "services", "events", "ingresses", "configmaps", "pvcs", "pvs", "jobs", "cronjobs"}}, "namespace": pNS}), run: toolKubeGet},
+	{Name: "kube_get", Description: "List Kubernetes objects. Pass kind (comma-separated, e.g. deployments,statefulsets,daemonsets,cronjobs,jobs,pods) to list several kinds in one call: compact rows with name, namespace, status, ready, age and restarts, plus total_count, by_kind, by_namespace and truncated. namespace '*' or 'all' (or empty) means every namespace; summary_only returns counts and names; unhealthy_only keeps only problem objects. Legacy what = nodes, namespaces, workloads, pods, services, events, ingresses, configmaps, pvcs, pvs, jobs or cronjobs. To count workloads or summarize a cluster, prefer kube_workload_summary or kube_cluster_summary (one call). If you still use kube_get, use namespace='*' and summary_only=true; NEVER call kube_get once per namespace.",
+		InputSchema: schema(nil, map[string]interface{}{"cluster": pCluster, "target_id": pTarget, "what": map[string]interface{}{"type": "string", "enum": []string{"nodes", "namespaces", "workloads", "pods", "services", "events", "ingresses", "configmaps", "pvcs", "pvs", "jobs", "cronjobs"}}, "kind": map[string]interface{}{"type": "string", "description": "Comma-separated kinds: deployments, statefulsets, daemonsets, cronjobs, jobs, pods, services, ingresses, configmaps, pvcs, pvs, nodes, namespaces"}, "namespace": pNS, "summary_only": map[string]interface{}{"type": "boolean"}, "unhealthy_only": map[string]interface{}{"type": "boolean"}, "label_selector": str, "field_selector": str, "limit": map[string]interface{}{"type": "integer", "description": "rows, default 50, max 200"}}), run: toolKubeGet},
 	{Name: "kube_describe", Description: "kubectl describe for one object (secret-looking values masked).",
 		InputSchema: schema([]string{"kind", "name"}, map[string]interface{}{"cluster": pCluster, "target_id": pTarget, "kind": map[string]interface{}{"type": "string", "description": "pod, deployment, node, service, ..."}, "namespace": pNS, "name": str}), run: toolKubeDescribe},
 	{Name: "kube_logs", Description: "Last lines of a pod's logs.",
@@ -389,12 +389,43 @@ func toolKubeTargets(s *Server, _ *http.Request, _ map[string]interface{}) (stri
 	return jsonText(out)
 }
 
+// kubeKindArg reads the kind argument: a comma-separated string, or a list of strings.
+func kubeKindArg(args map[string]interface{}) []string {
+	switch v := args["kind"].(type) {
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return nil
+		}
+		return strings.Split(v, ",")
+	case []interface{}:
+		return argStrList(args, "kind")
+	}
+	return nil
+}
+
 func toolKubeGet(s *Server, r *http.Request, args map[string]interface{}) (string, error) {
 	t, err := s.kubeTargetOf(args)
 	if err != nil {
 		return "", err
 	}
+	if kinds := kubeKindArg(args); len(kinds) > 0 {
+		res, err := s.inspector.KubeList(t.ID, kinds, inspector.KubeListOpts{
+			Namespace:     argStr(args, "namespace"),
+			LabelSelector: argStr(args, "label_selector"),
+			FieldSelector: argStr(args, "field_selector"),
+			SummaryOnly:   argBool(args, "summary_only"),
+			UnhealthyOnly: argBool(args, "unhealthy_only"),
+			Limit:         int(argInt(args, "limit")),
+		})
+		if err != nil {
+			return "", err
+		}
+		return jsonText(res)
+	}
 	what := argStr(args, "what")
+	if what == "" {
+		return "", fmt.Errorf("kind or what is required")
+	}
 	sub, q := what, url.Values{}
 	switch what {
 	case "nodes", "namespaces", "workloads", "pods", "services", "events":
@@ -404,7 +435,8 @@ func toolKubeGet(s *Server, r *http.Request, args map[string]interface{}) (strin
 	default:
 		return "", fmt.Errorf("unsupported what %q", what)
 	}
-	if ns := argStr(args, "namespace"); ns != "" && what != "nodes" && what != "namespaces" {
+	// "*" and "all" mean every namespace, which the legacy endpoints express as no ns parameter.
+	if ns := argStr(args, "namespace"); ns != "" && ns != "*" && ns != "all" && what != "nodes" && what != "namespaces" {
 		q.Set("ns", ns)
 	}
 	m, err := s.loopJSON(r.Context(), http.MethodGet, kubePath(t, sub, q), nil)

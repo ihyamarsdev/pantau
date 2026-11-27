@@ -61,6 +61,10 @@ type Inspector struct {
 	onInspectDone func(int64)
 	// teleportDir is the data directory; Teleport kubeconfigs live in its teleport/ subfolder. Set once at startup.
 	teleportDir string
+	// kubeExecOverride replaces the SSH/kubeconfig runner for kubectl scripts. Nil in production; tests set it.
+	kubeExecOverride func(targetID int64, body string, timeout time.Duration) (stdout, stderr string, exitCode int, err error)
+	// summaries caches the Kubernetes aggregator snapshots (kube_summary.go). Its zero value is ready to use.
+	summaries kubeSummaryCache
 }
 
 // SetOnInspectDone registers a callback invoked after a host inspection persists its status.
