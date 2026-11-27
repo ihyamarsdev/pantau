@@ -14,9 +14,10 @@ fi
 
 # Only added lines of the staged diff are scanned; the pattern list targets common key/token formats.
 patterns='-----BEGIN ([A-Z]+ )?PRIVATE KEY-----|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|sk-[A-Za-z0-9]{20,}'
-if git diff --cached -U0 | grep -E '^\+' | grep -v '^+++' | grep -E "$patterns" >/dev/null; then
+# grep -e: the first pattern starts with "-", which grep would otherwise read as an option.
+if git diff --cached -U0 | grep -E '^\+' | grep -v '^+++' | grep -E -e "$patterns" >/dev/null; then
 	echo "pre-commit: possible private key/token/secret found in staged diff:" >&2
-	git diff --cached -U0 | grep -E '^\+' | grep -v '^+++' | grep -E "$patterns" | sed 's/^/  /' | cut -c1-160 >&2
+	git diff --cached -U0 | grep -E '^\+' | grep -v '^+++' | grep -E -e "$patterns" | sed 's/^/  /' | cut -c1-160 >&2
 	echo "pre-commit: remove it, or use git commit --no-verify only if it is a verified false positive." >&2
 	fail=1
 fi
