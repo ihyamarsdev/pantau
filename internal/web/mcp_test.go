@@ -139,6 +139,7 @@ func TestMCPProtocol(t *testing.T) {
 				"pantau_get_docker_overview": true, "pantau_get_devsecops_findings": true,
 				"pantau_get_iac_runs": true, "pantau_list_vault_keys": true,
 				"pantau_diagnose_k8s_pod": true, "pantau_diagnose_docker": true, "pantau_diagnose_iac": true,
+				"pantau_k8s_workload_summary": true, "pantau_k8s_cluster_summary": true,
 			}
 			got := map[string]bool{}
 			for _, raw := range tools {

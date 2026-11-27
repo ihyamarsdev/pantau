@@ -194,3 +194,173 @@ func mcpDiagnoseIaC(s *Server, ctx context.Context, args map[string]any) (any, e
 		return json.RawMessage(text), nil
 	})
 }
+
+// mcpKubeTarget is one cluster an MCP summary can ask about: a registered cluster, or a k3s/RKE2 host cluster.
+type mcpKubeTarget struct {
+	name      string
+	target    int64 // inspector target id
+	clusterID int64 // registered cluster id, 0 for a host cluster
+	hostID    int64 // host id of a host cluster, 0 for a registered cluster
+}
+
+// mcpKubeRow is one cluster in a summary answer. A cluster that fails keeps its row, with live_error.
+type mcpKubeRow struct {
+	Name          string `json:"name"`
+	ClusterID     int64  `json:"cluster_id,omitempty"`
+	HostID        int64  `json:"host_id,omitempty"`
+	Summary       any    `json:"summary,omitempty"`
+	LiveError     string `json:"live_error,omitempty"`
+	LiveErrorCode string `json:"live_error_code,omitempty"`
+}
+
+// mcpKubeWorkloadFn and mcpKubeInventoryFn are the live queries behind the two summary tools. Tests replace them.
+var (
+	mcpKubeWorkloadFn = func(s *Server, target int64, opts inspector.KubeWorkloadOpts) (*inspector.KubeWorkloadSummary, error) {
+		return s.inspector.SummarizeWorkloads(context.Background(), target, opts)
+	}
+	mcpKubeInventoryFn = func(s *Server, target int64, refresh bool) (*inspector.KubeClusterInventory, error) {
+		return s.inspector.SummarizeClusterInventory(context.Background(), target, refresh)
+	}
+)
+
+// mcpKubeTargets resolves the optional cluster_id and host_id arguments. With neither, it returns every cluster.
+func mcpKubeTargets(s *Server, args map[string]any) ([]mcpKubeTarget, error) {
+	clusterID, err := mcpOptionalInt(args, "cluster_id")
+	if err != nil {
+		return nil, err
+	}
+	hostID, err := mcpOptionalInt(args, "host_id")
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case clusterID > 0:
+		c, err := s.db.GetKubeCluster(clusterID)
+		if err != nil {
+			return nil, err
+		}
+		if c == nil {
+			return nil, fmt.Errorf("no registered cluster with id %d", clusterID)
+		}
+		return []mcpKubeTarget{{name: c.Name, target: inspector.KubeClusterTarget(c.ID), clusterID: c.ID}}, nil
+	case hostID > 0:
+		h, err := s.db.GetHost(hostID)
+		if err != nil || h == nil {
+			return nil, fmt.Errorf("no host with id %d", hostID)
+		}
+		if h.KubeClusterID == "" {
+			return nil, fmt.Errorf("host %d is not part of a Kubernetes cluster", hostID)
+		}
+		return []mcpKubeTarget{{name: h.Name, target: h.ID, hostID: h.ID}}, nil
+	}
+	clusters, err := s.db.ListKubeClusters()
+	if err != nil {
+		return nil, err
+	}
+	var out []mcpKubeTarget
+	for _, c := range clusters {
+		out = append(out, mcpKubeTarget{name: c.Name, target: inspector.KubeClusterTarget(c.ID), clusterID: c.ID})
+	}
+	for _, c := range s.kubeHostClusters() {
+		out = append(out, mcpKubeTarget{name: c.Name, target: c.target().ID, hostID: c.target().ID})
+	}
+	return out, nil
+}
+
+// mcpOptionalInt reads an integer argument that may be absent; absent reads as 0.
+func mcpOptionalInt(args map[string]any, key string) (int64, error) {
+	if _, ok := args[key]; !ok {
+		return 0, nil
+	}
+	return mcpArgInt(args, key)
+}
+
+// mcpKubeFanOut runs fn for every target in parallel under one mcpLiveTimeout deadline and keeps the target order.
+// A slow or failed cluster reports live_error, and the rest still return.
+func mcpKubeFanOut(ctx context.Context, targets []mcpKubeTarget, fn func(mcpKubeTarget) (any, error)) []mcpKubeRow {
+	ctx, cancel := context.WithTimeout(ctx, mcpLiveTimeout)
+	defer cancel()
+	type result struct {
+		i   int
+		row mcpKubeRow
+	}
+	ch := make(chan result, len(targets)) // buffered: a late answer never blocks its goroutine
+	for i, t := range targets {
+		go func(i int, t mcpKubeTarget) {
+			v, err := fn(t)
+			row := mcpKubeRow{Name: t.name, ClusterID: t.clusterID, HostID: t.hostID, Summary: v}
+			if err != nil {
+				row.Summary = nil
+				row.LiveError = err.Error()
+				if _, expired := teleportSessionFailure(err); expired {
+					row.LiveError, row.LiveErrorCode = mcpTeleportExpiredText, teleport.CodeSessionExpired
+				}
+			}
+			ch <- result{i, row}
+		}(i, t)
+	}
+	rows := make([]mcpKubeRow, len(targets))
+	done := make([]bool, len(targets))
+	for n := 0; n < len(targets); {
+		select {
+		case r := <-ch:
+			rows[r.i], done[r.i] = r.row, true
+			n++
+		case <-ctx.Done():
+			for i, t := range targets {
+				if !done[i] {
+					rows[i] = mcpKubeRow{Name: t.name, ClusterID: t.clusterID, HostID: t.hostID,
+						LiveError: fmt.Sprintf("live query did not finish within %s", mcpLiveTimeout)}
+				}
+			}
+			return rows
+		}
+	}
+	return rows
+}
+
+func mcpK8sWorkloadSummary(s *Server, ctx context.Context, args map[string]any) (any, error) {
+	targets, err := mcpKubeTargets(s, args)
+	if err != nil {
+		return nil, err
+	}
+	ns := mcpArgString(args, "namespace")
+	if ns == "*" || ns == "all" {
+		ns = ""
+	}
+	if ns != "" && !inspector.ValidKubeNamespace(ns) {
+		return nil, fmt.Errorf("invalid namespace")
+	}
+	opts := inspector.KubeWorkloadOpts{Namespace: ns}
+	opts.IncludePods, _ = args["include_pods"].(bool)
+	opts.IncludeNames, _ = args["include_names"].(bool)
+	opts.Refresh, _ = args["refresh"].(bool)
+	rows := mcpKubeFanOut(ctx, targets, func(t mcpKubeTarget) (any, error) {
+		sum, err := mcpKubeWorkloadFn(s, t.target, opts)
+		if err != nil {
+			return nil, err
+		}
+		return sum, nil
+	})
+	return struct {
+		Clusters []mcpKubeRow `json:"clusters"`
+	}{rows}, nil
+}
+
+func mcpK8sClusterSummary(s *Server, ctx context.Context, args map[string]any) (any, error) {
+	targets, err := mcpKubeTargets(s, args)
+	if err != nil {
+		return nil, err
+	}
+	refresh, _ := args["refresh"].(bool)
+	rows := mcpKubeFanOut(ctx, targets, func(t mcpKubeTarget) (any, error) {
+		inv, err := mcpKubeInventoryFn(s, t.target, refresh)
+		if err != nil {
+			return nil, err
+		}
+		return inv, nil
+	})
+	return struct {
+		Clusters []mcpKubeRow `json:"clusters"`
+	}{rows}, nil
+}

@@ -38,7 +38,10 @@ Use ` + "`list_hosts`" + `, ` + "`get_host_state`" + `, ` + "`list_alerts`" + `,
 	domainKubernetes: `## Skill: Kubernetes
 - Discover clusters with ` + "`kube_targets`" + ` (` + "`cluster_id`" + `). Read workloads with ` + "`kube_get`" + `, ` + "`kube_describe`" + `, ` + "`kube_logs`" + `.
 - Always run ` + "`kube_diff`" + ` before ` + "`kube_apply`" + `. ` + "`kube_apply`" + ` and ` + "`kube_action`" + ` (` + "`drain`" + ` takes workloads offline) always ask for operator approval.
-- Respect read-only/no-exec cluster modes; report mode restrictions instead of bypassing them.`,
+- Respect read-only/no-exec cluster modes; report mode restrictions instead of bypassing them.
+- Aggregate questions ("ada berapa workloads/pods/deployments", "ringkasan cluster", "namespace mana yang bermasalah") MUST be answered in one step with ` + "`kube_workload_summary`" + ` (workloads) or ` + "`kube_cluster_summary`" + ` (nodes, namespaces, services, problems). Do not page through namespaces.
+- Never call ` + "`kube_get`" + ` once per namespace. For a list across namespaces use namespace "*" with summary_only, or the summary tools above.
+- If the operator is viewing a specific cluster, use that cluster by default. Do not scan SSH hosts (` + "`list_hosts`" + `, ` + "`ssh_batch_inspect`" + `) to find it.`,
 
 	domainDocker: `## Skill: Docker & Compose
 - Inspect with ` + "`docker_list`" + `, ` + "`docker_inspect`" + `, ` + "`docker_logs`" + `, ` + "`docker_info`" + `, ` + "`docker_stack_file`" + `.
@@ -110,7 +113,7 @@ type domainIntentRule struct {
 }
 
 var domainIntentRules = []domainIntentRule{
-	{domainKubernetes, regexp.MustCompile(`\b(k8s|kube|kubectl|kubernetes|pod|pods|deployment|deployments|statefulset|daemonset|namespace|namespaces|helm|ingress|crashloopbackoff|kubeconfig|nodeport)\b`)},
+	{domainKubernetes, regexp.MustCompile(`\b(k8s|kube|kubectl|kubernetes|pod|pods|deployment|deployments|statefulset|statefulsets|daemonset|daemonsets|cronjob|cronjobs|workload|workloads|cluster|clusters|namespace|namespaces|helm|ingress|crashloopbackoff|kubeconfig|nodeport)\b`)},
 	{domainDocker, regexp.MustCompile(`\b(docker|container|containers|compose|dockerfile|dockerhub|stack)\b`)},
 	{domainTerraform, regexp.MustCompile(`\b(terraform|tfvars|hcl|tf_plan|tf_apply|tfstate|workspace)\b`)},
 	{domainAnsible, regexp.MustCompile(`\b(ansible|playbook|playbooks|ansible-playbook|adhoc|gather_facts)\b`)},

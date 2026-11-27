@@ -38,9 +38,32 @@ var mcpTools = []mcpTool{
 	},
 	{
 		Name:        "pantau_get_k8s_overview",
-		Description: "Registered Kubernetes clusters (external kubeconfig clusters and k3s/RKE2 hosts) with their mode and identity. With include_live=true, adds a live read-only summary per cluster: node Ready state and unhealthy pods (CrashLoopBackOff, OOMKilled, Pending, Failed). Each live query has a 10-second limit; a cluster that is offline or slow reports live_error and the rest still return.",
+		Description: "Registered Kubernetes clusters (external kubeconfig clusters and k3s/RKE2 hosts) with their mode and identity. With include_live=true, adds a live read-only summary per cluster: node Ready state and unhealthy pods (CrashLoopBackOff, OOMKilled, Pending, Failed). Each live query has a 10-second limit; a cluster that is offline or slow reports live_error and the rest still return. For workload counts and per-namespace breakdowns, use pantau_k8s_workload_summary instead.",
 		InputSchema: mcpSchema(map[string]any{"include_live": map[string]any{"type": "boolean", "description": "Query each cluster live (10s limit per cluster)"}}),
 		run:         mcpGetK8sOverview,
+	},
+	{
+		Name:        "pantau_k8s_workload_summary",
+		Description: "Workload counts for Kubernetes clusters in one read-only call per cluster: Deployments, StatefulSets, DaemonSets, CronJobs and Jobs, with totals, ready and unhealthy counts, a per-namespace breakdown and up to 25 unhealthy objects. Leave cluster_id and host_id empty for every cluster, or set one to ask about a single cluster. A cluster that is offline, slow or has an expired Teleport session reports live_error (and live_error_code) and the rest still return.",
+		InputSchema: mcpSchema(map[string]any{
+			"cluster_id":    map[string]any{"type": "integer", "description": "Registered cluster id (from pantau_get_k8s_overview)"},
+			"host_id":       map[string]any{"type": "integer", "description": "Host of a k3s/RKE2 cluster (from host_clusters in pantau_get_k8s_overview)"},
+			"namespace":     map[string]any{"type": "string", "description": "One namespace; empty or '*' means all"},
+			"include_pods":  map[string]any{"type": "boolean", "description": "Add pod totals and unhealthy pods"},
+			"include_names": map[string]any{"type": "boolean", "description": "Add a short list of workloads (up to 50)"},
+			"refresh":       map[string]any{"type": "boolean", "description": "Skip the 25-second cache"},
+		}),
+		run: mcpK8sWorkloadSummary,
+	},
+	{
+		Name:        "pantau_k8s_cluster_summary",
+		Description: "Overview of Kubernetes clusters in one read-only call per cluster: node Ready and NotReady counts, namespace, workload, service, ingress and PVC counts, and up to 25 active problems. Leave cluster_id and host_id empty for every cluster, or set one. Offline, slow or expired-session clusters report live_error (and live_error_code) and the rest still return.",
+		InputSchema: mcpSchema(map[string]any{
+			"cluster_id": map[string]any{"type": "integer", "description": "Registered cluster id (from pantau_get_k8s_overview)"},
+			"host_id":    map[string]any{"type": "integer", "description": "Host of a k3s/RKE2 cluster (from host_clusters in pantau_get_k8s_overview)"},
+			"refresh":    map[string]any{"type": "boolean", "description": "Skip the 25-second cache"},
+		}),
+		run: mcpK8sClusterSummary,
 	},
 	{
 		Name:        "pantau_get_docker_overview",

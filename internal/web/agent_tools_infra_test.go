@@ -71,8 +71,8 @@ func TestToolKubeGetMultiKindIsOneKubectlCall(t *testing.T) {
 		},
 		{
 			// The fake answers with the whole fixture whatever the scope, so only the command is checked here.
-			name:      "one namespace",
-			args:      map[string]interface{}{"kind": "deployments", "namespace": "shop"},
+			name: "one namespace",
+			args: map[string]interface{}{"kind": "deployments", "namespace": "shop"},
 			// The script is wrapped in sh -c, so the quoted namespace is escaped; the prefix is what matters.
 			wantTotal: 3, wantCmd: "kc get deployments -n ",
 		},
@@ -114,5 +114,32 @@ func TestToolKubeGetRejectsUnknownKinds(t *testing.T) {
 	}
 	if n := len(commands()); n != 0 {
 		t.Errorf("kubectl ran %d times for rejected input", n)
+	}
+}
+
+func TestToolKubeWorkloadSummaryIsOneKubectlCall(t *testing.T) {
+	t.Parallel()
+	srv, hostID, commands := newKubeGetServer(t)
+	// namespace "*" means every namespace, so the command has -A and no -n.
+	out, err := toolKubeWorkloadSummary(srv, nil, map[string]interface{}{"target_id": float64(hostID), "namespace": "*"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sum struct {
+		Totals struct {
+			Total     int `json:"total_workloads"`
+			Unhealthy int `json:"unhealthy_workloads"`
+		} `json:"totals"`
+	}
+	if err := json.Unmarshal([]byte(out), &sum); err != nil {
+		t.Fatalf("result is not JSON: %v\n%s", err, out)
+	}
+	// The fixture holds one healthy Deployment, one NotReady Deployment and one failed Job.
+	if sum.Totals.Total != 3 || sum.Totals.Unhealthy != 2 {
+		t.Errorf("totals = %+v, want 3 workloads with 2 unhealthy", sum.Totals)
+	}
+	cmds := commands()
+	if len(cmds) != 1 || !strings.Contains(cmds[0], "kc get deployments,statefulsets,daemonsets,cronjobs,jobs -A -o json") {
+		t.Errorf("kubectl commands = %q, want one all-namespace workload query", cmds)
 	}
 }

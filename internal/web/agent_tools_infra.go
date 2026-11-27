@@ -60,6 +60,12 @@ var infraTools = []agentTool{
 		InputSchema: schema(nil, map[string]interface{}{}), run: toolKubeTargets},
 	{Name: "kube_get", Description: "List Kubernetes objects. Pass kind (comma-separated, e.g. deployments,statefulsets,daemonsets,cronjobs,jobs,pods) to list several kinds in one call: compact rows with name, namespace, status, ready, age and restarts, plus total_count, by_kind, by_namespace and truncated. namespace '*' or 'all' (or empty) means every namespace; summary_only returns counts and names; unhealthy_only keeps only problem objects. Legacy what = nodes, namespaces, workloads, pods, services, events, ingresses, configmaps, pvcs, pvs, jobs or cronjobs. To count workloads or summarize a cluster, prefer kube_workload_summary or kube_cluster_summary (one call). If you still use kube_get, use namespace='*' and summary_only=true; NEVER call kube_get once per namespace.",
 		InputSchema: schema(nil, map[string]interface{}{"cluster": pCluster, "target_id": pTarget, "what": map[string]interface{}{"type": "string", "enum": []string{"nodes", "namespaces", "workloads", "pods", "services", "events", "ingresses", "configmaps", "pvcs", "pvs", "jobs", "cronjobs"}}, "kind": map[string]interface{}{"type": "string", "description": "Comma-separated kinds: deployments, statefulsets, daemonsets, cronjobs, jobs, pods, services, ingresses, configmaps, pvcs, pvs, nodes, namespaces"}, "namespace": pNS, "summary_only": map[string]interface{}{"type": "boolean"}, "unhealthy_only": map[string]interface{}{"type": "boolean"}, "label_selector": str, "field_selector": str, "limit": map[string]interface{}{"type": "integer", "description": "rows, default 50, max 200"}}), run: toolKubeGet},
+	{Name: "kube_workload_summary", Description: "Count Kubernetes workloads (Deployments, StatefulSets, DaemonSets, CronJobs, Jobs) on one cluster in ONE read-only call, across all namespaces or one namespace: totals, ready and unhealthy counts, a per-namespace breakdown and up to 25 unhealthy objects. Use it first for any count or 'which namespace has problems' question. include_pods adds pod counts, include_names adds a short list (limit), refresh skips the 25-second cache.",
+		InputSchema: schema(nil, map[string]interface{}{"cluster": pCluster, "target_id": pTarget, "namespace": pNS, "include_pods": map[string]interface{}{"type": "boolean"}, "include_names": map[string]interface{}{"type": "boolean"}, "limit": map[string]interface{}{"type": "integer", "description": "names returned with include_names, default 50, max 200"}, "refresh": map[string]interface{}{"type": "boolean"}}),
+		keywords:    kubeSummaryKeywords, run: toolKubeWorkloadSummary},
+	{Name: "kube_cluster_summary", Description: "Overview of one Kubernetes cluster in ONE read-only call: node Ready and NotReady counts, namespace, workload, service, ingress and PVC counts, and up to 25 active problems (NotReady nodes, unhealthy workloads, Pending or Lost claims). Use it for 'how is the cluster' questions. refresh skips the 25-second cache.",
+		InputSchema: schema(nil, map[string]interface{}{"cluster": pCluster, "target_id": pTarget, "refresh": map[string]interface{}{"type": "boolean"}}),
+		keywords:    kubeSummaryKeywords, run: toolKubeClusterSummary},
 	{Name: "kube_describe", Description: "kubectl describe for one object (secret-looking values masked).",
 		InputSchema: schema([]string{"kind", "name"}, map[string]interface{}{"cluster": pCluster, "target_id": pTarget, "kind": map[string]interface{}{"type": "string", "description": "pod, deployment, node, service, ..."}, "namespace": pNS, "name": str}), run: toolKubeDescribe},
 	{Name: "kube_logs", Description: "Last lines of a pod's logs.",
@@ -447,6 +453,54 @@ func toolKubeGet(s *Server, r *http.Request, args map[string]interface{}) (strin
 		return jsonText(pick(m, "columns", "rows"))
 	}
 	return jsonText(m[what])
+}
+
+// kubeSummaryKeywords are the find_tools terms of the cluster summaries, so a question phrased in either language finds them.
+var kubeSummaryKeywords = []string{"workload", "workloads", "count", "berapa", "summary", "inventory", "overview", "namespace", "deployments", "statefulsets", "daemonsets", "cronjobs", "jobs", "cluster"}
+
+// kubeSummaryNamespace maps "*" and "all" to the empty namespace, which means every namespace.
+func kubeSummaryNamespace(args map[string]interface{}) string {
+	if ns := argStr(args, "namespace"); ns != "*" && ns != "all" {
+		return ns
+	}
+	return ""
+}
+
+func requestContext(r *http.Request) context.Context {
+	if r == nil {
+		return context.Background()
+	}
+	return r.Context()
+}
+
+func toolKubeWorkloadSummary(s *Server, r *http.Request, args map[string]interface{}) (string, error) {
+	t, err := s.kubeTargetOf(args)
+	if err != nil {
+		return "", err
+	}
+	sum, err := s.inspector.SummarizeWorkloads(requestContext(r), t.ID, inspector.KubeWorkloadOpts{
+		Namespace:    kubeSummaryNamespace(args),
+		IncludePods:  argBool(args, "include_pods"),
+		IncludeNames: argBool(args, "include_names"),
+		Limit:        int(argInt(args, "limit")),
+		Refresh:      argBool(args, "refresh"),
+	})
+	if err != nil {
+		return "", err
+	}
+	return jsonText(sum)
+}
+
+func toolKubeClusterSummary(s *Server, r *http.Request, args map[string]interface{}) (string, error) {
+	t, err := s.kubeTargetOf(args)
+	if err != nil {
+		return "", err
+	}
+	inv, err := s.inspector.SummarizeClusterInventory(requestContext(r), t.ID, argBool(args, "refresh"))
+	if err != nil {
+		return "", err
+	}
+	return jsonText(inv)
 }
 
 func toolKubeDescribe(s *Server, r *http.Request, args map[string]interface{}) (string, error) {

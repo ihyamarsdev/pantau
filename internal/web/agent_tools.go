@@ -34,6 +34,7 @@ type agentTool struct {
 	Description string                 `json:"description"`
 	InputSchema map[string]interface{} `json:"inputSchema"`
 	gate        int                    // highest gate the tool can ask for; run calls agentGate with the gate of the concrete action
+	keywords    []string               // extra find_tools terms that are not in the name or description
 	run         func(s *Server, r *http.Request, args map[string]interface{}) (string, error)
 }
 
@@ -146,6 +147,8 @@ func agentToolDomain(name string) toolDomain {
 	case name == "find_tools", name == "set_tool_domain",
 		name == "list_hosts", name == "get_host_state", name == "list_alerts", name == "inspect_host",
 		name == "read_file", name == "fleet_search", name == "exec_command", name == "ssh_batch_inspect",
+		// The two cluster summaries answer aggregate questions in one call, so they stay loaded in every domain.
+		name == "kube_workload_summary", name == "kube_cluster_summary",
 		strings.HasPrefix(name, "memory_"):
 		return domainCore
 	case strings.HasPrefix(name, "systemd_"), name == "host_info", name == "list_dir", name == "disk_usage",
@@ -234,26 +237,57 @@ func agentToolSpecsFor(domain toolDomain) []llmToolSpec {
 // the active domain by keyword, then load that domain for the next model call.
 func toolFindTools(s *Server, r *http.Request, args map[string]interface{}) (string, error) {
 	q, _ := args["query"].(string)
-	q = strings.ToLower(strings.TrimSpace(q))
-	if q == "" {
+	q = strings.TrimSpace(q)
+	terms := strings.Fields(strings.ToLower(q))
+	if len(terms) == 0 {
 		return "", fmt.Errorf("query is required")
 	}
-	const head = "name\tdomain\tdescription\n"
-	var b strings.Builder
-	b.WriteString(head)
+	type hit struct {
+		tool  agentTool
+		score int
+	}
+	var hits []hit
 	for _, t := range agentTools {
 		if t.Name == "find_tools" || t.Name == "set_tool_domain" {
 			continue
 		}
-		if !strings.Contains(strings.ToLower(t.Name+" "+t.Description), q) {
-			continue
+		if score := agentToolScore(t, terms); score > 0 {
+			hits = append(hits, hit{t, score})
 		}
-		b.WriteString(t.Name + "\t" + string(agentToolDomain(t.Name)) + "\t" + clipTo(t.Description, 160) + "\n")
 	}
-	if b.Len() == len(head) {
+	if len(hits) == 0 {
 		return "no tool matches " + q, nil
 	}
+	slices.SortStableFunc(hits, func(a, b hit) int {
+		if a.score != b.score {
+			return b.score - a.score
+		}
+		return strings.Compare(a.tool.Name, b.tool.Name)
+	})
+	var b strings.Builder
+	b.WriteString("name\tdomain\tdescription\n")
+	for _, h := range hits {
+		b.WriteString(h.tool.Name + "\t" + string(agentToolDomain(h.tool.Name)) + "\t" + clipTo(h.tool.Description, 160) + "\n")
+	}
 	return b.String(), nil
+}
+
+// agentToolScore ranks a tool for find_tools. A query term found in the name or keywords is worth 3, one found only
+// in the description is worth 1. Terms that match nothing add nothing, so a multi-word query still finds its tools.
+func agentToolScore(t agentTool, terms []string) int {
+	name := strings.ToLower(t.Name)
+	index := strings.ToLower(strings.Join(t.keywords, " "))
+	desc := strings.ToLower(t.Description)
+	score := 0
+	for _, term := range terms {
+		switch {
+		case strings.Contains(name, term), strings.Contains(index, term):
+			score += 3
+		case strings.Contains(desc, term):
+			score++
+		}
+	}
+	return score
 }
 
 // agentDomainKey carries a pointer to the conversation's active domain through the request, so the
