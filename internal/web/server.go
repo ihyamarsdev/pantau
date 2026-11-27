@@ -486,6 +486,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/teleport/profiles", s.authMiddleware(s.handleTeleportProfiles))
 	s.mux.HandleFunc("/api/teleport/profiles/", s.authMiddleware(s.handleTeleportProfileRoute))
 	s.mux.HandleFunc("/api/teleport/clusters/", s.authMiddleware(s.handleTeleportClusterRoute))
+	s.mux.HandleFunc("/api/teleport/cli/status", s.authMiddleware(s.handleTeleportCLIStatus))
+	s.mux.HandleFunc("/api/teleport/cli/check-update", s.authMiddleware(s.handleTeleportCLICheckUpdate))
+	s.mux.HandleFunc("/api/teleport/cli/install", s.authMiddleware(s.handleTeleportCLIInstall))
 	// kubectl CLI manager: the kubectl External Cluster operations run with
 	s.mux.HandleFunc("/api/kube/cli/update-check", s.authMiddleware(s.handleKubeCliUpdateCheck))
 	s.mux.HandleFunc("/api/kube/cli/install", s.authMiddleware(s.handleKubeCliInstall))

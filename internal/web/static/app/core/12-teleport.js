@@ -19,6 +19,10 @@ const TP = {
   busyId: null,
   statusTimer: null,
   editingId: null,
+  cli: null,        // GET /api/teleport/cli/status
+  cliCheck: null,   // last POST /api/teleport/cli/check-update answer
+  cliBusy: false,   // a check or an install is running
+  cliLog: '',       // install log, kept so a repaint does not lose it
 };
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -370,9 +374,6 @@ function profileFormHTML(p) {
 }
 
 function profilesListHTML() {
-  const tshLine = TP.tsh && TP.tsh.installed
-    ? `<p class="tp-muted">tsh: ${esc(TP.tsh.path || '')}</p>`
-    : `<p class="tp-warn">${esc(tt('tp_tsh_missing', 'tsh is not installed on this server'))}</p>`;
   const rows = TP.profiles.map((p) => {
     const st = TP.status[p.id];
     return `<tr><td>${esc(p.name)}</td><td>${esc(p.proxy)}</td><td>${esc(p.teleport_cluster)}</td>`
@@ -390,8 +391,191 @@ function profilesListHTML() {
       + `<th>${esc(tt('tp_cluster', 'Teleport cluster'))}</th><th>${esc(tt('tp_policy', 'Default policy'))}</th>`
       + `<th>${esc(tt('tp_session', 'Session'))}</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
     : `<p class="tp-muted">${esc(tt('tp_none', 'No Teleport profiles yet.'))}</p>`;
-  return tshLine + table
+  return `<div id="tpCliCard" class="tp-cli-card">${cliCardInner()}</div>` + table
     + `<div class="tp-form-actions"><button class="btn btn-sm" data-tp="new">${esc(tt('tp_new', 'New profile'))}</button></div>`;
+}
+
+// ---------- Teleport CLI (tsh) card: ADR 0080 (check) and ADR 0081 (managed install) ----------
+
+async function loadCLIStatus() {
+  const r = await apiJSON('GET', '/api/teleport/cli/status');
+  if (r.ok) TP.cli = r.data;
+  return TP.cli;
+}
+
+// The profile whose proxy version the check reads: the one with a live session, otherwise the first one.
+function profileForCLICheck() {
+  const active = TP.profiles.find((p) => TP.status[p.id] && TP.status[p.id].active);
+  return active || TP.profiles[0] || null;
+}
+
+function cliSourceLabel(source) {
+  return { env: tt('tp_cli_src_env', 'Env'), managed: tt('tp_cli_src_managed', 'Managed'), system: tt('tp_cli_src_system', 'System') }[source] || '';
+}
+
+function cliResultHTML(c) {
+  if (!c) return '';
+  if (c.status === 'check_failed') {
+    return `<p class="tp-warn" role="status">${esc(tt('tp_cli_check_failed', 'Check failed: {error}', { error: c.error || '' }))}</p>`;
+  }
+  let main = '';
+  if (c.status === 'update_available') main = tt('tp_cli_update_available', 'Update available: {installed} → {latest}', { installed: c.installed || '-', latest: c.latest });
+  else if (c.status === 'up_to_date') main = tt('tp_cli_up_to_date', 'Up to date (v{version})', { version: c.installed || c.latest });
+  else if (c.status === 'not_installed') main = tt('tp_cli_status_not_installed', 'tsh is not installed on this server. Install it to use Teleport profiles.');
+  else main = tt('tp_cli_status_unknown', 'The installed version cannot be compared with the latest release.');
+  const parts = [`<p class="tp-cli-main">${esc(main)}</p>`];
+  if (c.major_version_mismatch && c.proxy && c.proxy.version) {
+    parts.push(`<p class="tp-warn">${esc(tt('tp_cli_major_mismatch', 'Major version differs from the proxy (v{proxy}). Pick a version that matches the proxy.', { proxy: c.proxy.version }))}</p>`);
+  }
+  if (c.proxy && c.proxy.error) {
+    parts.push(`<p class="tp-muted">${esc(tt('tp_cli_proxy_error', 'The proxy version could not be read: {error}', { error: c.proxy.error }))}</p>`);
+  }
+  return parts.join('');
+}
+
+// cliCardInner renders the card body. The install log lives in TP.cliLog, so a repaint keeps it.
+function cliCardInner() {
+  const tsh = (TP.cli && TP.cli.tsh) || {};
+  const installed = !!tsh.installed;
+  const check = TP.cliCheck;
+  const busy = TP.cliBusy;
+  const proxyVersion = check && check.proxy && check.proxy.version ? check.proxy.version : '';
+  const latest = check && check.latest ? check.latest : '';
+
+  const badge = installed
+    ? `<span class="badge badge-healthy">${esc(cliSourceLabel(tsh.source))}</span>`
+    : `<span class="badge badge-danger">${esc(tt('tp_cli_not_installed', 'Not Installed'))}</span>`;
+  const kv = (label, value) => `<div class="tp-cli-kv"><span>${esc(label)}</span><strong>${value}</strong></div>`;
+
+  const rows = [
+    kv(tt('tp_cli_version', 'Installed version'), esc(installed ? (tsh.version || tt('tp_cli_unknown_version', 'unknown')) : '-')),
+  ];
+  if (installed && tsh.path) rows.push(kv(tt('tp_cli_path', 'Path'), `<code>${esc(tsh.path)}</code>`));
+  rows.push(kv(tt('tp_cli_proxy_version', 'Proxy version'), esc(proxyVersion || tt('tp_cli_no_profile', 'Add a Teleport profile to see its proxy version.'))));
+
+  const override = tsh.override_active
+    ? `<p class="tp-warn">${esc(tt('tp_cli_override', 'PANTAU_TSH_BIN is set on this server, so Pantau runs that binary and not the managed tsh. Installing here does not change what runs.'))}</p>`
+    : '';
+
+  // Install is offered when tsh is missing, when a newer release exists, or when the major version differs from the proxy.
+  const needsInstall = !installed || (check && (check.status === 'update_available' || check.status === 'not_installed' || check.major_version_mismatch));
+  // "Match Proxy" is offered when the proxy runs a release other than the latest and other than what is installed.
+  const matchProxy = proxyVersion && proxyVersion !== latest && proxyVersion !== (tsh.version || '');
+
+  const actions = [
+    `<button type="button" class="btn btn-sm" data-tp="cli-check"${busy ? ' disabled' : ''}>${esc(busy ? tt('tp_cli_checking', 'Checking…') : tt('tp_cli_check', 'Check for updates'))}</button>`,
+  ];
+  if (needsInstall) {
+    actions.push(`<button type="button" class="btn btn-sm btn-primary" data-tp="cli-install" data-version="${esc(latest)}"${busy ? ' disabled' : ''}>${esc(tt('tp_cli_install', 'Install / Update now'))}</button>`);
+  }
+  if (matchProxy) {
+    actions.push(`<button type="button" class="btn btn-sm" data-tp="cli-install" data-version="${esc(proxyVersion)}"${busy ? ' disabled' : ''}>${esc(tt('tp_cli_match', 'Match Proxy v{version}', { version: proxyVersion }))}</button>`);
+  }
+  if (check && check.release_url) {
+    actions.push(`<a class="tp-link" href="${esc(check.release_url)}" target="_blank" rel="noopener noreferrer">${esc(tt('tp_cli_release_notes', 'Release notes'))}</a>`);
+  }
+
+  return `<div class="tp-cli-head"><strong>${esc(tt('tp_cli_title', 'Teleport CLI (tsh)'))}</strong> ${badge}</div>`
+    + `<div class="tp-cli-kvs">${rows.join('')}</div>`
+    + override
+    + `<div class="tp-cli-result">${cliResultHTML(check)}</div>`
+    + `<div class="tp-cli-actions">${actions.join('')}</div>`
+    + `<pre class="tp-cli-log" id="tpCliLog"${TP.cliLog ? '' : ' hidden'}>${esc(TP.cliLog)}</pre>`
+    + `<p class="tp-muted">${esc(tt('tp_cli_hint', 'Check reads only: it contacts the Teleport release site and the proxy, and installs nothing. Install downloads the release, verifies its SHA-256 and only then replaces the managed tsh.'))}</p>`;
+}
+
+function renderCLICard() {
+  const el = document.getElementById('tpCliCard');
+  if (el) el.innerHTML = cliCardInner();
+}
+
+function appendCLILog(text) {
+  TP.cliLog += text;
+  const el = document.getElementById('tpCliLog');
+  if (el) {
+    el.hidden = false;
+    el.textContent = TP.cliLog;
+    el.scrollTop = el.scrollHeight;
+  }
+}
+
+// checkCLIUpdate runs POST /api/teleport/cli/check-update. A failed request is shown as check_failed, never as up to date.
+async function checkCLIUpdate() {
+  if (TP.cliBusy) return;
+  TP.cliBusy = true;
+  renderCLICard();
+  try {
+    const profile = profileForCLICheck();
+    const r = await apiJSON('POST', '/api/teleport/cli/check-update', profile ? { profile_id: profile.id } : {});
+    TP.cliCheck = r.ok ? r.data : { status: 'check_failed', error: (r.data && r.data.error) || tt('tp_failed', 'Teleport request failed') };
+  } catch (e) {
+    TP.cliCheck = { status: 'check_failed', error: e.message };
+  } finally {
+    TP.cliBusy = false;
+    renderCLICard();
+  }
+}
+
+// readInstallStream reads the NDJSON answer of the install: {"log"} lines, then {"done":true[,"error"]}.
+async function readInstallStream(body) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  let failure = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let nl = buf.indexOf('\n');
+    while (nl >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      nl = buf.indexOf('\n');
+      if (!line) continue;
+      let msg = null;
+      try { msg = JSON.parse(line); } catch (_) { continue; }
+      if (msg.log) appendCLILog(msg.log);
+      if (msg.done && msg.error) failure = msg.error;
+    }
+  }
+  return failure;
+}
+
+// installCLI runs POST /api/teleport/cli/install. An empty version installs the newest release.
+async function installCLI(version) {
+  if (TP.cliBusy) return;
+  TP.cliBusy = true;
+  TP.cliLog = '';
+  renderCLICard();
+  let failure = '';
+  try {
+    const res = await fetch('/api/teleport/cli/install', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(version ? { version } : {}),
+    });
+    if (res.status === 409) {
+      failure = tt('tp_cli_busy', 'An install is already running');
+    } else if (!res.ok) {
+      let d = {};
+      try { d = await res.json(); } catch (_) { d = {}; }
+      failure = d.error || tt('tp_failed', 'Teleport request failed');
+    } else {
+      failure = await readInstallStream(res.body);
+    }
+  } catch (e) {
+    failure = e.message;
+  }
+  TP.cliBusy = false;
+  await loadCLIStatus();
+  if (failure) {
+    appendCLILog(`${tt('tp_cli_install_failed', 'The install failed')}: ${failure}\n`);
+    notify(failure, 'error');
+    renderCLICard();
+    return;
+  }
+  notify(tt('tp_cli_installed_ok', 'tsh {version} is installed', { version: (TP.cli && TP.cli.tsh && TP.cli.tsh.version) || '' }), 'success');
+  await checkCLIUpdate();
 }
 
 function ensureOverlay(id, title) {
@@ -414,6 +598,7 @@ function ensureOverlay(id, title) {
 
 async function openProfiles() {
   await tpLoadProfiles();
+  await loadCLIStatus();
   const el = ensureOverlay('tpProfilesModal', tt('tp_title', 'Teleport Profiles'));
   el.querySelector('[data-tp-body]').innerHTML = profilesListHTML();
   for (const p of TP.profiles) tpStatusFor(p.id);
@@ -626,6 +811,12 @@ function onClick(e) {
       break;
     case 'edit':
       openProfileForm(id);
+      break;
+    case 'cli-check':
+      checkCLIUpdate();
+      break;
+    case 'cli-install':
+      installCLI(btn.getAttribute('data-version') || '');
       break;
     case 'new':
       openProfileForm(0);

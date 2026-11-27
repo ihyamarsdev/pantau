@@ -32,6 +32,11 @@ type Manager struct {
 
 	mu    sync.Mutex
 	locks map[int64]*sync.Mutex
+
+	up        Upstream      // release and download hosts; see upstream.go
+	latestMu  sync.Mutex    // guards latest and serializes release lookups
+	latest    cachedRelease // newest release, cached for latestCacheTTL
+	installMu sync.Mutex    // one tsh install at a time
 }
 
 // NewManager builds a Manager. dataDir must be absolute. tshOverride may be empty (tsh is then taken from PATH).
@@ -49,6 +54,7 @@ func NewManager(dataDir, tshOverride string, runner Runner) (*Manager, error) {
 		runner:      runner,
 		userHome:    os.UserHomeDir,
 		locks:       make(map[int64]*sync.Mutex),
+		up:          defaultUpstream(),
 	}, nil
 }
 
