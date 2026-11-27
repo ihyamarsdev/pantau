@@ -35,6 +35,15 @@ async function startFakeLLM(toolCalls = 1, calls?: ScriptedCall[]): Promise<Fake
       let body: { messages?: ChatMessage[]; tools?: { function?: { name?: string } }[]; system?: string } = {};
       try { body = JSON.parse(raw); } catch { /* an unparsable body is answered like an empty one */ }
       const messages = body.messages || [];
+      const sysText = (messages.find((m) => m.role === 'system') || {}).content || body.system || '';
+      if (sysText.startsWith('Generate a concise 3 to 7 word title')) {
+        // The thread-title call is a side request, not a chat turn: answer it without counting it.
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'E2E thread title' }, finish_reason: null }] }) + '\n\n');
+        res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] }) + '\n\n');
+        res.end('data: [DONE]\n\n');
+        return;
+      }
       const last = messages[messages.length - 1];
       const isPing = last?.role === 'user' && last.content === 'ping';
       if (!isPing) {
