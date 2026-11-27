@@ -23,7 +23,7 @@ func TestSessionSurvivesRestart(t *testing.T) {
 
 	first := NewServer(db, nil, nil)
 	w := httptest.NewRecorder()
-	token := first.issueSession(w)
+	token := first.issueSession(w, httptest.NewRequest(http.MethodPost, "/api/login", nil))
 	if token == "" {
 		t.Fatal("no session token issued")
 	}

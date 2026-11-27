@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"strings"
 	"sync"
@@ -58,6 +59,10 @@ func NewResolver(db *store.DB) *Resolver {
 // Uses api.ip2location.io as the primary provider for high-accuracy regional geolocation,
 // falling back to ip-api.com if unreachable or failed.
 func (r *Resolver) httpLookup(ctx context.Context, ip string) (store.GeoIPEntry, error) {
+	// Only a literal IP may enter either lookup URL; anything else could steer the request to another host (SSRF).
+	if net.ParseIP(ip) == nil {
+		return store.GeoIPEntry{}, fmt.Errorf("invalid ip for geo lookup")
+	}
 	entry, err := r.httpLookupIP2Location(ctx, ip)
 	if err == nil {
 		return entry, nil
@@ -70,13 +75,13 @@ func (r *Resolver) httpLookupIP2Location(ctx context.Context, ip string) (store.
 	defer cancel()
 	url := geoLookupURL + ip
 	if key := os.Getenv("IP2LOCATION_API_KEY"); key != "" {
-		url += "&key=" + key
+		url += "&key=" + neturl.QueryEscape(key)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil) // #nosec G704 -- ip validated by net.ParseIP in httpLookup; URL host is the constant geo API
 	if err != nil {
 		return store.GeoIPEntry{}, err
 	}
-	resp, err := r.http.Do(req)
+	resp, err := r.http.Do(req) // #nosec G704 -- ip validated by net.ParseIP in httpLookup; URL host is the constant geo API
 	if err != nil {
 		return store.GeoIPEntry{}, err
 	}

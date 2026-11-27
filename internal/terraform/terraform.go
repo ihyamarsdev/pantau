@@ -310,7 +310,7 @@ func ForceUnlockFiles(root string) {
 			return nil
 		}
 		if info != nil && info.Name() == ".terraform.tfstate.lock.info" {
-			_ = os.Remove(p)
+			_ = os.Remove(p) // #nosec G122 -- lock-info cleanup inside the admin-owned workspace; no attacker-controlled entries
 		}
 		return nil
 	})

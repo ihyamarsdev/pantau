@@ -3,7 +3,7 @@ package web
 import (
 	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha1"
+	"crypto/sha1" // #nosec G505 -- SHA-1 is the RFC 6238 default for TOTP; HMAC-SHA1 is not weakened by collisions here
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base32"
@@ -42,7 +42,7 @@ func GenerateOTP(secret string, timeStep int64) (string, error) {
 	}
 
 	buf := make([]byte, 8)
-	binary.BigEndian.PutUint64(buf, uint64(timeStep))
+	binary.BigEndian.PutUint64(buf, uint64(timeStep)) // #nosec G115 -- timeStep is Unix time divided by the 30s step, never negative
 
 	mac := hmac.New(sha1.New, key)
 	mac.Write(buf)

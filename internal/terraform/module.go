@@ -432,7 +432,7 @@ func CloneModuleFiles(ctx context.Context, g GitSource, ref, subdir string) (map
 			return nil
 		}
 
-		b, err := os.ReadFile(p)
+		b, err := os.ReadFile(p) // #nosec G122 -- read inside the admin-owned module cache; symlinks there are admin-controlled
 		if err == nil {
 			files[name] = string(b)
 		}

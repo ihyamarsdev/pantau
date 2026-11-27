@@ -125,9 +125,9 @@ func serveGlobeHiresChunk() http.HandlerFunc {
 		}
 		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 			w.Header().Set("Content-Encoding", "gzip")
-			_, _ = w.Write(gzBuf.Bytes())
+			_, _ = w.Write(gzBuf.Bytes()) // #nosec G705 -- embedded static app asset, not user-supplied content
 			return
 		}
-		_, _ = w.Write(raw)
+		_, _ = w.Write(raw) // #nosec G705 -- embedded static app asset, not user-supplied content
 	}
 }

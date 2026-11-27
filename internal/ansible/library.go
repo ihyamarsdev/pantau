@@ -416,7 +416,7 @@ func copyTree(src, dst string) error {
 			if err != nil {
 				return err
 			}
-			in, err := os.Open(p)
+			in, err := os.Open(p) // #nosec G122 -- read inside the admin-owned library dir; symlinks there are admin-controlled
 			if err != nil {
 				return err
 			}

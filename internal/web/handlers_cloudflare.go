@@ -525,7 +525,7 @@ func (s *Server) handleZoneDNSExport(w http.ResponseWriter, r *http.Request, acc
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+zid+`.zone"`)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	_, _ = w.Write([]byte(text))
+	_, _ = w.Write([]byte(text)) // #nosec G705 -- text/plain zone file served as an attachment with nosniff
 }
 
 func (s *Server) handleZoneAccessRules(w http.ResponseWriter, r *http.Request, account *store.CloudflareAccount, zid string) {

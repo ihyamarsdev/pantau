@@ -287,7 +287,7 @@ func writeVendorGz(w http.ResponseWriter, name string, gz []byte) {
 	w.Header().Set("Content-Type", ct)
 	w.Header().Set("Content-Encoding", "gzip")
 	w.Header().Set("Content-Length", strconv.Itoa(len(gz)))
-	_, _ = w.Write(gz)
+	_, _ = w.Write(gz) // #nosec G705 -- static vendor asset with a type derived from its file extension
 }
 
 func (s *Server) routes() {
@@ -566,7 +566,7 @@ func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 // cookies, ends it earlier.
 const sessionTTL = 365 * 24 * time.Hour
 
-func (s *Server) issueSession(w http.ResponseWriter) string {
+func (s *Server) issueSession(w http.ResponseWriter, r *http.Request) string {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		b = []byte(fmt.Sprintf("%d_%d", time.Now().UnixNano(), time.Now().Unix()))
@@ -581,12 +581,13 @@ func (s *Server) issueSession(w http.ResponseWriter) string {
 		}
 	}
 
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure is set per request by secureCookie (TLS-only); gosec cannot see through the helper
 		Name:     "pantau_session",
 		Value:    token,
 		Path:     "/",
 		Expires:  expiry,
 		MaxAge:   int(sessionTTL / time.Second),
+		Secure:   secureCookie(r),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
@@ -666,7 +667,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.issueSession(w)
+	s.issueSession(w, r)
 	logger.Info("auth", "", "Admin session established successfully")
 	writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok"})
 }
@@ -716,7 +717,7 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 	if valid {
 		_ = s.db.SetSetting("last_totp_step", strconv.FormatInt(matchedStep, 10))
 		s.temp2FAChallenges.Delete(req.TempToken)
-		s.issueSession(w)
+		s.issueSession(w, r)
 		logger.Info("auth", "", "Admin 2FA token verified successfully")
 		writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok"})
 		return
@@ -733,7 +734,7 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		remBytes, _ := json.Marshal(remaining)
 		_ = s.db.SetSetting("totp_recovery_codes", string(remBytes))
 		s.temp2FAChallenges.Delete(req.TempToken)
-		s.issueSession(w)
+		s.issueSession(w, r)
 		logger.Warn("auth", "", "Admin 2FA recovery code used")
 		writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok", "recovery_used": true})
 		return
@@ -917,17 +918,25 @@ func (s *Server) handle2FADisable(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"status": "disabled"})
 }
 
+// secureCookie marks cookies Secure only when the request arrived over TLS, directly or via a TLS-terminating proxy.
+// Plain-HTTP LAN installs keep working because a Secure cookie would never be stored there.
+func secureCookie(r *http.Request) bool {
+	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("pantau_session")
 	if err == nil {
 		s.dropSession(cookie.Value)
 	}
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure is set per request by secureCookie (TLS-only); gosec cannot see through the helper
 		Name:     "pantau_session",
 		Value:    "",
 		Path:     "/",
 		Expires:  time.Unix(0, 0),
+		Secure:   secureCookie(r),
 		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
 	})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "logged_out"})
 }
@@ -3413,7 +3422,7 @@ func (s *Server) handleSnapshotExport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", `attachment; filename="pantau-state.enc"`)
 	w.Header().Set("Content-Length", strconv.Itoa(len(enc)))
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(enc)
+	_, _ = w.Write(enc) // #nosec G705 -- octet-stream attachment of encrypted bytes, never rendered as HTML
 }
 
 // resetVPNAfterRestore drops tunnels and on-disk VPN state that belonged to the networks a restore replaced.
@@ -3587,7 +3596,8 @@ func (s *Server) handleSnapshotVerify(w http.ResponseWriter, r *http.Request) {
 
 	res, err := snapshot.Verify(data, passphrase)
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "valid": false, "status": "invalid", "error": err.Error()})
+		// A wrong passphrase or damaged file is a client-side problem: a clean 400 with a generic reason.
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "valid": false, "status": "invalid", "error": err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "valid": true, "status": "valid", "result": res})

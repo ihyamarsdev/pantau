@@ -59,8 +59,8 @@ func serveCoreModules(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 		w.Header().Set("Content-Encoding", "gzip")
-		_, _ = w.Write(b.gz)
+		_, _ = w.Write(b.gz) // #nosec G705 -- static bundled module asset, content type set by the caller
 		return
 	}
-	_, _ = w.Write(b.body)
+	_, _ = w.Write(b.body) // #nosec G705 -- static bundled module asset, content type set by the caller
 }

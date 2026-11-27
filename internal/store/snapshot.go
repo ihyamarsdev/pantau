@@ -732,7 +732,7 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 		"tf_output_links", "tf_runs", "tf_state_versions", "tf_variables", "tf_varset_workspaces", "tf_varsets", "tf_policies", "tf_module_versions", "tf_modules", "tf_workspaces", "tf_cloud_accounts",
 	}
 	for _, t := range tables {
-		if _, err := tx.Exec("DELETE FROM " + t); err != nil {
+		if _, err := tx.Exec("DELETE FROM " + t); err != nil { // #nosec G202 -- t comes from the fixed table list above, never from input
 			return fmt.Errorf("clear %s: %w", t, err)
 		}
 	}

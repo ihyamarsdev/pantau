@@ -126,7 +126,7 @@ func (s *Server) loopback(ctx context.Context, method, path string, body interfa
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	req.AddCookie(&http.Cookie{Name: "pantau_session", Value: tok})
+	req.AddCookie(&http.Cookie{Name: "pantau_session", Value: tok}) // #nosec G124 -- request header for an in-process loopback call; Secure/HttpOnly do not apply
 	rec := &memResp{h: http.Header{}, code: http.StatusOK}
 	s.mux.ServeHTTP(rec, req)
 	return rec.code, rec.buf.Bytes()

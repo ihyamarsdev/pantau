@@ -250,7 +250,8 @@ func (s *Server) handleTunnel(w http.ResponseWriter, r *http.Request) {
 		if r.URL.RawQuery != "" {
 			target += "?" + r.URL.RawQuery
 		}
-		http.Redirect(w, r, target, http.StatusTemporaryRedirect)
+		// security: not an open redirect — target always starts with the fixed "/api/tunnel/" prefix, so it stays on this origin.
+		http.Redirect(w, r, target, http.StatusTemporaryRedirect) // #nosec G710 -- relative path under fixed /api/tunnel prefix, host-independent
 		return
 	}
 
@@ -376,11 +377,12 @@ func (s *Server) handleTunnelRedirect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid tunnel route (expected /api/tunnel/:hostId/:port/)", http.StatusBadRequest)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure is set per request by secureCookie (TLS-only); gosec cannot see through the helper
 		Name:     tunnelCookieName,
 		Value:    tunnelToken(hostID, port),
 		Path:     fmt.Sprintf("/api/tunnel/%d/%d", hostID, port),
 		MaxAge:   12 * 60 * 60,
+		Secure:   secureCookie(r),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
@@ -391,6 +393,12 @@ func (s *Server) handleTunnelRedirect(w http.ResponseWriter, r *http.Request) {
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
-	target := "http://" + net.JoinHostPort(strings.Trim(host, "[]"), strconv.Itoa(s.tunnelPort)) + r.URL.RequestURI()
-	http.Redirect(w, r, target, http.StatusTemporaryRedirect)
+	host = strings.Trim(host, "[]")
+	// Only IP literals or localhost may steer the redirect; a Host header naming any other hostname is refused.
+	if host != "localhost" && net.ParseIP(host) == nil {
+		http.Error(w, "invalid host", http.StatusBadRequest)
+		return
+	}
+	target := "http://" + net.JoinHostPort(host, strconv.Itoa(s.tunnelPort)) + r.URL.RequestURI()
+	http.Redirect(w, r, target, http.StatusTemporaryRedirect) // #nosec G710 -- host restricted to IP literal or localhost above
 }

@@ -36,8 +36,9 @@ const (
 
 // Exponential backoff with jitter. Tests in package vpnnet override these to be deterministic.
 var (
-	backoffBase   = 30 * time.Second
-	backoffCap    = 5 * time.Minute
+	backoffBase = 30 * time.Second
+	backoffCap  = 5 * time.Minute
+	// #nosec G404 -- reconnect jitter only spreads retries, not a security value
 	backoffJitter = func() float64 { return 0.8 + rand.Float64()*0.4 } // [0.8, 1.2]
 )
 

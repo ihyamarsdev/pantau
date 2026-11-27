@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	_ "net/http/pprof"
+	_ "net/http/pprof" // #nosec G108 -- opt-in via -pprof, bound to 127.0.0.1, see the pprof server block below
 	"os"
 	"os/exec"
 	"os/signal"
@@ -550,7 +550,10 @@ func main() {
 		fmt.Printf("🔬 pprof debug server on http://%s/debug/pprof/ (localhost only)\n", pprofAddr)
 		logger.Info("system", "", "pprof debug server enabled", "addr", pprofAddr)
 		go func() {
-			if err := http.ListenAndServe(pprofAddr, nil); err != nil && err != http.ErrServerClosed {
+			// Explicit server with timeouts (G114). Handler nil serves only net/http/pprof routes on DefaultServeMux,
+			// which the main server never uses, and the listener is loopback-only.
+			srv := &http.Server{Addr: pprofAddr, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
+			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				logger.Error("system", "", "pprof server error: "+err.Error())
 			}
 		}()

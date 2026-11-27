@@ -69,7 +69,7 @@ func (a *analyzer) externalRole(name string) string {
 			if info, err := d.Info(); err != nil || info.Size() > extRoleMaxFile || n >= extRoleMaxFiles {
 				return nil
 			}
-			data, err := os.ReadFile(p)
+			data, err := os.ReadFile(p) // #nosec G122 -- read inside the admin-owned library dir; symlinks there are admin-controlled
 			if err != nil {
 				return nil
 			}

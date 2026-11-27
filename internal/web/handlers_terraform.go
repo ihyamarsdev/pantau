@@ -750,13 +750,18 @@ func (s *Server) handleWorkspaceVCSTest(w http.ResponseWriter, r *http.Request, 
 		}
 	}
 
-	args := []string{"-c", "credential.helper=", "ls-remote", ws.GitURL}
+	// A URL or branch starting with "-" would be parsed by git as an option (e.g. --upload-pack=<command>).
+	if strings.HasPrefix(ws.GitURL, "-") || strings.HasPrefix(ws.GitBranch, "-") {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "git url and branch must not start with '-'"})
+		return
+	}
+	args := []string{"-c", "credential.helper=", "ls-remote", "--", ws.GitURL}
 	branch := ws.GitBranch
 	if branch != "" {
 		args = append(args, branch, "refs/heads/"+branch)
 	}
 
-	cmd := exec.CommandContext(ctx, gitBin, args...)
+	cmd := exec.CommandContext(ctx, gitBin, args...) // #nosec G702 -- gitBin is fixed; URL/branch rejected if they start with "-" and "--" ends options
 	cmd.Env = env
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout = &outBuf

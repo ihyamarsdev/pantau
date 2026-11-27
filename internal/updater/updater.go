@@ -134,13 +134,13 @@ func (m *Manager) StartBackgroundTicker(ctx context.Context) {
 		return
 	}
 	// Initial check after a short delay so boot isn't impacted
-	go func() {
+	go func() { // #nosec G118 -- background update check must outlive any request; stopped via updater lifecycle
 		time.Sleep(3 * time.Second)
 		_, _ = m.Check(context.Background(), false)
 	}()
 
 	ticker := time.NewTicker(defaultCheckInterval)
-	go func() {
+	go func() { // #nosec G118 -- background update check must outlive any request; stopped via updater lifecycle
 		defer ticker.Stop()
 		for {
 			select {
@@ -234,9 +234,10 @@ func (m *Manager) storeCache(res *CheckResult) {
 
 // CompareVersions compares two semver tags (e.g. "v1.2.3" vs "v1.2.0").
 // Returns:
-//   1 if v1 > v2
-//  -1 if v1 < v2
-//   0 if v1 == v2
+//
+//	 1 if v1 > v2
+//	-1 if v1 < v2
+//	 0 if v1 == v2
 func CompareVersions(v1, v2 string) int {
 	v1Clean := strings.TrimPrefix(strings.TrimSpace(v1), "v")
 	v2Clean := strings.TrimPrefix(strings.TrimSpace(v2), "v")
@@ -525,7 +526,7 @@ func (m *Manager) Restart() error {
 		return fmt.Errorf("failed to evaluate symlinks: %w", err)
 	}
 
-	cmd := exec.Command(execPath, os.Args[1:]...)
+	cmd := exec.Command(execPath, os.Args[1:]...) // #nosec G702 -- execPath is os.Executable(), the running binary itself
 	cmd.Dir, _ = os.Getwd()
 	cmd.Env = os.Environ()
 	cmd.Stdout = os.Stdout
