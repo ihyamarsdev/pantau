@@ -852,6 +852,7 @@
         err.settings = res.status === 400; // no provider/model configured: point at Settings → AI Agent
         throw err;
       }
+      const turn = { mutated: false, planned: false };
       await readSSE(res.body, (ev, data) => {
         if (ev === 'agent.tool') {
           const label = (data.tool || 'tool') + (data.label && data.label !== data.tool ? ': ' + data.label : '');
@@ -865,9 +866,9 @@
             refreshPlan(data.plan_id);
           }
           // Tools that add, change or regroup hosts: the host list reloads when one finishes, not at the next 30 s poll.
-          if (data.status !== 'running' && ['fleet_host_action', 'fleet_host_groups', 'fleet_host_import'].includes(data.tool) && typeof loadHosts === 'function') loadHosts();
-          // A Terraform change by the agent (workspace created, edited, run) shows in the Terraform list at once.
-          if (data.status !== 'running' && String(data.tool || '').startsWith('tf_')) refreshTerraformList();
+          // An action by the agent changes what its view shows: that view reloads now, not at the next manual refresh.
+          if (data.status !== 'running' && data.risk_tier !== 'read_only') { turn.mutated = true; refreshForTool(data.tool); }
+          if (data.plan_id) turn.planned = true;
         } else if (ev === 'agent.error') {
           S.msgs.push({ role: 'error', text: (data && data.error) || 'agent error' });
         } else if (data && data.choices && data.choices[0]) {
@@ -877,6 +878,9 @@
         }
         scheduleLog();
       });
+      // Any view the action changed reloads with the page, once the turn is done: the chat comes back from the server.
+      // A proposed plan keeps the page, because its card (approve, stop, rollback) lives only in memory.
+      if (turn.mutated && !turn.planned) setTimeout(() => location.reload(), 1200);
     } catch (e) {
       if (e.name !== 'AbortError') S.msgs.push({ role: 'error', text: e.message, settings: !!e.settings });
     } finally {
@@ -940,10 +944,31 @@
     </div>`;
   }
 
-  // A Terraform change by the agent shows in the Terraform list at once, without a manual refresh.
   function refreshTerraformList() {
     const tf = window.Tf;
     if (tf && tf.load && typeof tf.load.workspaces === 'function') tf.load.workspaces().catch(() => {});
+  }
+
+  // Reload the open host detail in place: fetch the host again and redraw the tab that is showing.
+  async function refreshOpenHost() {
+    const id = window.detailData && window.detailData.host && window.detailData.host.id;
+    if (!id) return;
+    const res = await fetch('/api/hosts/' + id);
+    if (!res.ok) return;
+    window.detailData = await res.json();
+    const tab = document.querySelector('#hostDetailTabs .tab.active');
+    if (tab && typeof switchTab === 'function') switchTab(tab.getAttribute('data-tab'));
+  }
+
+  // Each agent action reloads the view it changed, through the loader that view already has.
+  function refreshForTool(tool) {
+    const name = String(tool || '');
+    const run = (f) => { if (typeof f === 'function') { try { const p = f(); if (p && p.catch) p.catch(() => {}); } catch (_) {} } };
+    if (/^(fleet_|alert_)/.test(name)) run(window.loadHosts);
+    if (name.startsWith('tf_')) refreshTerraformList();
+    if (/^(kube_|k8s_)/.test(name)) run(window.refreshKubeCurrentTab);
+    if (name.startsWith('docker_')) { run(window.loadDockerFleetOverview); if (window.detailData) run(window.loadDockerTab); }
+    if (/^(systemd_|pkg_|file_|firewall_|transfer_|domain_|host_|vpn_)/.test(name)) refreshOpenHost().catch(() => {});
   }
 
   async function refreshPlan(id) {
@@ -951,8 +976,8 @@
     if (!r || !r.ok || !r.data) return;
     const before = S.plans[id] && S.plans[id].state;
     S.plans[id] = r.data;
-    // Plan steps run outside the chat stream, so the list is refreshed when a plan that touched Terraform moves on.
-    if (r.data.state !== 'running' && r.data.state !== before && (r.data.steps || []).some((st) => String(st.tool || '').startsWith('tf_'))) refreshTerraformList();
+    // Plan steps run outside the chat stream: their views reload when the plan moves on from running.
+    if (r.data.state !== 'running' && r.data.state !== before) (r.data.steps || []).filter((st) => st.type === 'mutate').forEach((st) => refreshForTool(st.tool));
     renderLog();
     if (r.data.state === 'running' || r.data.state === 'rolling_back') setTimeout(() => refreshPlan(id), 1500);
   }
