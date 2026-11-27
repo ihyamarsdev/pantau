@@ -1081,3 +1081,64 @@ exit 0
 		t.Fatalf("expected tf_workspace_scaffold validation.ok=true, got: %s", scaffoldToolResult)
 	}
 }
+
+func TestTruncateToolResult_PreservesValidateErrorsOverWarnings(t *testing.T) {
+	t.Parallel()
+	diags := make([]map[string]interface{}, 0, 33)
+	for i := 0; i < 30; i++ {
+		diags = append(diags, map[string]interface{}{
+			"severity": "warning",
+			"summary":  "Deprecated attribute",
+			"detail":   strings.Repeat("warning-padding-", 55),
+			"file":     "variables.tf",
+			"line":     i + 1,
+		})
+	}
+	diags = append(diags,
+		map[string]interface{}{"severity": "error", "summary": "Missing required argument", "detail": strings.Repeat("err1-", 60), "file": "main.tf", "line": 10},
+		map[string]interface{}{"severity": "error", "summary": "Invalid reference", "detail": strings.Repeat("err2-", 60), "file": "main.tf", "line": 20},
+		map[string]interface{}{"severity": "error", "summary": `Unsupported argument: "vlan"`, "detail": `An argument named "vlan" is not expected here.`, "address": "module.vm", "file": "main.tf", "line": 35},
+	)
+	payload := map[string]interface{}{
+		"workspace_id": 42,
+		"name":         "torcons",
+		"files_written": []map[string]interface{}{{"path": "main.tf", "size": 1200}},
+		"validation": map[string]interface{}{
+			"ok":            false,
+			"error_count":   3,
+			"warning_count": 30,
+			"diagnostics":   diags,
+		},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) <= agentToolResultMax {
+		t.Fatalf("test fixture must exceed agentToolResultMax (%d), got %d", agentToolResultMax, len(raw))
+	}
+
+	got := truncateToolResult("tf_workspace_scaffold", string(raw))
+	if len(got) > agentToolResultMax {
+		t.Fatalf("trimmed output %d > agentToolResultMax %d", len(got), agentToolResultMax)
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(got), &parsed); err != nil {
+		t.Fatalf("trimmed output must remain valid JSON: %v\ngot=%s", err, got)
+	}
+	if !strings.Contains(got, `Unsupported argument: \"vlan\"`) && !strings.Contains(got, `Unsupported argument: "vlan"`) {
+		t.Fatalf("expected 3rd error (Unsupported argument: vlan) to remain 100%% intact, got: %s", got)
+	}
+	val, _ := parsed["validation"].(map[string]interface{})
+	keptDiags, _ := val["diagnostics"].([]interface{})
+	errCount := 0
+	for _, item := range keptDiags {
+		d, _ := item.(map[string]interface{})
+		if d["severity"] == "error" {
+			errCount++
+		}
+	}
+	if errCount != 3 {
+		t.Fatalf("expected all 3 errors intact, got %d", errCount)
+	}
+}

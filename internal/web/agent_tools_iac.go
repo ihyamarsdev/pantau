@@ -58,7 +58,7 @@ var iacTools = []agentTool{
 		InputSchema: schema([]string{"files"}, map[string]interface{}{"workspace_id": pWS, "name": str, "description": str, "environment": str, "group_name": str, "tags": map[string]interface{}{"type": "array", "items": str}, "files": map[string]interface{}{"type": "object", "description": "all files of the workspace, name -> content (e.g. versions.tf, variables.tf, main.tf, outputs.tf)"}, "variables": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "object"}, "description": "each {key, value, category: terraform|env, sensitive}; a sensitive value must be {{ vault.KEY }}"}, "validate": map[string]interface{}{"type": "boolean"}}), run: toolTFWorkspaceScaffold},
 	{Name: "tf_workspace_data", Description: "The stored data of a Terraform workspace: action = state (the resources in the state), outputs (the outputs; sensitive ones stay hidden), variables (the variables; sensitive values are never returned), versions (the saved state versions), drift (the last drift check), diff (the difference between two state versions), audit (the Terraform log), write_file or delete_file (the files of an inline workspace), set_variable or delete_variable (a variable), state_op (state rm, state mv or import: rewrites the state under the workspace lock), state_import (stores a whole state file as a new version), rollback (restores an older state version), fmt or validate (checks the files; fmt returns the formatted files, validate runs terraform validate). Every action but the reads waits for explicit operator approval, every time; a sensitive variable value must not be sent to the model.",
 		InputSchema: schema([]string{"workspace_id", "action"}, map[string]interface{}{"workspace_id": pWS, "action": map[string]interface{}{"type": "string", "enum": []string{"state", "outputs", "variables", "versions", "drift", "diff", "audit", "write_file", "delete_file", "set_variable", "delete_variable", "state_op", "state_import", "rollback", "fmt", "validate"}}, "path": str, "content": str, "files": map[string]interface{}{"type": "object", "description": "for fmt and validate: the files of the workspace"}, "key": str, "value": str, "category": map[string]interface{}{"type": "string", "enum": []string{"terraform", "env"}}, "sensitive": map[string]interface{}{"type": "boolean"}, "description": str, "op": map[string]interface{}{"type": "string", "enum": []string{"rm", "mv", "import"}}, "address": str, "to": str, "import_id": str, "version_id": map[string]interface{}{"type": "integer"}, "from_version_id": map[string]interface{}{"type": "integer", "description": "for diff: the older state version id"}, "to_version_id": map[string]interface{}{"type": "integer", "description": "for diff: the newer state version id"}, "limit": map[string]interface{}{"type": "integer"}}), run: toolTFWorkspaceData},
-	{Name: "tf_catalog", Description: "The Terraform catalog of the Pantau server: action = policies (the plan policies), modules (the private modules), varsets (the variable sets), templates (the index of the built-in workspace templates in ONE call: id, name, provider, summary; optional query filters it; template_id returns the files of that one template; call it once, never once per template), registry_modules (search public registry modules; pass queries: []string for batch search in ONE call, or query for a single search), inspect (fetch compact schema — source, version, root required/optional inputs, outputs, and submodules with their sources and inputs — for up to 5 module_ids in ONE call; pass submodule to get all optional inputs of one submodule), registry_providers (the public registry), status (the installed binaries), create_policy, update_policy, delete_policy (a plan policy), create_module, delete_module (a private module), create_varset, delete_varset (a variable set), varset_variables (the variables of a variable set), set_varset_variable, delete_varset_variable (one variable of a variable set), set_varset_workspaces (the workspaces a variable set applies to), cloud_accounts (the cloud accounts of the catalog; their secrets are never shown), importable_accounts (the Pantau accounts a cloud account can copy its credentials from), create_cloud_account (imports the credentials from an existing Pantau account: cloudflare or kubernetes, by id), update_cloud_account (the name, description and non-secret fields), delete_cloud_account, test_cloud_account (tests the stored credentials). Every action but the reads waits for explicit operator approval, every time.",
+	{Name: "tf_catalog", Description: "The Terraform catalog of the Pantau server: action = policies (the plan policies), modules (the private modules), varsets (the variable sets), templates (the index of the built-in workspace templates in ONE call: id, name, provider, summary; optional query filters it; template_id returns the files of that one template; call it once, never once per template), registry_modules (search public registry modules; pass queries: []string for batch search in ONE call, or query for a single search; returns latest_version), inspect (fetch compact schema — source, version, latest_version, provider_dependencies, root required/optional inputs, outputs, and up to 15 submodules with their sources, required_inputs, and provider_dependencies — for up to 5 module_ids in ONE call; pass submodule to get all optional inputs of one submodule), registry_providers (the public registry), status (the installed binaries), create_policy, update_policy, delete_policy (a plan policy), create_module, delete_module (a private module), create_varset, delete_varset (a variable set), varset_variables (the variables of a variable set), set_varset_variable, delete_varset_variable (one variable of a variable set), set_varset_workspaces (the workspaces a variable set applies to), cloud_accounts (the cloud accounts of the catalog; their secrets are never shown), importable_accounts (the Pantau accounts a cloud account can copy its credentials from), create_cloud_account (imports the credentials from an existing Pantau account: cloudflare or kubernetes, by id), update_cloud_account (the name, description and non-secret fields), delete_cloud_account, test_cloud_account (tests the stored credentials). Every action but the reads waits for explicit operator approval, every time.",
 		InputSchema: schema([]string{"action"}, map[string]interface{}{"action": map[string]interface{}{"type": "string", "enum": []string{"policies", "modules", "varsets", "templates", "registry_modules", "inspect", "registry_providers", "status", "create_policy", "update_policy", "delete_policy", "create_module", "delete_module", "create_varset", "delete_varset", "varset_variables", "set_varset_variable", "delete_varset_variable", "set_varset_workspaces", "cloud_accounts", "importable_accounts", "create_cloud_account", "update_cloud_account", "delete_cloud_account", "test_cloud_account"}}, "policy_id": map[string]interface{}{"type": "integer"}, "module_id": map[string]interface{}{"type": "integer"}, "varset_id": map[string]interface{}{"type": "integer"}, "name": str, "description": str, "kind": str, "params": map[string]interface{}{"type": "object"}, "enforcement": str, "enabled": map[string]interface{}{"type": "boolean"}, "workspace_id": pWS, "provider": str, "global": map[string]interface{}{"type": "boolean"}, "query": str, "queries": map[string]interface{}{"type": "array", "items": str, "description": "for registry_modules: batch search queries executed in parallel (max 10)"}, "module_ids": map[string]interface{}{"type": "array", "items": str, "description": "for inspect: up to 5 registry module IDs (namespace/name/provider or namespace/name/provider/version)"}, "submodule": map[string]interface{}{"type": "string", "description": "for inspect: optional submodule name or path (e.g. compute_instance) to return all its optional inputs"}, "template_id": map[string]interface{}{"type": "string", "description": "for templates: the id of one template, to get its files"}, "limit": map[string]interface{}{"type": "integer"}, "variable_id": map[string]interface{}{"type": "integer"}, "workspace_ids": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "integer"}}, "account_id": map[string]interface{}{"type": "integer"}, "import_type": map[string]interface{}{"type": "string", "enum": []string{"cloudflare", "kubernetes"}}, "import_id": map[string]interface{}{"type": "integer", "description": "the Pantau account the credentials are copied from"}}), run: toolTFCatalog},
 
 	// ---- Kubernetes: clusters
@@ -1014,6 +1014,7 @@ func toolTFWorkspaceScaffold(s *Server, r *http.Request, args map[string]interfa
 		if verr != nil {
 			out["validate_error"] = verr.Error()
 		} else {
+			prioritizeErrorDiagnostics(vm)
 			out["validation"] = vm
 		}
 	}
@@ -1421,9 +1422,32 @@ func toolTFWorkspaceData(s *Server, r *http.Request, args map[string]interface{}
 			}
 			return jsonText(out)
 		}
+		prioritizeErrorDiagnostics(m)
 		return jsonText(m)
 	}
 	return "", fmt.Errorf("unknown action %q", action)
+}
+
+// prioritizeErrorDiagnostics orders diagnostics so severity=="error" entries always appear
+// before warnings and are never crowded out when a large validate payload is trimmed.
+func prioritizeErrorDiagnostics(m map[string]interface{}) {
+	rawDiags, ok := m["diagnostics"].([]interface{})
+	if !ok || len(rawDiags) == 0 {
+		return
+	}
+	var errs, warns []interface{}
+	for _, d := range rawDiags {
+		obj, _ := d.(map[string]interface{})
+		if sev, _ := obj["severity"].(string); sev == "error" {
+			errs = append(errs, d)
+		} else {
+			warns = append(warns, d)
+		}
+	}
+	ordered := make([]interface{}, 0, len(errs)+len(warns))
+	ordered = append(ordered, errs...)
+	ordered = append(ordered, warns...)
+	m["diagnostics"] = ordered
 }
 
 func toolTFCatalog(s *Server, r *http.Request, args map[string]interface{}) (string, error) {

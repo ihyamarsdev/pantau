@@ -470,9 +470,15 @@ var toolResultHints = map[string]string{
 // model keeps the beginning (what the command was) and the end (how it failed, the last lines of a log) and is
 // told how to fetch the middle. A cut is never silent: an unnotified truncation would make the model believe it
 // saw the whole output.
+//
+// Structured JSON results carrying diagnostics / init_error / error_excerpt are NEVER sliced mid-JSON:
+// non-essential fields and warnings are trimmed first so all errors (first 15) and init_error stay 100% intact.
 func truncateToolResult(tool, s string) string {
 	if len(s) <= agentToolResultMax {
 		return s
+	}
+	if out, ok := truncateStructuredToolResult(s); ok {
+		return out
 	}
 	// Half the budget to the head, half to the tail: an error and a summary usually sit at one end or the other.
 	head := agentToolResultMax / 2
@@ -484,6 +490,84 @@ func truncateToolResult(tool, s string) string {
 	cut := len(s) - head - tail
 	return fmt.Sprintf("%s\n\n[tool result truncated: %d of %d bytes omitted from the middle. %s]\n\n%s",
 		s[:head], cut, len(s), hint, s[len(s)-tail:])
+}
+
+func hasStructuredDiagnostics(m map[string]interface{}) bool {
+	for _, k := range []string{"diagnostics", "validation", "init_error", "init_error_tail", "error_excerpt"} {
+		if _, ok := m[k]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func trimDiagnosticsObj(obj map[string]interface{}, maxWarnings, maxErrors int) {
+	raw, ok := obj["diagnostics"].([]interface{})
+	if !ok {
+		return
+	}
+	var errs, warns []interface{}
+	for _, item := range raw {
+		d, _ := item.(map[string]interface{})
+		if sev, _ := d["severity"].(string); sev == "error" {
+			errs = append(errs, item)
+		} else {
+			warns = append(warns, item)
+		}
+	}
+	if maxErrors >= 0 && len(errs) > maxErrors {
+		obj["errors_omitted"] = len(errs) - maxErrors
+		errs = errs[:maxErrors]
+	}
+	if maxWarnings >= 0 && len(warns) > maxWarnings {
+		obj["warnings_omitted"] = len(warns) - maxWarnings
+		warns = warns[:maxWarnings]
+	}
+	combined := make([]interface{}, 0, len(errs)+len(warns))
+	combined = append(combined, errs...)
+	combined = append(combined, warns...)
+	obj["diagnostics"] = combined
+}
+
+func truncateStructuredToolResult(s string) (string, bool) {
+	trimmed := strings.TrimSpace(s)
+	if !strings.HasPrefix(trimmed, "{") {
+		return "", false
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(trimmed), &m); err != nil || !hasStructuredDiagnostics(m) {
+		return "", false
+	}
+
+	// Step 1: drop bulky non-diagnostic fields first.
+	for _, drop := range []string{"files_written", "files", "metadata", "workspace", "variables"} {
+		delete(m, drop)
+	}
+	if _, hasExcerpt := m["error_excerpt"]; hasExcerpt {
+		delete(m, "log_tail")
+	}
+	if b, err := json.Marshal(m); err == nil && len(b) <= agentToolResultMax {
+		return string(b), true
+	}
+
+	// Step 2: trim warnings while keeping up to 15 error diagnostics 100% intact.
+	diagTarget := m
+	if val, ok := m["validation"].(map[string]interface{}); ok {
+		diagTarget = val
+	}
+	for _, warnCap := range []int{10, 3, 0} {
+		trimDiagnosticsObj(diagTarget, warnCap, -1)
+		if b, err := json.Marshal(m); err == nil && len(b) <= agentToolResultMax {
+			return string(b), true
+		}
+	}
+
+	// Step 3: if >15 huge errors still exceed budget, keep first 15 errors intact.
+	trimDiagnosticsObj(diagTarget, 0, 15)
+	if b, err := json.Marshal(m); err == nil {
+		return string(b), true
+	}
+	return "", false
 }
 
 // ---------------------------------------------------------------- compaction
