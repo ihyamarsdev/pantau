@@ -244,6 +244,7 @@ covers it.
   discard (a finished plan that can never be applied), apply (a finished plan in status awaiting_approval). Read
   the plan with `tf_runs` before you apply it and summarise what is added, changed and destroyed. Destroy and apply
   change real infrastructure and always ask.
+- `search_knowledge` — searches the stored runbooks, blueprints and memory notes (read only), optionally by domain.
 - `agent_propose_plan` — a multi-step plan for a change (inspect, mutate and verify steps, plus a rollback plan). The operator approves the whole plan once on its card; nothing runs before that, and destructive tools are never in a plan.
 - `delegate_investigate` — 2 to 4 read-only investigations of different domains, run in parallel; each returns a short summary.
 - `tf_workspace_scaffold` — one inline workspace in one call and one approval: its files, its variables and an optional `validate` (sensitive values are `{{ vault.KEY }}` references only).

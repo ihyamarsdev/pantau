@@ -266,6 +266,10 @@ func (s *Server) handleAgentThreads(w http.ResponseWriter, r *http.Request) {
 
 // handleAgentThread: /api/agent/threads/{id} -> GET returns the thread with its messages, DELETE drops it.
 func (s *Server) handleAgentThread(w http.ResponseWriter, r *http.Request) {
+	if rest, ok := strings.CutSuffix(strings.TrimPrefix(r.URL.Path, "/api/agent/threads/"), "/distill"); ok {
+		s.handleAgentDistill(w, r, queryInt64(rest))
+		return
+	}
 	id := queryInt64(strings.TrimPrefix(r.URL.Path, "/api/agent/threads/"))
 	if id <= 0 {
 		http.Error(w, "bad thread id", http.StatusBadRequest)

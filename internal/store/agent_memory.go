@@ -301,6 +301,9 @@ func (d *DB) AddAgentMemoryScoped(scope AgentMemoryScope, content, source string
 	if err != nil {
 		return nil, err
 	}
+	if err := d.reindexKnowledge("memory", id); err != nil {
+		return nil, err
+	}
 	m, err := scanAgentMemory(d.QueryRow(`SELECT `+agentMemoryCols+` FROM agent_memory WHERE id = ?`, id))
 	return &m, err
 }
@@ -318,7 +321,7 @@ func (d *DB) UpdateAgentMemory(id int64, content string) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrAgentMemoryNotFound
 	}
-	return nil
+	return d.reindexKnowledge("memory", id)
 }
 
 func (d *DB) DeleteAgentMemory(id int64) error {
@@ -329,5 +332,6 @@ func (d *DB) DeleteAgentMemory(id int64) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrAgentMemoryNotFound
 	}
-	return nil
+	_, err = d.Exec(`DELETE FROM agent_knowledge_fts WHERE kind = 'memory' AND ref_id = ?`, id)
+	return err
 }

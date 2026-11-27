@@ -115,3 +115,13 @@ body.ag-docked-open #agentFab { display: none; }
 .ag-dryrun-box.is-err { border-color: var(--danger, #ef4444); }
 .ag-dryrun-out { margin: 6px 0 0; max-height: 150px; overflow: auto; font-family: var(--font-mono); font-size: 11px; white-space: pre-wrap; word-break: break-word; }
 @media (max-width: 768px) { .ag-diff-split { grid-template-columns: 1fr; } }
+
+.ag-modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); display: flex; align-items: center; justify-content: center; z-index: 10000; padding: 16px; }
+.ag-modal { width: min(560px, 100%); max-height: 90vh; overflow-y: auto; background: var(--surface-1, var(--card-bg)); border: 1px solid var(--card-border); border-radius: var(--radius); padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.ag-modal h4 { margin: 0; }
+.ag-modal input, .ag-modal select, .ag-modal textarea { width: 100%; }
+.ag-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.ag-k-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid var(--card-border); font-size: var(--fs-xs); }
+.ag-k-meta { color: var(--text-muted); }
+.ag-k-form { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.ag-k-form textarea { width: 100%; font-family: var(--font-mono); font-size: var(--fs-xs); }

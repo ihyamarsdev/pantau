@@ -818,6 +818,9 @@ func (d *DB) migrate() error {
 	if err := d.migrateAgentTriage(); err != nil {
 		return fmt.Errorf("migrate agent triage: %w", err)
 	}
+	if err := d.migrateAgentKnowledge(); err != nil {
+		return fmt.Errorf("migrate agent knowledge: %w", err)
+	}
 	return nil
 }
 

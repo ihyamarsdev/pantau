@@ -217,7 +217,8 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 	// The system prompt is rebuilt every turn and never stored in the history. Dynamic skill injection keeps
 	// only the active domain's instructions and scoped memory notes, while a host fingerprint gives the model
 	// OS-correct execution context before it writes any shell command (ADR 0086).
-	system := agentSystemPromptFor(c.Soul, domain) + "\n\n" + s.agentMemoryPromptForDomain(message, domain) + "\n" + s.agentFingerprintPrompt(message, threadID)
+	system := agentSystemPromptFor(c.Soul, domain) + "\n\n" + s.agentMemoryPromptForDomain(message, domain) + "\n" + s.agentFingerprintPrompt(message, threadID) +
+		"\n" + s.agentKnowledgePrompt(message, domain) + s.agentCustomSkillsPrompt(domain)
 
 	// A long text-only exchange never reaches a tool batch, so the history is compacted here too.
 	if lastTokens > 0 && lastTokens+len(message)/3 > c.CompactTokens {

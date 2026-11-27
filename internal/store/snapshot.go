@@ -232,6 +232,8 @@ type SnapshotPayload struct {
 	DesiredRules           []DesiredRule               `json:"desired_rules"`
 	TerminalPresets        []TerminalPreset            `json:"terminal_presets,omitempty"`
 	AgentMemory            []AgentMemory               `json:"agent_memory,omitempty"`
+	AgentRunbooks          []AgentRunbook              `json:"agent_runbooks,omitempty"`
+	AgentCustomSkills      []AgentCustomSkill          `json:"agent_custom_skills,omitempty"`
 	SSHKeys                []SnapshotSSHKey            `json:"ssh_keys,omitempty"`
 	KubeClusters           []SnapshotKubeCluster       `json:"kube_clusters,omitempty"`
 	TeleportProfiles       []TeleportProfile           `json:"teleport_profiles,omitempty"`
@@ -395,6 +397,14 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 	allMemory, err := d.ListAgentMemory(0, "")
 	if err != nil {
 		return nil, fmt.Errorf("export agent memory: %w", err)
+	}
+	allRunbooks, err := d.ListAgentRunbooks("")
+	if err != nil {
+		return nil, fmt.Errorf("export agent runbooks: %w", err)
+	}
+	allSkills, err := d.ListAgentCustomSkills("", false)
+	if err != nil {
+		return nil, fmt.Errorf("export agent custom skills: %w", err)
 	}
 
 	var allSSHKeys []SnapshotSSHKey
@@ -724,6 +734,8 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 		DesiredRules:           allRules,
 		TerminalPresets:        allPresets,
 		AgentMemory:            allMemory,
+		AgentRunbooks:          allRunbooks,
+		AgentCustomSkills:      allSkills,
 		SSHKeys:                allSSHKeys,
 		KubeClusters:           allClusters,
 		TeleportProfiles:       allTeleportProfiles,
@@ -759,7 +771,7 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 	defer tx.Rollback()
 
 	tables := []string{
-		"alerts", "incidents", "actual_items", "desired_rules", "hosts", "vpn_networks", "terminal_presets", "agent_memory",
+		"alerts", "incidents", "actual_items", "desired_rules", "hosts", "vpn_networks", "terminal_presets", "agent_memory", "agent_runbooks", "agent_custom_skills",
 		"ssh_keys", "kube_clusters", "teleport_profiles", "cloudflare_accounts", "s3_accounts",
 		"ansible_runs", "ansible_schedules", "ansible_playbooks", "ansible_assets",
 		"tf_output_links", "tf_runs", "tf_state_versions", "tf_variables", "tf_varset_workspaces", "tf_varsets", "tf_policies", "tf_module_versions", "tf_modules", "tf_workspaces", "tf_cloud_accounts",
@@ -955,6 +967,19 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 		}
 	}
 
+	for _, rb := range payload.AgentRunbooks {
+		if _, err := tx.Exec(`INSERT INTO agent_runbooks (id, kind, title, domain, trigger_summary, steps_json, tags, source_thread_id, usage_count, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, rb.ID, rb.Kind, rb.Title, rb.Domain, rb.TriggerSummary, rb.StepsJSON, rb.Tags, rb.SourceThreadID, rb.UsageCount, rb.CreatedAt, rb.UpdatedAt); err != nil {
+			return fmt.Errorf("insert agent runbook %d: %w", rb.ID, err)
+		}
+	}
+	for _, sk := range payload.AgentCustomSkills {
+		if _, err := tx.Exec(`INSERT INTO agent_custom_skills (id, name, domain, enabled, content_md, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			sk.ID, sk.Name, sk.Domain, boolToInt(sk.Enabled), sk.Content, sk.CreatedAt, sk.UpdatedAt); err != nil {
+			return fmt.Errorf("insert agent custom skill %d: %w", sk.ID, err)
+		}
+	}
+
 	for _, a := range payload.TerraformCloudAccounts {
 		fields, err := marshalCloudFields(a.Fields)
 		if err != nil {
@@ -1069,6 +1094,10 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 	_, _ = tx.Exec(`INSERT INTO settings (key, value) VALUES ('bootstrap_completed', '1') ON CONFLICT(key) DO UPDATE SET value = '1'`)
 
 	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// The index follows the restored rows: memory notes and runbooks came back through raw inserts.
+	if err := d.reindexAllKnowledge(); err != nil {
 		return err
 	}
 	// A snapshot made before multi-account S3 carries the single-account settings: turn them into an account.

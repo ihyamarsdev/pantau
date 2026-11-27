@@ -52,6 +52,16 @@
       ag_disabled: 'The AI agent is off. Enable it in Settings → AI Agent.', ag_open_settings: 'Open AI Agent settings',
       ag_working: 'Working…', ag_stop: 'Stop',
       ag_waiting_approval: 'Waiting for your approval',
+    ag_save_kb: 'Save as Runbook / Blueprint', ag_k_need_thread: 'Open a chat thread first: distill needs a conversation.',
+    ag_k_distilling: 'Distilling this chat into a draft...', ag_k_review_title: 'Review runbook draft',
+    ag_k_review_hint: 'Nothing is saved until you press Save. Check every step: credentials must stay as {{ vault.KEY }} placeholders.',
+    ag_k_f_title: 'Title', ag_k_f_kind: 'Kind', ag_k_f_domain: 'Domain', ag_k_f_trigger: 'Trigger (symptom or goal)',
+    ag_k_f_steps: 'Steps (one per line)', ag_k_f_verify: 'Verify (one per line)', ag_k_f_rollback: 'Rollback (one per line)',
+    ag_k_f_tags: 'Tags (comma separated)', ag_k_save: 'Save to Knowledge Base', ag_k_cancel: 'Cancel', ag_k_saved: 'Saved to the knowledge base',
+    ag_k_title: 'Knowledge & Skills', ag_k_hint: 'Runbooks and blueprints the agent retrieves for matching questions, and custom skills injected for their domain.',
+    ag_k_search: 'Search runbooks and notes', ag_k_skills: 'Custom skills', ag_k_no_skills: 'No custom skills yet.', ag_k_none: 'Nothing found.',
+    ag_k_enabled: 'Enabled', ag_k_delete: 'Delete', ag_k_used: 'used', ag_k_confirm_delete: 'Delete this entry? This cannot be undone.',
+    ag_k_skill_name: 'Skill name', ag_k_skill_content: 'Instructions for this domain (Markdown)', ag_k_add_skill: 'Add skill',
     ag_plan_title: 'Plan', ag_plan_loading: 'Loading plan...', ag_plan_goal_label: 'Goal',
     ag_plan_hint: 'Nothing runs until you approve. One approval covers the steps of this plan. Destructive actions are never part of a plan.',
     ag_plan_approve: 'Approve & Execute Plan', ag_plan_reject: 'Reject', ag_plan_stop: 'Stop', ag_plan_rollback: 'Run Rollback',
@@ -132,6 +142,16 @@
       ag_disabled: 'Agen AI nonaktif. Aktifkan di Pengaturan → AI Agent.', ag_open_settings: 'Buka pengaturan AI Agent',
       ag_working: 'Bekerja…', ag_stop: 'Berhenti',
       ag_waiting_approval: 'Menunggu persetujuan Anda',
+    ag_save_kb: 'Simpan sebagai Runbook / Blueprint', ag_k_need_thread: 'Buka thread chat dulu: penyulingan membutuhkan percakapan.',
+    ag_k_distilling: 'Menyuling chat ini menjadi draf...', ag_k_review_title: 'Tinjau draf runbook',
+    ag_k_review_hint: 'Tidak ada yang disimpan sebelum Anda menekan Simpan. Periksa setiap langkah: kredensial harus tetap berupa placeholder {{ vault.KEY }}.',
+    ag_k_f_title: 'Judul', ag_k_f_kind: 'Jenis', ag_k_f_domain: 'Domain', ag_k_f_trigger: 'Pemicu (gejala atau tujuan)',
+    ag_k_f_steps: 'Langkah (satu per baris)', ag_k_f_verify: 'Verifikasi (satu per baris)', ag_k_f_rollback: 'Rollback (satu per baris)',
+    ag_k_f_tags: 'Tag (dipisah koma)', ag_k_save: 'Simpan ke Basis Pengetahuan', ag_k_cancel: 'Batal', ag_k_saved: 'Disimpan ke basis pengetahuan',
+    ag_k_title: 'Pengetahuan & Skill', ag_k_hint: 'Runbook dan blueprint yang diambil agen untuk pertanyaan yang cocok, serta skill kustom yang disisipkan untuk domainnya.',
+    ag_k_search: 'Cari runbook dan catatan', ag_k_skills: 'Skill kustom', ag_k_no_skills: 'Belum ada skill kustom.', ag_k_none: 'Tidak ditemukan.',
+    ag_k_enabled: 'Aktif', ag_k_delete: 'Hapus', ag_k_used: 'dipakai', ag_k_confirm_delete: 'Hapus entri ini? Tindakan ini tidak bisa dibatalkan.',
+    ag_k_skill_name: 'Nama skill', ag_k_skill_content: 'Instruksi untuk domain ini (Markdown)', ag_k_add_skill: 'Tambah skill',
     ag_plan_title: 'Rencana', ag_plan_loading: 'Memuat rencana...', ag_plan_goal_label: 'Tujuan',
     ag_plan_hint: 'Tidak ada yang berjalan sebelum Anda menyetujui. Satu persetujuan mencakup langkah-langkah rencana ini. Aksi destruktif tidak pernah menjadi bagian rencana.',
     ag_plan_approve: 'Setujui & Jalankan Rencana', ag_plan_reject: 'Tolak', ag_plan_stop: 'Hentikan', ag_plan_rollback: 'Jalankan Rollback',
@@ -469,6 +489,7 @@
       <div id="agentPanel" role="dialog" aria-label="${esc(t('ag_title'))}">
         <div class="ag-resizer" id="agentResizer" role="separator" aria-orientation="vertical" aria-label="${esc(t('ag_resize_panel'))}"></div>
         <div class="ag-head">${svgIcon('bot', 'icon-sm')}<span>${esc(t('ag_title'))}</span><span class="ag-sp"></span>
+          <button class="btn btn-sm btn-ghost" onclick="AG.distill()" title="${esc(t('ag_save_kb'))}">${esc(t('ag_save_kb'))}</button>
           <button class="btn btn-sm btn-ghost" onclick="AG.newChat()">${esc(t('ag_new'))}</button>
           <button class="btn btn-sm btn-icon btn-ghost" id="agentDockToggle" onclick="AG.toggleDock()"></button>
           <button class="btn btn-sm btn-icon btn-ghost" id="agentExpand" onclick="AG.expand()"></button>
@@ -1488,5 +1509,141 @@
     const r = await api('/api/agent/memory?id=' + id, { method: 'DELETE' });
     if (r.ok) AG.loadMemory();
     else showToast(r.data.error || 'error', 'error');
+  };
+  /* ---------- Procedural memory: distill a thread, Knowledge & Skills settings ---------- */
+  const KNOWLEDGE_DOMAINS = ['global', 'host', 'kubernetes', 'docker', 'ansible', 'terraform', 'security'];
+  S.skills = S.skills || [];
+
+  // Distill: the fast model drafts a runbook from this chat; the operator reviews the draft before anything is saved.
+  AG.distill = async function () {
+    if (!S.thread) { showToast(t('ag_k_need_thread'), 'error'); return; }
+    showToast(t('ag_k_distilling'), 'info');
+    const r = await post('/api/agent/threads/' + S.thread + '/distill', {});
+    if (!r.ok) { showToast((r.data && r.data.error) || 'HTTP ' + r.status, 'error'); return; }
+    openDistillReview(r.data.draft);
+  };
+
+  function domainOptions(selected) {
+    return KNOWLEDGE_DOMAINS.map((d) => `<option value="${d}" ${d === selected ? 'selected' : ''}>${esc(d)}</option>`).join('');
+  }
+
+  function openDistillReview(d) {
+    const ov = document.createElement('div');
+    ov.className = 'ag-modal-backdrop';
+    ov.innerHTML = `<div class="ag-modal" role="dialog" aria-modal="true" aria-label="${esc(t('ag_k_review_title'))}">
+      <h4>${esc(t('ag_k_review_title'))}</h4>
+      <div class="form-hint">${esc(t('ag_k_review_hint'))}</div>
+      <div class="form-group"><label class="form-label" for="agDTitle">${esc(t('ag_k_f_title'))}</label><input id="agDTitle" value="${esc(d.title || '')}"></div>
+      <div class="form-group"><label class="form-label" for="agDKind">${esc(t('ag_k_f_kind'))}</label>
+        <select id="agDKind"><option value="runbook" ${d.kind !== 'blueprint' ? 'selected' : ''}>runbook</option><option value="blueprint" ${d.kind === 'blueprint' ? 'selected' : ''}>blueprint</option></select></div>
+      <div class="form-group"><label class="form-label" for="agDDomain">${esc(t('ag_k_f_domain'))}</label><select id="agDDomain">${domainOptions(d.domain || 'global')}</select></div>
+      <div class="form-group"><label class="form-label" for="agDTrigger">${esc(t('ag_k_f_trigger'))}</label><input id="agDTrigger" value="${esc(d.trigger_summary || '')}"></div>
+      <div class="form-group"><label class="form-label" for="agDSteps">${esc(t('ag_k_f_steps'))}</label><textarea id="agDSteps" rows="4">${esc((d.steps || []).join('\n'))}</textarea></div>
+      <div class="form-group"><label class="form-label" for="agDVerify">${esc(t('ag_k_f_verify'))}</label><textarea id="agDVerify" rows="2">${esc((d.verify || []).join('\n'))}</textarea></div>
+      <div class="form-group"><label class="form-label" for="agDRollback">${esc(t('ag_k_f_rollback'))}</label><textarea id="agDRollback" rows="2">${esc((d.rollback || []).join('\n'))}</textarea></div>
+      <div class="form-group"><label class="form-label" for="agDTags">${esc(t('ag_k_f_tags'))}</label><input id="agDTags" value="${esc((d.tags || []).join(', '))}"></div>
+      <div class="ag-modal-actions">
+        <button class="btn btn-sm btn-ghost" id="agDCancel" type="button">${esc(t('ag_k_cancel'))}</button>
+        <button class="btn btn-sm btn-primary" id="agDSave" type="button">${esc(t('ag_k_save'))}</button>
+      </div></div>`;
+    document.body.appendChild(ov);
+    const lines = (id) => $(id).value.split('\n').map((x) => x.trim()).filter(Boolean);
+    ov.querySelector('#agDCancel').onclick = () => ov.remove();
+    ov.querySelector('#agDSave').onclick = async () => {
+      const body = {
+        kind: $('agDKind').value, title: $('agDTitle').value, domain: $('agDDomain').value,
+        trigger_summary: $('agDTrigger').value, steps: lines('agDSteps'), verify: lines('agDVerify'), rollback: lines('agDRollback'),
+        tags: $('agDTags').value.split(',').map((x) => x.trim()).filter(Boolean), source_thread_id: d.source_thread_id || 0,
+      };
+      const r = await post('/api/agent/knowledge', body);
+      if (r.ok) { ov.remove(); showToast(t('ag_k_saved'), 'success'); }
+      else showToast((r.data && r.data.error) || 'HTTP ' + r.status, 'error');
+    };
+  }
+
+  function runbookRow(rb) {
+    return `<div class="ag-k-row"><b>${esc(rb.title)}</b> <span class="badge badge-unknown">${esc(rb.kind)}</span> <span class="badge badge-unknown">${esc(rb.domain)}</span>
+      <span class="ag-k-meta">${esc(t('ag_k_used'))} ${Number(rb.usage_count) || 0}</span>
+      <button class="btn btn-sm btn-ghost" onclick="AG.deleteRunbook(${Number(rb.id)})">${esc(t('ag_k_delete'))}</button></div>`;
+  }
+
+  function skillRow(sk) {
+    return `<div class="ag-k-row"><b>${esc(sk.name)}</b> <span class="badge badge-unknown">${esc(sk.domain)}</span>
+      <label class="ag-k-meta"><input type="checkbox" ${sk.enabled ? 'checked' : ''} onchange="AG.toggleSkill(${Number(sk.id)}, this.checked)"> ${esc(t('ag_k_enabled'))}</label>
+      <button class="btn btn-sm btn-ghost" onclick="AG.deleteSkill(${Number(sk.id)})">${esc(t('ag_k_delete'))}</button></div>`;
+  }
+
+  async function renderKnowledgeCard() {
+    const body = $('agentSettingsBody');
+    if (!body) return;
+    let card = $('agKnowledgeCard');
+    if (!card) { card = document.createElement('div'); card.id = 'agKnowledgeCard'; body.appendChild(card); }
+    const [rb, sk] = await Promise.all([api('/api/agent/knowledge'), api('/api/agent/skills/custom')]);
+    const runbooks = rb.ok ? (rb.data.runbooks || []) : [];
+    S.skills = sk.ok ? (sk.data.skills || []) : [];
+    card.innerHTML = `<div class="set-card">
+      <div class="set-header"><div><h4 class="set-title">${svgIcon('bot')} <span>${esc(t('ag_k_title'))}</span></h4></div></div>
+      <div class="form-hint" style="margin-bottom:8px;">${esc(t('ag_k_hint'))}</div>
+      <div class="form-group"><label class="form-label" for="agKSearch">${esc(t('ag_k_search'))}</label>
+        <input id="agKSearch" type="search" oninput="AG.knowledgeSearch(this.value)"></div>
+      <div id="agKList">${runbooks.map(runbookRow).join('') || `<div class="form-hint">${esc(t('ag_k_none'))}</div>`}</div>
+      <div style="margin:14px 0 6px;font-weight:600;">${esc(t('ag_k_skills'))}</div>
+      <div id="agSkillList">${S.skills.map(skillRow).join('') || `<div class="form-hint">${esc(t('ag_k_no_skills'))}</div>`}</div>
+      <div class="ag-k-form">
+        <input id="agSkName" placeholder="${esc(t('ag_k_skill_name'))}">
+        <select id="agSkDomain">${domainOptions('docker')}</select>
+        <textarea id="agSkContent" rows="3" placeholder="${esc(t('ag_k_skill_content'))}"></textarea>
+        <label class="ag-k-meta"><input type="checkbox" id="agSkEnabled" checked> ${esc(t('ag_k_enabled'))}</label>
+        <button class="btn btn-sm btn-primary" type="button" onclick="AG.addSkill()">${esc(t('ag_k_add_skill'))}</button>
+      </div></div>`;
+  }
+
+  const loadSettingsBase = AG.loadSettings;
+  AG.loadSettings = async function () {
+    await loadSettingsBase();
+    await renderKnowledgeCard();
+  };
+
+  AG.knowledgeSearch = async function (q) {
+    const list = $('agKList');
+    if (!list) return;
+    q = (q || '').trim();
+    if (!q) { renderKnowledgeCard(); return; }
+    const r = await api('/api/agent/knowledge?q=' + encodeURIComponent(q));
+    const hits = r.ok ? (r.data.hits || []) : [];
+    list.innerHTML = hits.map((h) => `<div class="ag-k-row"><b>${esc(h.title)}</b> <span class="badge badge-unknown">${esc(h.kind)}</span>
+      <span class="ag-k-meta">${esc(h.snippet || '')}</span>${h.kind === 'runbook' ? `<button class="btn btn-sm btn-ghost" onclick="AG.deleteRunbook(${Number(h.id)})">${esc(t('ag_k_delete'))}</button>` : ''}</div>`).join('')
+      || `<div class="form-hint">${esc(t('ag_k_none'))}</div>`;
+  };
+
+  AG.deleteRunbook = async function (id) {
+    if (!confirm(t('ag_k_confirm_delete'))) return;
+    const r = await api('/api/agent/knowledge/runbooks/' + id, { method: 'DELETE' });
+    if (!r.ok) showToast((r.data && r.data.error) || 'HTTP ' + r.status, 'error');
+    renderKnowledgeCard();
+  };
+
+  AG.addSkill = async function () {
+    const name = $('agSkName').value.trim();
+    if (!name) { showToast(t('ag_k_skill_name'), 'error'); return; }
+    const r = await post('/api/agent/skills/custom', { name, domain: $('agSkDomain').value, enabled: $('agSkEnabled').checked, content_md: $('agSkContent').value });
+    if (!r.ok) { showToast((r.data && r.data.error) || 'HTTP ' + r.status, 'error'); return; }
+    renderKnowledgeCard();
+  };
+
+  AG.toggleSkill = async function (id, enabled) {
+    const sk = S.skills.find((x) => x.id === id);
+    if (!sk) return;
+    const r = await api('/api/agent/skills/custom/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: sk.name, domain: sk.domain, enabled, content_md: sk.content_md }) });
+    if (!r.ok) showToast((r.data && r.data.error) || 'HTTP ' + r.status, 'error');
+    renderKnowledgeCard();
+  };
+
+  AG.deleteSkill = async function (id) {
+    if (!confirm(t('ag_k_confirm_delete'))) return;
+    const r = await api('/api/agent/skills/custom/' + id, { method: 'DELETE' });
+    if (!r.ok) showToast((r.data && r.data.error) || 'HTTP ' + r.status, 'error');
+    renderKnowledgeCard();
   };
 })();
