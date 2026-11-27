@@ -537,7 +537,10 @@ func TestAnsibleRunExtraVarsPrecedence(t *testing.T) {
 	if rec1.Code != http.StatusAccepted {
 		t.Fatalf("expected 202, got %d", rec1.Code)
 	}
-	time.Sleep(20 * time.Millisecond)
+	// Wait for the run to finish instead of a fixed sleep: under -race the run can lag behind the request.
+	for deadline := time.Now().Add(5 * time.Second); srv.ansibleMgr.HasActiveRunForPlaybook(pid) && time.Now().Before(deadline); {
+		time.Sleep(5 * time.Millisecond)
+	}
 	if capturedSpec.ExtraVars != `{"foo":"default"}` {
 		t.Fatalf("expected default extra_vars, got %s", capturedSpec.ExtraVars)
 	}
@@ -548,7 +551,7 @@ func TestAnsibleRunExtraVarsPrecedence(t *testing.T) {
 		"extra_vars": `{"foo":"override"}`,
 	})
 	if rec2.Code != http.StatusAccepted {
-		t.Fatalf("expected 202, got %d", rec2.Code)
+		t.Fatalf("expected 202, got %d: %s", rec2.Code, rec2.Body.String())
 	}
 	time.Sleep(20 * time.Millisecond)
 	if capturedSpec.ExtraVars != `{"foo":"override"}` {

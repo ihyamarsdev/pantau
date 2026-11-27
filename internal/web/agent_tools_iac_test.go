@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"pantau/internal/ansible"
 	"pantau/internal/store"
 )
 
@@ -549,6 +550,9 @@ func TestIacTerraformDriftAndStateImport(t *testing.T) {
 
 // The ad-hoc Ansible command asks the operator and refuses an empty target selection.
 func TestIacAnsibleAdhoc(t *testing.T) {
+	if _, _, err := ansible.Available(); err != nil {
+		t.Skip("ansible is required: the ad-hoc tool answers 409 without it")
+	}
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
 	_ = db.SetSetting("agent_enabled", "1")

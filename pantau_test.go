@@ -502,9 +502,15 @@ func TestTicket07_AlertDispatcher(t *testing.T) {
 	env := setupTestEnv(t)
 
 	// Configure fake webhook
-	var receivedWebhookPayload map[string]interface{}
+	// The handler runs on the server goroutine; the payload is handed over through a channel, not a shared variable.
+	webhookPayloads := make(chan map[string]interface{}, 1)
 	webhookServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewDecoder(r.Body).Decode(&receivedWebhookPayload)
+		var payload map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		select {
+		case webhookPayloads <- payload:
+		default:
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer webhookServer.Close()
@@ -516,7 +522,11 @@ func TestTicket07_AlertDispatcher(t *testing.T) {
 	env.dispatcher.SendAlert(host, rule, "Drift: service mysql is inactive", "Active: failed (Result: exit-code)")
 
 	// Allow brief async dispatch
-	time.Sleep(100 * time.Millisecond)
+	var receivedWebhookPayload map[string]interface{}
+	select {
+	case receivedWebhookPayload = <-webhookPayloads:
+	case <-time.After(2 * time.Second):
+	}
 
 	if receivedWebhookPayload == nil || receivedWebhookPayload["event"] != "drift_alert" {
 		t.Fatalf("webhook payload not received or invalid: %+v", receivedWebhookPayload)
@@ -1820,7 +1830,7 @@ func TestDiskUsageDriftNoDu(t *testing.T) {
 	}
 
 	// Mock df -Pk / to return 90% usage (9000 used / 10000 total)
-	env.mockRunner.Handlers[`df -Pk / 2>/dev/null`] = func() (string, string, int, error) {
+	env.mockRunner.Handlers[`df -Pk "$1" 2>/dev/null`] = func() (string, string, int, error) {
 		return "Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/sda1 10000 9000 1000 90% /", "", 0, nil
 	}
 
@@ -2021,6 +2031,15 @@ func TestUIPackageTabAndProcessTelemetryPresence(t *testing.T) {
 		t.Fatalf("read index.html: %v", err)
 	}
 	s := string(htmlContent)
+	// The UI is split into static/app modules; the top-resource section lives in one of them.
+	modules, _ := filepath.Glob("internal/web/static/app/*/*.js")
+	for _, m := range modules {
+		b, err := os.ReadFile(m)
+		if err != nil {
+			t.Fatalf("read %s: %v", m, err)
+		}
+		s += string(b)
+	}
 	if !strings.Contains(s, `data-tab="packages"`) {
 		t.Errorf("expected index.html to contain packages tab")
 	}

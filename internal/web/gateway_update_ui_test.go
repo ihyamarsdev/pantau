@@ -30,7 +30,7 @@ func TestGatewayUpdateCheckUIInBundles(t *testing.T) {
 	for _, want := range []string{
 		"id=\"tfCliUpdateCheck\"",
 		"/api/terraform/update-check",
-		"function resultHtml(",
+		"function cliResultHtml(",
 		"tfCliUpdateCard",
 	} {
 		if !strings.Contains(terraformBundle, want) {
@@ -42,7 +42,7 @@ func TestGatewayUpdateCheckUIInBundles(t *testing.T) {
 	// "up to date".
 	for _, want := range []string{
 		"ans_rs_cli_hint",
-		"tfcli_hint",
+		"tf_cli_hint",
 	} {
 		if !strings.Contains(ansibleBundle, want) && !strings.Contains(terraformBundle, want) {
 			t.Errorf("neither bundle carries %q", want)
@@ -51,7 +51,7 @@ func TestGatewayUpdateCheckUIInBundles(t *testing.T) {
 	if !strings.Contains(ansibleBundle, "ans_rs_cli_hint") {
 		t.Error("ansible bundle missing the read-only note")
 	}
-	if !strings.Contains(terraformBundle, "tfcli_hint") {
+	if !strings.Contains(terraformBundle, "tf_cli_hint") {
 		t.Error("terraform bundle missing the read-only note")
 	}
 
@@ -68,10 +68,10 @@ func TestGatewayUpdateCheckUIInBundles(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"tfcli_available",
-		"tfcli_current",
-		"tfcli_error",
-		"tfcli_unknown",
+		"tf_cli_available",
+		"tf_cli_current",
+		"tf_cli_error",
+		"tf_cli_unknown",
 	} {
 		if !strings.Contains(terraformBundle, want) {
 			t.Errorf("terraform bundle missing the status label %q", want)
@@ -101,12 +101,12 @@ func TestGatewayUpdateCheckI18nKeys(t *testing.T) {
 
 	// The Terraform keys live in an EN/ID pair table.
 	for _, key := range []string{
-		"tfcli_check",
-		"tfcli_available",
-		"tfcli_current",
-		"tfcli_unknown",
-		"tfcli_error",
-		"tfcli_hint",
+		"tf_cli_check",
+		"tf_cli_available",
+		"tf_cli_current",
+		"tf_cli_unknown",
+		"tf_cli_error",
+		"tf_cli_hint",
 	} {
 		if !strings.Contains(terraformBundle, key+":") {
 			t.Errorf("terraform bundle missing the i18n key %q", key)
@@ -151,11 +151,11 @@ func TestGatewayCLIUpdateControlsUI(t *testing.T) {
 
 	// The Terraform Gate card offers the update per binary, and streams the log.
 	for _, want := range []string{
-		"tf-cli-update",
+		`data-act="cli-install"`,
 		"/api/terraform/install",
 		`id="tfCliUpdateLog"`,
-		"tfcli_update",
-		"tfcli_install_hint",
+		"tf_cli_update",
+		"tf_cli_install_hint",
 	} {
 		if !strings.Contains(terraformBundle, want) {
 			t.Errorf("terraform bundle missing %q", want)

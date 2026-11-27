@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"pantau/internal/gwupdate"
@@ -22,9 +23,15 @@ func fakeUpstream(t *testing.T, version string) {
 	}))
 	t.Cleanup(srv.Close)
 
-	oldPyPI, oldHC := gwupdate.PyPIURL, gwupdate.HashiCorpURL
-	gwupdate.PyPIURL, gwupdate.HashiCorpURL = srv.URL, srv.URL
-	t.Cleanup(func() { gwupdate.PyPIURL, gwupdate.HashiCorpURL = oldPyPI, oldHC })
+	// OpenTofu's "latest" is read from a redirect to the release tag, so it gets its own fake.
+	ot := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://github.com/opentofu/opentofu/releases/tag/v"+version, http.StatusFound)
+	}))
+	t.Cleanup(ot.Close)
+
+	oldPyPI, oldHC, oldOT := gwupdate.PyPIURL, gwupdate.HashiCorpURL, gwupdate.OpenTofuURL
+	gwupdate.PyPIURL, gwupdate.HashiCorpURL, gwupdate.OpenTofuURL = srv.URL, srv.URL, ot.URL
+	t.Cleanup(func() { gwupdate.PyPIURL, gwupdate.HashiCorpURL, gwupdate.OpenTofuURL = oldPyPI, oldHC, oldOT })
 }
 
 // 1. The endpoint needs a session.
@@ -145,7 +152,8 @@ func TestTerraformUpdateCheck(t *testing.T) {
 		if r.Target != "terraform" && r.Target != "tofu" {
 			t.Errorf("unexpected target %q", r.Target)
 		}
-		if r.Latest != "1.17.2" {
+		// OpenTofu tags carry a "v" prefix by design (see gwupdate); compare the bare version.
+		if strings.TrimPrefix(r.Latest, "v") != "1.17.2" {
 			t.Errorf("latest = %q, want 1.17.2", r.Latest)
 		}
 	}

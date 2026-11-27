@@ -631,7 +631,10 @@ func TestAgentChatNativeOverHTTP(t *testing.T) {
 		gotAuth = r.Header.Get("Authorization")
 		b := new(bytes.Buffer)
 		_, _ = b.ReadFrom(r.Body)
-		gotBody = b.String()
+		if calls == 0 {
+			// The chat request is the first call; the conversation title request that follows is tool-less.
+			gotBody = b.String()
+		}
 		calls++
 		w.Header().Set("Content-Type", "text/event-stream")
 		if calls == 1 {
