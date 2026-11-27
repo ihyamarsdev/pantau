@@ -66,7 +66,7 @@ Pantau menginspeksi Host remote melalui perintah SSH non-interaktif, memvalidasi
 |                                                    |                                           |                   |
 |                                       +------------v-------------+                             |                   |
 |                                       | Embedded SQLite (WAL)    |                             |                   |
-|                                       | Encrypted Snapshot/Argon2|                             |                   |
+|                                       | Encrypted Snapshot/PBKDF2|                             |                   |
 |                                       +------------+-------------+                             |                   |
 +----------------------------------------------------|-------------------------------------------|-------------------+
                                                      | Native SSH Protocol                       | Stream Pipe
@@ -116,7 +116,7 @@ Pantau menginspeksi Host remote melalui perintah SSH non-interaktif, memvalidasi
 - **Klasifikasi Bidang Serang (Attack Surface)**: Mengidentifikasi port listen yang terbuka, jenis binding IP (`0.0.0.0` vs `127.0.0.1`), serta mengklasifikasikan tingkat risikonya (*Public Internet* vs *Localhost Only*).
 
 ### 6. 🔐 System Snapshot Terenkripsi & Sinkronisasi GitHub
-- Mengenkripsi seluruh konfigurasi Host, kredensial SSH, dan aturan desired state ke dalam file snapshot `.enc` menggunakan derivasi kunci **Argon2id** dan enkripsi terotentikasi **AES-256-GCM**.
+- Mengenkripsi seluruh konfigurasi Host, kredensial SSH, dan aturan desired state ke dalam file snapshot `.enc` menggunakan derivasi kunci **PBKDF2-HMAC-SHA256** (100.000 iterasi) dan enkripsi terotentikasi **AES-256-GCM**.
 - **Sinkronisasi GitHub Otomatis**: Mendorong (*push*) file snapshot terenkripsi ke repositori GitHub privat secara terjadwal.
 - **Disaster Recovery Wizard**: Pulihkan seluruh inventaris monitoring dari nol hanya menggunakan token GitHub + path repositori atau file `.enc` cadangan.
 
@@ -455,7 +455,7 @@ systemctl enable --now pantau
 - **Backend Inti**: Golang (`net/http`, `golang.org/x/crypto/ssh`, `pkg/sftp`, `gorilla/websocket`)
 - **Database**: Pure-Go SQLite (`modernc.org/sqlite`) dengan mode Write-Ahead Logging (WAL)
 - **Frontend**: Single-Page Web App tersemat via `go:embed` (Zero-npm, Vanilla JS, xterm.js, CodeMirror)
-- **Keamanan**: Enkripsi snapshot Argon2id + AES-256-GCM, autentikasi admin ter-hash bcrypt
+- **Keamanan**: Enkripsi snapshot PBKDF2-SHA256 + AES-256-GCM, autentikasi admin ter-hash bcrypt
 
 ---
 

@@ -66,7 +66,7 @@ Pantau inspects remote hosts via non-interactive SSH commands, continuously vali
 |                                                    |                                           |                   |
 |                                       +------------v-------------+                             |                   |
 |                                       | Embedded SQLite (WAL)    |                             |                   |
-|                                       | Encrypted Snapshot/Argon2|                             |                   |
+|                                       | Encrypted Snapshot/PBKDF2|                             |                   |
 |                                       +------------+-------------+                             |                   |
 +----------------------------------------------------|-------------------------------------------|-------------------+
                                                      | Native SSH Protocol                       | Stream Pipe
@@ -116,7 +116,7 @@ Pantau inspects remote hosts via non-interactive SSH commands, continuously vali
 - **Attack Surface Classification**: Highlights open listening ports, binding addresses (`0.0.0.0` vs `127.0.0.1`), and tags risk levels (Public Internet vs Localhost).
 
 ### 6. 🔐 Encrypted System Snapshot & GitHub Disaster Recovery
-- Encrypts all host configurations, SSH credentials, and desired state baselines into portable `.enc` snapshots using **Argon2id** key derivation and **AES-256-GCM** authenticated encryption.
+- Encrypts all host configurations, SSH credentials, and desired state baselines into portable `.enc` snapshots using **PBKDF2-HMAC-SHA256** (100,000 iterations) key derivation and **AES-256-GCM** authenticated encryption.
 - **Automated GitHub Sync**: Push encrypted snapshots to a private GitHub repository on a scheduled interval.
 - **Disaster Recovery Wizard**: Rebuild an entire monitoring cluster from scratch using a GitHub token + repository path or a raw `.enc` file.
 
@@ -456,7 +456,7 @@ systemctl enable --now pantau
 - **Core Backend**: Golang (`net/http`, `golang.org/x/crypto/ssh`, `pkg/sftp`, `gorilla/websocket`)
 - **Database**: Pure-Go SQLite (`modernc.org/sqlite`) with Write-Ahead Logging (WAL mode)
 - **Frontend**: Single-Page Web App embedded via `go:embed` (Zero-npm, Vanilla JS, xterm.js, CodeMirror)
-- **Security**: Argon2id + AES-256-GCM snapshot encryption, bcrypt admin credentials
+- **Security**: PBKDF2-SHA256 + AES-256-GCM snapshot encryption, bcrypt admin credentials
 
 ---
 
