@@ -224,6 +224,7 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 		history = s.compactHistory(r.Context(), client, c, history)
 		rewrite = rewrite || len(history) < before
 	}
+	guard := newAgentTurnGuard(agentGuardHintAfterKubeGet, agentGuardRepeatLimit, agentGuardTotalLimit)
 	for step := range agentMaxSteps {
 		if err := rctx.Context().Err(); err != nil {
 			sse.errorEvent("the chat was cancelled")
@@ -278,10 +279,14 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 			riskTierName := string(riskTierOfTool(tc.Name, args))
 			sse.toolEvent(agentToolEvent{Tool: tc.Name, Label: label, Status: "running", ToolCallID: tc.ID, Domain: toolDomainName, RiskTier: riskTierName})
 			callStart := time.Now()
+			refuse, hint := guard.before(tc.Name, riskTierOfTool(tc.Name, args) == riskReadOnly)
 			text, isErr := "", true
-			if argErr != nil {
+			switch {
+			case argErr != nil:
 				text = "the tool arguments are not valid JSON"
-			} else {
+			case refuse != "":
+				text = refuse
+			default:
 				text, isErr = s.callAgentTool(rctx, tc.Name, args)
 			}
 			status := "done"
@@ -289,7 +294,8 @@ func (s *Server) runAgentTurn(w http.ResponseWriter, r *http.Request, c agentCfg
 				status = "error"
 			}
 			sse.toolEvent(agentToolEvent{Tool: tc.Name, Label: label, Status: status, ToolCallID: tc.ID, Domain: toolDomainName, RiskTier: riskTierName, DurationMS: time.Since(callStart).Milliseconds()})
-			history = append(history, llmMessage{Role: llmRoleTool, ToolCallID: tc.ID, ToolName: tc.Name, Text: truncateToolResult(tc.Name, text), IsError: isErr})
+			// The hint follows truncation so a long result cannot cut it off.
+			history = append(history, llmMessage{Role: llmRoleTool, ToolCallID: tc.ID, ToolName: tc.Name, Text: truncateToolResult(tc.Name, text) + hint, IsError: isErr})
 		}
 		// The batch is complete: it is kept even if the turn fails later.
 		saved = append([]llmMessage{}, history...)
