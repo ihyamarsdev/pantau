@@ -235,3 +235,33 @@ func FuzzTeleportOutputParsers(f *testing.F) {
 		}
 	})
 }
+
+// Shapes captured from tsh v18.11.10 (`tsh status --format=json`, `tsh kube ls --format=json`). Values are
+// placeholders; the field names and types are the real ones.
+func TestParseRealTshShapes(t *testing.T) {
+	t.Parallel()
+
+	status := []byte(`{"active":{"profile_url":"https://teleport.example.com:443","username":"user@example.com",
+	  "cluster":"teleport.example.com","roles":["kube-view"],"kubernetes_enabled":true,
+	  "valid_until":"2026-11-27T21:14:07+07:00","extensions":["permit-pty"]}}`)
+	st, err := ParseStatus(status, "teleport.example.com:443", "teleport.example.com")
+	if err != nil || !st.Active || st.Cluster != "teleport.example.com" {
+		t.Fatalf("ParseStatus(real shape) = %+v, %v", st, err)
+	}
+	if st.ValidUntil.IsZero() {
+		t.Fatal("valid_until with a UTC offset was not parsed")
+	}
+
+	kube := []byte(`[{"kube_cluster_name":"prod-eks","labels":{"cloud_provider":"aws","env":"production"},"selected":false,"scope":""},
+	  {"kube_cluster_name":"staging-gke","labels":{"cloud_provider":"gcp","env":"staging"},"selected":true,"scope":""}]`)
+	clusters, err := ParseKubeLS(kube)
+	if err != nil || len(clusters) != 2 {
+		t.Fatalf("ParseKubeLS(real shape) = %+v, %v", clusters, err)
+	}
+	if got := SuggestEnvBadge(clusters[0].Name, clusters[0].Labels); got != "prod" {
+		t.Fatalf("badge for production label = %q, want prod", got)
+	}
+	if got := SuggestEnvBadge(clusters[1].Name, clusters[1].Labels); got != "staging" {
+		t.Fatalf("badge for staging label = %q, want staging", got)
+	}
+}
