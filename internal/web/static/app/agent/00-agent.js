@@ -866,6 +866,8 @@
           }
           // Tools that add, change or regroup hosts: the host list reloads when one finishes, not at the next 30 s poll.
           if (data.status !== 'running' && ['fleet_host_action', 'fleet_host_groups', 'fleet_host_import'].includes(data.tool) && typeof loadHosts === 'function') loadHosts();
+          // A Terraform change by the agent (workspace created, edited, run) shows in the Terraform list at once.
+          if (data.status !== 'running' && String(data.tool || '').startsWith('tf_')) refreshTerraformList();
         } else if (ev === 'agent.error') {
           S.msgs.push({ role: 'error', text: (data && data.error) || 'agent error' });
         } else if (data && data.choices && data.choices[0]) {
@@ -938,10 +940,19 @@
     </div>`;
   }
 
+  // A Terraform change by the agent shows in the Terraform list at once, without a manual refresh.
+  function refreshTerraformList() {
+    const tf = window.Tf;
+    if (tf && tf.load && typeof tf.load.workspaces === 'function') tf.load.workspaces().catch(() => {});
+  }
+
   async function refreshPlan(id) {
     const r = await api('/api/agent/plans/' + encodeURIComponent(id)).catch(() => null);
     if (!r || !r.ok || !r.data) return;
+    const before = S.plans[id] && S.plans[id].state;
     S.plans[id] = r.data;
+    // Plan steps run outside the chat stream, so the list is refreshed when a plan that touched Terraform moves on.
+    if (r.data.state !== 'running' && r.data.state !== before && (r.data.steps || []).some((st) => String(st.tool || '').startsWith('tf_'))) refreshTerraformList();
     renderLog();
     if (r.data.state === 'running' || r.data.state === 'rolling_back') setTimeout(() => refreshPlan(id), 1500);
   }
