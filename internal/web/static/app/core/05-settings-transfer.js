@@ -919,6 +919,59 @@ async function doRestoreFromFile() {
   }
 }
 
+// Verify decrypts a snapshot in memory on the server; the live database and secrets are never returned.
+function openVerifySnapshotModal() {
+  document.getElementById('verifySnapshotFile').value = '';
+  document.getElementById('verifySnapshotPass').value = '';
+  document.getElementById('verifySnapshotResult').innerHTML = '';
+  openModal('verifySnapshotModal');
+}
+
+async function runSnapshotVerify(source) {
+  const pass = document.getElementById('verifySnapshotPass').value;
+  const out = document.getElementById('verifySnapshotResult');
+  const fail = (msg) => { out.innerHTML = '<span style="color: var(--danger);">' + escapeHtml(msg) + '</span>'; };
+  if (!pass) return fail(t('passphrase_required'));
+
+  let req;
+  if (source === 'file') {
+    const fileEl = document.getElementById('verifySnapshotFile');
+    if (!fileEl.files || fileEl.files.length === 0) return fail(t('select_snapshot_first'));
+    const fd = new FormData();
+    fd.append('file', fileEl.files[0]);
+    fd.append('passphrase', pass);
+    req = { method: 'POST', body: fd };
+  } else {
+    req = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source: 'github', passphrase: pass }) };
+  }
+
+  const buttons = ['btnVerifySnapshotFile', 'btnVerifySnapshotGitHub'].map(id => document.getElementById(id)).filter(Boolean);
+  buttons.forEach(b => b.disabled = true);
+  out.textContent = t('verify_snapshot_running');
+  try {
+    const res = await fetch('/api/snapshot/verify', req);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return fail(t('failed_prefix') + (data.error || (res.status + ' ' + res.statusText)));
+    if (!data.valid) {
+      out.innerHTML = '<div style="color: var(--danger); font-weight: 600;">' + t('verify_snapshot_invalid') + '</div>' +
+        '<div style="color: var(--text-muted); margin-top: 4px;">' + escapeHtml(data.error || '') + '</div>';
+      return;
+    }
+    const r = data.result;
+    const labels = [['hosts', 'verify_count_hosts'], ['ssh_keys', 'verify_count_ssh_keys'], ['desired_rules', 'verify_count_desired_rules'],
+      ['vault_secrets', 'verify_count_vault_secrets'], ['ansible_playbooks', 'verify_count_playbooks'],
+      ['terraform_workspaces', 'verify_count_tf_workspaces'], ['vpn_networks', 'verify_count_vpn_networks']];
+    const rows = labels.map(([k, key]) => '<tr><td style="padding: 2px 12px 2px 0;">' + t(key) + '</td><td style="text-align: right; font-weight: 600;">' + (r.counts[k] || 0) + '</td></tr>').join('');
+    out.innerHTML = '<div style="color: var(--success); font-weight: 600;">' + t('verify_snapshot_valid') + '</div>' +
+      '<div style="color: var(--text-muted); margin: 4px 0 8px;">' + t('verify_snapshot_timestamp') + ': ' + escapeHtml(new Date(r.created_at).toLocaleString()) + '</div>' +
+      '<table style="font-size: var(--fs-sm);">' + rows + '</table>';
+  } catch (e) {
+    fail(t('error_prefix') + e.message);
+  } finally {
+    buttons.forEach(b => b.disabled = false);
+  }
+}
+
 async function doStartFresh() {
   await fetch('/api/snapshot/bootstrap/start-fresh', { method: 'POST' });
   closeModal('restoreModal');

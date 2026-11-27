@@ -5203,6 +5203,33 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 </div>
 
 <!-- Snapshot Export Modal (Action Dialog) -->
+<div id="verifySnapshotModal" role="dialog" aria-modal="true" class="modal">
+  <div class="modal-content modal-dialog" style="max-width: 500px;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <svg class="icon"><use href="#i-shield-check"/></svg>
+        <h3 data-i18n="verify_snapshot_title">Verify Snapshot</h3>
+      </div>
+      <button class="btn btn-sm btn-ghost" onclick="closeModal('verifySnapshotModal')" aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 10px; padding: 4px 0;">
+      <p style="font-size: var(--fs-sm); color: var(--text-muted); margin: 0; line-height: 1.5;" data-i18n="verify_snapshot_desc">Decrypts the snapshot in memory and checks its structure. The live database is not changed and no secrets are shown.</p>
+      <div class="form-group">
+        <label class="form-label" data-i18n="verify_snapshot_file_label">Snapshot file (.enc)</label>
+        <input type="file" id="verifySnapshotFile" accept=".enc" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" data-i18n="snapshot_passphrase">Snapshot Passphrase</label>
+        <input type="password" id="verifySnapshotPass" placeholder="Secret passphrase for encryption" data-i18n-placeholder="snapshot_passphrase_ph" autocomplete="off" />
+      </div>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <button class="btn btn-primary btn-sm" id="btnVerifySnapshotFile" onclick="runSnapshotVerify('file')" data-i18n="verify_snapshot_file">Verify file</button>
+        <button class="btn btn-ghost btn-sm" id="btnVerifySnapshotGitHub" onclick="runSnapshotVerify('github')" data-i18n="verify_snapshot_github">Verify latest GitHub backup</button>
+      </div>
+      <div id="verifySnapshotResult" role="status" aria-live="polite" style="font-size: var(--fs-sm);"></div>
+    </div>
+  </div>
+</div>
 <div id="snapshotExportModal" role="dialog" aria-modal="true" class="modal">
   <div class="modal-content modal-dialog" style="max-width: 480px;">
     <div class="modal-header">
@@ -6114,6 +6141,7 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
             <div style="display: flex; gap: 8px; margin-top: 4px;">
               <button class="btn btn-sm" onclick="exportSnapshotPrompt()"><svg class="icon"><use href="#i-download"/></svg> <span data-i18n="download_snapshot_enc">Download Snapshot (.enc)</span></button>
               <button class="btn btn-sm btn-ghost" onclick="openRestoreModal()"><svg class="icon"><use href="#i-upload"/></svg> <span data-i18n="restore_snapshot">Restore Snapshot</span></button>
+              <button class="btn btn-sm btn-ghost" onclick="openVerifySnapshotModal()"><svg class="icon"><use href="#i-shield-check"/></svg> <span data-i18n="verify_snapshot">Verify Snapshot</span></button>
             </div>
           </div>
 

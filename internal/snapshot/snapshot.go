@@ -38,6 +38,11 @@ const (
 
 // Encrypt serializes the payload to JSON and encrypts it with AES-256-GCM.
 func Encrypt(payload *store.SnapshotPayload, passphrase string) ([]byte, error) {
+	return encryptWith(payload, passphrase, kdfIter)
+}
+
+// encryptWith is Encrypt with an explicit PBKDF2 iteration count; tests use a cheap count, production uses kdfIter.
+func encryptWith(payload *store.SnapshotPayload, passphrase string, iterations int) ([]byte, error) {
 	if strings.TrimSpace(passphrase) == "" {
 		return nil, errors.New("passphrase cannot be empty")
 	}
@@ -51,7 +56,7 @@ func Encrypt(payload *store.SnapshotPayload, passphrase string) ([]byte, error) 
 		return nil, fmt.Errorf("generate salt: %w", err)
 	}
 
-	key := pbkdf2.Key([]byte(passphrase), salt, kdfIter, keyLen, sha256.New)
+	key := pbkdf2.Key([]byte(passphrase), salt, iterations, keyLen, sha256.New)
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, fmt.Errorf("new cipher: %w", err)
@@ -79,6 +84,10 @@ func Encrypt(payload *store.SnapshotPayload, passphrase string) ([]byte, error) 
 
 // Decrypt verifies and decrypts a snapshot file, returning the parsed payload.
 func Decrypt(data []byte, passphrase string) (*store.SnapshotPayload, error) {
+	return decryptWith(data, passphrase, kdfIter)
+}
+
+func decryptWith(data []byte, passphrase string, iterations int) (*store.SnapshotPayload, error) {
 	if strings.TrimSpace(passphrase) == "" {
 		return nil, errors.New("passphrase cannot be empty")
 	}
@@ -96,7 +105,7 @@ func Decrypt(data []byte, passphrase string) (*store.SnapshotPayload, error) {
 	offset += nonceLen
 	ciphertext := data[offset:]
 
-	key := pbkdf2.Key([]byte(passphrase), salt, kdfIter, keyLen, sha256.New)
+	key := pbkdf2.Key([]byte(passphrase), salt, iterations, keyLen, sha256.New)
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, fmt.Errorf("new cipher: %w", err)
@@ -260,9 +269,9 @@ func (g *GitHubClient) pushWithSHA(ctx context.Context, repo, token, branch, pat
 
 // Manager orchestrates automated backups and on-demand sync operations.
 type Manager struct {
-	db     *store.DB
-	gh     *GitHubClient
-	mu     sync.Mutex
+	db *store.DB
+	gh *GitHubClient
+	mu sync.Mutex
 }
 
 func NewManager(db *store.DB, ghClient *GitHubClient) *Manager {

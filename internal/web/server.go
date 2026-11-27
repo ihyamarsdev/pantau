@@ -516,6 +516,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/snapshot/import", s.handleSnapshotImport)
 	s.mux.HandleFunc("/api/snapshot/github/sync", s.authMiddleware(s.handleSnapshotGitHubSync))
 	s.mux.HandleFunc("/api/snapshot/github/restore", s.handleSnapshotGitHubRestore)
+	s.mux.HandleFunc("/api/snapshot/verify", s.authMiddleware(s.handleSnapshotVerify))
 
 	// Self-Update & Release Management
 	s.mux.HandleFunc("/api/update/check", s.authMiddleware(s.handleUpdateCheck))
@@ -3530,6 +3531,66 @@ func (s *Server) handleSnapshotGitHubSync(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "message": "Synced to GitHub successfully"})
+}
+
+// handleSnapshotVerify decrypts a snapshot in memory and reports its structure. It never writes the live database
+// and never returns secret material; the passphrase is not logged.
+func (s *Server) handleSnapshotVerify(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var data []byte
+	var passphrase, source string
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			http.Error(w, "failed to parse multipart form", http.StatusBadRequest)
+			return
+		}
+		passphrase = r.FormValue("passphrase")
+		if file, _, err := r.FormFile("file"); err == nil {
+			defer file.Close()
+			if data, err = io.ReadAll(file); err != nil {
+				http.Error(w, "failed to read uploaded file", http.StatusBadRequest)
+				return
+			}
+		}
+	} else {
+		var req struct {
+			Source     string `json:"source"`
+			Passphrase string `json:"passphrase"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		passphrase, source = req.Passphrase, req.Source
+	}
+
+	if strings.TrimSpace(passphrase) == "" {
+		http.Error(w, `{"error":"passphrase is required"}`, http.StatusBadRequest)
+		return
+	}
+	if source == "github" {
+		fetched, err := s.snapshotMgr.PullSaved(r.Context())
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]interface{}{"ok": false, "error": err.Error()})
+			return
+		}
+		data = fetched
+	}
+	if len(data) == 0 {
+		http.Error(w, `{"error":"upload a .enc file or select the GitHub source"}`, http.StatusBadRequest)
+		return
+	}
+
+	res, err := snapshot.Verify(data, passphrase)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "valid": false, "status": "invalid", "error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "valid": true, "status": "valid", "result": res})
 }
 
 func (s *Server) handleSnapshotGitHubRestore(w http.ResponseWriter, r *http.Request) {
