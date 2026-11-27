@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Blocks commits that stage scratch/data files, likely secrets, or fail go vet.
+set -euo pipefail
+
+fail=0
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+
+if printf '%s\n' "$staged" | grep -E '^(\.scratch/|data/)' >/dev/null; then
+	echo "pre-commit: refusing to commit files under .scratch/ or data/:" >&2
+	printf '%s\n' "$staged" | grep -E '^(\.scratch/|data/)' >&2
+	fail=1
+fi
+
+# Only added lines of the staged diff are scanned; the pattern list targets common key/token formats.
+patterns='-----BEGIN ([A-Z]+ )?PRIVATE KEY-----|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|sk-[A-Za-z0-9]{20,}'
+if git diff --cached -U0 | grep -E '^\+' | grep -v '^+++' | grep -E "$patterns" >/dev/null; then
+	echo "pre-commit: possible private key/token/secret found in staged diff:" >&2
+	git diff --cached -U0 | grep -E '^\+' | grep -v '^+++' | grep -E "$patterns" | sed 's/^/  /' | cut -c1-160 >&2
+	echo "pre-commit: remove it, or use git commit --no-verify only if it is a verified false positive." >&2
+	fail=1
+fi
+
+if [ -f go.mod ] && ! go vet ./... ; then
+	echo "pre-commit: go vet ./... failed" >&2
+	fail=1
+fi
+
+exit $fail
