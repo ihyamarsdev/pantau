@@ -739,3 +739,77 @@ test('agent: dockable side-panel toggle persists mode and context pill/chips fol
     await deleteHosts(browser, ['e2e-dock-ctx']);
   }
 });
+
+test('agent: live processing animation, elapsed timer, and Stop button cancellation', async ({ app, screen, browser }) => {
+  const server = createServer((req, res) => {
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      let body: { messages?: ChatMessage[]; system?: string } = {};
+      try { body = JSON.parse(raw); } catch { /* ignore */ }
+      const messages = body.messages || [];
+      const sysText = (messages.find((m) => m.role === 'system') || {}).content || body.system || '';
+      if (sysText.startsWith('Generate a concise 3 to 7 word title')) {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Delayed test' }, finish_reason: null }] }) + '\n\n');
+        res.end('data: [DONE]\n\n');
+        return;
+      }
+      const last = messages[messages.length - 1];
+      const isPing = last?.role === 'user' && last.content === 'ping';
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      if (isPing) {
+        res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'pong' }, finish_reason: null }] }) + '\n\n');
+        res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] }) + '\n\n');
+        res.end('data: [DONE]\n\n');
+        return;
+      }
+      const timer = setTimeout(() => {
+        if (res.writableEnded) return;
+        res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Finished after delay.' }, finish_reason: null }] }) + '\n\n');
+        res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] }) + '\n\n');
+        res.end('data: [DONE]\n\n');
+      }, 650);
+      res.on('close', () => clearTimeout(timer));
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const llmUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+  try {
+    await app.open('/');
+    await initApp(screen, browser);
+    await browser.evaluate(async (url) => {
+      await fetch('/api/agent/settings', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: true, provider: 'openai', base_url: url, api_key: 'k-test', model: 'test-model' })
+      });
+      const g = window as unknown as PageGlobals;
+      g.AG.init();
+      g.AG.newChat();
+      g.AG.toggle(true);
+      return null;
+    }, llmUrl);
+
+    // 1. Send a message: verify processing bubble + elapsed timer + Stop button appear, then clear on completion.
+    await browser.locator('#agentInput').fill('Check status slowly');
+    await browser.locator('#agentSend').click();
+    await expect(browser.locator('#agentLog .ag-proc-bubble')).toBeVisible({ timeout: 5000 });
+    await expect(browser.locator('#agentLog .ag-proc-timer')).toBeVisible();
+    await expect(browser.locator('#agentPanel .ag-form.ag-busy')).toBeVisible();
+
+    await expect(browser.locator('#agentLog .ag-bot').last()).toContainText('Finished after delay.', { timeout: 10000 });
+    await expect(browser.locator('#agentLog .ag-proc-bubble')).toHaveCount(0);
+    await expect(browser.locator('#agentPanel .ag-form.ag-busy')).toHaveCount(0);
+
+    // 2. Send another message and click Stop mid-flight: verify clean cancellation.
+    await browser.locator('#agentInput').fill('Cancel this run');
+    await browser.locator('#agentSend').click();
+    await expect(browser.locator('#agentLog .ag-proc-bubble')).toBeVisible({ timeout: 5000 });
+    await browser.locator('#agentSend').click(); // Stop button
+    await expect(browser.locator('#agentPanel .ag-form.ag-busy')).toHaveCount(0, { timeout: 5000 });
+    await expect(browser.locator('#agentLog .ag-proc-bubble')).toHaveCount(0);
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});

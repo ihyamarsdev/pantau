@@ -19,7 +19,8 @@
   const S = {
     grants: [], enabled: false, open: false, expanded: false, docked: localStorage.getItem(MODE_KEY) === 'docked',
     dockWidth: storedDockWidth(), busy: false, session: null, abort: null, approvals: [], timer: null,
-    msgs: [], chatT0: 0, apprT0: 0, fab: null, drag: null, suppressToggle: false, wired: false,
+    msgs: [], chatT0: 0, apprT0: 0, procStart: 0, procTimer: null, phase: 'thinking', phaseDetail: '',
+    fab: null, drag: null, suppressToggle: false, wired: false,
     thread: 0, scope: '', hydrated: false, ctx: null, ctxTimer: null, skipAutoLoadForScope: '', reflowTimer: null
   };
 
@@ -52,6 +53,9 @@
       ag_disabled: 'The AI agent is off. Enable it in Settings → AI Agent.', ag_open_settings: 'Open AI Agent settings',
       ag_working: 'Working…', ag_stop: 'Stop',
       ag_waiting_approval: 'Waiting for your approval',
+      ag_phase_thinking: 'Thinking…', ag_phase_executing: 'Running tools…',
+      ag_phase_parallel: 'Running parallel checks…', ag_phase_waiting: 'Waiting for your approval',
+      ag_stop_tip: 'Stop generation', ag_cached: 'cached', ag_cancelled: 'Stopped by operator.',
     ag_save_kb: 'Save as Runbook / Blueprint', ag_k_need_thread: 'Open a chat thread first: distill needs a conversation.',
     ag_k_distilling: 'Distilling this chat into a draft...', ag_k_review_title: 'Review runbook draft',
     ag_k_review_hint: 'Nothing is saved until you press Save. Check every step: credentials must stay as {{ vault.KEY }} placeholders.',
@@ -142,6 +146,9 @@
       ag_disabled: 'Agen AI nonaktif. Aktifkan di Pengaturan → AI Agent.', ag_open_settings: 'Buka pengaturan AI Agent',
       ag_working: 'Bekerja…', ag_stop: 'Berhenti',
       ag_waiting_approval: 'Menunggu persetujuan Anda',
+      ag_phase_thinking: 'Memikirkan langkah…', ag_phase_executing: 'Menjalankan tool…',
+      ag_phase_parallel: 'Menjalankan pemeriksaan paralel…', ag_phase_waiting: 'Menunggu persetujuan Anda',
+      ag_stop_tip: 'Hentikan proses', ag_cached: 'cache', ag_cancelled: 'Dihentikan oleh operator.',
     ag_save_kb: 'Simpan sebagai Runbook / Blueprint', ag_k_need_thread: 'Buka thread chat dulu: penyulingan membutuhkan percakapan.',
     ag_k_distilling: 'Menyuling chat ini menjadi draf...', ag_k_review_title: 'Tinjau draf runbook',
     ag_k_review_hint: 'Tidak ada yang disimpan sebelum Anda menekan Simpan. Periksa setiap langkah: kredensial harus tetap berupa placeholder {{ vault.KEY }}.',
@@ -515,24 +522,71 @@
     wireResizer();
   }
 
-  function renderLog() {
+  function formatProcElapsed() {
+    const start = S.procStart || performance.now();
+    return ((performance.now() - start) / 1000).toFixed(1) + 's';
+  }
+
+  function formatToolDur(ms) {
+    if (ms === undefined || ms === null) return '';
+    return ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : ms + 'ms';
+  }
+
+  function phaseLabel() {
+    if (S.approvals.length || S.phase === 'waiting_approval') return t('ag_phase_waiting');
+    if (S.phase === 'parallel_subagents') return t('ag_phase_parallel');
+    if (S.phase === 'executing_tools') return t('ag_phase_executing') + (S.phaseDetail ? ' (' + S.phaseDetail + ')' : '');
+    return t('ag_phase_thinking');
+  }
+
+  function renderProcBubble() {
+    const waiting = S.approvals.length > 0 || S.phase === 'waiting_approval';
+    const cls = waiting ? 'ag-proc-bubble ag-proc-waiting' : 'ag-proc-bubble';
+    const indicator = waiting
+      ? svgIcon('shield-alert', 'icon-sm')
+      : '<span class="ag-dots" aria-hidden="true"><span class="ag-dot"></span><span class="ag-dot"></span><span class="ag-dot"></span></span>';
+    return `<div class="${cls}" role="status" aria-live="polite">${indicator}<span class="ag-proc-phase">${esc(phaseLabel())}</span><span class="ag-proc-timer">${esc(formatProcElapsed())}</span></div>`;
+  }
+
+  function startProcTimer() {
+    stopProcTimer();
+    S.procStart = performance.now();
+    S.procTimer = setInterval(() => {
+      const log = $('agentLog');
+      if (!log) return;
+      const el = log.querySelector('.ag-proc-timer');
+      if (el) el.textContent = formatProcElapsed();
+    }, 100);
+  }
+
+  function stopProcTimer() {
+    if (S.procTimer) {
+      clearInterval(S.procTimer);
+      S.procTimer = null;
+    }
+  }
+
+  function renderLog(forceScroll) {
     const log = $('agentLog');
     if (!log) return;
     if (!S.enabled) { log.innerHTML = `<div class="ag-empty">${esc(t('ag_disabled'))}<br><br><button class="btn btn-sm btn-primary" onclick="AG.toggle(false); openSettingsModal('agent')">${esc(t('ag_open_settings'))}</button></div>`; return; }
     if (S.msgs.length === 0) { log.innerHTML = `<div class="ag-empty">${esc(t('ag_empty'))}</div>`; return; }
+    const nearBottom = forceScroll || (log.scrollHeight - log.scrollTop - log.clientHeight < 64);
     log.innerHTML = S.msgs.map((m) => {
       if (m.role === 'user') return `<div class="ag-msg ag-user">${esc(m.text)}</div>`;
       if (m.role === 'tool') {
-        const mark = m.status === 'error' ? svgIcon('x', 'icon-sm') : m.status === 'done' ? svgIcon('check', 'icon-sm') : svgIcon('wrench', 'icon-sm');
-        const meta = [m.domain, m.risk_tier, m.duration_ms !== undefined ? m.duration_ms + 'ms' : ''].filter(Boolean).join(' · ');
-        return `<div class="ag-tool ag-tool-${m.status || 'running'}${m.risk_tier === 'destructive' ? ' ag-tool-danger' : ''}">${mark} ${esc(m.text)}${meta ? ` <span style="opacity:.6;font-size:.85em;">${esc(meta)}</span>` : ''}</div>`;
+        const st = m.status || 'running';
+        const mark = st === 'error' ? svgIcon('x', 'icon-sm') : st === 'done' ? svgIcon('check', 'icon-sm') : `<span class="ag-tool-spin">${svgIcon('loader-circle', 'icon-sm')}</span>`;
+        const meta = [m.domain, m.risk_tier, formatToolDur(m.duration_ms)].filter(Boolean).join(' · ');
+        const cachedBadge = m.cached ? ` <span class="ag-tool-badge-cached">${esc(t('ag_cached'))}</span>` : '';
+        return `<div class="ag-tool ag-tool-${st}${m.risk_tier === 'destructive' ? ' ag-tool-danger' : ''}">${mark} <span>${esc(m.text)}</span>${cachedBadge}${meta ? ` <span class="ag-tool-meta">${esc(meta)}</span>` : ''}</div>`;
       }
       if (m.role === 'plan') return renderPlanCard(m.planId);
-      if (m.role === 'error') return `<div class="ag-err">${esc(m.text)}${m.settings ? `<div style="margin-top:8px;"><button class="btn btn-sm btn-primary" onclick="AG.toggle(false); openSettingsModal('agent')">${esc(t('ag_open_settings'))}</button></div>` : ''}</div>`;
-      if (!m.text) return `<div class="ag-msg ag-bot">${S.approvals.length ? SP.html(t('ag_waiting_approval'), S.apprT0) : SP.html(t('ag_working'), S.chatT0)}</div>`;
+      if (m.role === 'error') return `<div class="ag-err">${esc(m.text)}${m.settings ? `<div class="ag-err-settings"><button class="btn btn-sm btn-primary" onclick="AG.toggle(false); openSettingsModal('agent')">${esc(t('ag_open_settings'))}</button></div>` : ''}</div>`;
+      if (!m.text) return renderProcBubble();
       return `<div class="ag-msg ag-bot">${md(m.text)}</div>`;
     }).join('');
-    log.scrollTop = log.scrollHeight;
+    if (nearBottom) log.scrollTop = log.scrollHeight;
   }
 
   // Streaming deltas arrive many times per frame; re-parsing the markdown of the whole chat for each is what made long answers lag.
@@ -570,6 +624,7 @@
     if (S.suppressToggle && force === undefined) { S.suppressToggle = false; return; }
     S.open = force === undefined ? !S.open : !!force;
     if (S.open) syncContext();
+    else if (!S.busy) stopProcTimer();
     paintPanel();
     scheduleLayoutReflow();
     if (S.open) setTimeout(() => $('agentInput') && $('agentInput').focus(), 30);
@@ -777,7 +832,8 @@
   }
 
   AG.newChat = function () {
-    if (S.abort) S.abort.abort();
+    stopActiveTurn();
+    stopProcTimer();
     api('/api/agent/grants', { method: 'DELETE' }).then(pollApprovals);
     S.msgs = [];
     S.session = newSession();
@@ -799,14 +855,25 @@
     const btn = $('agentSend');
     if (btn) {
       btn.innerHTML = b ? svgIcon('square', 'icon-sm') : svgIcon('send', 'icon-sm');
-      btn.title = b ? t('ag_stop') : t('ag_send');
+      const label = b ? t('ag_stop_tip') : t('ag_send');
+      btn.title = label;
+      btn.setAttribute('aria-label', label);
     }
+    const form = document.querySelector('#agentPanel .ag-form');
+    if (form) form.classList.toggle('ag-busy', !!b);
     document.querySelectorAll('#agentChips .ag-chip').forEach((c) => { c.disabled = !!b; });
+  }
+
+  function stopActiveTurn() {
+    if (S.thread > 0) {
+      fetch('/api/agent/threads/' + encodeURIComponent(S.thread) + '/cancel', { method: 'POST' }).catch(() => {});
+    }
+    if (S.abort) S.abort.abort();
   }
 
   AG.submit = function (e) {
     if (e && e.preventDefault) e.preventDefault();
-    if (S.busy) { if (S.abort) S.abort.abort(); return; }
+    if (S.busy) { stopActiveTurn(); return; }
     const inp = $('agentInput');
     const text = inp.value.trim();
     if (!text) return;
@@ -830,8 +897,11 @@
     const bot = { role: 'bot', text: '' };
     S.msgs.push(bot);
     S.chatT0 = Date.now();
-    renderLog();
+    S.phase = 'thinking';
+    S.phaseDetail = '';
+    startProcTimer();
     setBusy(true);
+    renderLog(true);
     S.abort = new AbortController();
     try {
       S.skipAutoLoadForScope = '';
@@ -854,11 +924,28 @@
       }
       const turn = { mutated: false, planned: false };
       await readSSE(res.body, (ev, data) => {
-        if (ev === 'agent.tool') {
+        if (ev === 'status') {
+          S.phase = (data && data.phase) || 'thinking';
+          S.phaseDetail = (data && data.detail) || '';
+          if (S.phase === 'waiting_approval') stopProcTimer();
+          else if (!S.procTimer && S.busy) startProcTimer();
+        } else if (ev === 'tool_start') {
+          const line = { role: 'tool', text: data.name || 'tool', status: 'running', id: data.call_id, domain: data.domain, mode: data.mode };
+          const prev = S.msgs.findIndex((m) => m.role === 'tool' && m.id === data.call_id);
+          if (prev >= 0) S.msgs[prev] = Object.assign(S.msgs[prev], line);
+          else S.msgs.splice(S.msgs.indexOf(bot) < 0 ? S.msgs.length : S.msgs.indexOf(bot), 0, line);
+        } else if (ev === 'tool_end') {
+          const prev = S.msgs.findIndex((m) => m.role === 'tool' && m.id === data.call_id);
+          if (prev >= 0) {
+            S.msgs[prev].status = data.ok ? 'done' : 'error';
+            S.msgs[prev].duration_ms = data.duration_ms;
+            S.msgs[prev].cached = !!data.cached;
+          }
+        } else if (ev === 'agent.tool') {
           const label = (data.tool || 'tool') + (data.label && data.label !== data.tool ? ': ' + data.label : '');
-          const line = { role: 'tool', text: label, status: data.status, id: data.toolCallId, domain: data.domain, risk_tier: data.risk_tier, duration_ms: data.duration_ms };
           const prev = S.msgs.findIndex((m) => m.role === 'tool' && m.id === data.toolCallId);
-          if (prev >= 0 && data.status !== 'running') S.msgs[prev] = line;
+          const line = { role: 'tool', text: label, status: data.status, id: data.toolCallId, domain: data.domain, risk_tier: data.risk_tier, duration_ms: data.duration_ms, cached: prev >= 0 ? S.msgs[prev].cached : false };
+          if (prev >= 0) S.msgs[prev] = line;
           else S.msgs.splice(S.msgs.indexOf(bot) < 0 ? S.msgs.length : S.msgs.indexOf(bot), 0, line);
           // A proposed plan shows its card right after the tool line; the card keeps itself in sync with the server.
           if (data.plan_id && data.status !== 'running') {
@@ -869,6 +956,8 @@
           // An action by the agent changes what its view shows: that view reloads now, not at the next manual refresh.
           if (data.status !== 'running' && data.risk_tier !== 'read_only') { turn.mutated = true; refreshForTool(data.tool); }
           if (data.plan_id) turn.planned = true;
+        } else if (ev === 'cancelled') {
+          if (!bot.text) S.msgs.push({ role: 'error', text: t('ag_cancelled') });
         } else if (ev === 'agent.error') {
           S.msgs.push({ role: 'error', text: (data && data.error) || 'agent error' });
         } else if (data && data.choices && data.choices[0]) {
@@ -883,7 +972,9 @@
       if (turn.mutated && !turn.planned) setTimeout(() => location.reload(), 1200);
     } catch (e) {
       if (e.name !== 'AbortError') S.msgs.push({ role: 'error', text: e.message, settings: !!e.settings });
+      else if (!bot.text) S.msgs.push({ role: 'error', text: t('ag_cancelled') });
     } finally {
+      stopProcTimer();
       if (!bot.text) S.msgs.splice(S.msgs.indexOf(bot), 1);
       S.abort = null;
       setBusy(false);

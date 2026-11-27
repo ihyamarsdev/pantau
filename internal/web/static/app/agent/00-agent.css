@@ -66,9 +66,29 @@ body.ag-docked-open #agentFab { display: none; }
 .ag-tool-done { color: var(--success); }
 .ag-tool-error { color: var(--danger); }
 .ag-tool-danger { border-left: 2px solid var(--warning); padding-left: 6px; }
+.ag-tool-spin { display: inline-flex; align-items: center; color: var(--primary); }
+.ag-tool-spin svg { animation: ag-spin 0.9s linear infinite; }
+.ag-tool-meta { opacity: .65; font-size: .85em; }
+.ag-tool-badge-cached { display: inline-flex; align-items: center; padding: 0 5px; border-radius: 999px; background: var(--accent-soft); border: 1px solid var(--accent-ring); color: var(--accent-text); font-size: 10px; font-weight: 600; }
+.ag-proc-bubble { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: var(--radius); background: var(--surface-2); border: 1px solid var(--card-border); font-size: var(--fs-xs); color: var(--text-muted); }
+.ag-proc-bubble.ag-proc-waiting { background: var(--warning-soft, rgba(245, 158, 11, 0.14)); border-color: var(--warning-border, #f59e0b); color: var(--warning, #d97706); }
+.ag-dots { display: inline-flex; align-items: center; gap: 3px; }
+.ag-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--primary); animation: ag-pulse-wave 1.2s ease-in-out infinite; }
+.ag-dot:nth-child(2) { animation-delay: 0.18s; }
+.ag-dot:nth-child(3) { animation-delay: 0.36s; }
+.ag-proc-phase { font-weight: 500; }
+.ag-proc-timer { font-family: var(--font-mono); font-variant-numeric: tabular-nums; opacity: .8; margin-left: 2px; }
 .ag-err { align-self: stretch; color: var(--danger); font-size: var(--fs-sm); background: var(--danger-soft); border: 1px solid var(--danger-border); border-radius: var(--radius); padding: 8px 10px; }
-.ag-form { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--card-border); align-items: flex-end; }
+.ag-err-settings { margin-top: 8px; }
+.ag-form { position: relative; display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--card-border); align-items: flex-end; }
+.ag-form.ag-busy::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--primary), transparent); background-size: 200% 100%; animation: ag-shimmer 1.4s linear infinite; }
 .ag-form textarea { flex: 1; resize: none; min-height: 38px; max-height: 120px; }
+@keyframes ag-pulse-wave { 0%, 80%, 100% { opacity: .28; transform: scale(.8); } 40% { opacity: 1; transform: scale(1.15); } }
+@keyframes ag-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+@keyframes ag-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .ag-dot, .ag-form.ag-busy::before, .ag-tool-spin svg { animation: none; }
+}
 /* Positioned by 00-agent.js (applyLayout): docked above the chat when open, above the bubble when closed. */
 #agentApprovals { position: fixed; left: 0; top: 0; z-index: 2147483001; display: flex; flex-direction: column; gap: 8px; width: 420px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow-y: auto; }
 .ag-appr { background: var(--card-bg); border: 1px solid var(--warning-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
