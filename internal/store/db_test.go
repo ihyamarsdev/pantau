@@ -665,7 +665,7 @@ func TestSnapshotRoundTripWithSSHKeys(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	db1, err := Open(filepath.Join(tmpDir, "source.db"))
+	db1, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -714,7 +714,7 @@ func TestSnapshotRoundTripWithSSHKeys(t *testing.T) {
 	}
 
 	// 4. Import snapshot into DB 2
-	db2, err := Open(filepath.Join(tmpDir, "dest.db"))
+	db2, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}

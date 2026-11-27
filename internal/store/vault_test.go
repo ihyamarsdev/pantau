@@ -2,7 +2,6 @@ package store
 
 import (
 	"database/sql"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -21,7 +20,7 @@ func newVaultTestDB(t *testing.T) *DB {
 
 func TestVaultMasterKeyPersistsAcrossReopen(t *testing.T) {
 	t.Parallel()
-	path := filepath.Join(t.TempDir(), "test.db")
+	path := TemplateCopy(t)
 	db, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -366,7 +365,7 @@ func TestVaultAudit(t *testing.T) {
 
 func TestVaultMigrationIdempotentOnReopen(t *testing.T) {
 	t.Parallel()
-	path := filepath.Join(t.TempDir(), "test.db")
+	path := TemplateCopy(t)
 	db, err := Open(path)
 	if err != nil {
 		t.Fatal(err)

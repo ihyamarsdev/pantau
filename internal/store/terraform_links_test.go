@@ -1,7 +1,6 @@
 package store_test
 
 import (
-	"path/filepath"
 	"testing"
 
 	"pantau/internal/store"
@@ -9,7 +8,7 @@ import (
 
 func TestOutputLinkCRUDAndDeleteCleanup(t *testing.T) {
 	t.Parallel()
-	db, err := store.Open(filepath.Join(t.TempDir(), "l.db"))
+	db, err := store.Open(store.TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}

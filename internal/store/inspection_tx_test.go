@@ -1,13 +1,12 @@
 package store
 
 import (
-	"path/filepath"
 	"testing"
 )
 
 func TestUpsertActualItemsBatch(t *testing.T) {
 	t.Parallel()
-	db, err := Open(filepath.Join(t.TempDir(), "tx.db"))
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -114,10 +113,7 @@ func TestSnapshotEncryptionDecryption(t *testing.T) {
 
 func TestDatabaseExportAndImportRoundtrip(t *testing.T) {
 	// Source DB
-	tmp1, _ := os.CreateTemp("", "pantau_src_*.db")
-	tmp1Path := tmp1.Name()
-	tmp1.Close()
-	defer os.Remove(tmp1Path)
+	tmp1Path := snapshot.TemplateCopy(t)
 
 	db1, err := store.Open(tmp1Path)
 	if err != nil {
@@ -166,10 +162,7 @@ func TestDatabaseExportAndImportRoundtrip(t *testing.T) {
 	}
 
 	// Destination DB (New PC / Fresh DB)
-	tmp2, _ := os.CreateTemp("", "pantau_dst_*.db")
-	tmp2Path := tmp2.Name()
-	tmp2.Close()
-	defer os.Remove(tmp2Path)
+	tmp2Path := snapshot.TemplateCopy(t)
 
 	db2, err := store.Open(tmp2Path)
 	if err != nil {
@@ -280,10 +273,7 @@ func TestGitHubMockSyncAndRestore(t *testing.T) {
 	ghClient.BaseURL = mockServer.URL
 
 	// Step 1: Create DB1 with host, configure backup to GitHub
-	tmp1, _ := os.CreateTemp("", "pantau_gh_*.db")
-	tmpPath1 := tmp1.Name()
-	tmp1.Close()
-	defer os.Remove(tmpPath1)
+	tmpPath1 := snapshot.TemplateCopy(t)
 
 	db1, _ := store.Open(tmpPath1)
 	defer db1.Close()
@@ -321,10 +311,7 @@ func TestGitHubMockSyncAndRestore(t *testing.T) {
 	}
 
 	// Step 3: Now simulate new PC / fresh DB2 restoring directly from GitHub!
-	tmp2, _ := os.CreateTemp("", "pantau_gh_newpc_*.db")
-	tmpPath2 := tmp2.Name()
-	tmp2.Close()
-	defer os.Remove(tmpPath2)
+	tmpPath2 := snapshot.TemplateCopy(t)
 
 	db2, _ := store.Open(tmpPath2)
 	defer db2.Close()

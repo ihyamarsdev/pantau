@@ -1,7 +1,6 @@
 package store
 
 import (
-	"path/filepath"
 	"testing"
 )
 
@@ -9,8 +8,7 @@ import (
 // the network row with its secret config, and a snapshot restore that keeps both in step.
 func TestVPNNetworkHostBindingRoundTrip(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := Open(filepath.Join(dir, "t.db"))
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +62,7 @@ func TestVPNNetworkHostBindingRoundTrip(t *testing.T) {
 		t.Fatalf("snapshot lost the network: %+v", payload.VPNNetworks)
 	}
 
-	other, err := Open(filepath.Join(dir, "t2.db"))
+	other, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}

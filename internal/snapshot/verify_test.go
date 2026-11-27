@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -93,7 +92,7 @@ func TestVerifySnapshot(t *testing.T) {
 // TestVerifyLeavesLiveDatabaseUnchanged proves verification is read-only against the active database.
 func TestVerifyLeavesLiveDatabaseUnchanged(t *testing.T) {
 	t.Parallel()
-	db, err := store.Open(filepath.Join(t.TempDir(), "live.db"))
+	db, err := store.Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatal(err)
 	}

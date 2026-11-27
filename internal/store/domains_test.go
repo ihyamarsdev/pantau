@@ -7,7 +7,7 @@ import (
 
 func domainsDB(t *testing.T) *DB {
 	t.Helper()
-	db, err := Open(t.TempDir() + "/domains.db")
+	db, err := Open(TemplateCopy(t))
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
