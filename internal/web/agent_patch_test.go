@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +15,8 @@ func TestAgentPatchPrepareAndApplyAnsibleAndTerraform(t *testing.T) {
 	t.Parallel()
 	srv, db, cleanup := setupTestServer(t)
 	defer cleanup()
+	_ = db.SetAnsibleEnabled(true)
+	_ = db.SetTerraformEnabled(true)
 
 	pbID, err := db.CreateAnsiblePlaybook(&store.AnsiblePlaybook{
 		Name:    "test-pb",
@@ -127,6 +130,124 @@ func TestAgentPatchGuardsProtectedAndReadOnly(t *testing.T) {
 	srv.handleAgentPatchApply(w, req)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 for read-only k8s host, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAgentPatchGatesAndBaseConcurrency(t *testing.T) {
+	t.Parallel()
+	const target = "/srv/app/motd.txt"
+	liveBase := patchSHA256("hello\n")
+	staleBase := patchSHA256("old\n")
+	readLive := func(int64, string) (string, error) { return "hello\n", nil }
+	readDown := func(int64, string) (string, error) { return "", errors.New("ssh unreachable") }
+
+	tests := []struct {
+		name     string
+		kind     string
+		apply    bool
+		prep     func(t *testing.T, db *store.DB) map[string]any // side effects + extra body fields
+		read     func(int64, string) (string, error)
+		base     string
+		wantCode int
+	}{
+		{
+			name: "ansible dry-run refused while ansible is disabled", kind: "ansible_playbook",
+			prep: func(t *testing.T, db *store.DB) map[string]any {
+				_ = db.SetAnsibleEnabled(false)
+				return map[string]any{"playbook_id": 1}
+			},
+			wantCode: http.StatusForbidden,
+		},
+		{
+			name: "terraform dry-run refused while terraform is disabled", kind: "terraform_hcl",
+			prep: func(t *testing.T, db *store.DB) map[string]any {
+				_ = db.SetTerraformEnabled(false)
+				return map[string]any{"workspace_id": 1}
+			},
+			wantCode: http.StatusForbidden,
+		},
+		{
+			name: "terraform apply refused while iac gate is on", kind: "terraform_hcl", apply: true,
+			prep: func(t *testing.T, db *store.DB) map[string]any {
+				_ = db.SetTerraformEnabled(true)
+				_ = db.SetSetting("iac_gate_enabled", "1")
+				return map[string]any{"workspace_id": 1}
+			},
+			wantCode: http.StatusConflict,
+		},
+		{
+			name: "terraform apply passes the gate when iac gate is off", kind: "terraform_hcl", apply: true,
+			prep: func(t *testing.T, db *store.DB) map[string]any {
+				_ = db.SetTerraformEnabled(true)
+				return map[string]any{"workspace_id": 999}
+			},
+			wantCode: http.StatusNotFound, // reaches the workspace lookup
+		},
+		{
+			name: "k8s dry-run refused on read-only host", kind: "k8s_yaml",
+			prep: func(t *testing.T, db *store.DB) map[string]any {
+				hid, err := db.CreateHost(&store.Host{Name: "k8s-ro-dry", Host: "10.0.0.11", Port: 22, User: "root", KubeMode: "read-only"})
+				if err != nil {
+					t.Fatalf("add host: %v", err)
+				}
+				return map[string]any{"host_id": hid}
+			},
+			wantCode: http.StatusForbidden,
+		},
+		{
+			name: "sftp dry-run without base is refused", kind: "sftp_file", read: readLive,
+			wantCode: http.StatusBadRequest,
+		},
+		{
+			name: "sftp apply with stale base conflicts", kind: "sftp_file", apply: true, read: readLive, base: staleBase,
+			wantCode: http.StatusConflict,
+		},
+		{
+			name: "sftp apply with unreadable host fails closed", kind: "sftp_file", apply: true, read: readDown, base: liveBase,
+			wantCode: http.StatusBadGateway,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			srv, db, cleanup := setupTestServer(t)
+			defer cleanup()
+			body := map[string]any{"kind": tc.kind, "host_id": 1, "target": target, "after": "new content\n", "base_sha256": tc.base}
+			if tc.prep != nil {
+				for k, v := range tc.prep(t, db) {
+					body[k] = v
+				}
+			}
+			srv.readPatchFileFn = tc.read
+
+			handler := srv.handleAgentPatchDryRun
+			if tc.apply {
+				handler = srv.handleAgentPatchApply
+			}
+			raw, _ := json.Marshal(body)
+			w := httptest.NewRecorder()
+			handler(w, httptest.NewRequest(http.MethodPost, "/api/agent/patch", strings.NewReader(string(raw))))
+			if w.Code != tc.wantCode {
+				t.Fatalf("status = %d, want %d: %s", w.Code, tc.wantCode, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestAgentPatchSFTPBaseMatchPasses(t *testing.T) {
+	t.Parallel()
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+	srv.readPatchFileFn = func(int64, string) (string, error) { return "hello\n", nil }
+
+	w := httptest.NewRecorder()
+	req := agentPatchReq{HostID: 1, Target: "/srv/app/motd.txt", BaseSHA256: patchSHA256("hello\n")}
+	if srv.sftpBaseConflict(w, req) {
+		t.Fatalf("matching base was refused: %d %s", w.Code, w.Body.String())
+	}
+	if w.Body.Len() != 0 {
+		t.Fatalf("expected no response written on match, got %s", w.Body.String())
 	}
 }
 

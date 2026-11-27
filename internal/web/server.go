@@ -84,6 +84,7 @@ type pending2FASetupData struct {
 type Server struct {
 	db                *store.DB
 	inspector         *inspector.Inspector
+	readPatchFileFn   func(hostID int64, target string) (string, error) // test seam; nil reads the host over SSH
 	dispatcher        *notify.Dispatcher
 	provisioner       sshrunner.KeyProvisioner
 	transferMgr       *transfer.Manager

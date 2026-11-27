@@ -989,7 +989,7 @@
   };
 
   /* ---------- Interactive Patch Diff (CodeMirror 5.65.16 local) & Dry-Run ---------- */
-  const DS = { patch: null, before: '', after: '', mode: 'split', dryRunOk: false, applied: false, cmBefore: null, cmAfter: null, cmUnified: null };
+  const DS = { patch: null, before: '', after: '', baseSha: '', mode: 'split', dryRunOk: false, applied: false, cmBefore: null, cmAfter: null, cmUnified: null };
 
   function cmModeForPatch(p) {
     if (!p) return 'yaml';
@@ -1135,6 +1135,7 @@
     DS.after = p.after || '';
     DS.dryRunOk = false;
     DS.applied = false;
+    DS.baseSha = ''; // fail closed: a failed prepare leaves no base, so dry-run and apply are refused
     $('agDiffTitle').textContent = (PATCH_KIND_LABEL[p.kind] || p.kind) + ' — ' + (p.title || p.target || p.stack_name || '');
     $('agDiffMeta').textContent = p.target || p.stack_name || '';
     const box = $('agDryRunBox');
@@ -1143,12 +1144,14 @@
     if (applyBtn) { applyBtn.disabled = true; applyBtn.title = t('ag_patch_need_dryrun'); applyBtn.innerHTML = `${svgIcon('check', 'icon-sm')} <span>${esc(t('ag_patch_apply'))}</span>`; }
     openModal('agentDiffModal');
     renderDiffEditors();
-    if (!DS.before) {
-      const r = await post('/api/agent/patch/prepare', p).catch(() => null);
-      if (r && r.ok && r.data && typeof r.data.before === 'string' && r.data.before !== DS.before) {
+    // Always re-read the live base: the proposal's "before" can be stale, and apply checks base_sha256 against the host.
+    const r = await post('/api/agent/patch/prepare', p).catch(() => null);
+    if (r && r.ok && r.data) {
+      if (typeof r.data.before === 'string' && r.data.before !== DS.before) {
         DS.before = r.data.before;
         renderDiffEditors();
       }
+      DS.baseSha = r.data.base_sha256 || '';
     }
   };
 
@@ -1158,7 +1161,7 @@
     const restore = typeof SP !== 'undefined' && SP.busy ? SP.busy(btn, t('ag_patch_dryrunning')) : () => {};
     if (box) { box.style.display = 'block'; box.className = 'ag-dryrun-box'; box.innerHTML = esc(t('ag_patch_dryrunning')); }
     try {
-      const payload = Object.assign({}, DS.patch, { after: DS.after });
+      const payload = Object.assign({}, DS.patch, { after: DS.after, base_sha256: DS.baseSha });
       const r = await post('/api/agent/patch/dry-run', payload);
       const ok = !!(r && r.ok && r.data && r.data.valid);
       DS.dryRunOk = ok;
@@ -1181,7 +1184,7 @@
     const btn = $('agDiffApplyBtn'), box = $('agDryRunBox');
     const restore = typeof SP !== 'undefined' && SP.busy ? SP.busy(btn, t('ag_patch_applying')) : () => {};
     try {
-      const payload = Object.assign({}, DS.patch, { after: DS.after });
+      const payload = Object.assign({}, DS.patch, { after: DS.after, base_sha256: DS.baseSha });
       const r = await post('/api/agent/patch/apply', payload);
       if (!r || !r.ok) {
         showToast((r && r.data && r.data.error) || 'error', 'error');
