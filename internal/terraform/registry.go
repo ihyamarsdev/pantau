@@ -40,8 +40,19 @@ var regSegRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 // Overridable in tests.
 var (
 	regNow      = time.Now
-	regCacheTTL = 5 * time.Minute
+	regCacheTTL = 15 * time.Minute
 )
+
+type regFlightCall struct {
+	done chan struct{}
+	body []byte
+	err  error
+}
+
+var regFlight = struct {
+	sync.Mutex
+	m map[string]*regFlightCall
+}{m: map[string]*regFlightCall{}}
 
 type regCacheEntry struct {
 	body    []byte
@@ -140,6 +151,26 @@ func regSeg(vals ...string) error {
 	return nil
 }
 
+// ParseRegistryModuleID validates and splits "namespace/name/provider[/version]" into components.
+// Rejects path traversal, leading '-', URLs, queries, and empty segments.
+func ParseRegistryModuleID(id string) (ns, name, provider, version string, err error) {
+	id = strings.TrimSpace(id)
+	if id == "" || strings.ContainsAny(id, "?#@\\") {
+		return "", "", "", "", fmt.Errorf("%w: %q", ErrBadRegistryArg, id)
+	}
+	parts := strings.Split(id, "/")
+	if len(parts) != 3 && len(parts) != 4 {
+		return "", "", "", "", fmt.Errorf("%w: %q (expected namespace/name/provider[/version])", ErrBadRegistryArg, id)
+	}
+	if err := regSeg(parts...); err != nil {
+		return "", "", "", "", err
+	}
+	if len(parts) == 4 {
+		version = parts[3]
+	}
+	return parts[0], parts[1], parts[2], version, nil
+}
+
 // Ping checks reachability without the cache.
 func (c *RegistryClient) Ping(ctx context.Context) error {
 	return c.get(ctx, "/v1/modules/search", url.Values{"limit": {"1"}}, nil, false)
@@ -156,11 +187,13 @@ func (c *RegistryClient) get(ctx context.Context, path string, q url.Values, out
 	}
 	if !ok {
 		var err error
-		if body, err = c.fetch(ctx, u); err != nil {
-			return err
-		}
 		if useCache {
-			regCachePut(u, body)
+			body, err = c.fetchSingleflight(ctx, u)
+		} else {
+			body, err = c.fetch(ctx, u)
+		}
+		if err != nil {
+			return err
 		}
 	}
 	if out == nil {
@@ -209,4 +242,41 @@ func (c *RegistryClient) fetch(ctx context.Context, u string) ([]byte, error) {
 		return nil, errors.New("registry response too large")
 	}
 	return body, nil
+}
+
+func (c *RegistryClient) fetchSingleflight(ctx context.Context, u string) ([]byte, error) {
+	regFlight.Lock()
+	if call, ok := regFlight.m[u]; ok {
+		regFlight.Unlock()
+		select {
+		case <-call.done:
+			return call.body, call.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	call := &regFlightCall{done: make(chan struct{})}
+	regFlight.m[u] = call
+	regFlight.Unlock()
+
+	// Run the upstream fetch decoupled from any single caller's cancellation so
+	// one aborted waiter does not fail other concurrent waiters.
+	fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), regTimeout)
+	body, err := c.fetch(fetchCtx, u)
+	cancel()
+
+	if err == nil {
+		regCachePut(u, body)
+	}
+	call.body, call.err = body, err
+
+	regFlight.Lock()
+	delete(regFlight.m, u)
+	regFlight.Unlock()
+	close(call.done)
+
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	return body, err
 }

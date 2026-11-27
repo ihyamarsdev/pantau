@@ -55,7 +55,7 @@ func riskTierOfTool(name string, args map[string]interface{}) agentRiskTier {
 // changes state, so the trace shows a write for it instead of read_only.
 var iacReadActions = map[string][]string{
 	"tf_workspace_data":       {"state", "outputs", "variables", "versions", "drift", "diff", "audit", "fmt", "validate"},
-	"tf_catalog":              {"policies", "modules", "varsets", "templates", "registry_modules", "registry_providers", "status", "varset_variables", "cloud_accounts", "importable_accounts"},
+	"tf_catalog":              {"policies", "modules", "varsets", "templates", "registry_modules", "registry_providers", "inspect", "status", "varset_variables", "cloud_accounts", "importable_accounts"},
 	"ansible_playbook_action": {"format", "analyze", "outline"},
 	"ansible_schedule_action": {"list"},
 	"ansible_resources":       {"status", "assets", "library", "roles", "config", "explorer", "facts"},

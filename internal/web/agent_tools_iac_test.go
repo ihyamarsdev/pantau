@@ -3,9 +3,11 @@ package web
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -760,4 +762,79 @@ func TestIacAnsibleAdhoc(t *testing.T) {
 		t.Fatalf("an ad-hoc run without a target must fail: %s", out)
 	}
 	_ = db
+}
+
+func TestTFCatalogBatchSearchAndInspect(t *testing.T) {
+	t.Parallel()
+	var hits int32
+	reg := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		switch r.URL.Path {
+		case "/v1/modules/search":
+			q := r.URL.Query().Get("q")
+			switch q {
+			case "gcp network":
+				_, _ = w.Write([]byte(`{"modules":[{"id":"terraform-google-modules/network/google/10.0.0","namespace":"terraform-google-modules","name":"network","provider":"google","version":"10.0.0"}]}`))
+			case "gcp vm":
+				_, _ = w.Write([]byte(`{"modules":[{"id":"terraform-google-modules/vm/google/15.0.0","namespace":"terraform-google-modules","name":"vm","provider":"google","version":"15.0.0"}]}`))
+			case "gcp storage":
+				_, _ = w.Write([]byte(`{"modules":[{"id":"terraform-google-modules/cloud-storage/google/9.0.0","namespace":"terraform-google-modules","name":"cloud-storage","provider":"google","version":"9.0.0"}]}`))
+			default:
+				_, _ = w.Write([]byte(`{"modules":[]}`))
+			}
+		case "/v1/modules/terraform-google-modules/vm/google":
+			_, _ = w.Write([]byte(`{"id":"terraform-google-modules/vm/google/15.0.0","namespace":"terraform-google-modules","name":"vm","provider":"google","version":"15.0.0","description":"VM modules","root":{"inputs":[],"outputs":[]},"submodules":[{"path":"modules/compute_instance","inputs":[{"name":"subnetwork","type":"string","required":true},{"name":"instance_template","type":"string","required":true},{"name":"hostname","type":"string","default":"\"vm\"","required":false}],"outputs":[{"name":"instances_self_links"}]}]}`))
+		case "/v1/modules/terraform-google-modules/cloud-storage/google":
+			_, _ = w.Write([]byte(`{"id":"terraform-google-modules/cloud-storage/google/9.0.0","namespace":"terraform-google-modules","name":"cloud-storage","provider":"google","version":"9.0.0","description":"GCS buckets","root":{"inputs":[{"name":"name","type":"string","required":true},{"name":"project_id","type":"string","required":true}],"outputs":[{"name":"bucket"}]},"submodules":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(reg.Close)
+
+	srv, db, cleanup := setupTestServer(t)
+	defer cleanup()
+	_ = db.SetSetting("agent_enabled", "1")
+	_ = db.SetTerraformEnabled(true)
+	_ = db.SetSetting("tf_registry_url", reg.URL)
+
+	// 1. Batch search in 1 call
+	out, isErr := callTool(t, srv, "tf_catalog", `{"action":"registry_modules","provider":"google","queries":["gcp network","gcp vm","gcp storage"]}`)
+	if isErr {
+		t.Fatalf("batch search failed: %s", out)
+	}
+	var searchResp struct {
+		Count   int `json:"count"`
+		Modules []struct {
+			Name string `json:"name"`
+		} `json:"modules"`
+	}
+	if err := json.Unmarshal([]byte(out), &searchResp); err != nil || searchResp.Count != 3 {
+		t.Fatalf("unexpected batch search response: err=%v out=%s", err, out)
+	}
+
+	// 2. Batch inspect in 1 call
+	out, isErr = callTool(t, srv, "tf_catalog", `{"action":"inspect","module_ids":["terraform-google-modules/vm/google","terraform-google-modules/cloud-storage/google"]}`)
+	if isErr {
+		t.Fatalf("batch inspect failed: %s", out)
+	}
+	if !strings.Contains(out, "terraform-google-modules/vm/google//modules/compute_instance") || !strings.Contains(out, "cloud-storage") {
+		t.Fatalf("missing expected submodule/module in inspect output: %s", out)
+	}
+
+	// 3. Anti-SSRF / path traversal / >5 module_ids rejected before hitting registry
+	hitsBefore := atomic.LoadInt32(&hits)
+	for _, badArgs := range []string{
+		`{"action":"inspect","module_ids":["../etc/passwd"]}`,
+		`{"action":"inspect","module_ids":["-flag/vm/google"]}`,
+		`{"action":"inspect","module_ids":["https://evil.com/vm/google"]}`,
+		`{"action":"inspect","module_ids":["a/b/c","a/b/d","a/b/e","a/b/f","a/b/g","a/b/h"]}`,
+	} {
+		if _, isErr := callTool(t, srv, "tf_catalog", badArgs); !isErr {
+			t.Fatalf("expected error for %s", badArgs)
+		}
+	}
+	if atomic.LoadInt32(&hits) != hitsBefore {
+		t.Fatalf("invalid inspect args must not hit upstream registry")
+	}
 }
