@@ -72,6 +72,9 @@ func (m *Manager) PullSaved(ctx context.Context) ([]byte, error) {
 	token, _ := m.db.GetSetting("github_token")
 	branch, _ := m.db.GetSetting("github_branch")
 	path, _ := m.db.GetSetting("github_file_path")
+	if m.gh == nil {
+		return nil, errors.New("github sync client is not configured")
+	}
 	if repo == "" || token == "" {
 		return nil, errors.New("github repository and token must be configured")
 	}

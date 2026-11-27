@@ -951,7 +951,7 @@ async function runSnapshotVerify(source) {
   try {
     const res = await fetch('/api/snapshot/verify', req);
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) return fail(t('failed_prefix') + (data.error || (res.status + ' ' + res.statusText)));
+    if (data.status !== 'invalid' && !res.ok) return fail(t('failed_prefix') + (data.error || (res.status + ' ' + res.statusText)));
     if (!data.valid) {
       out.innerHTML = '<div style="color: var(--danger); font-weight: 600;">' + t('verify_snapshot_invalid') + '</div>' +
         '<div style="color: var(--text-muted); margin-top: 4px;">' + escapeHtml(data.error || '') + '</div>';

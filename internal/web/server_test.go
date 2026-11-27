@@ -6,16 +6,19 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
 	"io/fs"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"pantau/internal/inspector"
+	"pantau/internal/snapshot"
 	"pantau/internal/sshrunner"
 	"pantau/internal/store"
 	"pantau/internal/updater"
@@ -2487,4 +2490,197 @@ func TestWSDockerLogs_ClosesRunnerOnDisconnect(t *testing.T) {
 	if !mockRunner.IsClosed() {
 		t.Errorf("expected mock runner to be closed immediately on docker logs websocket disconnect")
 	}
+}
+
+// TestSnapshotVerifyHandler drives POST /api/snapshot/verify end to end: auth, multipart upload, the saved
+// GitHub source against a fake Contents API, and the rule that response bodies never echo secrets.
+func TestSnapshotVerifyHandler(t *testing.T) {
+	t.Parallel()
+	const pass = "handler-pass-123"
+	const secret = "tg-token-do-not-leak-7731"
+	payload := &store.SnapshotPayload{
+		Version:   1,
+		CreatedAt: time.Date(2026, 11, 20, 3, 0, 0, 0, time.UTC),
+		Settings:  map[string]string{"telegram_token": secret},
+		Hosts: []store.Host{
+			{Name: "web-01", Host: "10.0.0.1", Port: 22, User: "root"},
+			{Name: "db-01", Host: "10.0.0.2", Port: 22, User: "root"},
+		},
+	}
+	valid, err := snapshot.Encrypt(payload, pass)
+	if err != nil {
+		t.Fatal(err)
+	}
+	corrupt := append(bytes.Clone(snapshot.MagicHeader), bytes.Repeat([]byte{0xAB}, 96)...)
+
+	// fakeGitHub serves the valid snapshot only to the configured repo and token, like the Contents API.
+	fakeGitHub := func(t *testing.T) *httptest.Server {
+		t.Helper()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/repos/acme/state/contents/pantau-state.enc" || r.Header.Get("Authorization") != "Bearer gh-token" {
+				http.NotFound(w, r)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]string{"sha": "abc", "content": base64.StdEncoding.EncodeToString(valid)})
+		}))
+		t.Cleanup(srv.Close)
+		return srv
+	}
+
+	tests := []struct {
+		name       string
+		authed     bool
+		github     bool // configure saved GitHub Sync settings against the fake API
+		build      func(t *testing.T) *http.Request
+		wantStatus int
+		wantValid  bool
+		wantHosts  int
+	}{
+		{
+			name:       "multipart valid file returns counts without secrets",
+			authed:     true,
+			build:      func(t *testing.T) *http.Request { return verifyMultipartRequest(t, valid, pass) },
+			wantStatus: http.StatusOK,
+			wantValid:  true,
+			wantHosts:  2,
+		},
+		{
+			name:       "wrong passphrase is a clean 400",
+			authed:     true,
+			build:      func(t *testing.T) *http.Request { return verifyMultipartRequest(t, valid, "wrong-pass") },
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "corrupt file is a clean 400",
+			authed:     true,
+			build:      func(t *testing.T) *http.Request { return verifyMultipartRequest(t, corrupt, pass) },
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "missing file is a 400",
+			authed:     true,
+			build:      func(t *testing.T) *http.Request { return verifyMultipartRequest(t, nil, pass) },
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "unauthenticated request is rejected before decrypting",
+			authed:     false,
+			build:      func(t *testing.T) *http.Request { return verifyMultipartRequest(t, valid, pass) },
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:   "github source verifies the saved latest backup",
+			authed: true,
+			github: true,
+			build: func(t *testing.T) *http.Request {
+				return verifyJSONRequest(t, map[string]string{"source": "github", "passphrase": pass})
+			},
+			wantStatus: http.StatusOK,
+			wantValid:  true,
+			wantHosts:  2,
+		},
+		{
+			name:   "github source without saved settings is a 502",
+			authed: true,
+			build: func(t *testing.T) *http.Request {
+				return verifyJSONRequest(t, map[string]string{"source": "github", "passphrase": pass})
+			},
+			wantStatus: http.StatusBadGateway,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			db, err := store.Open(testDBCopy(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { db.Close() })
+			srv := NewServer(db, nil, nil)
+			if tt.github {
+				gh := snapshot.NewGitHubClient(&http.Client{Timeout: 5 * time.Second})
+				gh.BaseURL = fakeGitHub(t).URL
+				srv.SetSnapshotManager(snapshot.NewManager(db, gh))
+				must := func(err error) {
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				must(db.SetSetting("github_repo", "acme/state"))
+				must(db.SetSetting("github_token", "gh-token"))
+			}
+			const token = "verify-handler-session"
+			if tt.authed {
+				srv.sessions.Store(token, time.Now().Add(time.Hour))
+			}
+
+			req := tt.build(t)
+			if tt.authed {
+				req.AddCookie(&http.Cookie{Name: "pantau_session", Value: token})
+			}
+			rr := httptest.NewRecorder()
+			srv.mux.ServeHTTP(rr, req)
+
+			if rr.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body: %s", rr.Code, tt.wantStatus, rr.Body.String())
+			}
+			body := rr.Body.String()
+			if strings.Contains(body, secret) || strings.Contains(body, pass) {
+				t.Fatalf("response leaked a secret or passphrase: %s", body)
+			}
+			if tt.wantStatus != http.StatusOK {
+				return
+			}
+			var got struct {
+				Valid  bool `json:"valid"`
+				Result struct {
+					Counts struct {
+						Hosts int `json:"hosts"`
+					} `json:"counts"`
+				} `json:"result"`
+			}
+			if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if got.Valid != tt.wantValid || got.Result.Counts.Hosts != tt.wantHosts {
+				t.Errorf("valid=%v hosts=%d, want valid=%v hosts=%d", got.Valid, got.Result.Counts.Hosts, tt.wantValid, tt.wantHosts)
+			}
+		})
+	}
+}
+
+// verifyMultipartRequest builds a multipart upload; a nil file omits the file field.
+func verifyMultipartRequest(t *testing.T, file []byte, passphrase string) *http.Request {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	if file != nil {
+		fw, err := mw.CreateFormFile("file", "pantau-state.enc")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fw.Write(file); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := mw.WriteField("passphrase", passphrase); err != nil {
+		t.Fatal(err)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/snapshot/verify", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	return req
+}
+
+func verifyJSONRequest(t *testing.T, body map[string]string) *http.Request {
+	t.Helper()
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/snapshot/verify", bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	return req
 }
