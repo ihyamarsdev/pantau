@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -13,9 +14,10 @@ import (
 )
 
 const (
-	statusTimeout = 20 * time.Second
-	listTimeout   = 30 * time.Second
-	loginTimeout  = 90 * time.Second
+	versionTimeout = 10 * time.Second
+	statusTimeout  = 20 * time.Second
+	listTimeout    = 30 * time.Second
+	loginTimeout   = 90 * time.Second
 	// maxErrorText bounds the tsh or kubectl text copied into an error, so no large output reaches logs or the UI.
 	maxErrorText = 512
 )
@@ -102,13 +104,59 @@ func (m *Manager) env(p Profile, kubeconfig string) ([]string, error) {
 	return base, nil
 }
 
+// cliDir is the directory Pantau installs managed CLIs into: <dataDir>/cli.
+func (m *Manager) cliDir() string {
+	return filepath.Join(m.dataDir, "cli")
+}
+
+// Locate returns the tsh binary and its source (env, managed or system), or ErrTSHNotInstalled.
+func (m *Manager) Locate() (TSHLocation, error) {
+	return ResolveTSH(m.tshOverride, m.cliDir(), nil)
+}
+
 func (m *Manager) tsh() (string, error) {
-	return LocateTSH(m.tshOverride, nil)
+	loc, err := m.Locate()
+	return loc.Path, err
 }
 
 // TSHPath reports the tsh binary Pantau would run, or ErrTSHNotInstalled. The UI uses it to show detection status.
 func (m *Manager) TSHPath() (string, error) {
 	return m.tsh()
+}
+
+// TSHInfo describes the tsh Pantau would run: where it comes from, its path and its version.
+type TSHInfo struct {
+	Installed      bool   `json:"installed"`
+	Source         string `json:"source"`
+	Path           string `json:"path,omitempty"`
+	Version        string `json:"version,omitempty"`
+	OS             string `json:"os"`
+	Arch           string `json:"arch"`
+	OverrideActive bool   `json:"override_active"`
+}
+
+// TSHInfo resolves tsh and reads its version offline: `tsh version --client` never contacts a proxy. A tsh
+// that is found but whose version cannot be read is still Installed, with an empty Version.
+func (m *Manager) TSHInfo(ctx context.Context) TSHInfo {
+	info := TSHInfo{
+		Source:         SourceMissing,
+		OS:             runtime.GOOS,
+		Arch:           runtime.GOARCH,
+		OverrideActive: m.tshOverride != "",
+	}
+	loc, err := m.Locate()
+	if err != nil {
+		return info
+	}
+	info.Installed, info.Source, info.Path = true, loc.Source, loc.Path
+
+	ctx, cancel := context.WithTimeout(ctx, versionTimeout)
+	defer cancel()
+	res, err := m.runner.Run(ctx, os.Environ(), loc.Path, "version", "--client", "--format=json")
+	if err == nil && res.ExitCode == 0 {
+		info.Version, _ = ParseTSHVersion(res.Stdout)
+	}
+	return info
 }
 
 // run executes tsh with a deadline. A non-zero exit is returned as a Result, not an error.

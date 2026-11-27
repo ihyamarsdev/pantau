@@ -22,6 +22,34 @@ RUN apk --no-cache add ca-certificates unzip \
  && grep " terraform_${TERRAFORM_VERSION}_linux_${TARGETARCH}.zip\$" "terraform_${TERRAFORM_VERSION}_SHA256SUMS" | sha256sum -c - \
  && unzip -q "terraform_${TERRAFORM_VERSION}_linux_${TARGETARCH}.zip" terraform -d /usr/local/bin
 
+# Teleport tsh client (Teleport profiles). The tarball is checked against the .sha256 that cdn.teleport.dev
+# publishes beside it, and only teleport/tsh is taken out of the archive. kubectl is already in the image (apk).
+# Pin TSH_VERSION to a stable release from https://github.com/gravitational/teleport/releases.
+FROM alpine:latest AS teleport
+ARG TARGETARCH
+ARG TSH_VERSION=18.11.10
+RUN apk --no-cache add ca-certificates tar \
+ && cd /tmp \
+ && wget -q "https://cdn.teleport.dev/teleport-v${TSH_VERSION}-linux-${TARGETARCH}-bin.tar.gz" \
+ && wget -q "https://cdn.teleport.dev/teleport-v${TSH_VERSION}-linux-${TARGETARCH}-bin.tar.gz.sha256" \
+ && sha256sum -c "teleport-v${TSH_VERSION}-linux-${TARGETARCH}-bin.tar.gz.sha256" \
+ && tar -xzf "teleport-v${TSH_VERSION}-linux-${TARGETARCH}-bin.tar.gz" -C /tmp teleport/tsh \
+ && install -m 0755 /tmp/teleport/tsh /usr/local/bin/tsh \
+ && rm -rf /tmp/teleport /tmp/teleport-v*
+
+# The Teleport tsh release is linked against glibc, and Alpine uses musl, so tsh does not start on Alpine as
+# shipped. This stage runs tsh once (proof that it works), then collects the glibc files it loads (ldd) at their
+# own paths so the final stage can copy them over. The fallback to the system copy is not used.
+FROM debian:stable-slim AS teleport-rt
+COPY --from=teleport /usr/local/bin/tsh /usr/local/bin/tsh
+RUN /usr/local/bin/tsh version --client >/dev/null \
+ && ldd /usr/local/bin/tsh | awk '/=> \//{print $3} /^[[:space:]]*\//{print $1}' | while read -r f; do \
+      case "$f" in \
+        /lib64/*|/lib/ld-*) mkdir -p "/rootfs$(dirname "$f")" && cp -L "$f" "/rootfs$f" ;; \
+        *) mkdir -p /rootfs/lib && cp -L "$f" "/rootfs/lib/$(basename "$f")" ;; \
+      esac; \
+    done
+
 # Optional VPN client binaries for Settings -> Networks. WITH_NETBIRD=1 bakes the NetBird CLI in, so a
 # container can run its own NetBird account (driver mode "instance") without the host's daemon.
 FROM alpine:latest AS vpn
@@ -49,6 +77,8 @@ RUN apk --no-cache add ca-certificates tzdata kubectl ansible-core openssh-clien
 COPY --from=vpn /vpn/ /usr/local/bin/
 COPY --from=infracost /usr/local/bin/infracost /usr/local/bin/infracost
 COPY --from=terraform /usr/local/bin/terraform /usr/local/bin/terraform
+COPY --from=teleport-rt /rootfs/ /
+COPY --from=teleport-rt /usr/local/bin/tsh /usr/local/bin/tsh
 WORKDIR /app
 COPY --from=builder /app/pantau /app/pantau
 VOLUME ["/app/data"]

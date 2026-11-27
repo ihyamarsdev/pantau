@@ -150,8 +150,8 @@ func (s *Server) handleTeleportProfiles(w http.ResponseWriter, r *http.Request) 
 		}
 		tsh := map[string]interface{}{"installed": false}
 		if s.teleportMgr != nil {
-			if path, err := s.teleportMgr.TSHPath(); err == nil {
-				tsh = map[string]interface{}{"installed": true, "path": path}
+			if loc, err := s.teleportMgr.Locate(); err == nil {
+				tsh = map[string]interface{}{"installed": true, "path": loc.Path, "source": loc.Source}
 			} else {
 				tsh["error"] = "tsh is not installed on the Pantau server"
 			}

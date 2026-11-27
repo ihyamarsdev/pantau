@@ -25,6 +25,9 @@ services:
       - NET_RAW   # bind an SSH socket to that interface (SO_BINDTODEVICE)
     devices:
       - /dev/net/tun:/dev/net/tun
+    # Teleport: /app/data is persistent. Set a Teleport profile's teleport_home to /app/data/teleport/tsh-home so
+    # `tsh login` survives "docker compose up --build". A global TELEPORT_HOME env is not used: Pantau strips it so
+    # each profile controls its own home.
     volumes:
       - ./data:/app/data
       - ${HOME}/.ssh/config:/root/.ssh/config:ro
