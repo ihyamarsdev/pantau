@@ -294,6 +294,97 @@ func TestRegistryBatchSearchAndInspect(t *testing.T) {
 	}
 }
 
+func TestNormalizeModuleSearchQuery(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		input     string
+		wantNS    string
+		wantQuery string
+	}{
+		{name: "namespace prefix multiword", input: "terraform-google-modules vm compute", wantNS: "terraform-google-modules", wantQuery: "vm"},
+		{name: "aws namespace prefix", input: "terraform-aws-modules vpc", wantNS: "terraform-aws-modules", wantQuery: "vpc"},
+		{name: "slash namespace", input: "hashicorp/consul", wantNS: "hashicorp", wantQuery: "consul"},
+		{name: "plain query unchanged", input: "gcp network", wantNS: "", wantQuery: "gcp network"},
+		{name: "special chars unchanged", input: "vpc & co", wantNS: "", wantQuery: "vpc & co"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ns, q := normalizeModuleSearchQuery(tt.input)
+			if ns != tt.wantNS || q != tt.wantQuery {
+				t.Fatalf("normalizeModuleSearchQuery(%q) = (%q, %q), want (%q, %q)", tt.input, ns, q, tt.wantNS, tt.wantQuery)
+			}
+		})
+	}
+}
+
+func TestRegistryInspect_LatestVersionProviderDepsAndAllSubmodules(t *testing.T) {
+	t.Parallel()
+	const multiSubFixture = `{
+  "id": "terraform-google-modules/vm/google/18.1.0",
+  "namespace": "terraform-google-modules",
+  "name": "vm",
+  "version": "18.1.0",
+  "provider": "google",
+  "description": "VM modules",
+  "versions": ["17.0.0", "18.1.0"],
+  "root": {
+    "inputs": [],
+    "outputs": [],
+    "provider_dependencies": [{"name": "google", "namespace": "hashicorp", "version": ">= 7.0, < 8.0"}]
+  },
+  "submodules": [
+    {
+      "path": "modules/compute_instance",
+      "inputs": [{"name": "subnetwork", "type": "string", "required": true}],
+      "outputs": [],
+      "provider_dependencies": [{"name": "google", "namespace": "hashicorp", "version": ">= 7.0"}]
+    },
+    {
+      "path": "modules/instance_template",
+      "inputs": [{"name": "machine_type", "type": "string", "required": true}, {"name": "source_image", "type": "string", "required": true}],
+      "outputs": [],
+      "provider_dependencies": [{"name": "google", "namespace": "hashicorp", "version": ">= 7.0"}]
+    }
+  ]
+}`
+	c, _ := regServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/modules/search" {
+			q := r.URL.Query()
+			if q.Get("namespace") != "terraform-google-modules" || q.Get("q") != "vm" {
+				t.Errorf("expected namespace=terraform-google-modules q=vm, got %s", r.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(`{"modules":[{"id":"terraform-google-modules/vm/google/18.1.0","namespace":"terraform-google-modules","name":"vm","provider":"google","version":"18.1.0"}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(multiSubFixture))
+	})
+
+	sr, err := c.SearchModules(context.Background(), "terraform-google-modules vm compute", "google", 0, 10)
+	if err != nil || len(sr.Modules) != 1 || sr.Modules[0].LatestVersion != "18.1.0" {
+		t.Fatalf("SearchModules = %+v, err=%v", sr, err)
+	}
+
+	d, err := c.ModuleDetail(context.Background(), "terraform-google-modules", "vm", "google", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc := FormatModuleSchema(d, "")
+	if sc.LatestVersion != "18.1.0" {
+		t.Fatalf("LatestVersion = %q, want 18.1.0", sc.LatestVersion)
+	}
+	if len(sc.Root.ProviderDependencies) != 1 || sc.Root.ProviderDependencies[0].Version != ">= 7.0, < 8.0" {
+		t.Fatalf("Root.ProviderDependencies = %+v", sc.Root.ProviderDependencies)
+	}
+	if len(sc.Submodules) != 2 {
+		t.Fatalf("expected both compute_instance and instance_template submodules in 1 call, got %d", len(sc.Submodules))
+	}
+	if sc.Submodules[1].Path != "modules/instance_template" || len(sc.Submodules[1].RequiredInputs) != 2 || len(sc.Submodules[1].ProviderDependencies) != 1 {
+		t.Fatalf("unexpected second submodule: %+v", sc.Submodules[1])
+	}
+}
+
 func TestRegistrySingleflightConcurrent(t *testing.T) {
 	gate := make(chan struct{})
 	c, hits := regServer(t, func(w http.ResponseWriter, r *http.Request) {

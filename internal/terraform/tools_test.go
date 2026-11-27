@@ -187,6 +187,45 @@ exit 0
 	if strings.Contains(res.InitErrorTail, "supersecrettoken12345") {
 		t.Fatalf("expected secret to be redacted in InitErrorTail: %q", res.InitErrorTail)
 	}
+	if strings.Contains(res.InitErrorTail, "Downloading registry.terraform.io") {
+		t.Fatalf("expected Downloading noise to be stripped from InitErrorTail, got: %q", res.InitErrorTail)
+	}
+}
+
+func TestValidateConfig_InitProviderVersionConflictStripsDownloadingNoise(t *testing.T) {
+	dataRoot := t.TempDir()
+	installFakeTerraform(t, `
+if [ "$1" = "init" ]; then
+  i=1
+  while [ $i -le 150 ]; do
+    echo "Downloading registry.terraform.io/terraform-google-modules/network/google 6.0.0 for module_$i..."
+    i=$((i + 1))
+  done
+  echo "╷"
+  echo "│ Error: Failed to query available provider packages"
+  echo "│ "
+  echo "│ Could not retrieve the list of available versions for provider"
+  echo "│ hashicorp/google: no available releases match the given constraints 6.0.0, >= 7.0.0"
+  echo "╵"
+  exit 1
+fi
+exit 0
+`)
+
+	res, err := ValidateConfig(context.Background(), "terraform", dataRoot, map[string]string{"versions.tf": ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.OK {
+		t.Fatal("expected OK=false")
+	}
+	if strings.Contains(res.InitErrorTail, "Downloading ") {
+		t.Fatalf("expected Downloading noise to be stripped, got: %q", res.InitErrorTail)
+	}
+	if !strings.Contains(res.InitErrorTail, "Error: Failed to query available provider packages") ||
+		!strings.Contains(res.InitErrorTail, ">= 7.0.0") {
+		t.Fatalf("expected full provider version conflict error, got: %q", res.InitErrorTail)
+	}
 }
 
 func TestValidateConfig_StructuredDiagnostics(t *testing.T) {

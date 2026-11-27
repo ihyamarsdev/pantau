@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -37,6 +38,7 @@ type Diagnostic struct {
 	Severity string `json:"severity"`
 	Summary  string `json:"summary"`
 	Detail   string `json:"detail"`
+	Address  string `json:"address,omitempty"`
 	File     string `json:"file"`
 	Line     int    `json:"line"`
 }
@@ -85,15 +87,39 @@ func TailClip(s string, max int) string {
 	return "…\n" + strings.TrimSpace(s[cut:])
 }
 
-// ExtractErrorExcerpt extracts the relevant Error: block(s) or last 40 lines from a Terraform log,
+var ansiEscapeRe = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
+
+func isInitNoiseLine(line string) bool {
+	t := strings.TrimSpace(line)
+	if t == "" {
+		return false
+	}
+	return strings.HasPrefix(t, "Downloading ") ||
+		strings.HasPrefix(t, "Initializing ") ||
+		strings.HasPrefix(t, "- ") && strings.Contains(t, " in .terraform/")
+}
+
+// ExtractErrorExcerpt extracts the relevant Error: block(s) (or last 40 non-noise lines)
+// from a Terraform log, stripping ANSI codes and Downloading/Initializing progress noise,
 // redacted with RedactAgentSecrets and bounded to 4 KB.
 func ExtractErrorExcerpt(log string) string {
-	redacted := strings.TrimSpace(inspector.RedactAgentSecrets(log))
+	clean := ansiEscapeRe.ReplaceAllString(log, "")
+	redacted := strings.TrimSpace(inspector.RedactAgentSecrets(clean))
 	if redacted == "" {
 		return ""
 	}
-	lines := strings.Split(redacted, "\n")
-	// Prefer starting from the first "Error:" line (or "╷" just above it) if present near the end.
+	rawLines := strings.Split(redacted, "\n")
+	lines := make([]string, 0, len(rawLines))
+	for _, ln := range rawLines {
+		if isInitNoiseLine(ln) {
+			continue
+		}
+		lines = append(lines, ln)
+	}
+	if len(lines) == 0 {
+		lines = rawLines
+	}
+	// Prefer starting from the first "Error:" line (or "╷" just above it).
 	errIdx := -1
 	for i, ln := range lines {
 		if strings.Contains(ln, "Error:") {
@@ -227,7 +253,10 @@ func ValidateConfig(ctx context.Context, binary, dataRoot string, files map[stri
 		return nil, err
 	}
 	if code != 0 {
-		tail := TailClip(inspector.RedactAgentSecrets(out.String()), toolOutputMax)
+		tail := ExtractErrorExcerpt(out.String())
+		if tail == "" {
+			tail = TailClip(inspector.RedactAgentSecrets(out.String()), toolOutputMax)
+		}
 		return &ValidateResult{
 			OK:             false,
 			InitDurationMs: initDur,
@@ -254,6 +283,7 @@ func ValidateConfig(ctx context.Context, binary, dataRoot string, files map[stri
 			Severity string `json:"severity"`
 			Summary  string `json:"summary"`
 			Detail   string `json:"detail"`
+			Address  string `json:"address"`
 			Range    *struct {
 				Filename string `json:"filename"`
 				Start    struct {
@@ -278,6 +308,7 @@ func ValidateConfig(ctx context.Context, binary, dataRoot string, files map[stri
 			Severity: d.Severity,
 			Summary:  inspector.RedactAgentSecrets(d.Summary),
 			Detail:   inspector.RedactAgentSecrets(d.Detail),
+			Address:  d.Address,
 		}
 		if d.Range != nil {
 			x.File, x.Line = filepath.Base(d.Range.Filename), d.Range.Start.Line

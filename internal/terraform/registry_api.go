@@ -13,16 +13,17 @@ import (
 const regReadmeCap = 40 << 10
 
 type RegistryModule struct {
-	ID          string `json:"id"`
-	Namespace   string `json:"namespace"`
-	Name        string `json:"name"`
-	Provider    string `json:"provider"`
-	Version     string `json:"version"`
-	Description string `json:"description"`
-	Source      string `json:"source"`
-	PublishedAt string `json:"published_at"`
-	Downloads   int64  `json:"downloads"`
-	Verified    bool   `json:"verified"`
+	ID            string `json:"id"`
+	Namespace     string `json:"namespace"`
+	Name          string `json:"name"`
+	Provider      string `json:"provider"`
+	Version       string `json:"version"`
+	LatestVersion string `json:"latest_version,omitempty"`
+	Description   string `json:"description"`
+	Source        string `json:"source"`
+	PublishedAt   string `json:"published_at"`
+	Downloads     int64  `json:"downloads"`
+	Verified      bool   `json:"verified"`
 }
 
 type RegistryModuleSearch struct {
@@ -110,6 +111,34 @@ func reversed(s []string) []string {
 	return out
 }
 
+// normalizeModuleSearchQuery extracts an explicit registry namespace prefix (such as
+// "terraform-google-modules vm compute" or "hashicorp/consul") so Registry API v1
+// receives namespace=<ns>&q=<term> instead of a raw multi-word string.
+func normalizeModuleSearchQuery(q string) (namespace, cleanQ string) {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return "", ""
+	}
+	fields := strings.Fields(q)
+	first := fields[0]
+	if strings.Contains(first, "/") {
+		parts := strings.SplitN(first, "/", 2)
+		if regSeg(parts[0]) == nil {
+			rest := strings.TrimSpace(parts[1])
+			if rest == "" && len(fields) > 1 {
+				rest = fields[1]
+			}
+			return parts[0], rest
+		}
+	}
+	if len(fields) > 1 && (strings.HasPrefix(first, "terraform-") || strings.HasSuffix(first, "-modules") || strings.Count(first, "-") >= 2) {
+		if regSeg(first) == nil {
+			return first, fields[1]
+		}
+	}
+	return "", q
+}
+
 func (c *RegistryClient) SearchModules(ctx context.Context, q, provider string, offset, limit int) (RegistryModuleSearch, error) {
 	var res RegistryModuleSearch
 	if provider != "" {
@@ -125,7 +154,11 @@ func (c *RegistryClient) SearchModules(ctx context.Context, q, provider string, 
 	} else if limit > 50 {
 		limit = 50
 	}
-	v := url.Values{"q": {q}, "offset": {strconv.Itoa(offset)}, "limit": {strconv.Itoa(limit)}}
+	ns, cleanQ := normalizeModuleSearchQuery(q)
+	v := url.Values{"q": {cleanQ}, "offset": {strconv.Itoa(offset)}, "limit": {strconv.Itoa(limit)}}
+	if ns != "" {
+		v.Set("namespace", ns)
+	}
 	if provider != "" {
 		v.Set("provider", provider)
 	}
@@ -141,6 +174,11 @@ func (c *RegistryClient) SearchModules(ctx context.Context, q, provider string, 
 	res.Modules = raw.Modules
 	if res.Modules == nil {
 		res.Modules = []RegistryModule{}
+	}
+	for i := range res.Modules {
+		if res.Modules[i].LatestVersion == "" {
+			res.Modules[i].LatestVersion = res.Modules[i].Version
+		}
 	}
 	if raw.Meta.NextOffset != nil {
 		res.NextOffset = *raw.Meta.NextOffset
@@ -309,24 +347,33 @@ type InspectedOptionalInput struct {
 	Default any    `json:"default,omitempty"`
 }
 
-// InspectedModuleSection holds inputs and outputs for root or a submodule.
-type InspectedModuleSection struct {
-	Path                string                   `json:"path,omitempty"`
-	Source              string                   `json:"source,omitempty"`
-	RequiredInputs      []InspectedRequiredInput `json:"required_inputs"`
-	OptionalInputs      []InspectedOptionalInput `json:"optional_inputs"`
-	OptionalInputsTotal int                      `json:"optional_inputs_total,omitempty"`
-	Outputs             []string                 `json:"outputs,omitempty"`
+// InspectedProviderDep is a compact provider version constraint required by a module or submodule.
+type InspectedProviderDep struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace,omitempty"`
+	Version   string `json:"version,omitempty"`
 }
 
-// InspectedModuleSchema is the <4 KB summary of a registry module returned by tf_catalog inspect.
+// InspectedModuleSection holds inputs, outputs, and provider dependencies for root or a submodule.
+type InspectedModuleSection struct {
+	Path                 string                   `json:"path,omitempty"`
+	Source               string                   `json:"source,omitempty"`
+	ProviderDependencies []InspectedProviderDep   `json:"provider_dependencies,omitempty"`
+	RequiredInputs       []InspectedRequiredInput `json:"required_inputs"`
+	OptionalInputs       []InspectedOptionalInput `json:"optional_inputs"`
+	OptionalInputsTotal  int                      `json:"optional_inputs_total,omitempty"`
+	Outputs              []string                 `json:"outputs,omitempty"`
+}
+
+// InspectedModuleSchema is the compact summary of a registry module returned by tf_catalog inspect.
 type InspectedModuleSchema struct {
-	ModuleID    string                   `json:"module_id"`
-	Source      string                   `json:"source"`
-	Version     string                   `json:"version"`
-	Description string                   `json:"description,omitempty"`
-	Root        InspectedModuleSection   `json:"root"`
-	Submodules  []InspectedModuleSection `json:"submodules,omitempty"`
+	ModuleID      string                   `json:"module_id"`
+	Source        string                   `json:"source"`
+	Version       string                   `json:"version"`
+	LatestVersion string                   `json:"latest_version"`
+	Description   string                   `json:"description,omitempty"`
+	Root          InspectedModuleSection   `json:"root"`
+	Submodules    []InspectedModuleSection `json:"submodules,omitempty"`
 }
 
 func clipText(s string, max int) string {
@@ -358,10 +405,29 @@ func compactDefault(v any) any {
 	return v
 }
 
-func buildSection(inputs []RegistryInput, outputs []RegistryOutput, optCap int, includeOutputs bool) InspectedModuleSection {
+func buildProviderDeps(deps []RegistryModuleProvider) []InspectedProviderDep {
+	if len(deps) == 0 {
+		return nil
+	}
+	out := make([]InspectedProviderDep, 0, len(deps))
+	for _, p := range deps {
+		if p.Name == "" {
+			continue
+		}
+		out = append(out, InspectedProviderDep{
+			Name:      p.Name,
+			Namespace: p.Namespace,
+			Version:   p.Version,
+		})
+	}
+	return out
+}
+
+func buildSection(inputs []RegistryInput, outputs []RegistryOutput, pdeps []RegistryModuleProvider, optCap int, includeOutputs bool) InspectedModuleSection {
 	sec := InspectedModuleSection{
-		RequiredInputs: []InspectedRequiredInput{},
-		OptionalInputs: []InspectedOptionalInput{},
+		ProviderDependencies: buildProviderDeps(pdeps),
+		RequiredInputs:       []InspectedRequiredInput{},
+		OptionalInputs:       []InspectedOptionalInput{},
 	}
 	var opts []InspectedOptionalInput
 	for _, in := range inputs {
@@ -406,43 +472,54 @@ func matchSubmodule(path, want string) bool {
 	return p == w || strings.TrimPrefix(p, "modules/") == w || strings.HasSuffix(p, "/"+w)
 }
 
-// FormatModuleSchema builds a compact (<4 KB) schema summary for a module and its submodules.
+// FormatModuleSchema builds a compact schema summary for a module and its submodules.
+// It always includes latest_version, provider_dependencies, and up to 15 submodules'
+// required_inputs + provider_dependencies in one call.
 // When submodule is non-empty, the matching submodule returns all of its optional inputs in full.
 func FormatModuleSchema(d RegistryModuleDetail, submodule string) InspectedModuleSchema {
 	baseSource := d.Module.Namespace + "/" + d.Module.Name + "/" + d.Module.Provider
-	rootOptCap := 12
+	latest := d.Module.Version
+	if len(d.Versions) > 0 && d.Versions[0] != "" {
+		latest = d.Versions[0]
+	}
+	rootOptCap := 10
 	if submodule != "" {
 		rootOptCap = 5
 	}
 	schema := InspectedModuleSchema{
-		ModuleID:    baseSource,
-		Source:      baseSource,
-		Version:     d.Module.Version,
-		Description: clipText(d.Module.Description, 180),
-		Root:        buildSection(d.Inputs, d.Outputs, rootOptCap, submodule == ""),
+		ModuleID:      baseSource,
+		Source:        baseSource,
+		Version:       d.Module.Version,
+		LatestVersion: latest,
+		Description:   clipText(d.Module.Description, 180),
+		Root:          buildSection(d.Inputs, d.Outputs, d.Providers, rootOptCap, submodule == ""),
 	}
 
-	subOptCap := 8
+	const maxSubmodules = 15
+	subOptCap := 6
 	if len(d.Submodules) > 4 {
-		subOptCap = 4
+		subOptCap = 3
 	}
 	for _, sm := range d.Submodules {
 		isMatch := matchSubmodule(sm.Path, submodule)
 		if submodule != "" && !isMatch {
 			continue
 		}
+		if submodule == "" && len(schema.Submodules) >= maxSubmodules {
+			break
+		}
 		capForSub := subOptCap
 		if isMatch {
 			capForSub = -1 // return all optional inputs in full for the requested submodule
 		}
-		sec := buildSection(sm.Inputs, sm.Outputs, capForSub, isMatch)
+		sec := buildSection(sm.Inputs, sm.Outputs, sm.ProviderDeps, capForSub, isMatch)
 		sec.Path = sm.Path
 		sec.Source = baseSource + "//" + strings.TrimPrefix(sm.Path, "/")
 		schema.Submodules = append(schema.Submodules, sec)
 	}
 
-	// Enforce < 4 KB per module by trimming optional_inputs if needed.
-	const maxSchemaBytes = 3950
+	// Keep payload compact while never dropping required_inputs or provider_dependencies.
+	const maxSchemaBytes = 6144
 	if b, err := json.Marshal(schema); err == nil && len(b) > maxSchemaBytes {
 		if schema.Root.OptionalInputsTotal == 0 && len(schema.Root.OptionalInputs) > 4 {
 			schema.Root.OptionalInputsTotal = len(schema.Root.OptionalInputs)
@@ -454,11 +531,11 @@ func FormatModuleSchema(d RegistryModuleDetail, submodule string) InspectedModul
 			if submodule != "" && matchSubmodule(schema.Submodules[i].Path, submodule) {
 				continue
 			}
-			if len(schema.Submodules[i].OptionalInputs) > 3 {
+			if len(schema.Submodules[i].OptionalInputs) > 2 {
 				if schema.Submodules[i].OptionalInputsTotal == 0 {
 					schema.Submodules[i].OptionalInputsTotal = len(schema.Submodules[i].OptionalInputs)
 				}
-				schema.Submodules[i].OptionalInputs = schema.Submodules[i].OptionalInputs[:3]
+				schema.Submodules[i].OptionalInputs = schema.Submodules[i].OptionalInputs[:2]
 			}
 		}
 	}
