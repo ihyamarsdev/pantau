@@ -88,7 +88,7 @@ func (m *Manager) getRunnerForHost(h *store.Host) (sshrunner.Runner, error) {
 			return nil, fmt.Errorf("%w: network down: %v", sshrunner.ErrNetworkUnavailable, err)
 		}
 	}
-	return m.factory(sshrunner.Target{Host: h.Host, Port: h.Port, User: h.User, Key: key, Net: path})
+	return m.factory(sshrunner.Target{Host: h.Host, Port: h.Port, User: h.User, Key: key, Net: path, LegacySSH: h.AllowLegacySSH})
 }
 
 func (m *Manager) StartTransfer(srcHostID int64, srcPath string, dstHostID int64, dstPath string, mode string) (*TransferJob, error) {

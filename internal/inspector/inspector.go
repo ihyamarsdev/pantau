@@ -184,7 +184,7 @@ func (ins *Inspector) GetRunnerForHost(h *store.Host) (sshrunner.Runner, error) 
 	if err != nil {
 		return nil, err
 	}
-	return ins.factory(sshrunner.Target{Host: h.Host, Port: h.Port, User: h.User, Key: key, Net: path})
+	return ins.factory(sshrunner.Target{Host: h.Host, Port: h.Port, User: h.User, Key: key, Net: path, LegacySSH: h.AllowLegacySSH})
 }
 
 // InspectHost performs a full health check, metrics scrape, and drift detection on a single host.

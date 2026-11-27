@@ -253,7 +253,7 @@ func (s *Server) SetVPNManager(m *vpnnet.Manager) {
 
 // hostTarget builds the dial target for a Host, resolving its VPN path (nil path means direct dialing).
 func (s *Server) hostTarget(h *store.Host) (sshrunner.Target, error) {
-	t := sshrunner.Target{Host: h.Host, Port: h.Port, User: h.User}
+	t := sshrunner.Target{Host: h.Host, Port: h.Port, User: h.User, LegacySSH: h.AllowLegacySSH}
 	if s.vpnMgr == nil || h.NetworkID == 0 {
 		return t, nil
 	}

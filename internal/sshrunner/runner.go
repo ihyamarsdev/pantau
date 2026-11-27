@@ -169,6 +169,8 @@ type Target struct {
 	User string
 	Key  string
 	Net  *vpnnet.Path
+	// LegacySSH enables CentOS 5/6-era algorithms (3DES/CBC, SHA-1 KEX, ssh-dss) for this host only.
+	LegacySSH bool
 }
 
 func Connect(t Target, timeout time.Duration) (*LiveSSHRunner, error) {
@@ -191,12 +193,12 @@ func Connect(t Target, timeout time.Duration) (*LiveSSHRunner, error) {
 		HostKeyCallback: TOFUHostKeyCallback(),
 		Timeout:         timeout,
 	}
-	configureLegacyCompatibleSSH(config)
+	configureSSH(config, t.LegacySSH)
 
 	addr := fmt.Sprintf("%s:%d", host, port)
 	client, err := dialSSH(addr, t.Net, config, timeout)
 	if err != nil {
-		return nil, fmt.Errorf("dial ssh %s: %w", addr, err)
+		return nil, fmt.Errorf("dial ssh %s: %w", addr, withLegacySSHHint(err, t.LegacySSH))
 	}
 
 	return &LiveSSHRunner{client: client}, nil
@@ -282,6 +284,25 @@ func isRouteErr(err error) bool {
 	return errors.Is(err, syscall.EHOSTUNREACH) || errors.Is(err, syscall.ENETUNREACH)
 }
 
+// configureSSH selects the algorithm profile: modern by default, legacy only for hosts that opted in.
+func configureSSH(config *ssh.ClientConfig, legacy bool) {
+	if legacy {
+		configureLegacyCompatibleSSH(config)
+		return
+	}
+	algos := ssh.SupportedAlgorithms() // x/crypto's list without SHA-1, CBC, 3DES and ssh-dss
+	config.Config = ssh.Config{KeyExchanges: algos.KeyExchanges, Ciphers: algos.Ciphers, MACs: algos.MACs}
+	config.HostKeyAlgorithms = algos.HostKeys
+}
+
+// withLegacySSHHint tells the operator how to recover when a modern-only handshake finds no shared algorithm.
+func withLegacySSHHint(err error, legacy bool) error {
+	if err == nil || legacy || !strings.Contains(err.Error(), "no common algorithm") {
+		return err
+	}
+	return fmt.Errorf("%w (hint: this host may run legacy SSH, e.g. CentOS 5/6 or OpenSSH 4.x; enable \"Allow Legacy SSH Ciphers\" in its Host settings)", err)
+}
+
 // configureLegacyCompatibleSSH applies a comprehensive set of key exchanges, ciphers, and host key algorithms
 // so Pantau can seamlessly connect to both modern servers and legacy servers (CentOS 5/6, Debian 7) without per-host flags.
 // ponytail: Universal legacy-compatible cryptographic profile.
@@ -337,12 +358,12 @@ func DefaultKeyProvisioner(t Target, password, pubKey string) error {
 		HostKeyCallback: TOFUHostKeyCallback(),
 		Timeout:         8 * time.Second,
 	}
-	configureLegacyCompatibleSSH(config)
+	configureSSH(config, t.LegacySSH)
 
 	addr := fmt.Sprintf("%s:%d", host, port)
 	client, err := dialSSH(addr, t.Net, config, 8*time.Second)
 	if err != nil {
-		return fmt.Errorf("ssh password authentication failed: %w", err)
+		return fmt.Errorf("ssh password authentication failed: %w", withLegacySSHHint(err, t.LegacySSH))
 	}
 	defer client.Close()
 

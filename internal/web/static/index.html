@@ -5298,6 +5298,15 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
         </select>
         <span class="form-hint" data-i18n="kube_mode_hint">Application guardrail only; actual security boundary is kubeconfig/sudoers/RBAC permissions on the host.</span>
       </div>
+      <details class="form-group" id="hostAdvanced">
+        <summary class="form-label" style="cursor: pointer;" data-i18n="host_advanced">Advanced</summary>
+        <label class="form-label" style="display: flex; align-items: center; gap: 8px; margin-top: 6px;">
+          <input type="checkbox" id="hostLegacySSH" onchange="syncLegacySSHWarn()" />
+          <span data-i18n="host_legacy_ssh">Allow Legacy SSH Ciphers (CentOS 5/6, Old OpenSSH)</span>
+        </label>
+        <span id="hostLegacySSHBadge" class="badge badge-warning" style="display: none;" data-i18n="host_legacy_ssh_badge">Legacy crypto enabled</span>
+        <span class="form-hint" data-i18n="host_legacy_ssh_hint">Enables weak legacy algorithms (3DES, AES-CBC, SHA-1 key exchange, ssh-dss) for this host only.</span>
+      </details>
       <div class="form-group">
         <label class="form-label" data-i18n="commission_date_label">Hardware Commission Date (Optional for New Old Stock)</label>
         <input type="date" id="hostCommissionDate" />

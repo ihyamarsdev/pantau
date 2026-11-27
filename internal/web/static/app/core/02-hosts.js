@@ -1269,6 +1269,7 @@ function openAddHostModal() {
   document.getElementById('hostGroup').value = '';
   const kmAdd = document.getElementById('hostKubeMode');
   if (kmAdd) kmAdd.value = 'full';
+  setLegacySSH(false);
   populateHostNetworkSelect(0);
   const testBtn = document.getElementById('btnTestHostInModal');
   if (testBtn) testBtn.style.display = 'none';
@@ -1296,6 +1297,7 @@ function openEditHostModal(hostId) {
   document.getElementById('hostNote').value = h.notes || '';
   const kmEdit = document.getElementById('hostKubeMode');
   if (kmEdit) kmEdit.value = h.kube_mode || 'full';
+  setLegacySSH(!!h.allow_legacy_ssh);
   populateHostNetworkSelect(h.network_id || 0);
   document.getElementById('passGroup').style.display = 'none';
   const testBtn = document.getElementById('btnTestHostInModal');
@@ -1354,6 +1356,7 @@ async function saveHost() {
     notes: document.getElementById('hostNote').value,
     group_name: (document.getElementById('hostGroup')?.value || '').trim(),
     kube_mode: document.getElementById('hostKubeMode')?.value || 'full',
+    allow_legacy_ssh: !!document.getElementById('hostLegacySSH')?.checked,
     network_id: parseInt(document.getElementById('hostNetwork')?.value, 10) || 0,
   };
   if (id && selectedKey === 'custom' && !customKey.trim()) {
@@ -2114,3 +2117,16 @@ function openTerminalForPath(targetPath) {
 }
 
 export { renderHosts, openHostGroupRename, saveHostGroupRename, deleteHostGroup, groupHosts, getHostGroupsCollapsed, toggleHostGroupCollapsed, renderGridView, buildHostCard, renderListView, fitHostList, setEngineStatus, updateFooterMetrics, loadVpnNetworkIndex, populateHostNetworkSelect, loadHosts, toggleAlertOverlay, closeAlertOverlay, renderAlertOverlayState, loadAlerts, loadAlertTriage, applyTriageRemediation, loadDailyBriefing, generateDailyBriefing, ackAlert, ackAllAlerts, openHostDetailFromAlert, populateHostKeySelect, vpnBadge, hostNetworkBadgeHtml, loadVpnNetworks, saveVpnGate, vpnDriverField, openVpnNetworkModal, loadVpnInterfaces, renderVpnDriverFields, collectVpnConfig, saveVpnNetwork, deleteVpnNetwork, vpnNetworkUp, vpnNetworkProbe, vpnNetworkDown, openVpnNetworkLog, onHostKeySelectChange, openAddHostModal, openEditHostModal, updateGroupSuggestions, saveHost, openCommissionDateModal, importFill, importReasonText, openImportHostsModal, importLoadFile, importRequestPreview, importParse, importReadServer, populateImportKeySelect, importBulkNetworkChanged, populateImportNetworkSelect, importInspectCreated, renderImportPreview, importNetworkPicked, importableBoxes, updateImportCount, importToggleAll, importSubmit, showImportGroupsStep, refreshImportGroupSuggestions, importSaveGroups, submitQuickCommissionDate, clearCommissionDate, showToast, showBusyToast, toggleDropdown, closeAllDropdowns, openInjectKeyModal, submitInjectKey, deleteHost, toggleHostSelectMode, toggleHostSelected, selectAllShownHosts, renderHostSelectBar, openBulkGroupModal, submitBulkGroup, deleteSelectedHosts, testHostSSH, inspectHost, applyHostDetailMaximizeState, toggleHostDetailMaximize, getHostActiveTab, setHostActiveTab, getHostFilesPath, setHostFilesPath, openTerminalForPath };
+
+// Legacy SSH is an opt-in per host; the badge makes an enabled weak profile visible while editing.
+function setLegacySSH(on) {
+  const cb = document.getElementById('hostLegacySSH');
+  if (cb) cb.checked = on;
+  syncLegacySSHWarn();
+}
+
+function syncLegacySSHWarn() {
+  const cb = document.getElementById('hostLegacySSH');
+  const badge = document.getElementById('hostLegacySSHBadge');
+  if (badge) badge.style.display = cb && cb.checked ? '' : 'none';
+}
