@@ -344,7 +344,6 @@ func buildDockerRun(spec DockerRunSpec) (string, error) {
 	return b.String(), nil
 }
 
-
 // vaultSecretsMap returns key -> decrypted value for all stored vault secrets.
 // Plaintext exists only in this Go map; it is passed straight to the container
 // environment and never written to disk by this package.
@@ -366,6 +365,7 @@ func (ins *Inspector) vaultSecretsMap() map[string]string {
 	}
 	return out
 }
+
 // DockerRunContainer creates and starts a container (pulling the image when it is missing) and returns its ID.
 func (ins *Inspector) DockerRunContainer(hostID int64, spec DockerRunSpec) (string, error) {
 	// Merge vault secrets into the container environment in memory only. The

@@ -955,3 +955,20 @@ func TestAgentMetaToolCrossDomainFallback(t *testing.T) {
 		t.Fatal("set_tool_domain must widen the advertised tools for the next call")
 	}
 }
+
+// The Test Fast Model button posts target "fast". With no fast model set, it must fall back to the primary model
+// and report the answer, and a fast-only failure must come back as ok:false without echoing the fast key.
+func TestAgentTestEndpointFastTarget(t *testing.T) {
+	t.Parallel()
+	f := &fakeLLM{results: []llmResult{{Text: "pong"}}}
+	srv, _ := nativeAgent(t, f)
+
+	w := httptest.NewRecorder()
+	srv.handleAgentTest(w, httptest.NewRequest(http.MethodPost, "/api/agent/test", strings.NewReader(`{"target":"fast"}`)))
+	if !strings.Contains(w.Body.String(), `"ok":true`) {
+		t.Fatalf("fast target must fall back to the primary model: %s", w.Body.String())
+	}
+	if f.callCount() != 1 {
+		t.Fatalf("one fallback call expected, got %d", f.callCount())
+	}
+}
