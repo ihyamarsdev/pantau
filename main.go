@@ -397,6 +397,9 @@ func main() {
 	runnerFactory := sshrunner.DefaultFactory()
 	dispatcher := notify.New(db)
 	ins := inspector.New(db, runnerFactory, dispatcher)
+	// Teleport kubeconfigs are isolated under <data>/teleport, next to the database.
+	teleportDataDir, _ := filepath.Abs(filepath.Dir(dbPath))
+	ins.SetTeleportDataDir(teleportDataDir)
 
 	// Start background inspection worker
 	ctx, cancel := context.WithCancel(context.Background())
@@ -423,6 +426,9 @@ func main() {
 	// ADR 0090: warm the offline-safe GeoIP cache in the background; never on the read path.
 	server.StartGeoResolver(ctx)
 	server.SetAnsibleLibraryDir(filepath.Join(filepath.Dir(dbPath), "ansible-library"))
+	if err := server.SetTeleportDataDir(teleportDataDir); err != nil {
+		logger.Error("system", "", "Teleport API disabled: "+err.Error())
+	}
 	ansible.SetGitKnownHostsFile(filepath.Join(filepath.Dir(dbPath), "git_known_hosts"))
 	// Pantau installs the CLIs it manages into its own directory, so an update needs neither root
 	// nor a package manager and never touches the system copy in /usr/bin.

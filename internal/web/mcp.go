@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -231,6 +232,11 @@ func (s *Server) mcpCall(ctx context.Context, req mcpRequest) *mcpResponse {
 	logger.Info("mcp", "", "tool call: "+p.Name)
 	data, err := tool.run(s, ctx, p.Arguments)
 	if err != nil {
+		var payload *mcpErrorPayload
+		if errors.As(err, &payload) {
+			raw, _ := json.Marshal(payload.Fields)
+			return mcpOK(req.ID, mcpToolResult(string(raw), true))
+		}
 		return mcpOK(req.ID, mcpToolResult(err.Error(), true))
 	}
 	raw, err := json.MarshalIndent(data, "", "  ")

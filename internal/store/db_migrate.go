@@ -361,6 +361,18 @@ func (d *DB) migrate() error {
 		kubeconfig TEXT NOT NULL DEFAULT '',
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+	CREATE TABLE IF NOT EXISTS teleport_profiles (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+		proxy TEXT NOT NULL DEFAULT '',
+		auth_connector TEXT NOT NULL DEFAULT '',
+		username TEXT NOT NULL DEFAULT '',
+		teleport_cluster TEXT NOT NULL DEFAULT '',
+		teleport_home TEXT NOT NULL DEFAULT '',
+		default_policy TEXT NOT NULL DEFAULT 'read-only',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
 	CREATE TABLE IF NOT EXISTS cloudflare_accounts (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -715,6 +727,18 @@ func (d *DB) migrate() error {
 		"group_name":       "TEXT NOT NULL DEFAULT ''",
 	} {
 		_ = d.alterAddColumn("ansible_playbooks", col, typ)
+	}
+	// Teleport clusters share kube_clusters; source_type keeps the older rows as kubeconfig clusters.
+	for col, typ := range map[string]string{
+		"source_type":         "TEXT NOT NULL DEFAULT 'kubeconfig'",
+		"teleport_profile_id": "INTEGER NOT NULL DEFAULT 0",
+		"teleport_kube_name":  "TEXT NOT NULL DEFAULT ''",
+		"kube_context_name":   "TEXT NOT NULL DEFAULT ''",
+		"env_badge":           "TEXT NOT NULL DEFAULT ''",
+		"is_favorite":         "INTEGER NOT NULL DEFAULT 0",
+		"last_used_at":        "DATETIME",
+	} {
+		_ = d.alterAddColumn("kube_clusters", col, typ)
 	}
 	_ = d.alterAddColumn("tf_workspaces", "group_name", "TEXT NOT NULL DEFAULT ''")
 	_ = d.alterAddColumn("tf_workspaces", "cloud_account_ids", "TEXT NOT NULL DEFAULT '[]'")

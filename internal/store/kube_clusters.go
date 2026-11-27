@@ -7,6 +7,12 @@ import (
 	"time"
 )
 
+// Source types of a kube_clusters row. Rows created before the Teleport integration are "kubeconfig".
+const (
+	KubeSourceKubeconfig = "kubeconfig"
+	KubeSourceTeleport   = "teleport"
+)
+
 type KubeCluster struct {
 	ID            int64     `json:"id"`
 	Name          string    `json:"name"`
@@ -17,9 +23,45 @@ type KubeCluster struct {
 	KubeClusterID string    `json:"kube_cluster_id,omitempty"` // kube-system namespace UID, filled by detect
 	Kubeconfig    string    `json:"-"`
 	CreatedAt     time.Time `json:"created_at"`
+
+	SourceType        string     `json:"source_type"`                   // kubeconfig | teleport
+	TeleportProfileID int64      `json:"teleport_profile_id,omitempty"` // set when SourceType is teleport
+	TeleportKubeName  string     `json:"teleport_kube_name,omitempty"`  // name of the cluster as tsh lists it
+	KubeContextName   string     `json:"kube_context_name,omitempty"`   // context written to the isolated kubeconfig
+	EnvBadge          string     `json:"env_badge"`                     // prod | staging | dev | ""
+	IsFavorite        bool       `json:"is_favorite"`
+	LastUsedAt        *time.Time `json:"last_used_at,omitempty"`
 }
 
 var ErrKubeClusterNameTaken = errors.New("a cluster with this name already exists")
+
+// kubeClusterColumns is the column list every read of kube_clusters uses, in scanKubeCluster order.
+const kubeClusterColumns = `id, name, context, server, provider, kube_mode, kube_cluster_id, kubeconfig, created_at,
+	source_type, teleport_profile_id, teleport_kube_name, kube_context_name, env_badge, is_favorite, last_used_at`
+
+func scanKubeCluster(s rowScanner) (KubeCluster, error) {
+	var c KubeCluster
+	var clusterUID, sourceType, envBadge sql.NullString
+	var lastUsed sql.NullTime
+	var isFavorite int
+	err := s.Scan(&c.ID, &c.Name, &c.Context, &c.Server, &c.Provider, &c.KubeMode, &clusterUID, &c.Kubeconfig, &c.CreatedAt,
+		&sourceType, &c.TeleportProfileID, &c.TeleportKubeName, &c.KubeContextName, &envBadge, &isFavorite, &lastUsed)
+	if err != nil {
+		return c, err
+	}
+	c.KubeClusterID = clusterUID.String
+	c.SourceType = sourceType.String
+	if c.SourceType == "" {
+		c.SourceType = KubeSourceKubeconfig
+	}
+	c.EnvBadge = envBadge.String
+	c.IsFavorite = isFavorite != 0
+	if lastUsed.Valid {
+		t := lastUsed.Time
+		c.LastUsedAt = &t
+	}
+	return c, nil
+}
 
 func normalizeKubeMode(mode string) string {
 	switch mode {
@@ -42,8 +84,13 @@ func isUniqueConstraintError(err error) bool {
 // Returns ErrKubeClusterNameTaken if a cluster with this name (case-insensitive) already exists.
 func (d *DB) CreateKubeCluster(c *KubeCluster) (int64, error) {
 	c.KubeMode = normalizeKubeMode(c.KubeMode)
-	res, err := d.Exec(`INSERT INTO kube_clusters (name, context, server, provider, kube_mode, kube_cluster_id, kubeconfig) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		c.Name, c.Context, c.Server, c.Provider, c.KubeMode, c.KubeClusterID, c.Kubeconfig)
+	if c.SourceType == "" {
+		c.SourceType = KubeSourceKubeconfig
+	}
+	res, err := d.Exec(`INSERT INTO kube_clusters (name, context, server, provider, kube_mode, kube_cluster_id, kubeconfig,
+		source_type, teleport_profile_id, teleport_kube_name, kube_context_name, env_badge, is_favorite) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.Name, c.Context, c.Server, c.Provider, c.KubeMode, c.KubeClusterID, c.Kubeconfig,
+		c.SourceType, c.TeleportProfileID, c.TeleportKubeName, c.KubeContextName, c.EnvBadge, boolInt(c.IsFavorite))
 	if err != nil {
 		if isUniqueConstraintError(err) {
 			return 0, ErrKubeClusterNameTaken
@@ -54,9 +101,7 @@ func (d *DB) CreateKubeCluster(c *KubeCluster) (int64, error) {
 }
 
 func (d *DB) GetKubeCluster(id int64) (*KubeCluster, error) {
-	var c KubeCluster
-	err := d.QueryRow(`SELECT id, name, context, server, provider, kube_mode, kube_cluster_id, kubeconfig, created_at FROM kube_clusters WHERE id = ?`, id).
-		Scan(&c.ID, &c.Name, &c.Context, &c.Server, &c.Provider, &c.KubeMode, &c.KubeClusterID, &c.Kubeconfig, &c.CreatedAt)
+	c, err := scanKubeCluster(d.QueryRow(`SELECT `+kubeClusterColumns+` FROM kube_clusters WHERE id = ?`, id))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -67,7 +112,7 @@ func (d *DB) GetKubeCluster(id int64) (*KubeCluster, error) {
 }
 
 func (d *DB) ListKubeClusters() ([]KubeCluster, error) {
-	rows, err := d.Query(`SELECT id, name, context, server, provider, kube_mode, kube_cluster_id, kubeconfig, created_at FROM kube_clusters ORDER BY name COLLATE NOCASE`)
+	rows, err := d.Query(`SELECT ` + kubeClusterColumns + ` FROM kube_clusters ORDER BY name COLLATE NOCASE`)
 	if err != nil {
 		return nil, err
 	}
@@ -75,8 +120,8 @@ func (d *DB) ListKubeClusters() ([]KubeCluster, error) {
 
 	list := make([]KubeCluster, 0)
 	for rows.Next() {
-		var c KubeCluster
-		if err := rows.Scan(&c.ID, &c.Name, &c.Context, &c.Server, &c.Provider, &c.KubeMode, &c.KubeClusterID, &c.Kubeconfig, &c.CreatedAt); err != nil {
+		c, err := scanKubeCluster(rows)
+		if err != nil {
 			return nil, err
 		}
 		list = append(list, c)
@@ -112,5 +157,11 @@ func (d *DB) DeleteKubeCluster(id int64) error {
 
 func (d *DB) SetKubeClusterUID(id int64, uid string) error {
 	_, err := d.Exec(`UPDATE kube_clusters SET kube_cluster_id = ? WHERE id = ?`, uid, id)
+	return err
+}
+
+// SetKubeClusterContextName records the context that tsh wrote for a Teleport cluster.
+func (d *DB) SetKubeClusterContextName(id int64, contextName string) error {
+	_, err := d.Exec(`UPDATE kube_clusters SET kube_context_name = ? WHERE id = ?`, contextName, id)
 	return err
 }

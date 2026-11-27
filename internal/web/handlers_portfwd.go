@@ -139,6 +139,8 @@ type portForwardManager struct {
 	nextID   int64
 	// kubectl overrides the kubectl binary for external clusters (tests); empty resolves the managed binary.
 	kubectl string
+	// teleportAccess gives the isolated kubeconfig file and context of a Teleport cluster.
+	teleportAccess func(*store.KubeCluster) (string, string, error)
 	// reserved holds local ports handed to a kubectl process that binds them itself.
 	reserved map[int]bool
 }
@@ -162,6 +164,12 @@ func (s *Server) SetPortForwardRange(bind string, min, max int) {
 				return nil, fmt.Errorf("inspector not available")
 			}
 			return s.inspector.GetRunnerForHost(h)
+		},
+		teleportAccess: func(c *store.KubeCluster) (string, string, error) {
+			if s.inspector == nil {
+				return "", "", fmt.Errorf("inspector not available")
+			}
+			return s.inspector.TeleportAccess(c)
 		},
 	}
 }

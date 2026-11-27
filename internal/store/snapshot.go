@@ -31,6 +31,25 @@ type SnapshotKubeCluster struct {
 	KubeClusterID string    `json:"kube_cluster_id,omitempty"`
 	Kubeconfig    string    `json:"kubeconfig"`
 	CreatedAt     time.Time `json:"created_at"`
+
+	// Teleport metadata. Snapshots made before the Teleport integration lack these and restore as kubeconfig clusters.
+	// The isolated kubeconfig file is never part of a snapshot: after a restore, a Teleport cluster needs Login again.
+	SourceType        string     `json:"source_type,omitempty"`
+	TeleportProfileID int64      `json:"teleport_profile_id,omitempty"`
+	TeleportKubeName  string     `json:"teleport_kube_name,omitempty"`
+	KubeContextName   string     `json:"kube_context_name,omitempty"`
+	EnvBadge          string     `json:"env_badge,omitempty"`
+	IsFavorite        bool       `json:"is_favorite,omitempty"`
+	LastUsedAt        *time.Time `json:"last_used_at,omitempty"`
+}
+
+func snapshotKubeClusterFrom(c KubeCluster) SnapshotKubeCluster {
+	return SnapshotKubeCluster{
+		ID: c.ID, Name: c.Name, Context: c.Context, Server: c.Server, Provider: c.Provider, KubeMode: c.KubeMode,
+		KubeClusterID: c.KubeClusterID, Kubeconfig: c.Kubeconfig, CreatedAt: c.CreatedAt,
+		SourceType: c.SourceType, TeleportProfileID: c.TeleportProfileID, TeleportKubeName: c.TeleportKubeName,
+		KubeContextName: c.KubeContextName, EnvBadge: c.EnvBadge, IsFavorite: c.IsFavorite, LastUsedAt: c.LastUsedAt,
+	}
 }
 
 type SnapshotCloudflareAccount struct {
@@ -215,6 +234,7 @@ type SnapshotPayload struct {
 	AgentMemory            []AgentMemory               `json:"agent_memory,omitempty"`
 	SSHKeys                []SnapshotSSHKey            `json:"ssh_keys,omitempty"`
 	KubeClusters           []SnapshotKubeCluster       `json:"kube_clusters,omitempty"`
+	TeleportProfiles       []TeleportProfile           `json:"teleport_profiles,omitempty"`
 	CloudflareAccounts     []SnapshotCloudflareAccount `json:"cloudflare_accounts,omitempty"`
 	S3Accounts             []SnapshotS3Account         `json:"s3_accounts,omitempty"`
 	AnsiblePlaybooks       []SnapshotAnsiblePlaybook   `json:"ansible_playbooks,omitempty"`
@@ -398,26 +418,38 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 		}
 	}
 	var allClusters []SnapshotKubeCluster
-	cRows, err := d.Query("SELECT id, name, context, server, provider, kube_mode, kube_cluster_id, kubeconfig, created_at FROM kube_clusters ORDER BY id ASC")
+	cRows, err := d.Query("SELECT " + kubeClusterColumns + " FROM kube_clusters ORDER BY id ASC")
 	if err != nil {
 		return nil, fmt.Errorf("export snapshot: %w", err)
 	}
 	{
 		defer cRows.Close()
 		for cRows.Next() {
-			var c SnapshotKubeCluster
-			var clusterUID sql.NullString
-			if err := cRows.Scan(&c.ID, &c.Name, &c.Context, &c.Server, &c.Provider, &c.KubeMode, &clusterUID, &c.Kubeconfig, &c.CreatedAt); err != nil {
+			c, err := scanKubeCluster(cRows)
+			if err != nil {
 				return nil, fmt.Errorf("export snapshot: %w", err)
 			}
-			{
-				if clusterUID.Valid {
-					c.KubeClusterID = clusterUID.String
-				}
-				allClusters = append(allClusters, c)
-			}
+			allClusters = append(allClusters, snapshotKubeClusterFrom(c))
 		}
 		if err := cRows.Err(); err != nil {
+			return nil, fmt.Errorf("export snapshot: read rows: %w", err)
+		}
+	}
+	var allTeleportProfiles []TeleportProfile
+	tpRows, err := d.Query("SELECT " + teleportProfileColumns + " FROM teleport_profiles ORDER BY id ASC")
+	if err != nil {
+		return nil, fmt.Errorf("export snapshot: %w", err)
+	}
+	{
+		defer tpRows.Close()
+		for tpRows.Next() {
+			p, err := scanTeleportProfile(tpRows)
+			if err != nil {
+				return nil, fmt.Errorf("export snapshot: %w", err)
+			}
+			allTeleportProfiles = append(allTeleportProfiles, p)
+		}
+		if err := tpRows.Err(); err != nil {
 			return nil, fmt.Errorf("export snapshot: read rows: %w", err)
 		}
 	}
@@ -694,6 +726,7 @@ func (d *DB) ExportSnapshot() (*SnapshotPayload, error) {
 		AgentMemory:            allMemory,
 		SSHKeys:                allSSHKeys,
 		KubeClusters:           allClusters,
+		TeleportProfiles:       allTeleportProfiles,
 		CloudflareAccounts:     allCFAccounts,
 		S3Accounts:             allS3Accounts,
 		AnsiblePlaybooks:       allPlaybooks,
@@ -727,7 +760,7 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 
 	tables := []string{
 		"alerts", "incidents", "actual_items", "desired_rules", "hosts", "vpn_networks", "terminal_presets", "agent_memory",
-		"ssh_keys", "kube_clusters", "cloudflare_accounts", "s3_accounts",
+		"ssh_keys", "kube_clusters", "teleport_profiles", "cloudflare_accounts", "s3_accounts",
 		"ansible_runs", "ansible_schedules", "ansible_playbooks", "ansible_assets",
 		"tf_output_links", "tf_runs", "tf_state_versions", "tf_variables", "tf_varset_workspaces", "tf_varsets", "tf_policies", "tf_module_versions", "tf_modules", "tf_workspaces", "tf_cloud_accounts",
 	}
@@ -766,14 +799,27 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 			return fmt.Errorf("insert ssh key %d: %w", k.ID, err)
 		}
 	}
+	for _, p := range payload.TeleportProfiles {
+		_, err := tx.Exec(`INSERT INTO teleport_profiles (id, name, proxy, auth_connector, username, teleport_cluster, teleport_home, default_policy, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			p.ID, p.Name, p.Proxy, p.AuthConnector, p.Username, p.TeleportCluster, p.TeleportHome, normalizeTeleportPolicy(p.DefaultPolicy), p.CreatedAt, p.UpdatedAt)
+		if err != nil {
+			return fmt.Errorf("insert teleport profile %d: %w", p.ID, err)
+		}
+	}
 	for _, c := range payload.KubeClusters {
 		mode := normalizeKubeMode(c.KubeMode)
 		provider := c.Provider
 		if provider == "" {
 			provider = "generic"
 		}
-		_, err := tx.Exec(`INSERT INTO kube_clusters (id, name, context, server, provider, kube_mode, kube_cluster_id, kubeconfig, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			c.ID, c.Name, c.Context, c.Server, provider, mode, c.KubeClusterID, c.Kubeconfig, c.CreatedAt)
+		sourceType := c.SourceType
+		if sourceType == "" {
+			sourceType = KubeSourceKubeconfig
+		}
+		_, err := tx.Exec(`INSERT INTO kube_clusters (id, name, context, server, provider, kube_mode, kube_cluster_id, kubeconfig, created_at,
+			source_type, teleport_profile_id, teleport_kube_name, kube_context_name, env_badge, is_favorite, last_used_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			c.ID, c.Name, c.Context, c.Server, provider, mode, c.KubeClusterID, c.Kubeconfig, c.CreatedAt,
+			sourceType, c.TeleportProfileID, c.TeleportKubeName, c.KubeContextName, c.EnvBadge, boolInt(c.IsFavorite), c.LastUsedAt)
 		if err != nil {
 			return fmt.Errorf("insert kube cluster %d: %w", c.ID, err)
 		}

@@ -169,7 +169,18 @@ func (m *portForwardManager) createKubeLocal(ctx context.Context, cluster *store
 		}
 		kubectl = path
 	}
-	fwd, _, err := inspector.StartLocalKubectlForward(ctx, kubectl, cluster.Kubeconfig, target, m.bind, fmt.Sprintf("%d:%d", port, target.RemotePort))
+	mapping := fmt.Sprintf("%d:%d", port, target.RemotePort)
+	var fwd *inspector.KubectlForward
+	if cluster.SourceType == store.KubeSourceTeleport {
+		cfgPath, kubeContext, accessErr := m.teleportAccess(cluster)
+		if accessErr != nil {
+			m.releasePort(port)
+			return nil, accessErr
+		}
+		fwd, _, err = inspector.StartTeleportKubectlForward(ctx, kubectl, cfgPath, kubeContext, target, m.bind, mapping)
+	} else {
+		fwd, _, err = inspector.StartLocalKubectlForward(ctx, kubectl, cluster.Kubeconfig, target, m.bind, mapping)
+	}
 	if err != nil {
 		m.releasePort(port)
 		return nil, err

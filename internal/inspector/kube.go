@@ -66,7 +66,8 @@ func (ins *Inspector) kubeRunner(targetID int64) (sshrunner.Runner, error) {
 		if err != nil {
 			return nil, err
 		}
-		return newLocalKubeRunner(cluster.Kubeconfig)
+		runner, _, err := ins.clusterRunner(cluster)
+		return runner, err
 	}
 	host, err := ins.db.GetHost(targetID)
 	if err != nil || host == nil {
@@ -90,7 +91,13 @@ func (ins *Inspector) kubeExec(hostID int64, body string, timeout time.Duration)
 		return "", "", 0, err
 	}
 	defer runner.Close()
-	return runner.ExecTimeout(wrap(body), timeout)
+	stdout, stderr, exitCode, err = runner.ExecTimeout(wrap(body), timeout)
+	if err == nil && exitCode != 0 {
+		if profileID, ok := ins.teleportProfileOf(hostID); ok {
+			err = teleportExpiredError(profileID, stdout, stderr)
+		}
+	}
+	return stdout, stderr, exitCode, err
 }
 
 func (ins *Inspector) kubeQuery(hostID int64, body, what string, timeout time.Duration) (string, error) {

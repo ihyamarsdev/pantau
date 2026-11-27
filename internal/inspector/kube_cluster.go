@@ -586,14 +586,24 @@ func clusterPrelude(provider string) string {
 // wrapClusterCmd wraps body with clusterPrelude and sh -c invocation.
 // If body is already wrapped with KubeShell / sh -c, unwrap the body first.
 func wrapClusterCmd(body, provider string) string {
+	return wrapWithPrelude(unwrapKubeShell(body), clusterPrelude(provider))
+}
+
+// wrapWithPrelude prefixes body with prelude and runs the result through sh -c.
+func wrapWithPrelude(body, prelude string) string {
+	return "sh -c " + shellQuote(prelude+body)
+}
+
+// unwrapKubeShell removes the sh -c wrapper and host prelude that KubeShell adds, so the body can be wrapped again.
+func unwrapKubeShell(body string) string {
 	if strings.HasPrefix(body, "sh -c '") && strings.HasSuffix(body, "'") {
 		inner := body[7 : len(body)-1]
 		inner = strings.ReplaceAll(inner, "'\\''", "'")
 		if strings.HasPrefix(inner, kubePrelude) {
-			body = strings.TrimPrefix(inner, kubePrelude)
+			return strings.TrimPrefix(inner, kubePrelude)
 		}
 	}
-	return "sh -c " + shellQuote(clusterPrelude(provider)+body)
+	return body
 }
 
 // getClusterTarget returns the cluster or error for a negative target ID.
@@ -618,14 +628,7 @@ func (ins *Inspector) KubeStreamRunner(targetID int64) (sshrunner.Runner, func(s
 		if err != nil {
 			return nil, nil, err
 		}
-		runner, err := newLocalKubeRunner(cluster.Kubeconfig)
-		if err != nil {
-			return nil, nil, err
-		}
-		wrap := func(body string) string {
-			return wrapClusterCmd(body, cluster.Provider)
-		}
-		return runner, wrap, nil
+		return ins.clusterRunner(cluster)
 	}
 
 	host, err := ins.db.GetHost(targetID)

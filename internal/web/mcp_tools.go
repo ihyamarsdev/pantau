@@ -253,6 +253,8 @@ func mcpGetK8sOverview(s *Server, ctx context.Context, args map[string]any) (any
 		Mode      string                       `json:"kube_mode"`
 		Live      *inspector.KubeClusterHealth `json:"live,omitempty"`
 		LiveError string                       `json:"live_error,omitempty"`
+		// LiveErrorCode is set for a structured failure such as an expired Teleport session.
+		LiveErrorCode string `json:"live_error_code,omitempty"`
 	}
 	type hostRow struct {
 		ID        int64  `json:"id"`
@@ -271,7 +273,7 @@ func mcpGetK8sOverview(s *Server, ctx context.Context, args map[string]any) (any
 	for _, c := range clusters {
 		row := clusterRow{ID: c.ID, Name: c.Name, Provider: c.Provider, Server: c.Server, Mode: c.KubeMode}
 		if r, ok := live[c.ID]; ok {
-			row.Live, row.LiveError = r.health, r.errText
+			row.Live, row.LiveError, row.LiveErrorCode = r.health, r.errText, r.code
 		}
 		out.Clusters = append(out.Clusters, row)
 	}

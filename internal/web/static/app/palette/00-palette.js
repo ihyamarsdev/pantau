@@ -249,6 +249,10 @@
     if (window.Domains && typeof window.Domains.openAll === 'function') {
       add(t('pal_cmd_domains', 'Domains across hosts'), 'globe', () => window.Domains.openAll());
     }
+    // Teleport re-login, sync, and one entry per Kubernetes cluster (so "k8s staging" finds a cluster).
+    if (window.TeleportPalette && typeof window.TeleportPalette.commands === 'function') {
+      window.TeleportPalette.commands().forEach((c) => cmds.push(c));
+    }
     return cmds;
   }
 

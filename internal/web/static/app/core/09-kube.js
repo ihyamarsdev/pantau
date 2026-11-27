@@ -109,6 +109,7 @@ async function loadKubeClusters() {
     S.kubeHostClusters = [];
   }
   populateKubeHostSelect();
+  if (typeof window.renderTeleportSwitcher === 'function') window.renderTeleportSwitcher();
 }
 
 function handleKubeEnvelope(data) {

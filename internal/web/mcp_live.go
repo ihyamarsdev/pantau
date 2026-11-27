@@ -9,6 +9,7 @@ import (
 
 	"pantau/internal/inspector"
 	"pantau/internal/store"
+	"pantau/internal/teleport"
 )
 
 // Live MCP queries run under hard deadlines. A slow or offline cluster degrades to an error entry for that
@@ -29,7 +30,22 @@ type mcpLiveResult struct {
 	id      int64
 	health  *inspector.KubeClusterHealth
 	errText string
+	// code is a structured reason for errText, such as teleport.CodeSessionExpired. Empty for other failures.
+	code string
 }
+
+// mcpTeleportExpiredText replaces tsh and kubectl output for an expired Teleport session. The client gets the code
+// and the profile, never the raw command output.
+const mcpTeleportExpiredText = "teleport session expired: log in again for this profile"
+
+// mcpErrorPayload is a tool error that carries structured fields, so a client can branch on a code instead of
+// parsing text. Message is also the plain error text.
+type mcpErrorPayload struct {
+	Message string
+	Fields  map[string]any
+}
+
+func (e *mcpErrorPayload) Error() string { return e.Message }
 
 // mcpClusterLive queries every cluster in parallel under one shared deadline. Clusters that answer in time report
 // health; the rest report live_error, so one dead cluster cannot hide the others.
@@ -44,6 +60,9 @@ func mcpClusterLive(ctx context.Context, s *Server, clusters []store.KubeCluster
 			r := mcpLiveResult{id: id, health: h}
 			if err != nil {
 				r.errText = err.Error()
+				if _, expired := teleportSessionFailure(err); expired {
+					r.errText, r.code = mcpTeleportExpiredText, teleport.CodeSessionExpired
+				}
 			}
 			ch <- r
 		}(c.ID)
@@ -129,7 +148,14 @@ func mcpDiagnoseK8sPod(s *Server, ctx context.Context, args map[string]any) (any
 	}
 	ns, pod := mcpArgString(args, "namespace"), mcpArgString(args, "pod")
 	return mcpWithin(ctx, mcpDiagnoseTimeout, func() (any, error) {
-		return s.inspector.KubeDiagnosePod(inspector.KubeClusterTarget(id), ns, pod)
+		res, err := s.inspector.KubeDiagnosePod(inspector.KubeClusterTarget(id), ns, pod)
+		if profileID, expired := teleportSessionFailure(err); expired {
+			return nil, &mcpErrorPayload{Message: mcpTeleportExpiredText, Fields: map[string]any{
+				"ok": false, "error": mcpTeleportExpiredText, "live_error_code": teleport.CodeSessionExpired,
+				"cluster_id": id, "teleport_profile_id": profileID,
+			}}
+		}
+		return res, err
 	})
 }
 

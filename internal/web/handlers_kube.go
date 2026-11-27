@@ -106,6 +106,10 @@ func withEnvelope(resp map[string]interface{}, primary, served *store.Host, prim
 }
 
 func writeKubeError(w http.ResponseWriter, err error, extra ...map[string]interface{}) {
+	if profileID, expired := teleportSessionFailure(err); expired {
+		writeTeleportError(w, err, profileID)
+		return
+	}
 	status := http.StatusInternalServerError
 	if errors.Is(err, inspector.ErrKubeInvalid) {
 		status = http.StatusBadRequest
@@ -121,6 +125,10 @@ func writeKubeError(w http.ResponseWriter, err error, extra ...map[string]interf
 
 // writeKubeErrorOK reports read failures as 200/ok:false except for rejected input (which is 400).
 func writeKubeErrorOK(w http.ResponseWriter, err error, extra ...map[string]interface{}) {
+	if profileID, expired := teleportSessionFailure(err); expired {
+		writeTeleportError(w, err, profileID)
+		return
+	}
 	if errors.Is(err, inspector.ErrKubeInvalid) {
 		writeKubeError(w, err, extra...)
 		return
