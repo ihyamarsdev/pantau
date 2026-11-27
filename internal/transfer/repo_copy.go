@@ -84,7 +84,8 @@ func (m *Manager) StartRepoCopy(c RepoCopy) (*TransferJob, error) {
 	}
 	ctx := m.register(job)
 	go m.runRepoCopy(ctx, job, dstHost, c.Write)
-	return job, nil
+	// The background copy keeps writing job under m.mu, so the caller gets a locked copy, not the live job.
+	return m.snapshot(job), nil
 }
 
 func (m *Manager) runRepoCopy(ctx context.Context, job *TransferJob, dstHost *store.Host, write func(context.Context, io.Writer) error) {

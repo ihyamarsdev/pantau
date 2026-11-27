@@ -1262,6 +1262,23 @@ function onHostKeySelectChange() {
   }
 }
 
+// populateHostJumpSelect fills the bastion picker from the loaded hosts, leaving out the Host being edited.
+// Loops are refused by the server, which answers with the reason.
+function populateHostJumpSelect(excludeId, currentJump) {
+  const sel = document.getElementById('hostJumpHost');
+  if (!sel) return;
+  let html = `<option value="0">${t('host_jump_none', 'None (direct connection)')}</option>`;
+  let found = !currentJump;
+  (S.allRawHosts || []).forEach(h => {
+    if (h.id === excludeId) return;
+    if (h.id === currentJump) found = true;
+    html += `<option value="${h.id}">${escapeHtml(h.name)} (${escapeHtml(h.host)})</option>`;
+  });
+  if (!found) html += `<option value="${currentJump}">Host #${currentJump}</option>`;
+  sel.innerHTML = html;
+  sel.value = String(currentJump || 0);
+}
+
 // loadSSHAgentStatus asks Pantau whether SSH_AUTH_SOCK answers and lists the agent's key fingerprints.
 async function loadSSHAgentStatus() {
   const sel = document.getElementById('hostAgentFingerprint');
@@ -1313,6 +1330,7 @@ function openAddHostModal() {
   updateGroupSuggestions();
   document.getElementById('passGroup').style.display = 'flex';
   document.getElementById('hostAgentFingerprint').dataset.current = '';
+  populateHostJumpSelect(0, 0);
   populateHostKeySelect(0, false);
   openModal('hostModal');
 }
@@ -1337,6 +1355,7 @@ function openEditHostModal(hostId) {
   if (kmEdit) kmEdit.value = h.kube_mode || 'full';
   setLegacySSH(!!h.allow_legacy_ssh);
   document.getElementById('hostAgentFingerprint').dataset.current = h.ssh_agent_fingerprint || '';
+  populateHostJumpSelect(h.id, h.jump_host_id || 0);
   populateHostNetworkSelect(h.network_id || 0);
   document.getElementById('passGroup').style.display = 'none';
   const testBtn = document.getElementById('btnTestHostInModal');
@@ -1400,6 +1419,7 @@ async function saveHost() {
     network_id: parseInt(document.getElementById('hostNetwork')?.value, 10) || 0,
     ssh_agent: useAgent,
     ssh_agent_fingerprint: useAgent ? (document.getElementById('hostAgentFingerprint')?.value || '') : '',
+    jump_host_id: parseInt(document.getElementById('hostJumpHost')?.value, 10) || 0,
   };
   if (id && selectedKey === 'custom' && !customKey.trim()) {
     // the API never returns the stored key; blank + keep flag leaves it unchanged

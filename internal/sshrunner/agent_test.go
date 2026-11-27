@@ -1,11 +1,9 @@
 package sshrunner
 
 import (
-	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
-	"fmt"
 	"net"
 	"path/filepath"
 	"sync"
@@ -80,44 +78,6 @@ func startAgent(t *testing.T, keys ...ed25519.PrivateKey) string {
 }
 
 // startSSHServer accepts publickey auth only for accepted and returns the port it listens on.
-func startSSHServer(t *testing.T, accepted ssh.PublicKey) int {
-	t.Helper()
-	_, hostPriv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	hostSigner, err := ssh.NewSignerFromKey(hostPriv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg := &ssh.ServerConfig{
-		PublicKeyCallback: func(_ ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
-			if bytes.Equal(key.Marshal(), accepted.Marshal()) {
-				return nil, nil
-			}
-			return nil, fmt.Errorf("key rejected")
-		},
-	}
-	cfg.AddHostKey(hostSigner)
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	serveListener(t, ln, func(c net.Conn) {
-		sc, chans, reqs, err := ssh.NewServerConn(c, cfg)
-		if err != nil {
-			_ = c.Close()
-			return
-		}
-		go ssh.DiscardRequests(reqs)
-		for nc := range chans {
-			_ = nc.Reject(ssh.Prohibited, "no sessions in test")
-		}
-		_ = sc.Close()
-	})
-	return ln.Addr().(*net.TCPAddr).Port
-}
-
 func newTestKey(t *testing.T) (ed25519.PrivateKey, ssh.PublicKey) {
 	t.Helper()
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
@@ -157,7 +117,7 @@ func TestConnectWithSSHAgent(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			port := startSSHServer(t, tt.serverKey)
+			port, _ := startTestSSHServer(t, tt.serverKey, false)
 			sock := ""
 			if tt.socketPath == "" {
 				sock = startAgent(t, tt.agentKeys...)

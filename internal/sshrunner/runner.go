@@ -118,6 +118,10 @@ type Runner interface {
 
 type LiveSSHRunner struct {
 	client *ssh.Client
+	// bastion is the runner of the hop this client tunnels through (ProxyJump); closing the Host closes it too.
+	bastion   *LiveSSHRunner
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // parseAllPrivateKeys memoizes by key hash so each inspection skips PEM parsing; errors are never cached.
@@ -176,6 +180,9 @@ type Target struct {
 	Net         *vpnnet.Path
 	// LegacySSH enables CentOS 5/6-era algorithms (3DES/CBC, SHA-1 KEX, ssh-dss) for this host only.
 	LegacySSH bool
+	// Via reaches this Host through a bastion (ProxyJump). The bastion is a full Target with its own credentials,
+	// network path and Via, so a chain is a linked list built with Chain.
+	Via *Target
 }
 
 func Connect(t Target, timeout time.Duration) (*LiveSSHRunner, error) {
@@ -185,16 +192,14 @@ func Connect(t Target, timeout time.Duration) (*LiveSSHRunner, error) {
 // ConnectContext dials the Host. Cancelling ctx aborts the agent lookup, the TCP dial and the handshake.
 // Fail-closed: an agent Host that cannot authenticate with its own key never falls back to another key.
 func ConnectContext(ctx context.Context, t Target, timeout time.Duration) (*LiveSSHRunner, error) {
-	host, port, user := t.Host, t.Port, t.User
-	if timeout <= 0 {
-		timeout = 10 * time.Second
+	if err := checkViaDepth(t); err != nil {
+		return nil, err
 	}
-
 	var auth ssh.AuthMethod
 	if t.Agent {
 		a, agentConn, err := agentAuth(ctx, t)
 		if err != nil {
-			return nil, fmt.Errorf("ssh agent auth for %s: %w", host, err)
+			return nil, fmt.Errorf("ssh agent auth for %s: %w", t.Host, err)
 		}
 		defer agentConn.Close()
 		auth = a
@@ -205,9 +210,22 @@ func ConnectContext(ctx context.Context, t Target, timeout time.Duration) (*Live
 		}
 		auth = ssh.PublicKeys(signers...)
 	}
+	return connectWith(ctx, t, auth, timeout)
+}
 
+// maxViaDepth guards the recursion through Target.Via against a malformed, cyclic or absurdly long chain.
+const maxViaDepth = 8
+
+// connectWith dials t, through its bastion chain when Via is set, and authenticates with auth.
+func connectWith(ctx context.Context, t Target, auth ssh.AuthMethod, timeout time.Duration) (*LiveSSHRunner, error) {
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	if err := checkViaDepth(t); err != nil {
+		return nil, err
+	}
 	config := &ssh.ClientConfig{
-		User: user,
+		User: t.User,
 		Auth: []ssh.AuthMethod{auth},
 		// ponytail: TOFU (Trust On First Use) provides seamless first-time connection while guarding against MITM.
 		HostKeyCallback: TOFUHostKeyCallback(),
@@ -215,13 +233,72 @@ func ConnectContext(ctx context.Context, t Target, timeout time.Duration) (*Live
 	}
 	configureSSH(config, t.LegacySSH)
 
-	addr := fmt.Sprintf("%s:%d", host, port)
+	addr := fmt.Sprintf("%s:%d", t.Host, t.Port)
+	if t.Via != nil {
+		return connectViaBastion(ctx, t, addr, config, timeout)
+	}
 	client, err := dialSSH(ctx, addr, t.Net, config, timeout)
 	if err != nil {
 		return nil, fmt.Errorf("dial ssh %s: %w", addr, withLegacySSHHint(err, t.LegacySSH))
 	}
-
 	return &LiveSSHRunner{client: client}, nil
+}
+
+// checkViaDepth refuses a bastion chain longer than maxViaDepth before anything is dialed.
+func checkViaDepth(t Target) error {
+	n := 0
+	for v := t.Via; v != nil && n <= maxViaDepth; v = v.Via {
+		n++
+	}
+	if n > maxViaDepth {
+		return fmt.Errorf("bastion chain for %s deeper than %d hops", t.Host, maxViaDepth)
+	}
+	return nil
+}
+
+// Chain links hops so the first is dialed directly and each later one through the previous one. It returns the
+// last hop, the one the final Host is reached through, or nil when there are no hops.
+func Chain(hops []Target) *Target {
+	var via *Target
+	for _, hop := range hops {
+		hop.Via = via
+		via = &hop
+	}
+	return via
+}
+
+// connectViaBastion connects the bastion described by t.Via, then runs t's SSH handshake inside a tunnel through it.
+// Whichever step fails, the bastion is closed, so no socket or goroutine outlives a failed connect.
+func connectViaBastion(ctx context.Context, t Target, addr string, config *ssh.ClientConfig, timeout time.Duration) (*LiveSSHRunner, error) {
+	bastion, err := ConnectContext(ctx, *t.Via, timeout)
+	if err != nil {
+		return nil, fmt.Errorf("via bastion %s: %w", t.Via.Host, err)
+	}
+	client, err := dialThrough(ctx, bastion.client, addr, config, timeout)
+	if err != nil {
+		_ = bastion.Close()
+		return nil, fmt.Errorf("dial ssh %s via %s: %w", addr, t.Via.Host, withLegacySSHHint(err, t.LegacySSH))
+	}
+	return &LiveSSHRunner{client: client, bastion: bastion}, nil
+}
+
+// dialThrough opens a tunnel to addr over the bastion client and runs the SSH handshake inside it. ctx and the
+// timeout bound both steps: when they end, the tunnel is closed, which unblocks a stuck handshake.
+func dialThrough(ctx context.Context, bastion *ssh.Client, addr string, config *ssh.ClientConfig, timeout time.Duration) (*ssh.Client, error) {
+	hctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	conn, err := bastion.DialContext(hctx, "tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	stop := context.AfterFunc(hctx, func() { _ = conn.Close() })
+	c, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
+	stop() // a live session must not die because the handshake context ends later
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return ssh.NewClient(c, chans, reqs), nil
 }
 
 // ponytail: ssh.Dial's Timeout only bounds the TCP dial, not the SSH handshake; bound both.
@@ -373,23 +450,12 @@ func configureLegacyCompatibleSSH(config *ssh.ClientConfig) {
 type KeyProvisioner func(t Target, password, pubKey string) error
 
 func DefaultKeyProvisioner(t Target, password, pubKey string) error {
-	host, port, user := t.Host, t.Port, t.User
-	config := &ssh.ClientConfig{
-		User: user,
-		Auth: []ssh.AuthMethod{
-			ssh.Password(password),
-		},
-		HostKeyCallback: TOFUHostKeyCallback(),
-		Timeout:         8 * time.Second,
-	}
-	configureSSH(config, t.LegacySSH)
-
-	addr := fmt.Sprintf("%s:%d", host, port)
-	client, err := dialSSH(context.Background(), addr, t.Net, config, 8*time.Second)
+	runner, err := connectWith(context.Background(), t, ssh.Password(password), 8*time.Second)
 	if err != nil {
-		return fmt.Errorf("ssh password authentication failed: %w", withLegacySSHHint(err, t.LegacySSH))
+		return fmt.Errorf("ssh password authentication failed: %w", err)
 	}
-	defer client.Close()
+	defer runner.Close()
+	client := runner.client
 
 	session, err := client.NewSession()
 	if err != nil {
@@ -626,11 +692,19 @@ func (r *LiveSSHRunner) DialContext(ctx context.Context, network, addr string) (
 	return r.client.DialContext(ctx, network, addr)
 }
 
+// Close shuts the Host connection and then its bastion chain. Repeated calls return the first result.
 func (r *LiveSSHRunner) Close() error {
-	if r.client != nil {
-		return r.client.Close()
-	}
-	return nil
+	r.closeOnce.Do(func() {
+		var errs []error
+		if r.client != nil {
+			errs = append(errs, r.client.Close())
+		}
+		if r.bastion != nil {
+			errs = append(errs, r.bastion.Close())
+		}
+		r.closeErr = errors.Join(errs...)
+	})
+	return r.closeErr
 }
 
 // MockRunner is the primary test seam for testing all Pantau inspections, terminal, and file logic without real SSH servers.

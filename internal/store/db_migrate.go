@@ -777,6 +777,8 @@ func (d *DB) migrate() error {
 	// Local ssh-agent authentication is opt-in per host; the fingerprint picks one key from the agent.
 	_ = d.alterAddColumn("hosts", "ssh_agent", "INTEGER NOT NULL DEFAULT 0")
 	_ = d.alterAddColumn("hosts", "ssh_agent_fingerprint", "TEXT NOT NULL DEFAULT ''")
+	// ProxyJump: 0 means direct. A dangling reference fails closed at dial time (see JumpChain).
+	_ = d.alterAddColumn("hosts", "jump_host_id", "INTEGER NOT NULL DEFAULT 0")
 	_ = d.alterAddColumn("geoip_cache", "region", "TEXT NOT NULL DEFAULT ''")
 	_, _ = d.Exec(`CREATE INDEX IF NOT EXISTS idx_hosts_network ON hosts(network_id)`)
 	_ = d.alterAddColumn("vpn_networks", "identity", "BLOB")

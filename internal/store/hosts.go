@@ -81,6 +81,8 @@ type Host struct {
 	// ($SSH_AUTH_SOCK). It replaces the Library, Custom and Global keys; a dead agent never falls back to them.
 	SSHAgent            bool   `json:"ssh_agent"`
 	SSHAgentFingerprint string `json:"ssh_agent_fingerprint"`
+	// JumpHostID names the bastion this Host is reached through (ProxyJump); 0 means a direct connection.
+	JumpHostID int64 `json:"jump_host_id"`
 }
 
 // normalizeAuth keeps one credential source per Host: the agent excludes stored keys, and a fingerprint
@@ -166,13 +168,14 @@ const hostSelectCols = `SELECT id, name, host, port, user, COALESCE(custom_key,'
 	COALESCE(top_cpu_processes, ''), COALESCE(top_ram_processes, ''), COALESCE(top_swap_processes, ''),
 	COALESCE(kube_cluster_id, ''), COALESCE(kube_mode, 'full'), COALESCE(network_id, 0),
 	COALESCE(geo_lat, 0), COALESCE(geo_lon, 0), COALESCE(geo_region, ''), COALESCE(geo_label, ''),
-	COALESCE(os_profile, ''), COALESCE(allow_legacy_ssh, 0), COALESCE(ssh_agent, 0), COALESCE(ssh_agent_fingerprint, '')
+	COALESCE(os_profile, ''), COALESCE(allow_legacy_ssh, 0), COALESCE(ssh_agent, 0), COALESCE(ssh_agent_fingerprint, ''), COALESCE(jump_host_id, 0)
 	FROM hosts `
 
 func scanHost(s rowScanner) (*Host, error) {
 	var h Host
 	var inspected sql.NullTime
 	var online, legacy, agent int
+	var jump sql.NullInt64
 	err := s.Scan(&h.ID, &h.Name, &h.Host, &h.Port, &h.User, &h.CustomKey, &h.KeyID, &h.Status, &h.OSInfo, &h.Kernel, &h.Uptime, &h.CPULoad, &h.RAMUsedBytes, &h.RAMTotalBytes, &h.DiskUsedBytes, &h.DiskTotalBytes, &h.LifecycleScore, &h.LifecycleNotes, &h.LifecycleBreakdown, &inspected, &h.CreatedAt,
 		&h.NetRxBytes, &h.NetTxBytes, &h.NetRxSpeedBps, &h.NetTxSpeedBps,
 		&h.DiskReadBytes, &h.DiskWriteBytes, &h.DiskReadSpeedBps, &h.DiskWriteSpeedBps,
@@ -184,10 +187,11 @@ func scanHost(s rowScanner) (*Host, error) {
 		&h.TopCPUProcesses, &h.TopRAMProcesses, &h.TopSwapProcesses,
 		&h.KubeClusterID, &h.KubeMode, &h.NetworkID,
 		&h.GeoLat, &h.GeoLon, &h.GeoRegion, &h.GeoLabel,
-		&h.OSProfile, &legacy, &agent, &h.SSHAgentFingerprint)
+		&h.OSProfile, &legacy, &agent, &h.SSHAgentFingerprint, &jump)
 	if err != nil {
 		return nil, err
 	}
+	h.JumpHostID = jump.Int64
 	h.InternetOnline = online == 1
 	h.AllowLegacySSH = legacy == 1
 	h.SSHAgent = agent == 1
@@ -243,6 +247,9 @@ func (d *DB) GetHost(id int64) (*Host, error) {
 
 func (d *DB) CreateHost(h *Host) (int64, error) {
 	h.normalizeAuth()
+	if err := d.ValidateJumpHost(0, h.JumpHostID); err != nil {
+		return 0, err
+	}
 	if h.KubeMode == "" {
 		h.KubeMode = "full"
 	}
@@ -256,7 +263,7 @@ func (d *DB) CreateHost(h *Host) (int64, error) {
 	}
 	var maxOrder int
 	_ = tx.QueryRow(`SELECT COALESCE(MAX(sort_order), 0) FROM hosts`).Scan(&maxOrder)
-	res, err := tx.Exec(`INSERT INTO hosts (name, host, port, user, custom_key, key_id, status, notes, sort_order, group_name, commission_date, bios_date, kube_cluster_id, kube_mode, network_id, geo_lat, geo_lon, geo_region, geo_label, allow_legacy_ssh, ssh_agent, ssh_agent_fingerprint) VALUES (?, ?, ?, ?, ?, ?, 'unknown', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, maxOrder+1, h.GroupName, h.CommissionDate, h.BIOSDate, h.KubeClusterID, h.KubeMode, h.NetworkID, h.GeoLat, h.GeoLon, h.GeoRegion, h.GeoLabel, boolInt(h.AllowLegacySSH), boolInt(h.SSHAgent), h.SSHAgentFingerprint)
+	res, err := tx.Exec(`INSERT INTO hosts (name, host, port, user, custom_key, key_id, status, notes, sort_order, group_name, commission_date, bios_date, kube_cluster_id, kube_mode, network_id, geo_lat, geo_lon, geo_region, geo_label, allow_legacy_ssh, ssh_agent, ssh_agent_fingerprint, jump_host_id) VALUES (?, ?, ?, ?, ?, ?, 'unknown', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, maxOrder+1, h.GroupName, h.CommissionDate, h.BIOSDate, h.KubeClusterID, h.KubeMode, h.NetworkID, h.GeoLat, h.GeoLon, h.GeoRegion, h.GeoLabel, boolInt(h.AllowLegacySSH), boolInt(h.SSHAgent), h.SSHAgentFingerprint, h.JumpHostID)
 	if err != nil {
 		return 0, err
 	}
@@ -272,6 +279,9 @@ func (d *DB) CreateHost(h *Host) (int64, error) {
 
 func (d *DB) UpdateHost(h *Host) error {
 	h.normalizeAuth()
+	if err := d.ValidateJumpHost(h.ID, h.JumpHostID); err != nil {
+		return err
+	}
 	if h.KubeMode == "" {
 		h.KubeMode = "full"
 	}
@@ -283,7 +293,7 @@ func (d *DB) UpdateHost(h *Host) error {
 	if h.GroupName, err = hostGroupSpelling(tx, h.GroupName, h.ID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`UPDATE hosts SET name=?, host=?, port=?, user=?, custom_key=?, key_id=?, notes=?, group_name=?, commission_date=?, kube_mode=?, network_id=?, geo_lat=?, geo_lon=?, geo_region=?, geo_label=?, allow_legacy_ssh=?, ssh_agent=?, ssh_agent_fingerprint=? WHERE id=?`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, h.GroupName, h.CommissionDate, h.KubeMode, h.NetworkID, h.GeoLat, h.GeoLon, h.GeoRegion, h.GeoLabel, boolInt(h.AllowLegacySSH), boolInt(h.SSHAgent), h.SSHAgentFingerprint, h.ID); err != nil {
+	if _, err := tx.Exec(`UPDATE hosts SET name=?, host=?, port=?, user=?, custom_key=?, key_id=?, notes=?, group_name=?, commission_date=?, kube_mode=?, network_id=?, geo_lat=?, geo_lon=?, geo_region=?, geo_label=?, allow_legacy_ssh=?, ssh_agent=?, ssh_agent_fingerprint=?, jump_host_id=? WHERE id=?`, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Notes, h.GroupName, h.CommissionDate, h.KubeMode, h.NetworkID, h.GeoLat, h.GeoLon, h.GeoRegion, h.GeoLabel, boolInt(h.AllowLegacySSH), boolInt(h.SSHAgent), h.SSHAgentFingerprint, h.JumpHostID, h.ID); err != nil {
 		return err
 	}
 	return tx.Commit()

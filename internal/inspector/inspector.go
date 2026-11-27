@@ -175,16 +175,48 @@ func (ins *Inspector) InFlightCount() int {
 	return count
 }
 
+// GetRunnerForHost connects to h, through its bastion chain when it has one (ProxyJump).
 func (ins *Inspector) GetRunnerForHost(h *store.Host) (sshrunner.Runner, error) {
-	key, err := ins.db.ResolveHostPrivateKey(h)
+	t, err := ins.routedTarget(h)
 	if err != nil {
 		return nil, err
+	}
+	return ins.factory(t)
+}
+
+// routedTarget is the dial target for h together with the bastions it is reached through.
+func (ins *Inspector) routedTarget(h *store.Host) (sshrunner.Target, error) {
+	t, err := ins.hopTarget(h)
+	if err != nil {
+		return t, err
+	}
+	chain, err := ins.db.JumpChain(h)
+	if err != nil {
+		return t, err
+	}
+	hops := make([]sshrunner.Target, 0, len(chain))
+	for _, b := range chain {
+		bt, err := ins.hopTarget(b)
+		if err != nil {
+			return t, fmt.Errorf("bastion %s: %w", b.Name, err)
+		}
+		hops = append(hops, bt)
+	}
+	t.Via = sshrunner.Chain(hops)
+	return t, nil
+}
+
+// hopTarget is the dial target for one Host, without its bastions: its credentials and VPN path.
+func (ins *Inspector) hopTarget(h *store.Host) (sshrunner.Target, error) {
+	key, err := ins.db.ResolveHostPrivateKey(h)
+	if err != nil {
+		return sshrunner.Target{}, err
 	}
 	path, err := ins.netPath(h)
 	if err != nil {
-		return nil, err
+		return sshrunner.Target{}, err
 	}
-	return ins.factory(sshrunner.Target{Host: h.Host, Port: h.Port, User: h.User, Key: key, Agent: h.SSHAgent, AgentFingerprint: h.SSHAgentFingerprint, Net: path, LegacySSH: h.AllowLegacySSH})
+	return sshrunner.Target{Host: h.Host, Port: h.Port, User: h.User, Key: key, Agent: h.SSHAgent, AgentFingerprint: h.SSHAgentFingerprint, Net: path, LegacySSH: h.AllowLegacySSH}, nil
 }
 
 // InspectHost performs a full health check, metrics scrape, and drift detection on a single host.

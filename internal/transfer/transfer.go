@@ -74,10 +74,41 @@ type PathResolver interface {
 
 func (m *Manager) SetPathResolver(r PathResolver) { m.paths = r }
 
+// getRunnerForHost connects to h, through its bastion chain when it has one (ProxyJump).
 func (m *Manager) getRunnerForHost(h *store.Host) (sshrunner.Runner, error) {
-	key, err := m.db.ResolveHostPrivateKey(h)
+	t, err := m.routedTarget(h)
 	if err != nil {
 		return nil, err
+	}
+	return m.factory(t)
+}
+
+func (m *Manager) routedTarget(h *store.Host) (sshrunner.Target, error) {
+	t, err := m.hopTarget(h)
+	if err != nil {
+		return t, err
+	}
+	chain, err := m.db.JumpChain(h)
+	if err != nil {
+		return t, err
+	}
+	hops := make([]sshrunner.Target, 0, len(chain))
+	for _, b := range chain {
+		bt, err := m.hopTarget(b)
+		if err != nil {
+			return t, fmt.Errorf("bastion %s: %w", b.Name, err)
+		}
+		hops = append(hops, bt)
+	}
+	t.Via = sshrunner.Chain(hops)
+	return t, nil
+}
+
+// hopTarget is the dial target for one Host, without its bastions: its credentials and VPN path.
+func (m *Manager) hopTarget(h *store.Host) (sshrunner.Target, error) {
+	key, err := m.db.ResolveHostPrivateKey(h)
+	if err != nil {
+		return sshrunner.Target{}, err
 	}
 	var path *vpnnet.Path
 	if h.NetworkID != 0 && m.paths != nil {
@@ -85,10 +116,10 @@ func (m *Manager) getRunnerForHost(h *store.Host) (sshrunner.Runner, error) {
 		defer cancel()
 		path, err = m.paths.Ensure(ctx, h.NetworkID)
 		if err != nil {
-			return nil, fmt.Errorf("%w: network down: %v", sshrunner.ErrNetworkUnavailable, err)
+			return sshrunner.Target{}, fmt.Errorf("%w: network down: %v", sshrunner.ErrNetworkUnavailable, err)
 		}
 	}
-	return m.factory(sshrunner.Target{Host: h.Host, Port: h.Port, User: h.User, Key: key, Agent: h.SSHAgent, AgentFingerprint: h.SSHAgentFingerprint, Net: path, LegacySSH: h.AllowLegacySSH})
+	return sshrunner.Target{Host: h.Host, Port: h.Port, User: h.User, Key: key, Agent: h.SSHAgent, AgentFingerprint: h.SSHAgentFingerprint, Net: path, LegacySSH: h.AllowLegacySSH}, nil
 }
 
 func (m *Manager) StartTransfer(srcHostID int64, srcPath string, dstHostID int64, dstPath string, mode string) (*TransferJob, error) {

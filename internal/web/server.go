@@ -251,9 +251,35 @@ func (s *Server) SetVPNManager(m *vpnnet.Manager) {
 	}
 }
 
-// hostTarget builds the dial target for a Host, resolving its VPN path (nil path means direct dialing).
+// hostTarget builds the dial target for a Host, including its bastion chain (ProxyJump).
 func (s *Server) hostTarget(h *store.Host) (sshrunner.Target, error) {
-	t := sshrunner.Target{Host: h.Host, Port: h.Port, User: h.User, Agent: h.SSHAgent, AgentFingerprint: h.SSHAgentFingerprint, LegacySSH: h.AllowLegacySSH}
+	t, err := s.hopTarget(h)
+	if err != nil {
+		return t, err
+	}
+	chain, err := s.db.JumpChain(h)
+	if err != nil {
+		return t, err
+	}
+	hops := make([]sshrunner.Target, 0, len(chain))
+	for _, b := range chain {
+		bt, err := s.hopTarget(b)
+		if err != nil {
+			return t, fmt.Errorf("bastion %s: %w", b.Name, err)
+		}
+		hops = append(hops, bt)
+	}
+	t.Via = sshrunner.Chain(hops)
+	return t, nil
+}
+
+// hopTarget builds the dial target for one Host without its bastions: credentials and VPN path (nil path means direct dialing).
+func (s *Server) hopTarget(h *store.Host) (sshrunner.Target, error) {
+	key, err := s.db.ResolveHostPrivateKey(h)
+	if err != nil {
+		return sshrunner.Target{}, err
+	}
+	t := sshrunner.Target{Host: h.Host, Port: h.Port, User: h.User, Key: key, Agent: h.SSHAgent, AgentFingerprint: h.SSHAgentFingerprint, LegacySSH: h.AllowLegacySSH}
 	if s.vpnMgr == nil || h.NetworkID == 0 {
 		return t, nil
 	}
@@ -1163,7 +1189,7 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 
 		id, err := s.db.CreateHost(&h)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeHostStoreError(w, err)
 			return
 		}
 		h.ID = id
@@ -1407,7 +1433,7 @@ func (s *Server) handleHostDetailRoute(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if err := s.db.UpdateHost(&h); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				writeHostStoreError(w, err)
 				return
 			}
 			s.invalidateGlobe()

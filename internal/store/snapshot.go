@@ -853,8 +853,8 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 			internet_online, internet_latency_ms, public_ip, private_ips, active_conn_count, failed_logins_count,
 			top_connections, listening_ports, notes, sort_order, group_name,
 			commission_date, bios_date, os_install_epoch,
-			kube_cluster_id, kube_mode, network_id, os_profile, allow_legacy_ssh, ssh_agent, ssh_agent_fingerprint
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			kube_cluster_id, kube_mode, network_id, os_profile, allow_legacy_ssh, ssh_agent, ssh_agent_fingerprint, jump_host_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			h.ID, h.Name, h.Host, h.Port, h.User, h.CustomKey, h.KeyID, h.Status, h.OSInfo, h.Kernel, h.Uptime, h.CPULoad,
 			h.RAMUsedBytes, h.RAMTotalBytes, h.DiskUsedBytes, h.DiskTotalBytes, h.LifecycleScore, h.LifecycleNotes, h.LifecycleBreakdown,
 			h.CreatedAt, h.NetRxBytes, h.NetTxBytes, h.NetRxSpeedBps, h.NetTxSpeedBps,
@@ -862,7 +862,7 @@ func (d *DB) ImportSnapshot(payload *SnapshotPayload) error {
 			onlineInt, h.InternetLatencyMs, h.PublicIP, h.PrivateIPs, h.ActiveConnCount, h.FailedLoginsCount,
 			h.TopConnections, h.ListeningPorts, h.Notes, h.SortOrder, h.GroupName,
 			h.CommissionDate, h.BIOSDate, h.OSInstallEpoch,
-			h.KubeClusterID, kubeMode, h.NetworkID, h.OSProfile, boolInt(h.AllowLegacySSH), boolInt(h.SSHAgent), h.SSHAgentFingerprint,
+			h.KubeClusterID, kubeMode, h.NetworkID, h.OSProfile, boolInt(h.AllowLegacySSH), boolInt(h.SSHAgent), h.SSHAgentFingerprint, h.JumpHostID,
 		)
 		if err != nil {
 			return fmt.Errorf("insert host %d: %w", h.ID, err)
