@@ -429,6 +429,8 @@ func (s *Server) handleTeleportClusterRoute(w http.ResponseWriter, r *http.Reque
 	}
 
 	switch {
+	case len(parts) == 2 && parts[1] == "ensure" && r.Method == http.MethodPost:
+		s.handleTeleportEnsure(w, r, c)
 	case len(parts) == 2 && parts[1] == "used" && r.Method == http.MethodPost:
 		if err := s.db.TouchKubeClusterUsed(id); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "record use failed"})
@@ -473,4 +475,32 @@ func (s *Server) handleTeleportClusterRoute(w http.ResponseWriter, r *http.Reque
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// handleTeleportEnsure serves POST /api/teleport/clusters/{id}/ensure. It logs the profile into one cluster when that
+// cluster has no context yet, and stores the context name. The UI calls it before it loads a Teleport cluster.
+func (s *Server) handleTeleportEnsure(w http.ResponseWriter, r *http.Request, c *store.KubeCluster) {
+	if c.SourceType != store.KubeSourceTeleport {
+		writeTeleportError(w, fmt.Errorf("%w: cluster is not a teleport cluster", teleport.ErrInvalidInput), 0)
+		return
+	}
+	mgr := s.teleportManager(w)
+	if mgr == nil {
+		return
+	}
+	p, err := s.db.GetTeleportProfile(c.TeleportProfileID)
+	if err != nil || p == nil {
+		writeTeleportError(w, fmt.Errorf("%w: the profile of this cluster no longer exists", teleport.ErrInvalidInput), c.TeleportProfileID)
+		return
+	}
+	ctxName, err := mgr.EnsureKubeContext(r.Context(), teleportProfileOf(p), c.TeleportKubeName)
+	if err != nil {
+		writeTeleportError(w, err, p.ID)
+		return
+	}
+	if err := s.db.SetKubeClusterContextName(c.ID, ctxName); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "save context name failed"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "kube_context_name": ctxName})
 }

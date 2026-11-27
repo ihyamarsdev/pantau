@@ -14,6 +14,7 @@ import * as m08metricssystemddocker from './08-metrics-systemd-docker.js';
 import * as m09kube from './09-kube.js';
 import * as m10bulkpkg from './10-bulk-pkg.js';
 import * as m11cloudflare from './11-cloudflare.js';
+import * as m12teleport from './12-teleport.js';
 
 Object.assign(window, m00foundation);
 Object.assign(window, m01i18nauth);
@@ -27,6 +28,7 @@ Object.assign(window, m08metricssystemddocker);
 Object.assign(window, m09kube);
 Object.assign(window, m10bulkpkg);
 Object.assign(window, m11cloudflare);
+Object.assign(window, m12teleport);
 
 Object.defineProperty(window, "hostSelectMode", { get: () => S.hostSelectMode, set: (v) => { S.hostSelectMode = v; }, configurable: true });
 Object.defineProperty(window, "selectedHostIds", { get: () => S.selectedHostIds, set: (v) => { S.selectedHostIds = v; }, configurable: true });

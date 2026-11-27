@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"pantau/internal/inspector"
+	"pantau/internal/store"
 	"pantau/internal/teleport"
 )
 
@@ -339,3 +340,53 @@ func TestKubeErrorMapsExpiredTeleportSession(t *testing.T) {
 }
 
 func tpID(n int64) string { return strconv.FormatInt(n, 10) }
+
+func TestTeleportEnsureContext(t *testing.T) {
+	srv, auth, _ := setupTeleportAPI(t, teleportFakeTSH)
+	id := createProfile(t, srv, auth)
+	teleportCall(t, srv, auth, http.MethodPost, "/api/teleport/profiles/"+tpID(id)+"/sync", nil)
+	clusters, _ := srv.db.ListKubeClusters()
+	var devID int64
+	for _, c := range clusters {
+		if c.Name == "dev-1" {
+			devID = c.ID
+		}
+	}
+
+	t.Run("logs in and stores the context name", func(t *testing.T) {
+		rec := teleportCall(t, srv, auth, http.MethodPost, "/api/teleport/clusters/"+tpID(devID)+"/ensure", nil)
+		body := decodeTeleportJSON(t, rec)
+		if rec.Code != http.StatusOK || body["kube_context_name"] != "tc/dev-1" {
+			t.Fatalf("ensure = %d %v", rec.Code, body)
+		}
+		if c, _ := srv.db.GetKubeCluster(devID); c == nil || c.KubeContextName != "tc/dev-1" {
+			t.Fatalf("context not stored: %+v", c)
+		}
+	})
+
+	t.Run("refuses a cluster that is not a teleport cluster", func(t *testing.T) {
+		ext, err := srv.db.CreateKubeCluster(&store.KubeCluster{Name: "external", KubeMode: "full", Kubeconfig: "apiVersion: v1"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rec := teleportCall(t, srv, auth, http.MethodPost, "/api/teleport/clusters/"+tpID(ext)+"/ensure", nil); rec.Code != http.StatusBadRequest {
+			t.Fatalf("external cluster: status = %d, want 400", rec.Code)
+		}
+	})
+
+	t.Run("expired session returns 401 naming the profile", func(t *testing.T) {
+		expSrv, expAuth, _ := setupTeleportAPI(t, teleportExpiredTSH)
+		eid := createProfile(t, expSrv, expAuth)
+		cid, err := expSrv.db.CreateKubeCluster(&store.KubeCluster{
+			Name: "prod-eu", KubeMode: "read-only", SourceType: store.KubeSourceTeleport, TeleportProfileID: eid, TeleportKubeName: "prod-eu",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec := teleportCall(t, expSrv, expAuth, http.MethodPost, "/api/teleport/clusters/"+tpID(cid)+"/ensure", nil)
+		body := decodeTeleportJSON(t, rec)
+		if rec.Code != http.StatusUnauthorized || body["code"] != teleport.CodeSessionExpired || body["teleport_profile_id"] != float64(eid) {
+			t.Fatalf("expired ensure = %d %v", rec.Code, body)
+		}
+	})
+}
