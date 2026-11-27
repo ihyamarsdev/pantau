@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"pantau/internal/inspector"
@@ -387,6 +388,56 @@ func TestTeleportEnsureContext(t *testing.T) {
 		body := decodeTeleportJSON(t, rec)
 		if rec.Code != http.StatusUnauthorized || body["code"] != teleport.CodeSessionExpired || body["teleport_profile_id"] != float64(eid) {
 			t.Fatalf("expired ensure = %d %v", rec.Code, body)
+		}
+	})
+}
+
+func TestTeleportParseCommand(t *testing.T) {
+	srv, auth := setupClusterTestServer(t)
+	const path = "/api/teleport/profiles/parse-command"
+
+	t.Run("maps a pasted tsh login line and reports ignored flags", func(t *testing.T) {
+		body := map[string]interface{}{"raw_command": "tsh login --proxy=teleport.setoranku.com:443 --auth=local --user=i.rakasurya --browser=none teleport.internal.verihubs.com"}
+		rec := teleportCall(t, srv, auth, http.MethodPost, path, body)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+		}
+		out := decodeTeleportJSON(t, rec)
+		mapping := out["mapping"].(map[string]interface{})
+		want := map[string]string{
+			"name": "teleport.internal.verihubs.com", "proxy": "teleport.setoranku.com:443", "auth_connector": "local",
+			"username": "i.rakasurya", "teleport_cluster": "teleport.internal.verihubs.com", "teleport_home": "",
+		}
+		for k, v := range want {
+			if mapping[k] != v {
+				t.Errorf("mapping[%s] = %v, want %q", k, mapping[k], v)
+			}
+		}
+		if ignored := out["ignored_flags"].([]interface{}); len(ignored) != 1 || ignored[0] != "browser" {
+			t.Errorf("ignored_flags = %v, want [browser]", ignored)
+		}
+	})
+
+	t.Run("rejects shell chaining with 400 and does not echo the command", func(t *testing.T) {
+		body := map[string]interface{}{"raw_command": "tsh login --proxy=p.example.com:443; rm -rf /"}
+		rec := teleportCall(t, srv, auth, http.MethodPost, path, body)
+		if rec.Code != http.StatusBadRequest || decodeTeleportJSON(t, rec)["code"] != "INVALID_INPUT" {
+			t.Fatalf("chaining: %d %s", rec.Code, rec.Body.String())
+		}
+		if strings.Contains(rec.Body.String(), "rm -rf") {
+			t.Fatalf("response echoes the raw command: %s", rec.Body.String())
+		}
+	})
+
+	t.Run("missing command is rejected", func(t *testing.T) {
+		if rec := teleportCall(t, srv, auth, http.MethodPost, path, map[string]interface{}{}); rec.Code != http.StatusBadRequest {
+			t.Fatalf("empty raw_command: status = %d, want 400", rec.Code)
+		}
+	})
+
+	t.Run("only POST is allowed", func(t *testing.T) {
+		if rec := teleportCall(t, srv, auth, http.MethodGet, path, nil); rec.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("GET: status = %d, want 405", rec.Code)
 		}
 	})
 }

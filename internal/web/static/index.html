@@ -3699,6 +3699,12 @@ body.side-panel-collapsed .side-panel-collapse-btn .icon { transform: rotate(180
 .tp-form label{display:flex;flex-direction:column;font-size:12px;gap:4px}
 .tp-form input,.tp-form select{padding:6px}
 .tp-form-actions{grid-column:1/-1;display:flex;gap:8px;margin-top:6px}
+.tp-quick{grid-column:1/-1;display:flex;flex-direction:column;gap:4px}
+.tp-quick textarea{width:100%;padding:6px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;resize:vertical}
+.tp-quick-row{display:flex;gap:8px;align-items:center;font-size:12px}
+.tp-quick-err{color:#d93025}
+.tp-flash{animation:tp-flash 1.2s ease-out}
+@keyframes tp-flash{from{box-shadow:0 0 0 3px rgba(59,130,246,.6)}to{box-shadow:0 0 0 3px rgba(59,130,246,0)}}
 .tp-login-term{height:360px;background:#000;border-radius:6px;padding:6px}
 .tp-login-status{font-size:12px;margin:6px 0 0}
 .tp-ok{color:#1e8e3e}

@@ -46,13 +46,19 @@ const seedClusters = (): ClusterRow[] => [
 // stubTeleport answers the Teleport API. ensureStatus lets a test make the lazy provisioning fail with an expired session.
 async function stubTeleport(
   browser: any,
-  opts: { ensureStatus?: number; patches?: Array<Record<string, unknown>> } = {},
+  opts: { ensureStatus?: number; patches?: Array<Record<string, unknown>>; posted?: Array<Record<string, unknown>> } = {},
 ) {
   const rows = seedClusters();
   await browser.route('**/api/kube/clusters', async (route) => {
     await route.fulfill({ json: { ok: true, clusters: rows, host_clusters: [] } });
   });
   await browser.route('**/api/teleport/profiles', async (route) => {
+    if (route.request.method === 'POST') {
+      const body = JSON.parse(route.request.postData ?? '{}') as Record<string, unknown>;
+      opts.posted?.push(body);
+      await route.fulfill({ status: 201, json: { id: 2, ...body } });
+      return;
+    }
     await route.fulfill({ json: { profiles, tsh: { installed: true, path: '/usr/bin/tsh' } } });
   });
   await browser.route('**/api/teleport/profiles/1/status', async (route) => {
@@ -150,4 +156,36 @@ test('teleport switcher: an expired session shows the Re-Login banner naming the
   await expect(browser.locator('#tpBanner')).toBeVisible();
   await expect(browser.locator('#tpBanner')).toContainText('Re-Login');
   await expect(browser.locator('#tpBanner button[data-tp="relogin"][data-id="1"]')).toBeVisible();
+});
+
+test('teleport profiles: a pasted tsh login command fills the form and saves the profile', async ({ app, screen, browser }) => {
+  const posted: Array<Record<string, unknown>> = [];
+  await stubTeleport(browser, { posted });
+  await openKube(app, screen, browser);
+
+  await browser.locator('#tpSwitcher button[data-tp="profiles"]').click();
+  await browser.locator('#tpProfilesModal button[data-tp="new"]').click();
+  await browser.locator('#tpProfilesModal [data-tp-quick-input]').fill(
+    'tsh login --proxy=teleport.setoranku.com:443 --auth=local --user=i.rakasurya teleport.internal.verihubs.com',
+  );
+
+  const field = (sel: string) => browser.locator(`#tpProfilesModal form[data-tp-form] ${sel}`);
+  await expect(field('[data-tp-quick-status]')).toContainText('Mapped: proxy, auth, user, cluster');
+  await expect(field('input[name="proxy"]')).toHaveValue('teleport.setoranku.com:443');
+  await expect(field('input[name="auth_connector"]')).toHaveValue('local');
+  await expect(field('input[name="username"]')).toHaveValue('i.rakasurya');
+  await expect(field('input[name="teleport_cluster"]')).toHaveValue('teleport.internal.verihubs.com');
+  await expect(field('input[name="name"]')).toHaveValue('teleport.internal.verihubs.com');
+
+  await field('button[type="submit"]').click();
+  await expect(browser.locator('body')).toContainText('Profile saved');
+  expect(posted).toHaveLength(1);
+  expect(posted[0]).toMatchObject({
+    name: 'teleport.internal.verihubs.com',
+    proxy: 'teleport.setoranku.com:443',
+    auth_connector: 'local',
+    username: 'i.rakasurya',
+    teleport_cluster: 'teleport.internal.verihubs.com',
+    default_policy: 'read-only',
+  });
 });

@@ -359,6 +359,10 @@ function profileFormHTML(p) {
   const pol = p && p.default_policy ? p.default_policy : 'read-only';
   const opt = (val, label) => `<option value="${val}"${pol === val ? ' selected' : ''}>${esc(label)}</option>`;
   return `<form class="tp-form" data-tp-form="${p ? esc(p.id) : 'new'}">`
+    + `<div class="tp-quick"><label>${esc(tt('tp_quick_label', 'Quick Paste (tsh login command)'))}`
+    + `<textarea rows="2" class="tp-mono" data-tp-quick-input spellcheck="false" autocomplete="off" placeholder="${esc(tt('tp_quick_placeholder', QUICK_PLACEHOLDER))}"></textarea></label>`
+    + `<div class="tp-quick-row"><button type="button" class="btn btn-sm btn-ghost" data-tp="quick-clear">${esc(tt('tp_quick_clear', 'Clear'))}</button>`
+    + `<span class="tp-muted tp-quick-status" data-tp-quick-status aria-live="polite"></span></div></div>`
     + `<label>${esc(tt('tp_name', 'Name'))}<input name="name" required maxlength="64" value="${v(p && p.name)}"></label>`
     + `<label>${esc(tt('tp_proxy', 'Proxy'))}<input name="proxy" required placeholder="teleport.example.com:443" value="${v(p && p.proxy)}"></label>`
     + `<label>${esc(tt('tp_auth', 'Auth connector'))}<input name="auth_connector" placeholder="local | oidc" value="${v(p && p.auth_connector)}"></label>`
@@ -630,6 +634,270 @@ async function saveProfileForm(form) {
   openProfiles();
 }
 
+// ---------- quick paste: a raw `tsh login` command ----------
+// Mirrors internal/teleport/command.go. Pure: it runs nothing, and it fails the whole command rather than mapping part
+// of it. The Go rules are the source of truth; change both together.
+const QUICK_PLACEHOLDER = 'tsh login --proxy=teleport.example.com:443 --auth=local --user=alice cluster.example.com';
+const QUICK_META = /[;&|`$<>(){}\\]/;
+const QUICK_ENV = /^[A-Za-z_][A-Za-z0-9_]*=/;
+const QUICK_IGNORED = { browser: true, ttl: true, 'mfa-mode': true, insecure: false, 'request-id': true, 'skip-version-check': false };
+const QUICK_VALUE_FLAGS = ['proxy', 'auth', 'user', 'cluster'];
+const QUICK_RE = {
+  proxy: /^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(:[0-9]{1,5})?$/,
+  auth_connector: /^[a-z0-9]([a-z0-9_-]{0,62})$/,
+  username: /^[A-Za-z0-9]([A-Za-z0-9._@+-]{0,127})$/,
+  teleport_cluster: /^[A-Za-z0-9]([A-Za-z0-9.-]{0,252})$/,
+};
+// Form field -> short label shown in the "Mapped:" status.
+const QUICK_MAP = [['proxy', 'proxy'], ['auth_connector', 'auth'], ['username', 'user'], ['teleport_cluster', 'cluster'], ['teleport_home', 'home']];
+const QUICK_FIELD_LABEL = {
+  proxy: ['tp_proxy', 'Proxy'], auth_connector: ['tp_auth', 'Auth connector'], username: ['tp_user', 'Username'],
+  teleport_cluster: ['tp_cluster', 'Teleport cluster'], teleport_home: ['tp_home', 'TELEPORT_HOME (optional)'],
+};
+
+function quickFlagLabel(name) {
+  return /^[a-z][a-z-]{0,31}$/.test(name) ? `--${name}` : '(?)';
+}
+
+// quickSplitWords splits on blanks outside quotes. Quotes are removed; no escapes. It returns null on an open quote.
+function quickSplitWords(s) {
+  const out = [];
+  let cur = '';
+  let quote = '';
+  let inWord = false;
+  for (const ch of s) {
+    if (quote) {
+      if (ch === quote) quote = '';
+      else cur += ch;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+      inWord = true;
+    } else if (ch === ' ' || ch === '\t') {
+      if (inWord) {
+        out.push(cur);
+        cur = '';
+        inWord = false;
+      }
+    } else {
+      cur += ch;
+      inWord = true;
+    }
+  }
+  if (quote) return null;
+  if (inWord) out.push(cur);
+  return out;
+}
+
+// quickLogicalLines drops the "$ " prompt and joins backslash continuations.
+function quickLogicalLines(text) {
+  const out = [];
+  let cur = '';
+  for (let line of text.split('\n')) {
+    line = line.trim();
+    line = line.startsWith('$ ') ? line.slice(2).trim() : line;
+    if (line.endsWith('\\')) {
+      cur += line.slice(0, -1) + ' ';
+      continue;
+    }
+    cur += line;
+    out.push(cur);
+    cur = '';
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+function quickHomeOK(home) {
+  if (/[\u0000\r\n]/.test(home)) return false;
+  if (!home.startsWith('/') && !home.startsWith('~/')) return false;
+  return !home.split('/').includes('..');
+}
+
+// parseTshLogin returns { ok, fields, name, ignored } or { ok: false, code, flag?, field? }.
+function parseTshLogin(raw) {
+  const fail = (code, extra) => ({ ok: false, code, ...(extra || {}) });
+  if (new TextEncoder().encode(String(raw || '')).length > 8192) return fail('long');
+  const text = String(raw || '').replace(/\r\n/g, '\n');
+  if (/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/.test(text)) return fail('chars');
+
+  let found = false;
+  let home = '';
+  let args = [];
+  const setHome = (val) => {
+    if (home && val && home !== val) return false;
+    if (val) home = val;
+    return true;
+  };
+  for (const line of quickLogicalLines(text)) {
+    const words = line.split(/\s+/).filter(Boolean);
+    if (!words.length) continue;
+    const first = words[0];
+    if (first !== 'export' && first !== 'tsh' && !QUICK_ENV.test(first)) continue;
+    const tokens = quickSplitWords(line);
+    if (tokens === null) {
+      if (words.length > 1 && words[0] === 'tsh' && words[1] === 'login') return fail('quote');
+      continue; // prose with an apostrophe, not a command
+    }
+    let i = 0;
+    while (i < tokens.length && QUICK_ENV.test(tokens[i])) i++;
+    if (i + 1 < tokens.length && tokens[i] === 'tsh' && tokens[i + 1] === 'login') {
+      if (QUICK_META.test(line)) return fail('chars');
+      if (found) return fail('multi');
+      found = true;
+      for (const a of tokens.slice(0, i)) {
+        const eq = a.indexOf('=');
+        const name = a.slice(0, eq);
+        if (name === 'TELEPORT_HOME') {
+          if (!setHome(a.slice(eq + 1))) return fail('home');
+        } else if (name !== 'KUBECONFIG') {
+          return fail('env');
+        }
+      }
+      args = tokens.slice(i + 2);
+    } else if (i === 0 && tokens.length === 2 && tokens[0] === 'export') {
+      if (QUICK_META.test(line)) return fail('chars');
+      const eq = tokens[1].indexOf('=');
+      if (eq > 0 && tokens[1].slice(0, eq) === 'TELEPORT_HOME' && !setHome(tokens[1].slice(eq + 1))) return fail('home');
+    }
+  }
+  if (!found) return fail('none');
+
+  const values = {};
+  const ignored = [];
+  for (let i = 0; i < args.length; i++) {
+    const tok = args[i];
+    if (!tok.startsWith('-')) {
+      if (tok === '') return fail('flag', { flag: '(?)' });
+      if ('cluster' in values) return fail('flag', { flag: '--cluster' });
+      values.cluster = tok;
+      continue;
+    }
+    const long = tok.startsWith('--');
+    const body = long ? tok.slice(2) : tok.slice(1);
+    const eq = body.indexOf('=');
+    const hasVal = eq >= 0;
+    let name = hasVal ? body.slice(0, eq) : body;
+    let val = hasVal ? body.slice(eq + 1) : '';
+    if (!long && name !== 'u') return fail('flag', { flag: quickFlagLabel(name) });
+    if (!long) name = 'user';
+    if (QUICK_VALUE_FLAGS.includes(name)) {
+      if (!hasVal) {
+        if (i + 1 >= args.length) return fail('flag', { flag: quickFlagLabel(name) });
+        i++;
+        val = args[i];
+      }
+      if (val === '' || name in values) return fail('flag', { flag: quickFlagLabel(name) });
+      values[name] = val;
+      continue;
+    }
+    if (long && Object.prototype.hasOwnProperty.call(QUICK_IGNORED, name)) {
+      if (QUICK_IGNORED[name] && !hasVal) {
+        if (i + 1 >= args.length) return fail('flag', { flag: quickFlagLabel(name) });
+        i++;
+      }
+      ignored.push(name);
+      continue;
+    }
+    return fail('flag', { flag: quickFlagLabel(name) });
+  }
+
+  const fields = {
+    proxy: values.proxy || '', auth_connector: values.auth || '', username: values.user || '',
+    teleport_cluster: values.cluster || '', teleport_home: home,
+  };
+  if (!fields.proxy) return fail('field', { field: 'proxy' });
+  for (const k of ['proxy', 'auth_connector', 'username', 'teleport_cluster']) {
+    if (fields[k] && !QUICK_RE[k].test(fields[k])) return fail('field', { field: k });
+  }
+  if (home && !quickHomeOK(home)) return fail('field', { field: 'teleport_home' });
+
+  const name = fields.teleport_cluster || (fields.proxy.includes(':') ? fields.proxy.slice(0, fields.proxy.lastIndexOf(':')) : fields.proxy);
+  return { ok: true, fields, name, ignored };
+}
+
+function quickErrorText(res) {
+  switch (res.code) {
+    case 'long': return tt('tp_quick_err_long', 'Command is too long');
+    case 'chars': return tt('tp_quick_err_chars', 'Command contains characters or shell syntax that are not allowed');
+    case 'quote': return tt('tp_quick_err_quote', 'Unterminated quote in the tsh login command');
+    case 'none': return tt('tp_quick_err_none', 'No tsh login command found');
+    case 'multi': return tt('tp_quick_err_multi', 'More than one tsh login command');
+    case 'flag': return tt('tp_quick_err_flag', 'Flag {flag} is unsupported, repeated, or missing its value', { flag: res.flag });
+    case 'env': return tt('tp_quick_err_env', 'Unsupported environment variable before tsh login');
+    case 'home': return tt('tp_quick_err_home', 'Conflicting TELEPORT_HOME values');
+    case 'field': {
+      const [key, fallback] = QUICK_FIELD_LABEL[res.field];
+      return tt('tp_quick_err_field', 'Invalid value for {field}', { field: tt(key, fallback) });
+    }
+    default: return tt('tp_failed', 'Teleport request failed');
+  }
+}
+
+function setQuickStatus(el, text, isError) {
+  if (!el) return;
+  el.textContent = text;
+  el.classList.toggle('tp-quick-err', !!isError);
+}
+
+// flashField gives a field that was just filled a short highlight, so the change is visible.
+function flashField(input) {
+  input.classList.remove('tp-flash');
+  void input.offsetWidth;
+  input.classList.add('tp-flash');
+  setTimeout(() => input.classList.remove('tp-flash'), 1200);
+}
+
+// applyQuickPaste fills the form from the pasted command. On a parse error it only shows the message, so fields that
+// were already correct stay as they are. Name is filled only while the user has not edited it.
+function applyQuickPaste(ta) {
+  const form = ta.closest('form[data-tp-form]');
+  if (!form) return;
+  const status = form.querySelector('[data-tp-quick-status]');
+  if (!ta.value.trim()) {
+    setQuickStatus(status, '', false);
+    return;
+  }
+  const res = parseTshLogin(ta.value);
+  if (!res.ok) {
+    setQuickStatus(status, quickErrorText(res), true);
+    return;
+  }
+  const mapped = [];
+  for (const [formName, label] of QUICK_MAP) {
+    const val = res.fields[formName];
+    if (!val) continue;
+    mapped.push(label);
+    const input = form.querySelector(`[name="${formName}"]`);
+    if (input && input.value !== val) {
+      input.value = val;
+      flashField(input);
+    }
+  }
+  const nameInput = form.querySelector('[name="name"]');
+  if (nameInput && res.name && nameInput.dataset.manual !== '1' && nameInput.value !== res.name) {
+    nameInput.value = res.name;
+    flashField(nameInput);
+  }
+  let text = mapped.length ? tt('tp_quick_mapped', 'Mapped: {fields}', { fields: mapped.join(', ') }) : '';
+  if (res.ignored.length) {
+    text += (text ? ' · ' : '') + tt('tp_quick_ignored', 'Ignored: {flags}', { flags: res.ignored.join(', ') });
+  }
+  setQuickStatus(status, text, false);
+}
+
+let quickTimer = 0;
+function onQuickInput(e) {
+  const t = e.target;
+  if (!t || !t.matches) return;
+  if (t.matches('form[data-tp-form] input[name="name"]')) {
+    t.dataset.manual = '1';
+    return;
+  }
+  if (!t.matches('[data-tp-quick-input]')) return;
+  clearTimeout(quickTimer);
+  quickTimer = setTimeout(() => applyQuickPaste(t), 150);
+}
+
 async function syncProfile(profileId, withContexts) {
   const r = await apiJSON('POST', `/api/teleport/profiles/${profileId}/sync`, { sync_contexts: !!withContexts });
   if (!r.ok) {
@@ -827,6 +1095,14 @@ function onClick(e) {
     case 'form-cancel':
       openProfiles();
       break;
+    case 'quick-clear': {
+      const form = btn.closest('form[data-tp-form]');
+      if (form) {
+        form.querySelector('[data-tp-quick-input]').value = '';
+        setQuickStatus(form.querySelector('[data-tp-quick-status]'), '', false);
+      }
+      break;
+    }
     case 'close': {
       const modal = btn.closest('.modal');
       if (modal && modal.id === 'tpLoginModal') closeLogin();
@@ -875,6 +1151,7 @@ function init() {
   document.addEventListener('click', onClick);
   document.addEventListener('input', onInput);
   document.addEventListener('submit', onSubmit);
+  document.addEventListener('input', onQuickInput);
   document.addEventListener('focusin', onFocusSearch);
   window.addEventListener('beforeunload', rememberClusterState);
   tpLoadProfiles().then(() => renderTeleportSwitcher());

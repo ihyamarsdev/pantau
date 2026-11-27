@@ -183,6 +183,39 @@ func (s *Server) handleTeleportProfiles(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+// teleportParseCommandReq is the body of POST /api/teleport/profiles/parse-command.
+type teleportParseCommandReq struct {
+	RawCommand string `json:"raw_command"`
+}
+
+// handleTeleportParseCommand serves POST /api/teleport/profiles/parse-command. It maps a pasted `tsh login` command to
+// profile fields. It runs nothing, and neither the response nor the log carries the raw text.
+func (s *Server) handleTeleportParseCommand(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req teleportParseCommandReq
+	if !decodeTeleportBody(w, r, &req) {
+		return
+	}
+	cmd, err := teleport.ParseLoginCommand(req.RawCommand)
+	if err != nil {
+		writeTeleportError(w, err, 0)
+		return
+	}
+	p := cmd.Profile
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok": true,
+		"mapping": map[string]string{
+			"name": cmd.NameSuggestion, "proxy": p.Proxy, "auth_connector": p.AuthConnector, "username": p.Username,
+			"teleport_cluster": p.TeleportCluster, "teleport_home": p.TeleportHome,
+		},
+		"ignored_flags": cmd.IgnoredFlags,
+		"warnings":      cmd.Warnings,
+	})
+}
+
 // handleTeleportProfileRoute dispatches /api/teleport/profiles/{id}[/status|/sync|/logout|/login/ws].
 func (s *Server) handleTeleportProfileRoute(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/teleport/profiles/"), "/")

@@ -484,6 +484,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/kube/clusters/", s.authMiddleware(s.handleKubeClusterRoute))
 	s.mux.HandleFunc("/api/kube/host-clusters/", s.authMiddleware(s.handleKubeHostCluster))
 	s.mux.HandleFunc("/api/teleport/profiles", s.authMiddleware(s.handleTeleportProfiles))
+	s.mux.HandleFunc("/api/teleport/profiles/parse-command", s.authMiddleware(s.handleTeleportParseCommand))
 	s.mux.HandleFunc("/api/teleport/profiles/", s.authMiddleware(s.handleTeleportProfileRoute))
 	s.mux.HandleFunc("/api/teleport/clusters/", s.authMiddleware(s.handleTeleportClusterRoute))
 	s.mux.HandleFunc("/api/teleport/cli/status", s.authMiddleware(s.handleTeleportCLIStatus))
